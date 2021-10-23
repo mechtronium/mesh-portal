@@ -6,19 +6,19 @@ extern crate anyhow;
 
 
 
-use resource_mesh_portal_tcp_common::{PrimitiveFrameReader, PrimitiveFrameWriter, FrameWriter, FrameReader};
+use mesh_portal_tcp_common::{PrimitiveFrameReader, PrimitiveFrameWriter, FrameWriter, FrameReader};
 use anyhow::Error;
-use resource_mesh_portal_api_client::{Portal, PortalCtrl, PortalSkel, InletApi, Inlet };
+use mesh_portal_api_client::{Portal, PortalCtrl, PortalSkel, InletApi, Inlet };
 use std::sync::Arc;
 use tokio::net::TcpStream;
 use tokio::sync::mpsc;
-use resource_mesh_portal_serde::version::latest::portal;
-use resource_mesh_portal_serde::version::latest::log::Log;
+use mesh_portal_serde::version::latest::portal;
+use mesh_portal_serde::version::latest::log::Log;
 use tokio::sync::mpsc::error::TrySendError;
-use resource_mesh_portal_serde::version;
+use mesh_portal_serde::version;
 use std::thread;
 use tokio::time::Duration;
-use resource_mesh_portal_serde::version::latest::portal::{outlet, inlet};
+use mesh_portal_serde::version::latest::portal::{outlet, inlet};
 
 
 pub struct PortalTcpClient {

@@ -26,14 +26,14 @@ lazy_static! {
     use tokio::sync::{mpsc, oneshot};
 
     use anyhow::Error;
-    use resource_mesh_portal_api_client::{InletApi, PortalCtrl, PortalSkel, client, PortCtrl};
-    use resource_mesh_portal_api_server::{Message, MuxCall, Portal, PortalMuxer, Router};
+    use mesh_portal_api_client::{InletApi, PortalCtrl, PortalSkel, client, PortCtrl};
+    use mesh_portal_api_server::{Message, MuxCall, Portal, PortalMuxer, Router};
 
-    use resource_mesh_portal_tcp_client::{PortalClient, PortalTcpClient};
-    use resource_mesh_portal_tcp_common::{
+    use mesh_portal_tcp_client::{PortalClient, PortalTcpClient};
+    use mesh_portal_tcp_common::{
         FrameReader, FrameWriter, PrimitiveFrameReader, PrimitiveFrameWriter,
     };
-    use resource_mesh_portal_tcp_server::{Call, Event, PortalServer, PortalTcpServer};
+    use mesh_portal_tcp_server::{Call, Event, PortalServer, PortalTcpServer};
     use std::collections::HashMap;
     use std::convert::TryInto;
     use std::io::Write;
@@ -44,15 +44,15 @@ lazy_static! {
     use tokio::sync::mpsc::Sender;
     use tokio::sync::oneshot::error::RecvError;
     use tokio::time::Duration;
-    use resource_mesh_portal_serde::version::latest::resource::{Status, ResourceStub, Selector};
-    use resource_mesh_portal_serde::version::latest::operation::{Operation, ResourceOperation, ExtOperation, PortOperation};
-    use resource_mesh_portal_serde::version::latest::config::{Info, PortalKind};
-    use resource_mesh_portal_serde::version::latest::id::Identifier;
-    use resource_mesh_portal_serde::version::latest::messaging::ExchangeKind;
-    use resource_mesh_portal_serde::version::latest::delivery::{Entity, Payload, ResponseEntity};
-    use resource_mesh_portal_serde::version::latest::resource::Archetype;
-    use resource_mesh_portal_serde::version::latest::delivery::ResourceEntity;
-    use resource_mesh_portal_serde::version::latest::portal::inlet;
+    use mesh_portal_serde::version::latest::resource::{Status, ResourceStub, Selector};
+    use mesh_portal_serde::version::latest::operation::{Operation, ResourceOperation, ExtOperation, PortOperation};
+    use mesh_portal_serde::version::latest::config::{Info, PortalKind};
+    use mesh_portal_serde::version::latest::id::Identifier;
+    use mesh_portal_serde::version::latest::messaging::ExchangeKind;
+    use mesh_portal_serde::version::latest::delivery::{Entity, Payload, ResponseEntity};
+    use mesh_portal_serde::version::latest::resource::Archetype;
+    use mesh_portal_serde::version::latest::delivery::ResourceEntity;
+    use mesh_portal_serde::version::latest::portal::inlet;
 
     #[derive(Clone)]
     pub enum GlobalEvent {
@@ -250,7 +250,7 @@ lazy_static! {
                                                 ResourceEntity::Stubs(resources),
                                             ));
                                             let response =
-                                                resource_mesh_portal_api_server::Response {
+                                                mesh_portal_api_server::Response {
                                                     to: request.from.clone(),
                                                     from: request.to.clone(),
                                                     exchange_id: exchange_id.clone(),
@@ -265,7 +265,7 @@ lazy_static! {
                                     }
                                     _ => match &request.kind {
                                         ExchangeKind::RequestResponse(exchange_id) => {
-                                            let response = resource_mesh_portal_api_server::Response {
+                                            let response = mesh_portal_api_server::Response {
                                                 to: request.from.clone(),
                                                 from: request.to.clone(),
                                                 exchange_id: exchange_id.clone(),

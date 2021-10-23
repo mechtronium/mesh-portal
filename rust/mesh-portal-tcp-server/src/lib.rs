@@ -19,16 +19,16 @@ use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::sync::{mpsc, oneshot, broadcast, Mutex};
 use tokio::sync::mpsc::error::SendTimeoutError;
 
-use resource_mesh_portal_api_server::{Message, MuxCall, Portal, PortalMuxer, Router};
-use resource_mesh_portal_tcp_common::{FrameReader, FrameWriter, PrimitiveFrameReader, PrimitiveFrameWriter};
-use resource_mesh_portal_serde::version::v0_0_1::config::Info;
+use mesh_portal_api_server::{Message, MuxCall, Portal, PortalMuxer, Router};
+use mesh_portal_tcp_common::{FrameReader, FrameWriter, PrimitiveFrameReader, PrimitiveFrameWriter};
+use mesh_portal_serde::version::v0_0_1::config::Info;
 use tokio::runtime::Runtime;
 use std::thread;
-use resource_mesh_portal_serde::version::latest::frame::CloseReason;
-use resource_mesh_portal_serde::version::latest::resource::Status;
-use resource_mesh_portal_serde::version::latest::operation::Operation;
-use resource_mesh_portal_serde::version::latest::portal::{inlet, outlet};
-use resource_mesh_portal_serde::version::latest::log::Log;
+use mesh_portal_serde::version::latest::frame::CloseReason;
+use mesh_portal_serde::version::latest::resource::Status;
+use mesh_portal_serde::version::latest::operation::Operation;
+use mesh_portal_serde::version::latest::portal::{inlet, outlet};
+use mesh_portal_serde::version::latest::log::Log;
 
 #[derive(Clone,strum_macros::Display)]
 pub enum Event {

@@ -14,16 +14,16 @@ use tokio::sync::{mpsc, oneshot};
 use tokio::sync::mpsc::error::{SendError, SendTimeoutError};
 use uuid::Uuid;
 
-use resource_mesh_portal_serde::message as request_message;
-use resource_mesh_portal_serde::version::latest::config::Info;
-use resource_mesh_portal_serde::version::latest::delivery::ResponseEntity;
-use resource_mesh_portal_serde::version::latest::frame::CloseReason;
-use resource_mesh_portal_serde::version::latest::id::{Address, Identifier, Key};
-use resource_mesh_portal_serde::version::latest::log::Log;
-use resource_mesh_portal_serde::version::latest::messaging::{ExchangeId, ExchangeKind};
-use resource_mesh_portal_serde::version::latest::operation::{ExtOperation, Operation};
-use resource_mesh_portal_serde::version::latest::portal::{inlet, outlet};
-use resource_mesh_portal_serde::version::latest::resource::Status;
+use mesh_portal_serde::message as request_message;
+use mesh_portal_serde::version::latest::config::Info;
+use mesh_portal_serde::version::latest::delivery::ResponseEntity;
+use mesh_portal_serde::version::latest::frame::CloseReason;
+use mesh_portal_serde::version::latest::id::{Address, Identifier, Key};
+use mesh_portal_serde::version::latest::log::Log;
+use mesh_portal_serde::version::latest::messaging::{ExchangeId, ExchangeKind};
+use mesh_portal_serde::version::latest::operation::{ExtOperation, Operation};
+use mesh_portal_serde::version::latest::portal::{inlet, outlet};
+use mesh_portal_serde::version::latest::resource::Status;
 
 #[derive(Clone,Eq,PartialEq,Hash)]
 pub enum PortalStatus{
@@ -327,22 +327,22 @@ pub enum MuxCall {
 pub mod message {
 
     pub mod inlet {
-        use resource_mesh_portal_serde::version::latest::operation::Operation;
+        use mesh_portal_serde::version::latest::operation::Operation;
         use crate::message::generic;
 
         pub type Message = generic::Message<Operation>;
     }
 
     pub mod outlet {
-        use resource_mesh_portal_serde::version::latest::operation::ExtOperation;
+        use mesh_portal_serde::version::latest::operation::ExtOperation;
         use crate::message::generic;
 
         pub type Message = generic::Message<ExtOperation>;
     }
 
     pub mod generic {
-        use resource_mesh_portal_serde::message::generic::{Request, Response};
-        use resource_mesh_portal_serde::version::latest::id::Identifier;
+        use mesh_portal_serde::message::generic::{Request, Response};
+        use mesh_portal_serde::version::latest::id::Identifier;
 
         pub enum Message<OPERATION> {
             Request(Request<OPERATION>),
