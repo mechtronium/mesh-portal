@@ -27,9 +27,7 @@ use mesh_portal_serde::version::latest::resource::Status;
 use mesh_portal_serde::version::latest::messaging::{ExchangeId, Exchange};
 use mesh_portal_serde::version::latest::config::Info;
 use mesh_portal_serde::version::latest::log::Log;
-use mesh_portal_serde::version::latest::operation::{ExtOperation, PortOperation};
-use mesh_portal_serde::version::latest::payload::Entity;
-use mesh_portal_serde::version::latest::payload::ResponseEntity;
+use mesh_portal_serde::version::latest::{portal, entity};
 
 
 struct EmptySkel {
@@ -60,7 +58,7 @@ pub trait PortalCtrl: Sync+Send {
 
 #[async_trait]
 pub trait PortCtrl: Sync+Send {
-    async fn request( &self, request: Request<PortOperation> ) -> Result<Option<ResponseEntity>,Error>{
+    async fn request( &self, request: portal::outlet::Request ) -> Result<Option<entity::response::Entity>,Error>{
         Ok(Option::None)
     }
 }
@@ -182,7 +180,7 @@ impl Outlet for Portal {
                     let from = request.from.clone();
                     let kind = request.exchange.clone();
                     tokio::spawn( async move {
-                        match request.entity.clone() {
+/*                        match request.entity.clone() {
                             ExtOperation::Http(_) => {
                                 if let Exchange::RequestResponse(exchange_id) = &kind
                                 {
@@ -307,7 +305,8 @@ impl Outlet for Portal {
                                     }
                                 }
                             }
-                        }
+                        }*/
+                        unimplemented!()
                     });
                 }
                 outlet::Frame::Response(response) => {
@@ -352,12 +351,8 @@ impl InletApi {
 
 
     pub fn notify(&self, request: inlet::Request) {
-        let mut request = request;
-        if let Exchange::None = request.exchange {
-        } else {
-            (self.logger)(Log::Warn("ExchangeKind is replaced in 'notify' or 'exchange' method and should be preset to ExchangeKind::None".to_string()));
-        }
-        request.exchange = Exchange::Notification;
+        let request = request.exchange(Exchange::Notification);
+
         self.inlet.send_frame(inlet::Frame::Request(request));
     }
 
@@ -365,13 +360,10 @@ impl InletApi {
         &mut self,
         request: inlet::Request
     ) -> Result<outlet::Response, Error> {
-        if let Exchange::None = request.exchange {
-        } else {
-            self.inlet.send_frame(inlet::Frame::Log(Log::Warn("ExchangeKind is replaced in 'notify' or 'exchange' method and should be preset to ExchangeKind::None".to_string())));
-        }
+
         let mut request = request;
         let exchange_id: ExchangeId = Uuid::new_v4().to_string();
-        request.exchange = Exchange::RequestResponse(exchange_id.clone());
+        let request = request.exchange(Exchange::RequestResponse(exchange_id.clone()));
         let (tx,rx) = oneshot::channel();
         self.exchanges.insert(exchange_id, tx);
         self.inlet.send_frame(inlet::Frame::Request(request));
@@ -390,10 +382,8 @@ pub mod client {
     use anyhow::Error;
     use mesh_portal_serde::version::latest::portal::outlet;
     use mesh_portal_serde::version::latest::id::Identifier;
-    use mesh_portal_serde::version::latest::operation::{ExtOperation, PortOperation};
     use mesh_portal_serde::version::latest::config::Info;
     use mesh_portal_serde::version::latest::http::HttpRequest;
-    use mesh_portal_serde::version::latest::payload::ResponseEntity;
 
     #[derive(Clone)]
     pub struct RequestContext {
@@ -423,34 +413,6 @@ pub mod client {
             &self.request
         }
     }
-
-    impl Request<HttpRequest> {
-        pub fn try_from_http(request: outlet::Request, context: RequestContext) -> Result<Request<HttpRequest>, Error> {
-            if let ExtOperation::Http(http_request) = request.entity {
-                Ok(Self {
-                    context,
-                    from: request.from,
-                    request: http_request,
-                })
-            } else {
-                Err(anyhow!("can only create Request<PortOperation> from ExtOperation::Port"))
-            }
-        }
-    }
-
-    impl Request<PortOperation> {
-        pub fn try_from_port(request: outlet::Request, context: RequestContext) -> Result<Request<PortOperation>, Error> {
-            if let ExtOperation::Port(port_request) = request.entity {
-                Ok(Self {
-                    context,
-                    from: request.from,
-                    request: port_request,
-                })
-            } else {
-                Err(anyhow!("can only create Request<PortOperation> from ExtOperation::Port"))
-            }
-        }
-    }
 }
 
 
@@ -462,9 +424,10 @@ pub mod example {
 
     use crate::{InletApi, PortalCtrl, PortalSkel, Request, inlet};
     use std::collections::HashMap;
-    use mesh_portal_serde::version::latest::operation::{Operation, ExtOperation, PortOperation};
-    use mesh_portal_serde::version::latest::payload::{Entity, ResponseEntity, Payload};
     use mesh_portal_serde::version::latest::id::Identifier;
+    use mesh_portal_serde::version::latest::payload::Payload;
+    use mesh_portal_serde::version::latest::entity;
+    use mesh_portal_serde::version::latest::entity::request::Msg;
 
     pub struct HelloCtrl {
         pub skel: Arc<PortalSkel>,
@@ -483,17 +446,17 @@ pub mod example {
 
         async fn init(&mut self) -> Result<(), Error> {
             let mut request =
-                inlet::Request::new(Operation::Msg(ExtOperation::Port(PortOperation {
+                inlet::Request::new(entity::request::Entity::Msg( Msg {
                     port: "hello-world".to_string(),
-                    entity: Entity::Empty,
-                })));
+                    payload: Payload::Empty,
+                }));
 
             // send this request to itself
             request.to.push( Identifier::Key(self.inlet_api.info.key.clone()) );
 
             let response = self.inlet_api.exchange(request).await?;
 
-            if let ResponseEntity::Ok(Entity::Payload(Payload::Text(text))) = response.entity {
+            if let entity::response::Entity::Ok(Payload::Text(text)) = response.entity {
                 println!("{}",text);
             } else {
                 return Err(anyhow!("unexpected signal"));
@@ -505,9 +468,5 @@ pub mod example {
 
     }
 
-    impl HelloCtrl {
-        fn hello_world( &self, request: Request<PortOperation> ) {
 
-        }
-    }
 }

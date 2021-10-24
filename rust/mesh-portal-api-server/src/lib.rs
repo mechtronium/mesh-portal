@@ -23,7 +23,7 @@ use mesh_portal_serde::version::latest::messaging::{ExchangeId, Exchange};
 use mesh_portal_serde::version::latest::portal::{inlet, outlet};
 use mesh_portal_serde::version::latest::resource::Status;
 use mesh_portal_serde::version::latest::entity::response;
-use mesh_portal_serde::version::latest::generic::fail;
+use mesh_portal_serde::version::latest::fail;
 
 #[derive(Clone,Eq,PartialEq,Hash)]
 pub enum PortalStatus{
@@ -60,7 +60,7 @@ pub struct ExchangePair {
 enum PortalCall {
     FrameIn(inlet::Frame),
     FrameOut(outlet::Frame),
-    Exchange(Exchange)
+    Exchange(ExchangePair)
 }
 
 pub struct Portal {
@@ -128,13 +128,11 @@ impl Portal {
                                 inlet::Frame::Command(_) => {}
                                 inlet::Frame::Request(request) => {
                                     match &request.exchange {
-                                        Exchange::None=> {
-                                            logger(Log::Fatal("FATAL: received request with an invalid 'ExchangeKind::None'".to_string()))
-                                        }
+
                                         Exchange::Notification => {
                                             for to in &request.to {
-                                                let request = mesh::inlet::Request::from( request.clone(), Identifier::Key(info.key.clone()), to.clone() );
-                                                let result = mux_tx.send_timeout(MuxCall::MessageIn(message::inlet::Message::Request(request)), Duration::from_secs(info.config.frame_timeout.clone())).await;
+                                                let request = mesh::Request::from( request.clone().into(), Identifier::Key(info.key.clone()), to.clone(), Exchange::Notification );
+                                                let result = mux_tx.send_timeout(MuxCall::MessageIn(message::Message::Request(request)), Duration::from_secs(info.config.frame_timeout.clone())).await;
                                                 if let Result::Err(_err) = result {
                                                     logger(Log::Fatal("FATAL: send timeout error request_tx".to_string()))
                                                 }
@@ -145,7 +143,7 @@ impl Portal {
                                                 let response = outlet::Response{
                                                     from: Identifier::Key(info.key.clone()),
                                                     exchange: exchange_id.clone(),
-                                                    entity: response::Entity::Fail(fail::Mesh( fail::mesh::Fail( ) ))
+                                                    entity: response::Entity::Fail(fail::Fail::Resource(fail::resource::Fail::Messaging(fail::Messaging::RequestReplyExchangesRequireOneAndOnlyOneRecipient)))
                                                    // ResponseEntity::Error("a RequestResponse message must have one and only one to recipient.".to_string())
                                                 };
                                                 let result = outlet_tx.send_timeout(outlet::Frame::Response(response), Duration::from_secs(info.config.frame_timeout.clone()) ).await;
@@ -154,8 +152,8 @@ impl Portal {
                                                 }
                                             } else {
                                                 let to = request.to.first().expect("expected to identifier").clone();
-                                                let request = mesh::inlet::Request::from( request.clone(), Identifier::Key(info.key.clone()), to );
-                                                let result = mux_tx.send_timeout(MuxCall::MessageIn(message::inlet::Message::Request(request)), Duration::from_secs(info.config.frame_timeout.clone())).await;
+                                                let request = mesh::Request::from( request.clone().into(), Identifier::Key(info.key.clone()), to, Exchange::RequestResponse(exchange_id.clone()) );
+                                                let result = mux_tx.send_timeout(MuxCall::MessageIn(message::Message::Request(request)), Duration::from_secs(info.config.frame_timeout.clone())).await;
                                                 if let Result::Err(_err) = result {
                                                     logger(Log::Fatal("FATAL: frame timeout error request_tx".to_string()));
                                                 }
@@ -220,9 +218,9 @@ impl Portal {
     pub async fn exchange(&self, request: outlet::Request ) -> Result<inlet::Response, Error> {
         let mut request = request;
         let exchange_id: ExchangeId = Uuid::new_v4().to_string();
-        request.exchange = Exchange::RequestResponse(exchange_id.clone());
+        let request = request.exchange(Exchange::RequestResponse(exchange_id.clone()));
         let (tx,rx) = tokio::sync::oneshot::channel();
-        let exchange = Exchange {
+        let exchange = ExchangePair {
             id: exchange_id,
             tx
         };
@@ -321,8 +319,8 @@ pub enum MuxCall {
     Add(Portal),
     Remove(Identifier),
     Select{ selector: fn(info:&Info)->bool, tx: oneshot::Sender<Vec<Info>> },
-    MessageIn(message::inlet::Message),
-    MessageOut(message::outlet::Message)
+    MessageIn(message::Message),
+    MessageOut(message::Message)
 }
 
 pub mod message {
@@ -361,7 +359,7 @@ pub mod message {
 
 
 pub trait Router: Send+Sync {
-    fn route( &self, message: message::inlet::Message );
+    fn route( &self, message: message::Message );
     fn logger( &self, message: &str ) {
         println!("{}", message );
     }
@@ -452,10 +450,10 @@ impl PortalMuxer {
                             {
                                 Some(portal) => {
                                     match message {
-                                        message::outlet::Message::Request(request) => {
+                                        message::Message::Request(request) => {
                                             portal.call_tx.try_send( PortalCall::FrameOut( outlet::Frame::Request(request.into())));
                                         }
-                                        message::outlet::Message::Response(response) => {
+                                        message::Message::Response(response) => {
                                             portal.call_tx.try_send( PortalCall::FrameOut( outlet::Frame::Response(response.into())));
                                         }
                                     }

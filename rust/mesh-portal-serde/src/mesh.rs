@@ -17,35 +17,39 @@ pub mod generic {
     pub struct Request<ENTITY> {
         pub to: Identifier,
         pub from: Identifier,
-        pub operation: ENTITY
+        pub entity: ENTITY,
+        pub exchange: Exchange
     }
 
     impl<ENTITY> Request<ENTITY> {
-        pub fn new(to: Identifier, from: Identifier, operation: ENTITY) -> Self {
+        pub fn new(to: Identifier, from: Identifier, entity: ENTITY, exchange: Exchange) -> Self {
             Request {
                 to,
                 from,
-                operation,
+                entity,
+                exchange
             }
         }
     }
 
 
     impl Request<Entity> {
-        pub fn from(request: inlet::Request, from: Identifier, to: Identifier) -> Self {
+        pub fn from(request: inlet::Request, from: Identifier, to: Identifier, exchange: Exchange) -> Self {
             Self {
                 to,
                 from,
-                operation: request.entity,
+                entity: request.entity,
+                exchange
             }
         }
     }
 
-    impl Into<inlet::Request> for Request<Entity> {
-        fn into(self) -> inlet::Request {
-            inlet::Request {
+    impl Into<inlet::exchange::Request> for Request<Entity> {
+        fn into(self) -> inlet::exchange::Request {
+            inlet::exchange::Request {
                 to: vec![self.to],
-                entity: self.operation,
+                entity: self.entity,
+                exchange: self.exchange
             }
         }
     }
@@ -70,6 +74,7 @@ pub mod generic {
         }
     }
 
+    /*
     impl Into<inlet::Response> for Response {
         fn into(self) -> inlet::Response {
             inlet::Response {
@@ -79,6 +84,8 @@ pub mod generic {
             }
         }
     }
+
+     */
 
     impl Into<outlet::Response> for Response {
         fn into(self) -> outlet::Response {

@@ -70,7 +70,7 @@ pub mod http {
 }
 
 pub mod resource {
-    use crate::version::v0_0_1::id::{Key, Address, Kind};
+    use crate::version::latest::id::{Key, Address, Kind};
     use serde::{Deserialize, Serialize};
     use crate::version::v0_0_1::resource;
 
@@ -89,7 +89,7 @@ pub mod resource {
 }
 
 pub mod config {
-    use crate::version::v0_0_1::id::{Key, Address, Kind};
+    use crate::version::latest::id::{Key, Address, Kind};
     use crate::version::v0_0_1::config;
     use crate::version::v0_0_1::generic;
 
@@ -105,7 +105,7 @@ pub mod config {
 }
 
 pub mod payload {
-    use crate::version::v0_0_1::id::{Key, Address, Kind};
+    use crate::version::latest::id::{Key, Address, Kind};
     use crate::version::v0_0_1::payload;
     use crate::version::v0_0_1::generic;
     use crate::version::v0_0_1::bin::Bin;
@@ -119,21 +119,20 @@ pub mod entity {
 
     pub mod request {
         use crate::version::v0_0_1::generic;
-        use crate::version::v0_0_1::id::{Key, Address, Kind};
+        use crate::version::latest::id::{Key, Address, Kind};
 
         pub type Entity = generic::entity::request::Entity<Key,Address,Kind>;
         pub type Rc = generic::entity::request::Rc<Key,Address,Kind>;
         pub type Msg = generic::entity::request::Msg<Key,Address,Kind>;
         pub type Http = generic::entity::request::Http;
     }
-
-    pub mod response {
-        use crate::version::v0_0_1::{generic, fail};
-        use crate::version::v0_0_1::id::{Key, Address, Kind};
+    pub mod response{
+        use crate::version::v0_0_1::generic;
+        use crate::version::latest::fail;
+        use crate::version::latest::id::{Key, Address, Kind};
 
         pub type Entity = generic::entity::response::Entity<Key,Address,Kind,fail::Fail>;
     }
-
 }
 
 pub mod portal {
@@ -158,6 +157,13 @@ pub mod portal {
             fn try_from(value: PrimitiveFrame) -> Result<Self, Self::Error> {
                 Ok(bincode::deserialize(value.data.as_slice() )?)
             }
+        }
+
+        pub mod exchange {
+            use crate::version::v0_0_1::generic;
+            use crate::version::latest::id::{Key, Address, Kind};
+
+            pub type Request=generic::portal::inlet::exchange::Request<Key,Address,Kind>;
         }
     }
 
@@ -184,6 +190,13 @@ pub mod portal {
                 Ok(bincode::deserialize(value.data.as_slice() )?)
             }
         }
+
+        pub mod exchange {
+            use crate::version::v0_0_1::generic;
+            use crate::version::latest::id::{Key, Address, Kind};
+
+            pub type Request=generic::portal::outlet::exchange::Request<Key,Address,Kind>;
+        }
     }
 }
 
@@ -208,7 +221,7 @@ pub mod fail {
     pub mod resource {
         use serde::{Deserialize, Serialize};
         use crate::version::v0_0_1::fail::resource;
-        use crate::version::v0_0_1::id::Address;
+        use crate::version::latest::id::Address;
 
         pub type Fail = resource::Fail;
         pub type Create= resource::Create;
@@ -218,13 +231,13 @@ pub mod fail {
 
     pub mod port {
         use crate::version::v0_0_1::fail::port;
-        use crate::version::v0_0_1::id::Address;
+        use crate::version::latest::id::Address;
         pub type Fail = port::Fail;
     }
 
     pub mod http {
         use crate::version::v0_0_1::fail::http;
-        use crate::version::v0_0_1::id::Address;
+        use crate::version::latest::id::Address;
         use serde::{Deserialize, Serialize};
 
         pub type Error = http::Error;
@@ -232,6 +245,7 @@ pub mod fail {
 
     pub type BadRequest = fail::BadRequest;
     pub type Conditional = fail::Conditional;
+    pub type Messaging = fail::Messaging;
     pub type Timeout = fail::Timeout;
     pub type NotFound = fail::NotFound;
     pub type Bad = fail::Bad;
@@ -240,3 +254,4 @@ pub mod fail {
     pub type Wrong = fail::Wrong;
     pub type Fail = fail::Fail;
 }
+
