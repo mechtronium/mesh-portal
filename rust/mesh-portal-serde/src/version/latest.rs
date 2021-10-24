@@ -122,7 +122,7 @@ pub mod entity {
         use crate::version::v0_0_1::generic;
         use crate::version::latest::id::{Key, Address, Kind};
 
-        pub type Entity = generic::entity::request::Entity<Key,Address,Kind>;
+        pub type ReqEntity = generic::entity::request::ReqEntity<Key,Address,Kind>;
         pub type Rc = generic::entity::request::Rc<Key,Address,Kind>;
         pub type Msg = generic::entity::request::Msg<Key,Address,Kind>;
         pub type Http = generic::entity::request::Http;
@@ -132,7 +132,7 @@ pub mod entity {
         use crate::version::latest::fail;
         use crate::version::latest::id::{Key, Address, Kind};
 
-        pub type Entity = generic::entity::response::Entity<Key,Address,Kind,fail::Fail>;
+        pub type RespEntity = generic::entity::response::RespEntity<Key,Address,Kind,fail::Fail>;
     }
 }
 

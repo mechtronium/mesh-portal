@@ -58,7 +58,7 @@ pub trait PortalCtrl: Sync+Send {
 
 #[async_trait]
 pub trait PortCtrl: Sync+Send {
-    async fn request( &self, request: portal::outlet::Request ) -> Result<Option<entity::response::Entity>,Error>{
+    async fn request( &self, request: portal::outlet::Request ) -> Result<Option<entity::response::RespEntity>,Error>{
         Ok(Option::None)
     }
 }
@@ -446,7 +446,7 @@ pub mod example {
 
         async fn init(&mut self) -> Result<(), Error> {
             let mut request =
-                inlet::Request::new(entity::request::Entity::Msg( Msg {
+                inlet::Request::new(entity::request::ReqEntity::Msg( Msg {
                     port: "hello-world".to_string(),
                     payload: Payload::Empty,
                 }));
@@ -456,7 +456,7 @@ pub mod example {
 
             let response = self.inlet_api.exchange(request).await?;
 
-            if let entity::response::Entity::Ok(Payload::Text(text)) = response.entity {
+            if let entity::response::RespEntity::Ok(Payload::Text(text)) = response.entity {
                 println!("{}",text);
             } else {
                 return Err(anyhow!("unexpected signal"));

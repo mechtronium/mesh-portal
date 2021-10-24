@@ -1,6 +1,6 @@
-use crate::version::latest::entity::request::Entity;
+use crate::version::latest::entity::request::ReqEntity;
 
-pub type Request = generic::Request<Entity>;
+pub type Request = generic::Request<ReqEntity>;
 pub type Response = generic::Response;
 
 pub mod generic {
@@ -10,7 +10,7 @@ pub mod generic {
     use crate::version::latest::portal::{inlet, outlet};
     use crate::version::latest::id::Identifier;
     use crate::version::latest::messaging::{ExchangeId, Exchange};
-    use crate::version::latest::entity::request::Entity;
+    use crate::version::latest::entity::request::ReqEntity;
     use crate::version::latest::entity::response;
     use crate::version::latest::{portal, entity};
 
@@ -34,7 +34,7 @@ pub mod generic {
     }
 
 
-    impl Request<Entity> {
+    impl Request<ReqEntity> {
         pub fn from(request: inlet::Request, from: Identifier, to: Identifier, exchange: Exchange) -> Self {
             Self {
                 to,
@@ -45,7 +45,7 @@ pub mod generic {
         }
     }
 
-    impl Into<inlet::exchange::Request> for Request<Entity> {
+    impl Into<inlet::exchange::Request> for Request<ReqEntity> {
         fn into(self) -> inlet::exchange::Request {
             inlet::exchange::Request {
                 to: vec![self.to],
@@ -55,7 +55,7 @@ pub mod generic {
         }
     }
 
-    impl Into<portal::outlet::exchange::Request> for Request<Entity>{
+    impl Into<portal::outlet::exchange::Request> for Request<ReqEntity>{
         fn into(self) ->  portal::outlet::exchange::Request{
             portal::outlet::exchange::Request{
                 from: self.from,
@@ -71,7 +71,7 @@ pub mod generic {
         pub to: Identifier,
         pub from: Identifier,
         pub exchange: ExchangeId,
-        pub entity: response::Entity
+        pub entity: response::RespEntity
     }
 
     impl Response {

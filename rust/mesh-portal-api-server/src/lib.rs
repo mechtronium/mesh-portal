@@ -143,7 +143,7 @@ impl Portal {
                                                 let response = outlet::Response{
                                                     from: Identifier::Key(info.key.clone()),
                                                     exchange: exchange_id.clone(),
-                                                    entity: response::Entity::Fail(fail::Fail::Resource(fail::resource::Fail::Messaging(fail::Messaging::RequestReplyExchangesRequireOneAndOnlyOneRecipient)))
+                                                    entity: response::RespEntity::Fail(fail::Fail::Resource(fail::resource::Fail::Messaging(fail::Messaging::RequestReplyExchangesRequireOneAndOnlyOneRecipient)))
                                                    // ResponseEntity::Error("a RequestResponse message must have one and only one to recipient.".to_string())
                                                 };
                                                 let result = outlet_tx.send_timeout(outlet::Frame::Response(response), Duration::from_secs(info.config.frame_timeout.clone()) ).await;
@@ -325,9 +325,9 @@ pub enum MuxCall {
 
 pub mod message {
 
-    use mesh_portal_serde::version::latest::entity::request::Entity;
+    use mesh_portal_serde::version::latest::entity::request::ReqEntity;
 
-    pub type Message = generic::Message<Entity>;
+    pub type Message = generic::Message<ReqEntity>;
 
     pub mod generic {
         use mesh_portal_serde::mesh::generic::{Request, Response};
