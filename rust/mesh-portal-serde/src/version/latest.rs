@@ -113,7 +113,10 @@ pub mod delivery {
     use crate::version::v0_0_1::generic;
     use crate::version::latest::bin::Bin;
 
-    pub type Payload = delivery::Payload;
+    pub type PayloadType = delivery::PayloadType;
+    pub type Payload = generic::delivery::Payload<Key,Address,Kind,Bin>;
+    pub type PayloadAspect = generic::delivery::PayloadAspect<Key,Address,Kind,Bin>;
+
     pub type Entity = generic::delivery::Entity<Key,Address,Kind>;
     pub type ResourceEntity = generic::delivery::ResourceEntity<Key,Address,Kind>;
     pub type ResponseEntity = generic::delivery::ResponseEntity<Key,Address,Kind>;

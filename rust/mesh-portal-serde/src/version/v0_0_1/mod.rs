@@ -273,13 +273,10 @@ pub mod delivery {
     use crate::version::v0_0_1::id::{Key, Address, Kind};
     use crate::version::v0_0_1::generic;
 
-    #[derive(Debug, Clone, Serialize, Deserialize)]
-    pub enum Payload {
-        Text(String),
-        Bin(Bin),
-        Bins(HashMap<String, Bin>)
-    }
 
+    pub type PayloadType = generic::delivery::PayloadType;
+    pub type Payload = generic::delivery::Payload<Key,Address,Kind,Bin>;
+    pub type PayloadAspect = generic::delivery::PayloadAspect<Key,Address,Kind,Bin>;
     pub type Entity = generic::delivery::Entity<Key,Address,Kind>;
     pub type ResourceEntity = generic::delivery::ResourceEntity<Key,Address,Kind>;
     pub type ResponseEntity = generic::delivery::ResponseEntity<Key,Address,Kind>;
@@ -874,18 +871,65 @@ pub mod generic {
         use serde::{Deserialize, Serialize};
 
         use crate::version::v0_0_1::{State, http};
-        use crate::version::v0_0_1::delivery::Payload;
         use crate::version::v0_0_1::generic;
         use std::fmt::Debug;
         use std::hash::Hash;
         use std::str::FromStr;
         use crate::version::v0_0_1::generic::resource::ResourceStub;
+        use crate::version::v0_0_1::bin::Bin;
+        use std::collections::HashMap;
+
+        #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
+        pub enum PayloadType
+        {
+            Empty,
+            Text,
+            Texts,
+            Key,
+            Keys,
+            Address,
+            Addresses,
+            Stub,
+            Stubs,
+            Meta,
+            Bin,
+            Bins,
+        }
+
+        #[derive(Debug, Clone, Serialize, Deserialize)]
+        pub enum Payload<KEY: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, ADDRESS: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, KIND: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, BIN: Debug + Clone + Serialize + Send + Sync>  {
+            Empty,
+            Text(String),
+            Texts(Vec<String>),
+            Key(KEY),
+            Keys(Vec<KEY>),
+            Address(ADDRESS),
+            Addresses(Vec<ADDRESS>),
+            Stub(ResourceStub<KEY,ADDRESS,KIND>),
+            Stubs(Vec<ResourceStub<KEY,ADDRESS,KIND>>),
+            Meta(HashMap<String,String>),
+            Bin(BIN),
+            Bins(HashMap<String, BIN>),
+            Mix(HashMap<String,PayloadAspect<KEY,ADDRESS,KIND,BIN>>)
+        }
+
+        #[derive(Debug, Clone, Serialize, Deserialize)]
+        pub enum PayloadAspect<KEY: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, ADDRESS: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, KIND: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, BIN: Debug + Clone + Serialize + Send + Sync>  {
+            Empty,
+            Text(String),
+            Key(KEY),
+            Address(ADDRESS),
+            Stub(ResourceStub<KEY,ADDRESS,KIND>),
+            Meta(HashMap<String,String>),
+            Bin(BIN),
+        }
+
 
         #[derive(Debug, Clone, Serialize, Deserialize)]
         pub enum Entity<KEY: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, ADDRESS: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, KIND: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync> {
             Empty,
             Resource(ResourceEntity<KEY,ADDRESS,KIND>),
-            Payload(Payload),
+            Payload(Payload<KEY,ADDRESS,KIND,Bin>),
             HttpResponse(http::HttpResponse)
         }
 
