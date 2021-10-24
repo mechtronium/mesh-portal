@@ -24,7 +24,7 @@ pub mod generic {
     use crate::version::latest::portal::{inlet, outlet};
     use crate::version::latest::delivery::ResponseEntity;
     use crate::version::latest::id::Identifier;
-    use crate::version::latest::messaging::{ExchangeId, ExchangeKind};
+    use crate::version::latest::messaging::{ExchangeId, Exchange};
     use crate::version::latest::operation::{ExtOperation, Operation};
 
     #[derive(Clone)]
@@ -32,7 +32,7 @@ pub mod generic {
         pub to: Identifier,
         pub from: Identifier,
         pub operation: OPERATION,
-        pub kind: ExchangeKind,
+        pub kind: Exchange,
     }
 
     impl<OPERATION> Request<OPERATION> {
@@ -41,7 +41,7 @@ pub mod generic {
                 to,
                 from,
                 operation,
-                kind: ExchangeKind::None
+                kind: Exchange::None
             }
         }
     }
@@ -51,10 +51,10 @@ pub mod generic {
 
         fn try_into(self) -> Result<Request<ExtOperation>, Self::Error> {
             match self.operation {
-                Operation::Resource(_) => {
+                Operation::Rc(_) => {
                     Err(anyhow!("cannot turn a ResourceOperation into an ExtOperation"))
                 }
-                Operation::Ext(ext) => {
+                Operation::Msg(ext) => {
                     Ok(Request {
                         to: self.to,
                         from: self.from,
@@ -71,8 +71,8 @@ pub mod generic {
             Self {
                 to,
                 from,
-                operation: request.operation,
-                kind: request.kind
+                operation: request.entity,
+                kind: request.exchange
             }
         }
     }
@@ -81,8 +81,8 @@ pub mod generic {
         fn into(self) -> inlet::Request {
             inlet::Request {
                 to: vec![self.to],
-                operation: self.operation,
-                kind: self.kind
+                entity: self.operation,
+                exchange: self.kind
             }
         }
     }
@@ -91,8 +91,8 @@ pub mod generic {
         fn into(self) -> outlet::Request {
             outlet::Request {
                 from: self.from,
-                operation: self.operation,
-                kind: self.kind
+                entity: self.operation,
+                exchange: self.kind
             }
         }
     }
@@ -110,8 +110,8 @@ pub mod generic {
             Self {
                 to,
                 from,
-                exchange_id: response.exchange_id,
-                signal: response.signal
+                exchange_id: response.exchange,
+                signal: response.entity
             }
         }
     }
@@ -120,8 +120,8 @@ pub mod generic {
         fn into(self) -> inlet::Response {
             inlet::Response {
                 to: self.to,
-                exchange_id: self.exchange_id,
-                signal: self.signal
+                exchange: self.exchange_id,
+                entity: self.signal
             }
         }
     }
@@ -130,8 +130,8 @@ pub mod generic {
         fn into(self) -> outlet::Response {
             outlet::Response {
                 from: self.from,
-                exchange_id: self.exchange_id,
-                signal: self.signal
+                exchange: self.exchange_id,
+                entity: self.signal
             }
         }
     }

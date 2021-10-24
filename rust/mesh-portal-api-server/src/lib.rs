@@ -20,7 +20,7 @@ use mesh_portal_serde::version::latest::delivery::ResponseEntity;
 use mesh_portal_serde::version::latest::frame::CloseReason;
 use mesh_portal_serde::version::latest::id::{Address, Identifier, Key};
 use mesh_portal_serde::version::latest::log::Log;
-use mesh_portal_serde::version::latest::messaging::{ExchangeId, ExchangeKind};
+use mesh_portal_serde::version::latest::messaging::{ExchangeId, Exchange};
 use mesh_portal_serde::version::latest::operation::{ExtOperation, Operation};
 use mesh_portal_serde::version::latest::portal::{inlet, outlet};
 use mesh_portal_serde::version::latest::resource::Status;
@@ -127,11 +127,11 @@ impl Portal {
                                 }
                                 inlet::Frame::Command(_) => {}
                                 inlet::Frame::Request(request) => {
-                                    match &request.kind {
-                                        ExchangeKind::None=> {
+                                    match &request.exchange {
+                                        Exchange::None=> {
                                             logger(Log::Fatal("FATAL: received request with an invalid 'ExchangeKind::None'".to_string()))
                                         }
-                                        ExchangeKind::Notification => {
+                                        Exchange::Notification => {
                                             for to in &request.to {
                                                 let request = request_message::inlet::Request::from( request.clone(), Identifier::Key(info.key.clone()), to.clone() );
                                                 let result = mux_tx.send_timeout(MuxCall::MessageIn(message::inlet::Message::Request(request)), Duration::from_secs(info.config.frame_timeout.clone())).await;
@@ -140,12 +140,12 @@ impl Portal {
                                                 }
                                             }
                                         }
-                                        ExchangeKind::RequestResponse(exchange_id) => {
+                                        Exchange::RequestResponse(exchange_id) => {
                                             if request.to.len() != 1 {
                                                 let response = outlet::Response{
                                                     from: Identifier::Key(info.key.clone()),
-                                                    exchange_id: exchange_id.clone(),
-                                                    signal: ResponseEntity::Error("a RequestResponse message must have one and only one to recipient.".to_string())
+                                                    exchange: exchange_id.clone(),
+                                                    entity: ResponseEntity::Error("a RequestResponse message must have one and only one to recipient.".to_string())
                                                 };
                                                 let result = outlet_tx.send_timeout(outlet::Frame::Response(response), Duration::from_secs(info.config.frame_timeout.clone()) ).await;
                                                 if let Result::Err(_err) = result {
@@ -164,9 +164,9 @@ impl Portal {
 
                                 }
                                 inlet::Frame::Response(response) => {
-                                    match exchanges.remove( &response.exchange_id ) {
+                                    match exchanges.remove( &response.exchange) {
                                         None => {
-                                            logger(Log::Fatal(format!("FATAL: missing request/response exchange id '{}'", response.exchange_id)));
+                                            logger(Log::Fatal(format!("FATAL: missing request/response exchange id '{}'", response.exchange)));
                                         }
                                         Some(tx) => {
                                             let tx = tx;
@@ -219,7 +219,7 @@ impl Portal {
     pub async fn exchange(&self, request: outlet::Request ) -> Result<inlet::Response, Error> {
         let mut request = request;
         let exchange_id: ExchangeId = Uuid::new_v4().to_string();
-        request.kind = ExchangeKind::RequestResponse(exchange_id.clone());
+        request.exchange = Exchange::RequestResponse(exchange_id.clone());
         let (tx,rx) = tokio::sync::oneshot::channel();
         let exchange = Exchange {
             id: exchange_id,

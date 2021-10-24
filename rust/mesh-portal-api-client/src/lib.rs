@@ -24,7 +24,7 @@ use mesh_portal_serde::std_logger;
 use mesh_portal_serde::version::latest::http::{HttpRequest, HttpResponse};
 use mesh_portal_serde::version::latest::portal::{inlet, outlet};
 use mesh_portal_serde::version::latest::resource::Status;
-use mesh_portal_serde::version::latest::messaging::{ExchangeId, ExchangeKind};
+use mesh_portal_serde::version::latest::messaging::{ExchangeId, Exchange};
 use mesh_portal_serde::version::latest::config::Info;
 use mesh_portal_serde::version::latest::log::Log;
 use mesh_portal_serde::version::latest::operation::{ExtOperation, PortOperation};
@@ -180,11 +180,11 @@ impl Outlet for Portal {
                     let context = RequestContext::new(skel.info.clone(), skel.logger );
                     let ports = self.ports.clone();
                     let from = request.from.clone();
-                    let kind = request.kind.clone();
+                    let kind = request.exchange.clone();
                     tokio::spawn( async move {
-                        match request.operation.clone() {
+                        match request.entity.clone() {
                             ExtOperation::Http(_) => {
-                                if let ExchangeKind::RequestResponse(exchange_id) = &kind
+                                if let Exchange::RequestResponse(exchange_id) = &kind
                                 {
                                     let result = Request::try_from_http(request, context);
                                     match result {
@@ -195,8 +195,8 @@ impl Outlet for Portal {
                                                 Ok(response) => {
                                                     let response = inlet::Response {
                                                         to: from,
-                                                        exchange_id:exchange_id.clone(),
-                                                        signal: ResponseEntity::Ok(Entity::HttpResponse(response))
+                                                        exchange:exchange_id.clone(),
+                                                        entity: ResponseEntity::Ok(Entity::HttpResponse(response))
                                                     };
                                                     inlet_api.respond( response );
                                                 }
@@ -204,8 +204,8 @@ impl Outlet for Portal {
                                                     (skel.logger)(format!("ERROR: HttpRequest.path: '{}' error: '{}' ",  path, err.to_string()).as_str());
                                                     let response = inlet::Response {
                                                         to: from,
-                                                        exchange_id:exchange_id.clone(),
-                                                        signal: ResponseEntity::Ok(Entity::HttpResponse(HttpResponse::server_side_error()))
+                                                        exchange:exchange_id.clone(),
+                                                        entity: ResponseEntity::Ok(Entity::HttpResponse(HttpResponse::server_side_error()))
                                                     };
                                                     inlet_api.respond( response );
                                                 }
@@ -231,12 +231,12 @@ impl Outlet for Portal {
                                                     Ok(response) => {
                                                         match response {
                                                             Some(signal) => {
-                                                                if let ExchangeKind::RequestResponse(exchange_id) = &kind
+                                                                if let Exchange::RequestResponse(exchange_id) = &kind
                                                                 {
                                                                    let response = inlet::Response {
                                                                        to: request_from,
-                                                                       exchange_id: exchange_id.clone(),
-                                                                       signal
+                                                                       exchange: exchange_id.clone(),
+                                                                       entity: signal
                                                                    };
 
                                                                    inlet_api.respond(response);
@@ -248,12 +248,12 @@ impl Outlet for Portal {
                                                             None => {
                                                                 let message = format!("ERROR: PortOperation.port '{}' generated no response", port_request.port);
                                                                 (skel.logger)(message.as_str());
-                                                                if let ExchangeKind::RequestResponse(exchange_id) = &kind
+                                                                if let Exchange::RequestResponse(exchange_id) = &kind
                                                                 {
                                                                     let response = inlet::Response {
                                                                         to: request_from,
-                                                                        exchange_id: exchange_id.clone(),
-                                                                        signal: ResponseEntity::Error(message)
+                                                                        exchange: exchange_id.clone(),
+                                                                        entity: ResponseEntity::Error(message)
                                                                     };
                                                                     inlet_api.respond(response);
                                                                 }
@@ -263,12 +263,12 @@ impl Outlet for Portal {
                                                     Err(err) => {
                                                         let message = format!("ERROR: PortOperation.port '{}' message: '{}'", port_request.port, err.to_string());
                                                         (skel.logger)(message.as_str());
-                                                        if let ExchangeKind::RequestResponse(exchange_id) = &kind
+                                                        if let Exchange::RequestResponse(exchange_id) = &kind
                                                         {
                                                             let response = inlet::Response {
                                                                 to: request_from,
-                                                                exchange_id: exchange_id.clone(),
-                                                                signal: ResponseEntity::Error(message)
+                                                                exchange: exchange_id.clone(),
+                                                                entity: ResponseEntity::Error(message)
                                                             };
                                                             inlet_api.respond(response);
                                                         }
@@ -279,12 +279,12 @@ impl Outlet for Portal {
                                             Err(err) => {
                                                 let message = format!("FATAL: could not modify PortOperation into Request<PortOperation>: {}", err.to_string());
                                                 (skel.logger)(message.as_str());
-                                                if let ExchangeKind::RequestResponse(exchange_id) = &kind
+                                                if let Exchange::RequestResponse(exchange_id) = &kind
                                                 {
                                                     let response = inlet::Response {
                                                         to: from,
-                                                        exchange_id: exchange_id.clone(),
-                                                        signal: ResponseEntity::Error(message)
+                                                        exchange: exchange_id.clone(),
+                                                        entity: ResponseEntity::Error(message)
                                                     };
                                                     inlet_api.respond(response);
                                                 }
@@ -295,12 +295,12 @@ impl Outlet for Portal {
                                     None => {
                                         let message =format!("ERROR: message port: '{}' not defined ", port_request.port );
                                         (skel.logger)(message.as_str());
-                                        if let ExchangeKind::RequestResponse(exchange_id) = &kind
+                                        if let Exchange::RequestResponse(exchange_id) = &kind
                                         {
                                             let response = inlet::Response {
                                                 to: from,
-                                                exchange_id: exchange_id.clone(),
-                                                signal: ResponseEntity::Error(message)
+                                                exchange: exchange_id.clone(),
+                                                entity: ResponseEntity::Error(message)
                                             };
                                             inlet_api.respond(response);
                                         }
@@ -312,7 +312,7 @@ impl Outlet for Portal {
                 }
                 outlet::Frame::Response(response) => {
                     if let Option::Some((_,tx)) =
-                        self.skel.exchanges.remove(&response.exchange_id)
+                        self.skel.exchanges.remove(&response.exchange)
                     {
                         tx.send(response).unwrap_or(());
                     } else {
@@ -353,11 +353,11 @@ impl InletApi {
 
     pub fn notify(&self, request: inlet::Request) {
         let mut request = request;
-        if let ExchangeKind::None = request.kind {
+        if let Exchange::None = request.exchange {
         } else {
             (self.logger)(Log::Warn("ExchangeKind is replaced in 'notify' or 'exchange' method and should be preset to ExchangeKind::None".to_string()));
         }
-        request.kind = ExchangeKind::Notification;
+        request.exchange = Exchange::Notification;
         self.inlet.send_frame(inlet::Frame::Request(request));
     }
 
@@ -365,13 +365,13 @@ impl InletApi {
         &mut self,
         request: inlet::Request
     ) -> Result<outlet::Response, Error> {
-        if let ExchangeKind::None = request.kind {
+        if let Exchange::None = request.exchange {
         } else {
             self.inlet.send_frame(inlet::Frame::Log(Log::Warn("ExchangeKind is replaced in 'notify' or 'exchange' method and should be preset to ExchangeKind::None".to_string())));
         }
         let mut request = request;
         let exchange_id: ExchangeId = Uuid::new_v4().to_string();
-        request.kind = ExchangeKind::RequestResponse(exchange_id.clone());
+        request.exchange = Exchange::RequestResponse(exchange_id.clone());
         let (tx,rx) = oneshot::channel();
         self.exchanges.insert(exchange_id, tx);
         self.inlet.send_frame(inlet::Frame::Request(request));
@@ -426,7 +426,7 @@ pub mod client {
 
     impl Request<HttpRequest> {
         pub fn try_from_http(request: outlet::Request, context: RequestContext) -> Result<Request<HttpRequest>, Error> {
-            if let ExtOperation::Http(http_request) = request.operation {
+            if let ExtOperation::Http(http_request) = request.entity {
                 Ok(Self {
                     context,
                     from: request.from,
@@ -440,7 +440,7 @@ pub mod client {
 
     impl Request<PortOperation> {
         pub fn try_from_port(request: outlet::Request, context: RequestContext) -> Result<Request<PortOperation>, Error> {
-            if let ExtOperation::Port(port_request) = request.operation {
+            if let ExtOperation::Port(port_request) = request.entity {
                 Ok(Self {
                     context,
                     from: request.from,
@@ -483,7 +483,7 @@ pub mod example {
 
         async fn init(&mut self) -> Result<(), Error> {
             let mut request =
-                inlet::Request::new(Operation::Ext(ExtOperation::Port(PortOperation {
+                inlet::Request::new(Operation::Msg(ExtOperation::Port(PortOperation {
                     port: "hello-world".to_string(),
                     entity: Entity::Empty,
                 })));
@@ -493,7 +493,7 @@ pub mod example {
 
             let response = self.inlet_api.exchange(request).await?;
 
-            if let ResponseEntity::Ok(Entity::Payload(Payload::Text(text))) = response.signal {
+            if let ResponseEntity::Ok(Entity::Payload(Payload::Text(text))) = response.entity {
                 println!("{}",text);
             } else {
                 return Err(anyhow!("unexpected signal"));

@@ -25,7 +25,7 @@ pub mod id {
 pub mod messaging {
     use crate::version::v0_0_1::messaging;
     pub type ExchangeId = messaging::ExchangeId;
-    pub type ExchangeKind = messaging::ExchangeKind;
+    pub type Exchange = messaging::Exchange;
 }
 
 
@@ -78,8 +78,8 @@ pub mod resource {
 
     pub type Status = resource::Status;
 
-    pub type Operation=generic::operation::Operation<Key,Address,Kind>;
-    pub type ResourceOperation=generic::operation::ResourceOperation<Key,Address,Kind>;
+    pub type Operation=generic::request::ReqEntity<Key,Address,Kind>;
+    pub type ResourceOperation=generic::request::Rc<Key,Address,Kind>;
     pub type Create=generic::resource::Create<Key,Address,Kind>;
 
     pub type StateSrc=generic::resource::StateSrc;
@@ -128,12 +128,12 @@ pub mod operation {
     use crate::version::latest::id::{Key, Address, Kind};
 
     use crate::version::v0_0_1::generic::resource::{Create, Selector};
-    use crate::version::v0_0_1::generic::operation;
+    use crate::version::v0_0_1::generic::request;
 
-    pub type Operation = operation::Operation<Key,Address,Kind>;
-    pub type ResourceOperation = operation::ResourceOperation<Key,Address,Kind>;
-    pub type ExtOperation = operation::ExtOperation<Key,Address,Kind>;
-    pub type PortOperation = operation::PortOperation<Key,Address,Kind>;
+    pub type Operation = request::ReqEntity<Key,Address,Kind>;
+    pub type ResourceOperation = request::Rc<Key,Address,Kind>;
+    pub type ExtOperation = request::ExtOperation<Key,Address,Kind>;
+    pub type PortOperation = request::Msg<Key,Address,Kind>;
 }
 
 pub mod portal {

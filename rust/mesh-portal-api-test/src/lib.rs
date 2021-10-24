@@ -47,7 +47,7 @@ lazy_static! {
     use mesh_portal_serde::version::latest::operation::{Operation, ResourceOperation, ExtOperation, PortOperation};
     use mesh_portal_serde::version::latest::config::{Info, PortalKind};
     use mesh_portal_serde::version::latest::id::Identifier;
-    use mesh_portal_serde::version::latest::messaging::ExchangeKind;
+    use mesh_portal_serde::version::latest::messaging::Exchange;
     use mesh_portal_serde::version::latest::delivery::{Entity, Payload, ResponseEntity};
     use mesh_portal_serde::version::latest::resource::Archetype;
     use mesh_portal_serde::version::latest::delivery::ResourceEntity;
@@ -221,10 +221,10 @@ lazy_static! {
                 match message {
                     message::inlet::Message::Request(request) => {
                         match &request.operation {
-                            Operation::Resource(operation) => {
+                            Operation::Rc(operation) => {
                                 match operation {
                                     ResourceOperation::Select(selector) => {
-                                        if let ExchangeKind::RequestResponse(exchange_id) =
+                                        if let Exchange::RequestResponse(exchange_id) =
                                             &request.kind
                                         {
                                             let (tx, rx) = oneshot::channel();
@@ -264,7 +264,7 @@ lazy_static! {
                                         }
                                     }
                                     _ => match &request.kind {
-                                        ExchangeKind::RequestResponse(exchange_id) => {
+                                        Exchange::RequestResponse(exchange_id) => {
                                             let response = mesh::outlet::Response {
                                                 to: request.from.clone(),
                                                 from: request.to.clone(),
@@ -279,7 +279,7 @@ lazy_static! {
                                     },
                                 }
                             }
-                            Operation::Ext(_) => {
+                            Operation::Msg(_) => {
                                 // since we are not connected to a mesh all inbound messages are just sent back to the outbound
                                 unimplemented!();
 /*                                mux_tx.try_send(MuxCall::MessageOut(message::inlet::Message::Request(
@@ -350,14 +350,14 @@ lazy_static! {
             // wait just a bit to make sure everyone got chance to be in the muxer
             tokio::time::sleep(Duration::from_millis(50));
 
-            let mut request = inlet::Request::new(Operation::Resource(
+            let mut request = inlet::Request::new(Operation::Rc(
                 ResourceOperation::Select(Selector::new()),
             ));
             request.to.push(self.skel.info.parent.clone());
 
 println!("FriendlyPortalCtrl::exchange...");
             match self.skel.api().exchange(request).await {
-                Ok(response) => match response.signal {
+                Ok(response) => match response.entity {
                     ResponseEntity::Ok(Entity::Resource(ResourceEntity::Stubs(resources))) => {
 println!("FriendlyPortalCtrl::Ok");
                         for resource in resources {
@@ -366,7 +366,7 @@ println!("FriendlyPortalCtrl::Ok");
                                     "INFO: found resource: {}",
                                     resource.address
                                 ).as_str());
-                                let mut request = inlet::Request::new(Operation::Ext(
+                                let mut request = inlet::Request::new(Operation::Msg(
                                     ExtOperation::Port(PortOperation {
                                         port: "greet".to_string(),
                                         entity: Entity::Payload(Payload::Text(format!(
@@ -378,7 +378,7 @@ println!("FriendlyPortalCtrl::Ok");
                                 let result = self.skel.api().exchange(request).await;
                                 match result {
                                     Ok(response) => {
-                                        match &response.signal {
+                                        match &response.entity {
                                             ResponseEntity::Ok(Entity::Payload(Payload::Text(response))) => {
                                                 println!("got response: {}", response );
                                                 GLOBAL_TX.send(GlobalEvent::Finished(self.skel.info.owner.clone()));
