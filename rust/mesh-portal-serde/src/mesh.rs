@@ -12,6 +12,7 @@ pub mod generic {
     use crate::version::latest::messaging::{ExchangeId, Exchange};
     use crate::version::latest::entity::request::Entity;
     use crate::version::latest::entity::response;
+    use crate::version::latest::{portal, entity};
 
     #[derive(Clone)]
     pub struct Request<ENTITY> {
@@ -48,6 +49,16 @@ pub mod generic {
         fn into(self) -> inlet::exchange::Request {
             inlet::exchange::Request {
                 to: vec![self.to],
+                entity: self.entity,
+                exchange: self.exchange
+            }
+        }
+    }
+
+    impl Into<portal::outlet::exchange::Request> for Request<Entity>{
+        fn into(self) ->  portal::outlet::exchange::Request{
+            portal::outlet::exchange::Request{
+                from: self.from,
                 entity: self.entity,
                 exchange: self.exchange
             }

@@ -420,7 +420,7 @@ impl PortalMuxer {
                             muxer.key_to_address.insert(portal.info.key.clone(), portal.info.address.clone() );
                             muxer.address_to_key.insert(portal.info.address.clone(), portal.info.key.clone() );
                             muxer.portals.insert(Identifier::Key(portal.info.key.clone()), portal );
-                            muxer.router.logger(format!("INFO: {} add to portal muxer at address {}", kind.to_string(), address ).as_str() );
+                            muxer.router.logger(format!("INFO: {} add to portal muxer at address {}", kind.to_string(), address.to_string() ).as_str() );
                         }
                         MuxCall::Remove(id) => {
                             let key = match &id {
@@ -437,7 +437,7 @@ impl PortalMuxer {
                                     muxer.key_to_address.remove(&portal.info.key);
                                     muxer.address_to_key.remove(&portal.info.address);
 
-                                    muxer.router.logger(format!("INFO: {} removed from portal muxer at address {}", portal.info.kind.to_string(), portal.info.address ).as_str() );
+                                    muxer.router.logger(format!("INFO: {} removed from portal muxer at address {}", portal.info.kind.to_string(), portal.info.address.to_string() ).as_str() );
                                     portal.shutdown();
                                 }
                             }

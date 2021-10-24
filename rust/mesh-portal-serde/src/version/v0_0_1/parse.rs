@@ -13,6 +13,7 @@ use nom::sequence::{delimited, preceded, terminated, tuple};
 use serde::{Deserialize, Serialize};
 
 use crate::version::v0_0_1::id::{ResourceType, Specific, Version};
+use std::fmt;
 
 pub type Res<T, U> = IResult<T, U, VerboseError<T>>;
 
@@ -192,6 +193,19 @@ pub struct ParseError {
     pub message: String,
 }
 
+
+
+impl std::error::Error for ParseError {
+
+}
+
+
+impl fmt::Display for ParseError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.message )
+    }
+}
+
 impl <T> From<nom::Err<VerboseError<T>>>  for ParseError {
     fn from(_: nom::Err<VerboseError<T>>) -> Self {
         Self {
@@ -199,6 +213,7 @@ impl <T> From<nom::Err<VerboseError<T>>>  for ParseError {
         }
     }
 }
+
 
 
 

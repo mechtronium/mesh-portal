@@ -758,10 +758,10 @@ pub mod generic {
 
 
             impl <KEY: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, ADDRESS: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, KIND: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync> Request<KEY,ADDRESS,KIND> {
-                pub fn new(operation: request::Entity<KEY,ADDRESS,KIND>) -> Self {
+                pub fn new(entity: request::Entity<KEY,ADDRESS,KIND>) -> Self {
                     Self {
                         to: vec![],
-                        entity: operation,
+                        entity,
                     }
                 }
             }

@@ -26,7 +26,6 @@ use tokio::runtime::Runtime;
 use std::thread;
 use mesh_portal_serde::version::latest::frame::CloseReason;
 use mesh_portal_serde::version::latest::resource::Status;
-use mesh_portal_serde::version::latest::operation::Operation;
 use mesh_portal_serde::version::latest::portal::{inlet, outlet};
 use mesh_portal_serde::version::latest::log::Log;
 
@@ -48,7 +47,7 @@ pub enum EventResult<E>{
 
 pub enum Call {
     ListenEvents(oneshot::Sender<broadcast::Receiver<Event>>),
-    InjectMessage(message::inlet::Message),
+    InjectMessage(message::Message),
     Shutdown
 }
 

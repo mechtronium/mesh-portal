@@ -44,15 +44,16 @@ lazy_static! {
     use tokio::sync::oneshot::error::RecvError;
     use tokio::time::Duration;
     use mesh_portal_serde::version::latest::resource::{Status, ResourceStub, Selector};
-    use mesh_portal_serde::version::latest::operation::{Operation, ResourceOperation, ExtOperation, PortOperation};
     use mesh_portal_serde::version::latest::config::{Info, PortalKind};
-    use mesh_portal_serde::version::latest::id::Identifier;
+    use mesh_portal_serde::version::latest::id::{Identifier, Address};
     use mesh_portal_serde::version::latest::messaging::Exchange;
-    use mesh_portal_serde::version::latest::payload::{Entity, Payload, ResponseEntity};
+    use mesh_portal_serde::version::latest::payload::Payload;
     use mesh_portal_serde::version::latest::resource::Archetype;
-    use mesh_portal_serde::version::latest::payload::ResourceEntity;
-    use mesh_portal_serde::version::latest::portal::inlet;
+    use mesh_portal_serde::version::latest::portal::{inlet, outlet};
     use mesh_portal_serde::mesh;
+    use mesh_portal_serde::version::latest::entity::request::{Entity, Rc, Msg};
+    use mesh_portal_serde::version::latest::entity::response;
+    use std::str::FromStr;
 
     #[derive(Clone)]
     pub enum GlobalEvent {
@@ -142,7 +143,7 @@ lazy_static! {
     pub struct TestRouter {}
 
     impl Router for TestRouter {
-        fn route(&self, message: message::inlet::Message) {
+        fn route(&self, message: message::Message) {
             todo!()
         }
     }
@@ -182,13 +183,13 @@ lazy_static! {
         async fn info(&self, user: String) -> Result<Info, anyhow::Error> {
             let index = self.atomic.fetch_add(1, Ordering::Relaxed);
             let key = format!("({})", index);
-            let address = format!("portal-{}", index);
+            let address = Address::from_str(format!("parent:portal-{}", index).as_str() )?;
 
             let info = Info {
                 key,
-                address,
+                address: address.clone(),
                 owner: user,
-                parent: Identifier::Address("parent".to_string()),
+                parent: Identifier::Address(address.parent().unwrap()),
                 archetype: Archetype {
                     kind: "Portal".to_string(),
                     specific: None,
@@ -215,11 +216,13 @@ lazy_static! {
         mux_tx: Sender<MuxCall>,
     }
     impl Router for InYourFaceRouter {
-        fn route(&self, message: message::inlet::Message) {
+        fn route(&self, message: message::Message) {
             let mux_tx = self.mux_tx.clone();
             tokio::spawn(async move {
+                unimplemented!()
+                /*
                 match message {
-                    message::inlet::Message::Request(request) => {
+                    message::Message::Request(request) => {
                         match &request.operation {
                             Operation::Rc(operation) => {
                                 match operation {
@@ -257,7 +260,7 @@ lazy_static! {
                                                     signal,
                                                 };
                                             mux_tx
-                                                .try_send(MuxCall::MessageOut(message::outlet::Message::Response(
+                                                .try_send(MuxCall::MessageOut(message::Message::Response(
                                                     response,
                                                 )))
                                                 .unwrap_or_default();
@@ -272,7 +275,7 @@ lazy_static! {
                                                 signal: ResponseEntity::Error("this is a primitive router that cannot handle resource commands other than Select".to_string())
                                             };
                                             mux_tx.try_send(MuxCall::MessageOut(
-                                                message::outlet::Message::Response(response),
+                                                message::Message::Response(response),
                                             ));
                                         }
                                         _ => {}
@@ -282,7 +285,7 @@ lazy_static! {
                             Operation::Msg(_) => {
                                 // since we are not connected to a mesh all inbound messages are just sent back to the outbound
                                 unimplemented!();
-/*                                mux_tx.try_send(MuxCall::MessageOut(message::inlet::Message::Request(
+/*                                mux_tx.try_send(MuxCall::MessageOut(message::Message::Request(
 //                                    request.try_into().unwrap(),
                                 )));
 
@@ -290,11 +293,13 @@ lazy_static! {
                             }
                         }
                     }
-                    message::inlet::Message::Response(response) => {
+                    message::Message::Response(response) => {
                         // since we are not connected to a mesh all inbound messages are just sent back to the outbound
-                        mux_tx.try_send(MuxCall::MessageOut(message::outlet::Message::Response(response)));
+                        mux_tx.try_send(MuxCall::MessageOut(message::Message::Response(response)));
                     }
                 }
+
+                 */
             });
         }
     }
@@ -348,38 +353,37 @@ lazy_static! {
         async fn init(&mut self) -> Result<(), Error> {
             println!("FriendlyPortalCtrl.init()");
             // wait just a bit to make sure everyone got chance to be in the muxer
-            tokio::time::sleep(Duration::from_millis(50));
+            tokio::time::sleep(Duration::from_millis(50)).await;
 
-            let mut request = inlet::Request::new(Operation::Rc(
-                ResourceOperation::Select(Selector::new()),
+            let mut request = inlet::Request::new(Entity::Rc(
+                Rc::Select(Selector::new()),
             ));
             request.to.push(self.skel.info.parent.clone());
 
 println!("FriendlyPortalCtrl::exchange...");
             match self.skel.api().exchange(request).await {
                 Ok(response) => match response.entity {
-                    ResponseEntity::Ok(Entity::Resource(ResourceEntity::Stubs(resources))) => {
+                    response::Entity::Ok(Payload::Stubs(resources)) => {
 println!("FriendlyPortalCtrl::Ok");
                         for resource in resources {
                             if resource.key != self.skel.info.key {
                                 (self.skel.logger)(format!(
                                     "INFO: found resource: {}",
-                                    resource.address
+                                    resource.address.to_string()
                                 ).as_str());
-                                let mut request = inlet::Request::new(Operation::Msg(
-                                    ExtOperation::Port(PortOperation {
+                                let mut request = inlet::Request::new(Entity::Msg (
+                                    Msg{
                                         port: "greet".to_string(),
-                                        entity: Entity::Payload(Payload::Text(format!(
+                                        payload: Payload::Text(format!(
                                             "Hello, my name is '{}' and I live at '{}'",
-                                            self.skel.info.owner, self.skel.info.address
-                                        ))),
-                                    }),
-                                ));
+                                            self.skel.info.owner, self.skel.info.address.to_string()
+                                        )),
+                                    }));
                                 let result = self.skel.api().exchange(request).await;
                                 match result {
                                     Ok(response) => {
                                         match &response.entity {
-                                            ResponseEntity::Ok(Entity::Payload(Payload::Text(response))) => {
+                                            response::Entity::Ok(Payload::Text(response)) => {
                                                 println!("got response: {}", response );
                                                 GLOBAL_TX.send(GlobalEvent::Finished(self.skel.info.owner.clone()));
                                             }
@@ -411,10 +415,10 @@ println!("FriendlyPortalCtrl::Ok");
 
             #[async_trait]
             impl PortCtrl for GreetPort {
-                async fn request( &self, request: client::Request<PortOperation> ) -> Result<Option<ResponseEntity>,Error>{
+                async fn request( &self, request: outlet::Request ) -> Result<Option<response::Entity>,Error>{
                     match &request.entity {
-                        Entity::Payload(Payload::Text(text)) => Ok(Option::Some(ResponseEntity::Ok(
-                            Entity::Payload(Payload::Text("Hello, <username>".to_string())),
+                        Entity::Msg( Msg { port:_, payload:Payload::Text(text) } ) => Ok(Option::Some(response::Entity::Ok(
+                            Payload::Text("Hello, <username>".to_string()),
                         ))),
                         _ => Err(anyhow!("unexpected request entity")),
                     }

@@ -8,10 +8,11 @@ pub type Port=v0_0_1::Port;
 
 pub mod id {
     use crate::version::v0_0_1::generic;
+    use crate::version::v0_0_1::id;
 
-    pub type Key = String;
-    pub type Address = String;
-    pub type Kind = String;
+    pub type Key = id::Key;
+    pub type Address = id::Address;
+    pub type Kind = id::Kind;
 
     pub enum IdentifierKind {
         Key,
@@ -151,13 +152,6 @@ pub mod portal {
         pub type Response=generic::portal::inlet::Response<Key,Address,Kind>;
         pub type Frame=generic::portal::inlet::Frame<Key,Address,Kind>;
 
-        impl TryFrom<PrimitiveFrame> for Frame {
-            type Error = Error;
-
-            fn try_from(value: PrimitiveFrame) -> Result<Self, Self::Error> {
-                Ok(bincode::deserialize(value.data.as_slice() )?)
-            }
-        }
 
         pub mod exchange {
             use crate::version::v0_0_1::generic;
@@ -182,14 +176,6 @@ pub mod portal {
         pub type Request=generic::portal::outlet::Request<Key,Address,Kind>;
         pub type Response=generic::portal::outlet::Response<Key,Address,Kind>;
         pub type Frame=generic::portal::outlet::Frame<Key,Address,Kind>;
-
-        impl TryFrom<PrimitiveFrame> for Frame {
-            type Error = Error;
-
-            fn try_from(value: PrimitiveFrame) -> Result<Self, Self::Error> {
-                Ok(bincode::deserialize(value.data.as_slice() )?)
-            }
-        }
 
         pub mod exchange {
             use crate::version::v0_0_1::generic;
