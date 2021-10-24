@@ -14,7 +14,7 @@ use tokio::sync::{mpsc, oneshot};
 use tokio::sync::mpsc::error::{SendError, SendTimeoutError};
 use uuid::Uuid;
 
-use mesh_portal_serde::message as request_message;
+use mesh_portal_serde::mesh as request_message;
 use mesh_portal_serde::version::latest::config::Info;
 use mesh_portal_serde::version::latest::delivery::ResponseEntity;
 use mesh_portal_serde::version::latest::frame::CloseReason;
@@ -320,8 +320,8 @@ pub enum MuxCall {
     Add(Portal),
     Remove(Identifier),
     Select{ selector: fn(info:&Info)->bool, tx: oneshot::Sender<Vec<Info>> },
-    MessageIn(inlet::Message),
-    MessageOut(outlet::Message)
+    MessageIn(message::inlet::Message),
+    MessageOut(message::outlet::Message)
 }
 
 pub mod message {
@@ -341,7 +341,7 @@ pub mod message {
     }
 
     pub mod generic {
-        use mesh_portal_serde::message::generic::{Request, Response};
+        use mesh_portal_serde::mesh::generic::{Request, Response};
         use mesh_portal_serde::version::latest::id::Identifier;
 
         pub enum Message<OPERATION> {
@@ -370,7 +370,7 @@ pub mod message {
 
 
 pub trait Router: Send+Sync {
-    fn route( &self, message: inlet::Message );
+    fn route( &self, message: message::inlet::Message );
     fn logger( &self, message: &str ) {
         println!("{}", message );
     }
@@ -461,10 +461,10 @@ impl PortalMuxer {
                             {
                                 Some(portal) => {
                                     match message {
-                                        outlet::Message::Request(request) => {
+                                        message::outlet::Message::Request(request) => {
                                             portal.call_tx.try_send( PortalCall::FrameOut( outlet::Frame::Request(request.into())));
                                         }
-                                        outlet::Message::Response(response) => {
+                                        message::outlet::Message::Response(response) => {
                                             portal.call_tx.try_send( PortalCall::FrameOut( outlet::Frame::Response(response.into())));
                                         }
                                     }

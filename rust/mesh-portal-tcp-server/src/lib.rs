@@ -19,9 +19,9 @@ use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::sync::{mpsc, oneshot, broadcast, Mutex};
 use tokio::sync::mpsc::error::SendTimeoutError;
 
-use mesh_portal_api_server::{Message, MuxCall, Portal, PortalMuxer, Router};
+use mesh_portal_api_server::{MuxCall, Portal, PortalMuxer, Router, message};
 use mesh_portal_tcp_common::{FrameReader, FrameWriter, PrimitiveFrameReader, PrimitiveFrameWriter};
-use mesh_portal_serde::version::v0_0_1::config::Info;
+use mesh_portal_serde::version::latest::config::Info;
 use tokio::runtime::Runtime;
 use std::thread;
 use mesh_portal_serde::version::latest::frame::CloseReason;
@@ -48,7 +48,7 @@ pub enum EventResult<E>{
 
 pub enum Call {
     ListenEvents(oneshot::Sender<broadcast::Receiver<Event>>),
-    InjectMessage(Message<Operation>),
+    InjectMessage(message::inlet::Message),
     Shutdown
 }
 

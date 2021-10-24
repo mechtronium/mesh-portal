@@ -1,39 +1,22 @@
 use std::convert::TryInto;
 use std::str::FromStr;
 
+use anyhow::Error;
 use nom::{AsChar, InputTakeAtPosition, IResult};
+use nom::branch::alt;
 use nom::bytes::complete::{tag, take};
-use nom::character::complete::{alpha0, alpha1, anychar, digit0, digit1, one_of, alphanumeric1, multispace0};
-use nom::combinator::{not, opt, all_consuming};
+use nom::character::complete::{alpha0, alpha1, alphanumeric1, anychar, digit0, digit1, multispace0, one_of};
+use nom::combinator::{all_consuming, not, opt};
 use nom::error::{context, ErrorKind, VerboseError};
 use nom::multi::{many1, many_m_n, separated_list0, separated_list1};
 use nom::sequence::{delimited, preceded, terminated, tuple};
 use serde::{Deserialize, Serialize};
 
-use nom::branch::alt;
-
-use anyhow::Error;
-use crate::version::v0_0_1::id::{Specific, ResourceType,Version};
+use crate::version::v0_0_1::id::{ResourceType, Specific, Version};
 
 pub type Res<T, U> = IResult<T, U, VerboseError<T>>;
 
-fn any_resource_path_segment<T>(i: T) -> Res<T, T>
-    where
-        T: InputTakeAtPosition,
-        <T as InputTakeAtPosition>::Item: AsChar,
-{
-    i.split_at_position1_complete(
-        |item| {
-            let char_item = item.as_char();
-            !(char_item == '-')
-            && !(char_item == '.')
-            && !(char_item == '/')
-            && !(char_item == '_')
-            && !(char_item.is_alpha() || char_item.is_dec_digit())
-        },
-        ErrorKind::AlphaNumeric,
-    )
-}
+
 
 fn loweralphanumerichyphen1<T>(i: T) -> Res<T, T>
     where
@@ -133,7 +116,7 @@ fn parse_version_major_minor_patch(input: &str) -> Res<&str, (usize, usize, usiz
 pub fn parse_version(input: &str) -> Res<&str, Version> {
     context(
         "version",
-        tuple((parse_version_major_minor_patch, opt(preceded(tag("-"), parse_skewer)))),
+        all_consuming(tuple((parse_version_major_minor_patch, opt(preceded(tag("-"), parse_skewer))))),
     )(input)
         .map(|(next_input, ((major, minor, patch), release))| {
             let release = match release
@@ -153,12 +136,12 @@ fn parse_skewer(input: &str) -> Res<&str, &str> {
 pub fn parse_specific(input: &str) -> Res<&str, Specific> {
     context(
         "specific",
-        tuple((
+        all_consuming(tuple((
             terminated(domain, tag(":")),
             terminated(loweralphanumerichyphen1, tag(":")),
             terminated(loweralphanumerichyphen1, tag(":")),
             parse_version,
-        )),
+        ))),
     )(input)
         .map(|(next_input, (vendor, product, variant, version))| {
             (
@@ -173,20 +156,51 @@ pub fn parse_specific(input: &str) -> Res<&str, Specific> {
         })
 }
 
-
+fn any_resource_path_segment<T>(i: T) -> Res<T, T>
+    where
+        T: InputTakeAtPosition,
+        <T as InputTakeAtPosition>::Item: AsChar,
+{
+    i.split_at_position1_complete(
+        |item| {
+            let char_item = item.as_char();
+            !(char_item == '-')
+                && !(char_item == '.')
+                && !(char_item == '/')
+                && !(char_item == '_')
+                && !(char_item.is_alpha() || char_item.is_dec_digit())
+        },
+        ErrorKind::AlphaNumeric,
+    )
+}
 
 pub fn parse_address(input: &str) -> Res<&str, Vec<String>> {
     context(
         "address",
-        separated_list1(
+        all_consuming(separated_list1(
             nom::character::complete::char(':'),
             any_resource_path_segment
-        ),
+        )),
     )(input).map( |(next,segments)|{
         let segments: Vec<String> = segments.iter().map( |s| s.to_string() ).collect();
         (next,segments)
     })
 }
+
+#[derive(Debug, Clone)]
+pub struct ParseError {
+    pub message: String,
+}
+
+impl <T> From<nom::Err<VerboseError<T>>>  for ParseError {
+    fn from(_: nom::Err<VerboseError<T>>) -> Self {
+        Self {
+            message: "parse error".to_string()
+        }
+    }
+}
+
+
 
 
 

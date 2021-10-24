@@ -15,7 +15,6 @@ lazy_static! {
     static ref GLOBAL_TX : tokio::sync::broadcast::Sender<GlobalEvent> = {
         tokio::sync::broadcast::channel(128).0
     };
-
 }
 
     use std::sync::atomic::{AtomicU32, Ordering};
@@ -27,7 +26,7 @@ lazy_static! {
 
     use anyhow::Error;
     use mesh_portal_api_client::{InletApi, PortalCtrl, PortalSkel, client, PortCtrl};
-    use mesh_portal_api_server::{Message, MuxCall, Portal, PortalMuxer, Router};
+    use mesh_portal_api_server::{MuxCall, Portal, PortalMuxer, Router, message};
 
     use mesh_portal_tcp_client::{PortalClient, PortalTcpClient};
     use mesh_portal_tcp_common::{
@@ -53,6 +52,7 @@ lazy_static! {
     use mesh_portal_serde::version::latest::resource::Archetype;
     use mesh_portal_serde::version::latest::delivery::ResourceEntity;
     use mesh_portal_serde::version::latest::portal::inlet;
+    use mesh_portal_serde::mesh;
 
     #[derive(Clone)]
     pub enum GlobalEvent {
@@ -142,7 +142,7 @@ lazy_static! {
     pub struct TestRouter {}
 
     impl Router for TestRouter {
-        fn route(&self, message: Message<Operation>) {
+        fn route(&self, message: message::inlet::Message) {
             todo!()
         }
     }
@@ -215,11 +215,11 @@ lazy_static! {
         mux_tx: Sender<MuxCall>,
     }
     impl Router for InYourFaceRouter {
-        fn route(&self, message: Message<Operation>) {
+        fn route(&self, message: message::inlet::Message) {
             let mux_tx = self.mux_tx.clone();
             tokio::spawn(async move {
                 match message {
-                    Message::Request(request) => {
+                    message::inlet::Message::Request(request) => {
                         match &request.operation {
                             Operation::Resource(operation) => {
                                 match operation {
@@ -250,14 +250,14 @@ lazy_static! {
                                                 ResourceEntity::Stubs(resources),
                                             ));
                                             let response =
-                                                mesh_portal_api_server::Response {
+                                                mesh::outlet::Response {
                                                     to: request.from.clone(),
                                                     from: request.to.clone(),
                                                     exchange_id: exchange_id.clone(),
                                                     signal,
                                                 };
                                             mux_tx
-                                                .try_send(MuxCall::MessageOut(Message::Response(
+                                                .try_send(MuxCall::MessageOut(message::outlet::Message::Response(
                                                     response,
                                                 )))
                                                 .unwrap_or_default();
@@ -265,14 +265,14 @@ lazy_static! {
                                     }
                                     _ => match &request.kind {
                                         ExchangeKind::RequestResponse(exchange_id) => {
-                                            let response = mesh_portal_api_server::Response {
+                                            let response = mesh::outlet::Response {
                                                 to: request.from.clone(),
                                                 from: request.to.clone(),
                                                 exchange_id: exchange_id.clone(),
                                                 signal: ResponseEntity::Error("this is a primitive router that cannot handle resource commands other than Select".to_string())
                                             };
                                             mux_tx.try_send(MuxCall::MessageOut(
-                                                Message::Response(response),
+                                                message::outlet::Message::Response(response),
                                             ));
                                         }
                                         _ => {}
@@ -281,15 +281,18 @@ lazy_static! {
                             }
                             Operation::Ext(_) => {
                                 // since we are not connected to a mesh all inbound messages are just sent back to the outbound
-                                mux_tx.try_send(MuxCall::MessageOut(Message::Request(
-                                    request.try_into().unwrap(),
+                                unimplemented!();
+/*                                mux_tx.try_send(MuxCall::MessageOut(message::inlet::Message::Request(
+//                                    request.try_into().unwrap(),
                                 )));
+
+ */
                             }
                         }
                     }
-                    Message::Response(response) => {
+                    message::inlet::Message::Response(response) => {
                         // since we are not connected to a mesh all inbound messages are just sent back to the outbound
-                        mux_tx.try_send(MuxCall::MessageOut(Message::Response(response)));
+                        mux_tx.try_send(MuxCall::MessageOut(message::outlet::Message::Response(response)));
                     }
                 }
             });

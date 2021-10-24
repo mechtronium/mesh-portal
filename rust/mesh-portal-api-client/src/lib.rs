@@ -20,16 +20,16 @@ use std::ops::Deref;
 use std::collections::HashMap;
 use tokio::sync::watch::Receiver;
 use client::{Request,RequestContext};
-use resource_mesh_portal_serde::std_logger;
-use resource_mesh_portal_serde::version::latest::http::{HttpRequest, HttpResponse};
-use resource_mesh_portal_serde::version::latest::portal::{inlet, outlet};
-use resource_mesh_portal_serde::version::latest::resource::Status;
-use resource_mesh_portal_serde::version::latest::messaging::{ExchangeId, ExchangeKind};
-use resource_mesh_portal_serde::version::latest::config::Info;
-use resource_mesh_portal_serde::version::latest::log::Log;
-use resource_mesh_portal_serde::version::latest::operation::{ExtOperation, PortOperation};
-use resource_mesh_portal_serde::version::latest::delivery::Entity;
-use resource_mesh_portal_serde::version::latest::delivery::ResponseEntity;
+use mesh_portal_serde::std_logger;
+use mesh_portal_serde::version::latest::http::{HttpRequest, HttpResponse};
+use mesh_portal_serde::version::latest::portal::{inlet, outlet};
+use mesh_portal_serde::version::latest::resource::Status;
+use mesh_portal_serde::version::latest::messaging::{ExchangeId, ExchangeKind};
+use mesh_portal_serde::version::latest::config::Info;
+use mesh_portal_serde::version::latest::log::Log;
+use mesh_portal_serde::version::latest::operation::{ExtOperation, PortOperation};
+use mesh_portal_serde::version::latest::delivery::Entity;
+use mesh_portal_serde::version::latest::delivery::ResponseEntity;
 
 
 struct EmptySkel {
@@ -388,12 +388,12 @@ impl InletApi {
 pub mod client {
     use std::ops::Deref;
     use anyhow::Error;
-    use resource_mesh_portal_serde::version::latest::portal::outlet;
-    use resource_mesh_portal_serde::version::latest::id::Identifier;
-    use resource_mesh_portal_serde::version::latest::operation::{ExtOperation, PortOperation};
-    use resource_mesh_portal_serde::version::latest::config::Info;
-    use resource_mesh_portal_serde::version::latest::http::HttpRequest;
-    use resource_mesh_portal_serde::version::latest::delivery::ResponseEntity;
+    use mesh_portal_serde::version::latest::portal::outlet;
+    use mesh_portal_serde::version::latest::id::Identifier;
+    use mesh_portal_serde::version::latest::operation::{ExtOperation, PortOperation};
+    use mesh_portal_serde::version::latest::config::Info;
+    use mesh_portal_serde::version::latest::http::HttpRequest;
+    use mesh_portal_serde::version::latest::delivery::ResponseEntity;
 
     #[derive(Clone)]
     pub struct RequestContext {
@@ -462,9 +462,9 @@ pub mod example {
 
     use crate::{InletApi, PortalCtrl, PortalSkel, Request, inlet};
     use std::collections::HashMap;
-    use resource_mesh_portal_serde::version::latest::operation::{Operation, ExtOperation, PortOperation};
-    use resource_mesh_portal_serde::version::latest::delivery::{Entity, ResponseEntity,Payload};
-    use resource_mesh_portal_serde::version::latest::id::Identifier;
+    use mesh_portal_serde::version::latest::operation::{Operation, ExtOperation, PortOperation};
+    use mesh_portal_serde::version::latest::delivery::{Entity, ResponseEntity,Payload};
+    use mesh_portal_serde::version::latest::id::Identifier;
 
     pub struct HelloCtrl {
         pub skel: Arc<PortalSkel>,

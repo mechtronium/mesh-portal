@@ -23,7 +23,7 @@ pub mod id {
     use serde::{Serialize,Deserialize};
     use std::str::FromStr;
     use anyhow::Error;
-    use crate::version::v0_0_1::parse::{parse_specific, parse_address, parse_version};
+    use crate::version::v0_0_1::parse::{parse_specific, parse_address, parse_version, ParseError};
 
     pub type Key = String;
     pub type Kind = String;
@@ -58,17 +58,11 @@ pub mod id {
     }
 
     impl FromStr for Address {
-        type Err = Error;
+        type Err = ParseError;
 
         fn from_str(s: &str) -> Result<Self, Self::Err> {
-            let (leftover,segments) = parse_address(s)?;
-            if leftover.len() != 0 {
-                Err(anyhow!(format!("could not parse entire address: '{}' leftover '{}'", s, leftover )))
-            } else {
-                Ok(Self{
-                    segments
-                })
-            }
+            let (_,segments) = parse_address(s)?;
+            Ok(Self{ segments })
         }
     }
 
@@ -107,19 +101,11 @@ pub mod id {
     }
 
     impl FromStr for Specific {
-        type Err = Error;
+        type Err = ParseError;
 
         fn from_str(s: &str) -> Result<Self, Self::Err> {
-            let (leftover, specific) = parse_specific(s)?;
-            if leftover.len() != 0 {
-                let message = format!(
-                    "could not process '{}' portion of Specific '{}'",
-                    leftover, s
-                );
-                Err(anyhow!(message))
-            } else {
-                Ok(specific)
-            }
+            let (_, specific) = parse_specific(s)?;
+            Ok(specific)
         }
     }
 
@@ -163,21 +149,12 @@ pub mod id {
     }
 
     impl FromStr for Version {
-        type Err = Error;
+        type Err = ParseError;
 
         fn from_str(s: &str) -> Result<Self, Self::Err> {
             let string = s.to_string();
-            let s: &'static str = string.as_str();
-            let (remaining, version) = parse_version(s)?;
-            if remaining.len() > 0 {
-                Err(anyhow!(format!(
-                    "could not parse '{}' portion for version string '{}",
-                    remaining, s
-                )
-                    ))
-            } else {
-                Ok(version)
-            }
+            let (_, version) = parse_version(s)?;
+            Ok(version)
         }
     }
 

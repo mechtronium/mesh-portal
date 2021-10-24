@@ -62,12 +62,12 @@ impl FrameWriter<inlet::Frame> {
 }
 
 
-pub struct FrameReader<FRAME> where FRAME: TryFrom<PrimitiveFrame> {
+pub struct FrameReader<FRAME> {
     stream: PrimitiveFrameReader,
     phantom: PhantomData<FRAME>
 }
 
-impl <FRAME> FrameReader<FRAME>  where FRAME: TryFrom<PrimitiveFrame> {
+impl <FRAME> FrameReader<FRAME>  {
     pub fn new(stream: PrimitiveFrameReader) -> Self {
         Self {
             stream,

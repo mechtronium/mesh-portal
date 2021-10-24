@@ -2,16 +2,18 @@
 
 pub mod inlet {
     use crate::version::latest::operation::Operation;
-    use crate::message::generic;
+    use crate::mesh::generic;
 
     pub type Request = generic::Request<Operation>;
+    pub type Response = generic::Response;
 }
 
 pub mod outlet {
     use crate::version::latest::operation::ExtOperation;
-    use crate::message::generic;
+    use crate::mesh::generic;
 
     pub type Request = generic::Request<ExtOperation>;
+    pub type Response = generic::Response;
 }
 
 
