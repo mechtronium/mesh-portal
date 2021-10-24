@@ -10,6 +10,7 @@ pub mod id {
     use crate::version::v0_0_1::generic;
     use crate::version::v0_0_1::id;
 
+    pub type ResourceType = id::ResourceType;
     pub type Key = id::Key;
     pub type Address = id::Address;
     pub type Kind = id::Kind;
@@ -120,10 +121,10 @@ pub mod entity {
 
     pub mod request {
         use crate::version::v0_0_1::generic;
-        use crate::version::latest::id::{Key, Address, Kind};
+        use crate::version::latest::id::{Key, Address, Kind,ResourceType};
 
-        pub type ReqEntity = generic::entity::request::ReqEntity<Key,Address,Kind>;
-        pub type Rc = generic::entity::request::Rc<Key,Address,Kind>;
+        pub type ReqEntity = generic::entity::request::ReqEntity<Key,Address,Kind,ResourceType>;
+        pub type Rc = generic::entity::request::Rc<Key,Address,Kind,ResourceType>;
         pub type Msg = generic::entity::request::Msg<Key,Address,Kind>;
         pub type Http = generic::entity::request::Http;
     }
@@ -138,7 +139,7 @@ pub mod entity {
 
 pub mod portal {
     pub mod inlet {
-        use crate::version::latest::id::{Key, Address, Kind};
+        use crate::version::latest::id::{Key, Address, Kind, ResourceType};
         use std::convert::TryFrom;
         use std::convert::TryInto;
 
@@ -148,21 +149,21 @@ pub mod portal {
         use crate::version::v0_0_1::generic;
         use crate::version::v0_0_1::frame::PrimitiveFrame;
 
-        pub type Request=generic::portal::inlet::Request<Key,Address,Kind>;
+        pub type Request=generic::portal::inlet::Request<Key,Address,Kind,ResourceType>;
         pub type Response=generic::portal::inlet::Response<Key,Address,Kind>;
-        pub type Frame=generic::portal::inlet::Frame<Key,Address,Kind>;
+        pub type Frame=generic::portal::inlet::Frame<Key,Address,Kind,ResourceType>;
 
 
         pub mod exchange {
             use crate::version::v0_0_1::generic;
-            use crate::version::latest::id::{Key, Address, Kind};
+            use crate::version::latest::id::{Key, Address, Kind, ResourceType};
 
-            pub type Request=generic::portal::inlet::exchange::Request<Key,Address,Kind>;
+            pub type Request=generic::portal::inlet::exchange::Request<Key,Address,Kind,ResourceType>;
         }
     }
 
     pub mod outlet {
-        use crate::version::latest::id::{Key, Address, Kind};
+        use crate::version::latest::id::{Key, Address, Kind, ResourceType};
 
         use std::convert::TryFrom;
         use std::convert::TryInto;
@@ -173,15 +174,15 @@ pub mod portal {
         use crate::version::v0_0_1::frame::PrimitiveFrame;
 
 
-        pub type Request=generic::portal::outlet::Request<Key,Address,Kind>;
+        pub type Request=generic::portal::outlet::Request<Key,Address,Kind,ResourceType>;
         pub type Response=generic::portal::outlet::Response<Key,Address,Kind>;
-        pub type Frame=generic::portal::outlet::Frame<Key,Address,Kind>;
+        pub type Frame=generic::portal::outlet::Frame<Key,Address,Kind,ResourceType>;
 
         pub mod exchange {
             use crate::version::v0_0_1::generic;
-            use crate::version::latest::id::{Key, Address, Kind};
+            use crate::version::latest::id::{Key, Address, Kind,ResourceType};
 
-            pub type Request=generic::portal::outlet::exchange::Request<Key,Address,Kind>;
+            pub type Request=generic::portal::outlet::exchange::Request<Key,Address,Kind,ResourceType>;
         }
     }
 }

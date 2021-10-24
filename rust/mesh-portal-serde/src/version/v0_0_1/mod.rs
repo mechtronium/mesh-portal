@@ -448,10 +448,10 @@ pub mod entity {
 
     pub mod request {
         use crate::version::v0_0_1::generic;
-        use crate::version::v0_0_1::id::{Key, Address, Kind};
+        use crate::version::v0_0_1::id::{Key, Address, Kind,ResourceType};
 
-        pub type ReqEntity = generic::entity::request::ReqEntity<Key,Address,Kind>;
-        pub type Rc = generic::entity::request::Rc<Key,Address,Kind>;
+        pub type ReqEntity = generic::entity::request::ReqEntity<Key,Address,Kind,ResourceType>;
+        pub type Rc = generic::entity::request::Rc<Key,Address,Kind,ResourceType>;
         pub type Msg = generic::entity::request::Msg<Key,Address,Kind>;
         pub type Http = generic::entity::request::Http;
     }
@@ -492,7 +492,7 @@ pub mod resource {
 
 pub mod portal {
     pub mod inlet {
-        use crate::version::v0_0_1::id::{Key, Address, Kind};
+        use crate::version::v0_0_1::id::{Key, Address, Kind,ResourceType};
         use std::convert::TryFrom;
         use std::convert::TryInto;
 
@@ -501,13 +501,13 @@ pub mod portal {
         use crate::version::v0_0_1::generic;
 
 
-        pub type Request=generic::portal::inlet::Request<Key,Address,Kind>;
+        pub type Request=generic::portal::inlet::Request<Key,Address,Kind,ResourceType>;
         pub type Response=generic::portal::inlet::Response<Key,Address,Kind>;
-        pub type Frame=generic::portal::inlet::Frame<Key,Address,Kind>;
+        pub type Frame=generic::portal::inlet::Frame<Key,Address,Kind,ResourceType>;
     }
 
     pub mod outlet {
-        use crate::version::v0_0_1::id::{Key, Address, Kind};
+        use crate::version::v0_0_1::id::{Key, Address, Kind,ResourceType};
         use std::convert::TryFrom;
         use std::convert::TryInto;
 
@@ -515,9 +515,9 @@ pub mod portal {
         use serde::{Deserialize, Serialize};
         use crate::version::v0_0_1::generic;
 
-        pub type Request=generic::portal::outlet::Request<Key,Address,Kind>;
+        pub type Request=generic::portal::outlet::Request<Key,Address,Kind,ResourceType>;
         pub type Response=generic::portal::outlet::Response<Key,Address,Kind>;
-        pub type Frame=generic::portal::outlet::Frame<Key,Address,Kind>;
+        pub type Frame=generic::portal::outlet::Frame<Key,Address,Kind,ResourceType>;
 
     }
 }
@@ -605,19 +605,20 @@ pub mod generic {
             use crate::version::v0_0_1::generic::payload::Payload;
 
             #[derive(Debug, Clone, Serialize, Deserialize)]
-            pub enum ReqEntity<KEY: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, ADDRESS: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, KIND: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync> {
-                Rc(Rc<KEY, ADDRESS, KIND>),
+            pub enum ReqEntity<KEY: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, ADDRESS: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, KIND: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, RESOURCE_TYPE: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync> {
+                Rc(Rc<KEY, ADDRESS, KIND, RESOURCE_TYPE>),
                 Msg(Msg<KEY, ADDRESS, KIND>),
                 Http(Http)
             }
 
             #[derive(Debug, Clone, Serialize, Deserialize)]
-            pub enum Rc<KEY: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, ADDRESS: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, KIND: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync> {
+            pub enum Rc<KEY: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, ADDRESS: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, KIND: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, RESOURCE_TYPE: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync> {
                 Create(Create<KEY, ADDRESS, KIND>),
                 Select(Selector),
-                Get,
-                Set(State),
+                Read,
+                Update(State),
                 Delete,
+                Unique(RESOURCE_TYPE)
             }
 
             #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -740,7 +741,7 @@ pub mod generic {
             use crate::version::v0_0_1::resource::Status;
             use crate::version::v0_0_1::bin::{BinParcel, Bin};
             use crate::version::v0_0_1::frame::{CloseReason, PrimitiveFrame};
-            use crate::version::v0_0_1::id::{Address, Kind, Key};
+            use crate::version::v0_0_1::id::{Address, Kind, Key, ResourceType};
             use std::fmt::Debug;
             use crate::version::v0_0_1::generic::id::Identifier;
             use std::hash::Hash;
@@ -751,14 +752,14 @@ pub mod generic {
 
 
             #[derive(Debug, Clone, Serialize, Deserialize)]
-            pub struct Request<KEY: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, ADDRESS: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, KIND: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync>  {
+            pub struct Request<KEY: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, ADDRESS: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, KIND: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync,RESOURCE_TYPE: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync>  {
                 pub to: Vec<Identifier<KEY,ADDRESS>>,
-                pub entity: request::ReqEntity<KEY,ADDRESS,KIND>,
+                pub entity: request::ReqEntity<KEY,ADDRESS,KIND,RESOURCE_TYPE>,
             }
 
 
-            impl <KEY: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, ADDRESS: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, KIND: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync> Request<KEY,ADDRESS,KIND> {
-                pub fn new(entity: request::ReqEntity<KEY,ADDRESS,KIND>) -> Self {
+            impl <KEY: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, ADDRESS: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, KIND: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync,RESOURCE_TYPE: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync> Request<KEY,ADDRESS,KIND,RESOURCE_TYPE> {
+                pub fn new(entity: request::ReqEntity<KEY,ADDRESS,KIND,RESOURCE_TYPE>) -> Self {
                     Self {
                         to: vec![],
                         entity,
@@ -766,8 +767,8 @@ pub mod generic {
                 }
             }
 
-            impl <KEY: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, ADDRESS: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, KIND: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync> Request<KEY,ADDRESS,KIND> {
-                pub fn exchange(self, exchange: Exchange) -> exchange::Request<KEY,ADDRESS,KIND> {
+            impl <KEY: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, ADDRESS: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, KIND: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync,RESOURCE_TYPE: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync> Request<KEY,ADDRESS,KIND,RESOURCE_TYPE> {
+                pub fn exchange(self, exchange: Exchange) -> exchange::Request<KEY,ADDRESS,KIND,RESOURCE_TYPE> {
                     exchange::Request {
                         to: self.to,
                         entity: self.entity,
@@ -785,17 +786,17 @@ pub mod generic {
             }
 
             #[derive(Debug, Clone, Serialize, Deserialize, strum_macros::Display)]
-            pub enum Frame<KEY: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, ADDRESS: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, KIND: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync> {
+            pub enum Frame<KEY: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, ADDRESS: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, KIND: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync,RESOURCE_TYPE: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync> {
                 Log(Log),
                 Command(Command),
-                Request(exchange::Request<KEY,ADDRESS,KIND>),
+                Request(exchange::Request<KEY,ADDRESS,KIND,RESOURCE_TYPE>),
                 Response(Response<KEY,ADDRESS,KIND>),
                 Status(Status),
                 BinParcel(BinParcel),
                 Close(CloseReason)
             }
 
-            impl <KEY: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, ADDRESS: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, KIND: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync> TryInto<PrimitiveFrame> for Frame<KEY,ADDRESS,KIND> {
+            impl <KEY: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, ADDRESS: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, KIND: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync,RESOURCE_TYPE: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync> TryInto<PrimitiveFrame> for Frame<KEY,ADDRESS,KIND,RESOURCE_TYPE> {
                 type Error = Error;
 
                 fn try_into(self) -> Result<PrimitiveFrame, Self::Error> {
@@ -806,7 +807,7 @@ pub mod generic {
                 }
             }
 
-            impl TryFrom<PrimitiveFrame> for Frame<Key,Address,Kind>{
+            impl TryFrom<PrimitiveFrame> for Frame<Key,Address,Kind,ResourceType>{
                 type Error = Error;
 
                 fn try_from(value: PrimitiveFrame) -> Result<Self, Self::Error> {
@@ -838,14 +839,14 @@ pub mod generic {
                 use crate::version::v0_0_1::generic::portal::inlet;
 
                 #[derive(Debug, Clone, Serialize, Deserialize)]
-                pub struct Request<KEY: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, ADDRESS: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, KIND: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync>  {
+                pub struct Request<KEY: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, ADDRESS: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, KIND: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync,RESOURCE_TYPE: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync>  {
                     pub to: Vec<Identifier<KEY,ADDRESS>>,
-                    pub entity: ReqEntity<KEY,ADDRESS,KIND>,
+                    pub entity: ReqEntity<KEY,ADDRESS,KIND,RESOURCE_TYPE>,
                     pub exchange: Exchange
                 }
 
-                impl <KEY: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, ADDRESS: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, KIND: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync> Into<inlet::Request<KEY,ADDRESS,KIND>> for Request<KEY,ADDRESS,KIND> {
-                    fn into(self) -> inlet::Request<KEY, ADDRESS, KIND> {
+                impl <KEY: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, ADDRESS: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, KIND: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync,RESOURCE_TYPE: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync> Into<inlet::Request<KEY,ADDRESS,KIND,RESOURCE_TYPE>> for Request<KEY,ADDRESS,KIND,RESOURCE_TYPE> {
+                    fn into(self) -> inlet::Request<KEY, ADDRESS, KIND,RESOURCE_TYPE> {
                         inlet::Request {
                             to: self.to,
                             entity: self.entity
@@ -871,19 +872,19 @@ pub mod generic {
             use std::str::FromStr;
             use crate::version::v0_0_1::generic::id::Identifier;
             use crate::version::v0_0_1::generic::config::Info;
-            use crate::version::v0_0_1::id::{Key, Address, Kind};
+            use crate::version::v0_0_1::id::{Key, Address, Kind, ResourceType};
             use crate::version::v0_0_1::generic::payload::Payload;
             use crate::version::v0_0_1::generic::entity::request;
             use crate::version::v0_0_1::generic::entity::response;
 
             #[derive(Debug, Clone, Serialize, Deserialize)]
-            pub struct Request<KEY: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, ADDRESS: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, KIND: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync> {
+            pub struct Request<KEY: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, ADDRESS: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, KIND: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync,RESOURCE_TYPE: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync> {
                 pub from: Identifier<KEY,ADDRESS>,
-                pub entity: request::ReqEntity<KEY,ADDRESS,KIND>
+                pub entity: request::ReqEntity<KEY,ADDRESS,KIND,RESOURCE_TYPE>
             }
 
-            impl <KEY: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, ADDRESS: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, KIND: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync> Request<KEY,ADDRESS,KIND> {
-                pub fn exchange(self, exchange: Exchange) -> exchange::Request<KEY,ADDRESS,KIND> {
+            impl <KEY: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, ADDRESS: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, KIND: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync,RESOURCE_TYPE: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync> Request<KEY,ADDRESS,KIND,RESOURCE_TYPE> {
+                pub fn exchange(self, exchange: Exchange) -> exchange::Request<KEY,ADDRESS,KIND,RESOURCE_TYPE> {
                     exchange::Request {
                         from: self.from,
                         entity: self.entity,
@@ -900,16 +901,16 @@ pub mod generic {
             }
 
             #[derive(Debug, Clone, Serialize, Deserialize, strum_macros::Display)]
-            pub enum Frame<KEY: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, ADDRESS: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, KIND: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync> {
+            pub enum Frame<KEY: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, ADDRESS: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, KIND: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync,RESOURCE_TYPE: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync> {
                 Init(Info<KEY,ADDRESS,KIND>),
                 CommandEvent(CommandEvent),
-                Request(exchange::Request<KEY,ADDRESS,KIND>),
+                Request(exchange::Request<KEY,ADDRESS,KIND,RESOURCE_TYPE>),
                 Response(Response<KEY,ADDRESS,KIND>),
                 BinParcel(BinParcel),
                 Close(CloseReason)
             }
 
-            impl <KEY: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, ADDRESS: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, KIND: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync> TryInto<PrimitiveFrame> for Frame<KEY,ADDRESS,KIND> {
+            impl <KEY: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, ADDRESS: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, KIND: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync,RESOURCE_TYPE: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync> TryInto<PrimitiveFrame> for Frame<KEY,ADDRESS,KIND,RESOURCE_TYPE> {
                 type Error = Error;
 
                 fn try_into(self) -> Result<PrimitiveFrame, Self::Error> {
@@ -921,7 +922,7 @@ pub mod generic {
             }
 
 
-            impl TryFrom<PrimitiveFrame> for Frame<Key,Address,Kind> {
+            impl TryFrom<PrimitiveFrame> for Frame<Key,Address,Kind,ResourceType> {
                 type Error = Error;
 
                 fn try_from(value: PrimitiveFrame) -> Result<Self, Self::Error> {
@@ -941,14 +942,14 @@ pub mod generic {
                 use crate::version::v0_0_1::generic::portal::outlet;
 
                 #[derive(Debug, Clone, Serialize, Deserialize)]
-                pub struct Request<KEY: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, ADDRESS: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, KIND: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync> {
+                pub struct Request<KEY: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, ADDRESS: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, KIND: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync,RESOURCE_TYPE: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync> {
                     pub from: Identifier<KEY,ADDRESS>,
-                    pub entity: ReqEntity<KEY,ADDRESS,KIND>,
+                    pub entity: ReqEntity<KEY,ADDRESS,KIND,RESOURCE_TYPE>,
                     pub exchange: Exchange
                 }
 
-                impl <KEY: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, ADDRESS: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, KIND: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync> Into<outlet::Request<KEY,ADDRESS,KIND>> for Request<KEY,ADDRESS,KIND> {
-                    fn into(self) -> outlet::Request<KEY, ADDRESS, KIND> {
+                impl <KEY: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, ADDRESS: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, KIND: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync,RESOURCE_TYPE: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync> Into<outlet::Request<KEY,ADDRESS,KIND,RESOURCE_TYPE>> for Request<KEY,ADDRESS,KIND,RESOURCE_TYPE> {
+                    fn into(self) -> outlet::Request<KEY, ADDRESS, KIND,RESOURCE_TYPE> {
                         outlet::Request {
                             from: self.from,
                             entity: self.entity
