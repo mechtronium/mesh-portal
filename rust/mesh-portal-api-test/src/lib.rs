@@ -48,9 +48,9 @@ lazy_static! {
     use mesh_portal_serde::version::latest::config::{Info, PortalKind};
     use mesh_portal_serde::version::latest::id::Identifier;
     use mesh_portal_serde::version::latest::messaging::Exchange;
-    use mesh_portal_serde::version::latest::delivery::{Entity, Payload, ResponseEntity};
+    use mesh_portal_serde::version::latest::payload::{Entity, Payload, ResponseEntity};
     use mesh_portal_serde::version::latest::resource::Archetype;
-    use mesh_portal_serde::version::latest::delivery::ResourceEntity;
+    use mesh_portal_serde::version::latest::payload::ResourceEntity;
     use mesh_portal_serde::version::latest::portal::inlet;
     use mesh_portal_serde::mesh;
 

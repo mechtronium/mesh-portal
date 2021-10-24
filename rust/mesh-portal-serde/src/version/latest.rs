@@ -70,7 +70,7 @@ pub mod http {
 }
 
 pub mod resource {
-    use crate::version::latest::id::{Key, Address, Kind};
+    use crate::version::v0_0_1::id::{Key, Address, Kind};
     use serde::{Deserialize, Serialize};
     use crate::version::v0_0_1::resource;
 
@@ -78,10 +78,7 @@ pub mod resource {
 
     pub type Status = resource::Status;
 
-    pub type Operation=generic::request::ReqEntity<Key,Address,Kind>;
-    pub type ResourceOperation=generic::request::Rc<Key,Address,Kind>;
     pub type Create=generic::resource::Create<Key,Address,Kind>;
-
     pub type StateSrc=generic::resource::StateSrc;
     pub type CreateStrategy=generic::resource::CreateStrategy;
     pub type AddressSrc=generic::resource::AddressSrc;
@@ -92,7 +89,7 @@ pub mod resource {
 }
 
 pub mod config {
-    use crate::version::latest::id::{Key, Address, Kind};
+    use crate::version::v0_0_1::id::{Key, Address, Kind};
     use crate::version::v0_0_1::config;
     use crate::version::v0_0_1::generic;
 
@@ -107,33 +104,36 @@ pub mod config {
     pub type PayloadConfig = config::PayloadConfig;
 }
 
-pub mod delivery {
-    use crate::version::latest::id::{Key, Address, Kind};
-    use crate::version::v0_0_1::delivery;
+pub mod payload {
+    use crate::version::v0_0_1::id::{Key, Address, Kind};
+    use crate::version::v0_0_1::payload;
     use crate::version::v0_0_1::generic;
-    use crate::version::latest::bin::Bin;
+    use crate::version::v0_0_1::bin::Bin;
 
-    pub type PayloadType = delivery::PayloadType;
-    pub type Payload = generic::delivery::Payload<Key,Address,Kind,Bin>;
-    pub type PayloadAspect = generic::delivery::PayloadAspect<Key,Address,Kind,Bin>;
-
-    pub type Entity = generic::delivery::Entity<Key,Address,Kind>;
-    pub type ResourceEntity = generic::delivery::ResourceEntity<Key,Address,Kind>;
-    pub type ResponseEntity = generic::delivery::ResponseEntity<Key,Address,Kind>;
+    pub type PayloadType = payload::PayloadType;
+    pub type Payload = generic::payload::Payload<Key,Address,Kind,Bin>;
+    pub type PayloadAspect = generic::payload::PayloadAspect<Key,Address,Kind,Bin>;
 }
 
+pub mod entity {
 
+    pub mod request {
+        use crate::version::v0_0_1::generic;
+        use crate::version::v0_0_1::id::{Key, Address, Kind};
 
-pub mod operation {
-    use crate::version::latest::id::{Key, Address, Kind};
+        pub type Entity = generic::entity::request::Entity<Key,Address,Kind>;
+        pub type Rc = generic::entity::request::Rc<Key,Address,Kind>;
+        pub type Msg = generic::entity::request::Msg<Key,Address,Kind>;
+        pub type Http = generic::entity::request::Http;
+    }
 
-    use crate::version::v0_0_1::generic::resource::{Create, Selector};
-    use crate::version::v0_0_1::generic::request;
+    pub mod response {
+        use crate::version::v0_0_1::{generic, fail};
+        use crate::version::v0_0_1::id::{Key, Address, Kind};
 
-    pub type Operation = request::ReqEntity<Key,Address,Kind>;
-    pub type ResourceOperation = request::Rc<Key,Address,Kind>;
-    pub type ExtOperation = request::ExtOperation<Key,Address,Kind>;
-    pub type PortOperation = request::Msg<Key,Address,Kind>;
+        pub type Entity = generic::entity::response::Entity<Key,Address,Kind,fail::Fail>;
+    }
+
 }
 
 pub mod portal {
@@ -185,4 +185,58 @@ pub mod portal {
             }
         }
     }
+}
+
+
+
+pub mod fail {
+    use serde::{Deserialize, Serialize};
+    use crate::version::v0_0_1::fail;
+
+    pub mod mesh {
+        use serde::{Deserialize, Serialize};
+        use crate::version::v0_0_1::fail::mesh;
+        pub type Fail = mesh::Fail;
+    }
+
+    pub mod portal{
+        use serde::{Deserialize, Serialize};
+        use crate::version::v0_0_1::fail::portal;
+        pub type Fail = portal::Fail;
+    }
+
+    pub mod resource {
+        use serde::{Deserialize, Serialize};
+        use crate::version::v0_0_1::fail::resource;
+        use crate::version::v0_0_1::id::Address;
+
+        pub type Fail = resource::Fail;
+        pub type Create= resource::Create;
+        pub type Update = resource::Update;
+    }
+
+
+    pub mod port {
+        use crate::version::v0_0_1::fail::port;
+        use crate::version::v0_0_1::id::Address;
+        pub type Fail = port::Fail;
+    }
+
+    pub mod http {
+        use crate::version::v0_0_1::fail::http;
+        use crate::version::v0_0_1::id::Address;
+        use serde::{Deserialize, Serialize};
+
+        pub type Error = http::Error;
+    }
+
+    pub type BadRequest = fail::BadRequest;
+    pub type Conditional = fail::Conditional;
+    pub type Timeout = fail::Timeout;
+    pub type NotFound = fail::NotFound;
+    pub type Bad = fail::Bad;
+    pub type Identifier = fail::Identifier;
+    pub type Illegal = fail::Illegal;
+    pub type Wrong = fail::Wrong;
+    pub type Fail = fail::Fail;
 }

@@ -14,16 +14,16 @@ use tokio::sync::{mpsc, oneshot};
 use tokio::sync::mpsc::error::{SendError, SendTimeoutError};
 use uuid::Uuid;
 
-use mesh_portal_serde::mesh as request_message;
+use mesh_portal_serde::mesh;
 use mesh_portal_serde::version::latest::config::Info;
-use mesh_portal_serde::version::latest::delivery::ResponseEntity;
 use mesh_portal_serde::version::latest::frame::CloseReason;
 use mesh_portal_serde::version::latest::id::{Address, Identifier, Key};
 use mesh_portal_serde::version::latest::log::Log;
 use mesh_portal_serde::version::latest::messaging::{ExchangeId, Exchange};
-use mesh_portal_serde::version::latest::operation::{ExtOperation, Operation};
 use mesh_portal_serde::version::latest::portal::{inlet, outlet};
 use mesh_portal_serde::version::latest::resource::Status;
+use mesh_portal_serde::version::latest::entity::response;
+use mesh_portal_serde::version::latest::generic::fail;
 
 #[derive(Clone,Eq,PartialEq,Hash)]
 pub enum PortalStatus{
@@ -51,7 +51,7 @@ pub fn log( log: Log) {
 }
 
 #[derive(Debug)]
-pub struct Exchange {
+pub struct ExchangePair {
     pub id: ExchangeId,
     pub tx: tokio::sync::oneshot::Sender<inlet::Response>,
 }
@@ -133,7 +133,7 @@ impl Portal {
                                         }
                                         Exchange::Notification => {
                                             for to in &request.to {
-                                                let request = request_message::inlet::Request::from( request.clone(), Identifier::Key(info.key.clone()), to.clone() );
+                                                let request = mesh::inlet::Request::from( request.clone(), Identifier::Key(info.key.clone()), to.clone() );
                                                 let result = mux_tx.send_timeout(MuxCall::MessageIn(message::inlet::Message::Request(request)), Duration::from_secs(info.config.frame_timeout.clone())).await;
                                                 if let Result::Err(_err) = result {
                                                     logger(Log::Fatal("FATAL: send timeout error request_tx".to_string()))
@@ -145,7 +145,8 @@ impl Portal {
                                                 let response = outlet::Response{
                                                     from: Identifier::Key(info.key.clone()),
                                                     exchange: exchange_id.clone(),
-                                                    entity: ResponseEntity::Error("a RequestResponse message must have one and only one to recipient.".to_string())
+                                                    entity: response::Entity::Fail(fail::Mesh( fail::mesh::Fail( ) ))
+                                                   // ResponseEntity::Error("a RequestResponse message must have one and only one to recipient.".to_string())
                                                 };
                                                 let result = outlet_tx.send_timeout(outlet::Frame::Response(response), Duration::from_secs(info.config.frame_timeout.clone()) ).await;
                                                 if let Result::Err(_err) = result {
@@ -153,7 +154,7 @@ impl Portal {
                                                 }
                                             } else {
                                                 let to = request.to.first().expect("expected to identifier").clone();
-                                                let request = request_message::inlet::Request::from( request.clone(), Identifier::Key(info.key.clone()), to );
+                                                let request = mesh::inlet::Request::from( request.clone(), Identifier::Key(info.key.clone()), to );
                                                 let result = mux_tx.send_timeout(MuxCall::MessageIn(message::inlet::Message::Request(request)), Duration::from_secs(info.config.frame_timeout.clone())).await;
                                                 if let Result::Err(_err) = result {
                                                     logger(Log::Fatal("FATAL: frame timeout error request_tx".to_string()));
@@ -326,19 +327,9 @@ pub enum MuxCall {
 
 pub mod message {
 
-    pub mod inlet {
-        use mesh_portal_serde::version::latest::operation::Operation;
-        use crate::message::generic;
+    use mesh_portal_serde::version::latest::entity::request::Entity;
 
-        pub type Message = generic::Message<Operation>;
-    }
-
-    pub mod outlet {
-        use mesh_portal_serde::version::latest::operation::ExtOperation;
-        use crate::message::generic;
-
-        pub type Message = generic::Message<ExtOperation>;
-    }
+    pub type Message = generic::Message<Entity>;
 
     pub mod generic {
         use mesh_portal_serde::mesh::generic::{Request, Response};

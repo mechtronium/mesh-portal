@@ -28,8 +28,8 @@ use mesh_portal_serde::version::latest::messaging::{ExchangeId, Exchange};
 use mesh_portal_serde::version::latest::config::Info;
 use mesh_portal_serde::version::latest::log::Log;
 use mesh_portal_serde::version::latest::operation::{ExtOperation, PortOperation};
-use mesh_portal_serde::version::latest::delivery::Entity;
-use mesh_portal_serde::version::latest::delivery::ResponseEntity;
+use mesh_portal_serde::version::latest::payload::Entity;
+use mesh_portal_serde::version::latest::payload::ResponseEntity;
 
 
 struct EmptySkel {
@@ -393,7 +393,7 @@ pub mod client {
     use mesh_portal_serde::version::latest::operation::{ExtOperation, PortOperation};
     use mesh_portal_serde::version::latest::config::Info;
     use mesh_portal_serde::version::latest::http::HttpRequest;
-    use mesh_portal_serde::version::latest::delivery::ResponseEntity;
+    use mesh_portal_serde::version::latest::payload::ResponseEntity;
 
     #[derive(Clone)]
     pub struct RequestContext {
@@ -463,7 +463,7 @@ pub mod example {
     use crate::{InletApi, PortalCtrl, PortalSkel, Request, inlet};
     use std::collections::HashMap;
     use mesh_portal_serde::version::latest::operation::{Operation, ExtOperation, PortOperation};
-    use mesh_portal_serde::version::latest::delivery::{Entity, ResponseEntity,Payload};
+    use mesh_portal_serde::version::latest::payload::{Entity, ResponseEntity, Payload};
     use mesh_portal_serde::version::latest::id::Identifier;
 
     pub struct HelloCtrl {
