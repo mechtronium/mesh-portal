@@ -5,7 +5,7 @@ use anyhow::Error;
 use nom::{AsChar, InputTakeAtPosition, IResult, Needed, InputTake, Compare, InputLength};
 use nom::{Err, Parser};
 use nom::branch::alt;
-use nom::bytes::complete::{tag, take_until};
+use nom::bytes::complete::{tag, take_until, take_till, escaped};
 use nom::character::complete::{alpha0, alpha1, digit0, digit1, multispace0, multispace1, anychar};
 use nom::combinator::{all_consuming, opt, recognize, not};
 use nom::error::{context, ErrorKind, ParseError, VerboseError, VerboseErrorKind, FromExternalError};
@@ -14,7 +14,7 @@ use nom::sequence::{delimited, tuple, preceded, terminated};
 use nom_supreme::{parse_from_str, ParserExt};
 
 use crate::{parse, Bind, Request, Rc, Msg, Http};
-use crate::token::{PayloadIdent, StackCmd};
+use crate::token::{PayloadType, StackCmd};
 use crate::symbol::{RootSelector, Address, PortCall};
 use crate::token::generic::BlockPart;
 
@@ -41,6 +41,20 @@ fn any_resource_path_segment<T>(i: T) -> Res<T, T>
                 && !(char_item == '/')
                 && !(char_item == '_')
                 && !(char_item.is_alpha() || char_item.is_dec_digit())
+        },
+        ErrorKind::AlphaNumeric,
+    )
+}
+
+fn in_double_quotes<T>(i: T) -> Res<T, T>
+    where
+        T: InputTakeAtPosition,
+        <T as InputTakeAtPosition>::Item: AsChar,
+{
+    i.split_at_position1_complete(
+        |item| {
+            let char_item = item.as_char();
+            char_item == '\"'
         },
         ErrorKind::AlphaNumeric,
     )
@@ -416,7 +430,7 @@ pub fn consume_port_call(input: &str) -> Res<&str, PortCall> {
 }
 
 /// use nom_supreme::{parse_from_str, parser_ext::ParserExt};
-pub fn payload_kind(input: &str ) -> Res<&str, PayloadIdent> {
+pub fn payload_kind(input: &str ) -> Res<&str, PayloadType> {
     parse_from_str(alpha1).parse(input)
 }
 
@@ -426,9 +440,9 @@ pub fn payload_format(input: &str ) -> Res<&str, PayloadFormat> {
 }
 
 pub fn payload_validator(input: &str ) -> Res<&str, PayloadValidator> {
-    tuple(( address, opt(preceded(tag("+"), address ))))(input).map( |(next,(address,schema))| {
+    tuple(( port_call, opt(preceded(tag("+"), address ))))(input).map( |(next,(port_call,schema))| {
         (next,PayloadValidator{
-            mechtron: address,
+            port_call,
             schema
         })
     } )
@@ -494,6 +508,48 @@ pub fn consume_payload_def(input: &str ) -> Res<&str, PayloadDef> {
     all_consuming(payload_def).parse(input)
 }
 
+pub fn text_value(input: &str ) -> Res<&str, PayloadValueSrc> {
+  delimited(tag("\""), in_double_quotes, tag("\""))(input).map ( |(next,text) | {
+
+      (next,
+      PayloadValueSrc::Text(text.to_string()))
+
+  } )
+}
+
+pub fn address_value(input: &str ) -> Res<&str, PayloadValueSrc> {
+    delimited(tag("'"), address, tag("'"))(input).map(|(next, address)| {
+        (next,
+         PayloadValueSrc::Address(address))
+    })
+}
+
+pub fn state_value(input: &str ) -> Res<&str, PayloadValueSrc> {
+    address(input).map(|(next, address)| {
+        (next,
+         PayloadValueSrc::State(address))
+    })
+}
+pub fn assigned_value(input: &str ) -> Res<&str, PayloadValueSrc> {
+  //alt((text_value,address_value,state_value))(input)
+    alt( ( text_value, address_value, state_value ) )(input)
+
+}
+
+
+pub fn payload_assignment(input: &str ) -> Res<&str, PayloadAssign> {
+    tuple((payload_def, tag("="), assigned_value))(input).map( |(next,(def,_,value))|{
+        (next,
+         PayloadAssign {
+            def,
+            value
+        })
+    })
+}
+
+pub fn consume_payload_assignment(input: &str ) -> Res<&str, PayloadAssign> {
+    all_consuming(payload_assignment)(input)
+}
 
 
 /*
@@ -546,12 +602,40 @@ pub enum PayloadFormat {
 
 
 
+pub enum LabelPattern{
+    Any,
+    Exact(String),
+    Enum(Vec<String>)
+}
+
+pub enum PayloadTypePattern{
+    Any,
+    Exact(PayloadType),
+    Enum(Vec<PayloadType>)
+}
+
+pub enum ChildPatterns {
+    None,
+    Single(PayloadDef),
+    Enum(Vec<PayloadDef>),
+    Any
+}
+
 pub struct PayloadDef {
     pub label: Option<String>,
     pub type_def: PayloadTypeDef
-
 }
 
+pub enum PayloadValueSrc {
+    Text(String),
+    Address(Address),
+    State(Address)
+}
+
+pub struct PayloadAssign {
+    pub def: PayloadDef,
+    pub value: PayloadValueSrc
+}
 
 pub struct PayloadValidation{
     pub format: Option<PayloadFormat>,
@@ -559,12 +643,12 @@ pub struct PayloadValidation{
 }
 
 pub struct PayloadValidator {
-    pub mechtron: Address,
+    pub port_call: PortCall,
     pub schema: Option<Address>
 }
 
 pub struct PayloadTypeDef {
-  pub kind: PayloadIdent,
+  pub kind: PayloadType,
   pub validation: Option<PayloadValidation>,
 }
 
@@ -660,8 +744,8 @@ pub mod test {
     use nom::Err;
     use nom::error::VerboseError;
 
-    use crate::parse::{payload_kind, block_seg, block_seg2, push_block, payload_type_def, PayloadValidator, PayloadFormat, consume_payload_def, MyError, PayloadValidation, rec_mechtron, consume_mechtron, consume_artifact, rec_address, consume_address, rec_version, skewer, rec_address_segment, Res};
-    use crate::token::PayloadIdent;
+    use crate::parse::{payload_kind, block_seg, block_seg2, push_block, payload_type_def, PayloadValidator, PayloadFormat, consume_payload_def, MyError, PayloadValidation, rec_mechtron, consume_mechtron, consume_artifact, rec_address, consume_address, rec_version, skewer, rec_address_segment, Res, consume_payload_assignment, PayloadValueSrc};
+    use crate::token::PayloadType;
     use nom::combinator::all_consuming;
     use nom::branch::alt;
 
@@ -735,18 +819,24 @@ pub mod test {
         match s {
             None => {"None".to_string()}
             Some(s) => {
-                format!( "mechtron: '{}' schema artifact: '{}'", s.mechtron.to_string(), to_string(s.schema) )
+                format!("mechtron: '{}' schema artifact: '{}'", s.port_call.to_string(), to_string(s.schema) )
             }
         }
     }
 
 
-    pub fn test_payload_assignment( s: &str ) -> Result<(),MyError>{
+    pub fn test_payload_def(s: &str ) -> Result<(),MyError>{
         let (_,payload) = consume_payload_def(s)?;
         println!("'{}' label: '{}' type: '{}' validation {{ '{}' }}", s, to_string(payload.label), payload.type_def.kind.to_string(), v_to_string(payload.type_def.validation));
 
         Ok(())
     }
+
+    pub fn test_payload_def_fail(s: &str ) {
+        assert!( consume_payload_def(s).is_err());
+        println!("'{}' ERROR!", s );
+    }
+
 
     #[test]
     pub fn alt_test() {
@@ -785,25 +875,125 @@ pub mod test {
         assert!(consume_address("mechtron.io:yet-some-more:1.0.0:/file.txt").is_ok());
 
 
-
-
         Ok(())
     }
 
 
     #[test]
-    pub fn payload_assignment_tests() -> Result<(),MyError>{
+    pub fn payload_def_tests() -> Result<(),MyError>{
 
-        test_payload_assignment("Bin")?;
-        test_payload_assignment("Bin~image")?;
-        test_payload_assignment("Bin~~mechtron:from:heaven")?;
-        test_payload_assignment("Bin~image~mechtron:from:heaven")?;
-        test_payload_assignment("Bin~image~mechtron:from:heaven+some:artifact")?;
-        test_payload_assignment("<Bin>")?;
-        test_payload_assignment("<Bin~image~mechtron:from:heaven>")?;
-        test_payload_assignment("label<Bin>")?;
-        test_payload_assignment("label<Bin~image>")?;
-        test_payload_assignment("label<Bin~image~mechtron:from:heaven>")?;
+        test_payload_def("Bin")?;
+        test_payload_def("Bin~image")?;
+        test_payload_def("Bin~~mechtron:from:heaven!go")?;
+        test_payload_def("Bin~image~mechtron:from:heaven!validate")?;
+        test_payload_def("Bin~image~mechtron:from:heaven!rock-it+some:artifact")?;
+        test_payload_def("<Bin>")?;
+        test_payload_def("<Bin~image~mechtron:from:heaven!work-it>")?;
+        test_payload_def("label<Bin>")?;
+        test_payload_def("label<Bin~image>")?;
+        test_payload_def("label<Bin~image~mechtron:from:heaven!parse>")?;
+
+        /*
+
+        test_payload_def("*" )?; // Anything
+        test_payload_def("*<*>" )?; // Match any LABELED payload
+
+        test_payload_def("label<*>" )?; // Any Payload with 'label'
+        test_payload_def("label<Bin|Test>" )?; // Bin or Text payloads
+        test_payload_def("*<Bin>" )?; // any label
+
+
+        test_payload_def("<Map[single<Text>]>")?;
+        test_payload_def("<Map[left<Text>,right<Bin>]>")?;
+
+
+
+        test_payload_def("Text[]")?;
+        test_payload_def("<Text[]>")?;
+        test_payload_def("<*[]>")?; // an array of Whatever
+
+        test_payload_def("<Text~json(max-length 32;)[5]>")?;
+
+
+        test_payload_def("<Text[0..5]>")?;
+        test_payload_def("<Map[required<Code>,*]>")?;
+        test_payload_def("<Map[*<Code>]>")?; // name anything of type Code
+        test_payload_def("<Map[*<Resource|Status>]>")?; // any label with Type of Resource or status
+        test_payload_def("<Map[larry<*>,david<*>]>")?; // larry and david, any type
+        test_payload_def("something<Text~json~blah:zophis+oink:crimo[]>")?;
+
+        test_payload_def_fail("<Map[Text]>");
+        test_payload_def_fail("<Map[<Text>]>");
+        test_payload_def_fail("<Map[child<Map>]>"); // ???
+        test_payload_def_fail("<Map[child<Map[grandkid<Text>]>]>"); // ???
+
+
+         */
+
+
+        Ok(())
+    }
+
+    pub fn test_payload_assign(s: &str ) -> Result<(),MyError>{
+        let (i,payload) = consume_payload_assignment(s)?;
+        match payload.value{
+            PayloadValueSrc::Text(text) => {
+                println!("{} .{}. -> Text={}",s,i,text);
+            }
+            PayloadValueSrc::Address(address) => {
+                println!("{} -> Address={}",s,address.to_string())
+            }
+            PayloadValueSrc::State(state) => {
+                println!("{} -> State={}",s,state.to_string())
+            }
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    pub fn paylod_assign_tests() -> Result<(),MyError>{
+
+        test_payload_assign("Text=\"Hello World\"")?; // Text assignment
+        test_payload_assign("Bin=mechtron.io:address")?; // state transfer
+        test_payload_assign("Address='mechtron.io:address'")?; // Address assignment
+
+        /*
+        test_payload_def("*" )?; // Anything
+        test_payload_def("*<*>" )?; // Match any LABELED payload
+
+        test_payload_def("label<*>" )?; // Any Payload with 'label'
+        test_payload_def("label<Bin|Test>" )?; // Bin or Text payloads
+        test_payload_def("*<Bin>" )?; // any label
+
+
+        test_payload_def("<Map[single<Text>]>")?;
+        test_payload_def("<Map[left<Text>,right<Bin>]>")?;
+
+
+
+        test_payload_def("Text[]")?;
+        test_payload_def("<Text[]>")?;
+        test_payload_def("<*[]>")?; // an array of Whatever
+
+        test_payload_def("<Text~json(max-length 32;)[5]>")?;
+
+
+        test_payload_def("<Text[0..5]>")?;
+        test_payload_def("<Map[required<Code>,*]>")?;
+        test_payload_def("<Map[*<Code>]>")?; // name anything of type Code
+        test_payload_def("<Map[*<Resource|Status>]>")?; // any label with Type of Resource or status
+        test_payload_def("<Map[larry<*>,david<*>]>")?; // larry and david, any type
+        test_payload_def("something<Text~json~blah:zophis+oink:crimo[]>")?;
+
+        test_payload_def_fail("<Map[Text]>");
+        test_payload_def_fail("<Map[<Text>]>");
+        test_payload_def_fail("<Map[child<Map>]>"); // ???
+        test_payload_def_fail("<Map[child<Map[grandkid<Text>]>]>"); // ???
+
+
+         */
+
 
         Ok(())
     }

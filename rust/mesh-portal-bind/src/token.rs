@@ -1,3 +1,6 @@
+use std::convert::TryInto;
+use anyhow::Error;
+
 #[derive(strum_macros::Display )]
 pub enum EntityIdent {
     Rc,
@@ -31,25 +34,84 @@ pub struct Msg {
 
 
 #[derive(strum_macros::Display,strum_macros::EnumString)]
-pub enum PayloadIdent
+pub enum PayloadType
 {
     Empty,
     Text,
-    Texts,
     Key,
-    Keys,
     Address,
-    Addresses,
     Stub,
-    Stubs,
     Meta,
     Bin,
-    Bins,
     Boolean,
     Code,
-    Num,
+    Int,
+    Status,
+    Resource,
+    List,
+    Map
+}
+
+impl TryInto<PayloadPrimitive> for PayloadType {
+
+    type Error = Error;
+
+    fn try_into(self) -> Result<PayloadPrimitive, Self::Error> {
+        match self {
+            PayloadType::Empty => Ok(PayloadPrimitive::Empty),
+            PayloadType::Text => Ok(PayloadPrimitive::Text),
+            PayloadType::Key => Ok(PayloadPrimitive::Key),
+            PayloadType::Address => Ok(PayloadPrimitive::Address),
+            PayloadType::Stub => Ok(PayloadPrimitive::Stub),
+            PayloadType::Meta => Ok(PayloadPrimitive::Meta),
+            PayloadType::Bin => Ok(PayloadPrimitive::Bin),
+            PayloadType::Boolean => Ok(PayloadPrimitive::Boolean),
+            PayloadType::Code => Ok(PayloadPrimitive::Code),
+            PayloadType::Int => Ok(PayloadPrimitive::Int),
+            PayloadType::Status => Ok(PayloadPrimitive::Status),
+            PayloadType::Resource => Ok(PayloadPrimitive::Resource),
+            payload_type => {
+                let message = format!("PayloadType: {} does not have a primitive",payload_type.to_string());
+                Err(anyhow!(message))
+            }
+        }
+    }
+}
+
+#[derive(strum_macros::Display,strum_macros::EnumString)]
+pub enum PayloadPrimitive
+{
+    Empty,
+    Text,
+    Key,
+    Address,
+    Stub,
+    Meta,
+    Bin,
+    Boolean,
+    Code,
+    Int,
     Status,
     Resource
+}
+
+impl Into<PayloadType> for PayloadPrimitive {
+    fn into(self) -> PayloadType {
+        match self {
+            Self::Empty => PayloadType::Empty,
+            Self::Text => PayloadType::Text,
+            Self::Key => PayloadType::Key,
+            Self::Address => PayloadType::Address,
+            Self::Stub => PayloadType::Stub,
+            Self::Meta => PayloadType::Meta,
+            Self::Bin => PayloadType::Bin,
+            Self::Boolean => PayloadType::Boolean,
+            Self::Code => PayloadType::Code,
+            Self::Int => PayloadType::Int,
+            Self::Status => PayloadType::Status,
+            Self::Resource => PayloadType::Resource
+        }
+    }
 }
 
 
