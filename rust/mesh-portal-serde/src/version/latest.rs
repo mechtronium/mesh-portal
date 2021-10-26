@@ -72,8 +72,7 @@ pub mod http {
 }
 
 pub mod resource {
-    use crate::version::latest::id::{Key, Address, Kind};
-    use serde::{Deserialize, Serialize};
+    use crate::version::latest::id::{Key, Address, Kind,Identifier,ResourceType};
     use crate::version::v0_0_1::resource;
 
     use crate::version::v0_0_1::{State, generic};
@@ -84,10 +83,9 @@ pub mod resource {
     pub type StateSrc=generic::resource::StateSrc;
     pub type CreateStrategy=generic::resource::CreateStrategy;
     pub type AddressSrc=generic::resource::AddressSrc;
-    pub type Selector=generic::resource::Selector;
-    pub type MetaSelector=generic::resource::MetaSelector;
+    pub type Selector=generic::resource::Selector<Key,Address,Kind,ResourceType>;
+    pub type FieldSelector =generic::resource::select::FieldSelector<Key,Address,Kind,ResourceType>;
     pub type ResourceStub = generic::resource::ResourceStub<Key,Address,Kind>;
-    pub type Archetype = generic::resource::Archetype<Kind>;
 }
 
 pub mod config {
