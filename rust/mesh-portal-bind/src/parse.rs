@@ -14,9 +14,9 @@ use nom::sequence::{delimited, tuple, preceded, terminated};
 use nom_supreme::{parse_from_str, ParserExt};
 
 use crate::{parse, Bind, Request, Rc, Msg, Http};
-use crate::token::{PayloadType, StackCmd};
+use crate::token::{PayloadType, StackCmd };
 use crate::symbol::{RootSelector, Address, PortCall};
-use crate::token::generic::BlockPart;
+use crate::token::generic::{BlockPart, EntityKind, Entity};
 
 pub type Res<I,O>=IResult<I,O, VerboseError<I>>;
 
@@ -626,6 +626,19 @@ pub struct PayloadDef {
     pub type_def: PayloadTypeDef
 }
 
+impl ToString for PayloadDef {
+    fn to_string(&self) -> String {
+        match &self.label {
+            None => {
+                self.type_def.to_string()
+            }
+            Some(label) => {
+                format!("{}<{}>",label, self.type_def.to_string() )
+            }
+        }
+    }
+}
+
 pub enum PayloadValueSrc {
     Text(String),
     Address(Address),
@@ -642,14 +655,61 @@ pub struct PayloadValidation{
     pub validator: Option<PayloadValidator>
 }
 
+impl ToString for PayloadValidation{
+    fn to_string(&self) -> String {
+        let mut rtn = String::new();
+        if let Some(format) = &self.format {
+            rtn.push_str( "~" );
+            rtn.push_str( format.to_string().as_str() );
+
+        } else if  self.validator.is_some() {
+            rtn.push_str("~")
+        }
+
+        if let Some(validator) = &self.validator{
+            rtn.push_str("~");
+            rtn.push_str(validator.to_string().as_str() );
+        }
+
+        rtn
+    }
+}
+
+
 pub struct PayloadValidator {
     pub port_call: PortCall,
     pub schema: Option<Address>
 }
 
+impl ToString for PayloadValidator {
+    fn to_string(&self) -> String {
+        match &self.schema {
+            None => {
+                self.port_call.to_string()
+            }
+            Some(schema) => {
+                format!("{}+{}",self.port_call.to_string(), schema.to_string()  )
+            }
+        }
+    }
+}
+
 pub struct PayloadTypeDef {
   pub kind: PayloadType,
   pub validation: Option<PayloadValidation>,
+}
+
+impl ToString for PayloadTypeDef {
+    fn to_string(&self) -> String {
+        match &self.validation {
+            None => {
+                format!("{}",self.kind.to_string() )
+            }
+            Some(validation) => {
+                format!("{}{}",self.kind.to_string(),validation.to_string()  )
+            }
+        }
+    }
 }
 
 /*
@@ -731,7 +791,16 @@ pub fn selector(input: &str) -> Res<&str, GroupToken> {
 }
 
 
+pub fn entity(input: &str) -> Res<&str, EntityKind> {
+    parse_from_str(alpha1 ).parse(input)
+}
 
+pub fn msg_entity_and_payload_def(input: &str) -> Res<&str, Entity<PayloadDef>> {
+    tuple((tag("Msg"),delimited(tag("<"),payload_def, tag(">"))))(input).map( |(next,(_,payload_def)) | {
+        (next,
+        Entity::Msg(payload_def))
+    } )
+}
 
 
 
@@ -744,7 +813,7 @@ pub mod test {
     use nom::Err;
     use nom::error::VerboseError;
 
-    use crate::parse::{payload_kind, block_seg, block_seg2, push_block, payload_type_def, PayloadValidator, PayloadFormat, consume_payload_def, MyError, PayloadValidation, rec_mechtron, consume_mechtron, consume_artifact, rec_address, consume_address, rec_version, skewer, rec_address_segment, Res, consume_payload_assignment, PayloadValueSrc};
+    use crate::parse::{payload_kind, block_seg, block_seg2, push_block, payload_type_def, PayloadValidator, PayloadFormat, consume_payload_def, MyError, PayloadValidation, rec_mechtron, consume_mechtron, consume_artifact, rec_address, consume_address, rec_version, skewer, rec_address_segment, Res, consume_payload_assignment, PayloadValueSrc,  msg_entity_and_payload_def};
     use crate::token::PayloadType;
     use nom::combinator::all_consuming;
     use nom::branch::alt;
@@ -836,7 +905,6 @@ pub mod test {
         assert!( consume_payload_def(s).is_err());
         println!("'{}' ERROR!", s );
     }
-
 
     #[test]
     pub fn alt_test() {
@@ -958,44 +1026,26 @@ pub mod test {
         test_payload_assign("Bin=mechtron.io:address")?; // state transfer
         test_payload_assign("Address='mechtron.io:address'")?; // Address assignment
 
-        /*
-        test_payload_def("*" )?; // Anything
-        test_payload_def("*<*>" )?; // Match any LABELED payload
-
-        test_payload_def("label<*>" )?; // Any Payload with 'label'
-        test_payload_def("label<Bin|Test>" )?; // Bin or Text payloads
-        test_payload_def("*<Bin>" )?; // any label
-
-
-        test_payload_def("<Map[single<Text>]>")?;
-        test_payload_def("<Map[left<Text>,right<Bin>]>")?;
-
-
-
-        test_payload_def("Text[]")?;
-        test_payload_def("<Text[]>")?;
-        test_payload_def("<*[]>")?; // an array of Whatever
-
-        test_payload_def("<Text~json(max-length 32;)[5]>")?;
-
-
-        test_payload_def("<Text[0..5]>")?;
-        test_payload_def("<Map[required<Code>,*]>")?;
-        test_payload_def("<Map[*<Code>]>")?; // name anything of type Code
-        test_payload_def("<Map[*<Resource|Status>]>")?; // any label with Type of Resource or status
-        test_payload_def("<Map[larry<*>,david<*>]>")?; // larry and david, any type
-        test_payload_def("something<Text~json~blah:zophis+oink:crimo[]>")?;
-
-        test_payload_def_fail("<Map[Text]>");
-        test_payload_def_fail("<Map[<Text>]>");
-        test_payload_def_fail("<Map[child<Map>]>"); // ???
-        test_payload_def_fail("<Map[child<Map[grandkid<Text>]>]>"); // ???
-
-
-         */
-
-
         Ok(())
     }
 
+
+
+
+    pub fn test_entity(s: &str ) -> Result<(),MyError>{
+       let (_,entity) = msg_entity_and_payload_def(s)?;
+
+       println!("{} -> {}", s, entity.to_string() );
+
+       Ok(())
+    }
+
+    #[test]
+    pub fn entity_tests() -> Result<(),MyError>{
+
+        test_entity("Msg<Bin>")?; // Text assignment
+        test_entity( "Msg<label<Bin~image~mechtron:from:heaven!parse+insane:artifact:/file.txt>>");
+
+        Ok(())
+    }
 }

@@ -8,11 +8,7 @@ pub enum EntityIdent {
     Http
 }
 
-pub enum Entity{
-    Rc(Rc),
-    Msg,
-    Http
-}
+
 
 #[derive(strum_macros::Display )]
 pub enum RcIdent {
@@ -135,6 +131,8 @@ pub mod generic {
     use std::collections::HashMap;
     use std::str::FromStr;
     use anyhow::Error;
+    use crate::parse::PayloadDef;
+    use crate::token::PayloadType;
 
 
     pub enum Ident {
@@ -261,8 +259,37 @@ pub mod generic {
         Request
     }
 
-    #[derive(strum_macros::EnumString)]
-    pub enum RequestIdent {
+    pub enum Entity<P>{
+        Rc,
+        Msg(P),
+        Http
+    }
+
+
+    impl ToString for Entity<PayloadDef> {
+        fn to_string(&self) -> String {
+            match self {
+                Entity::Rc => {
+                    format!("Rc")
+                }
+                Entity::Msg(p) => {
+                    if let PayloadType::Empty = p.type_def.kind {
+                        format!("Msg")
+                    } else {
+                        format!("Msg<{}>",p.to_string())
+                    }
+
+                }
+                Entity::Http => {
+                    format!("Http")
+                }
+            }
+        }
+    }
+
+
+    #[derive(strum_macros::EnumString,strum_macros::Display)]
+    pub enum EntityKind {
         Rc,
         Msg,
         Http
