@@ -9,7 +9,7 @@ use nom::bytes::complete::{tag, take_until};
 use nom::character::complete::{alpha0, alpha1, digit0, digit1, multispace0, multispace1, anychar};
 use nom::combinator::{all_consuming, opt, recognize, not};
 use nom::error::{context, ErrorKind, ParseError, VerboseError, VerboseErrorKind, FromExternalError};
-use nom::multi::{fold_many0, separated_list0, many1, separated_list1};
+use nom::multi::{fold_many0, separated_list0, many1, separated_list1, many0};
 use nom::sequence::{delimited, tuple, preceded, terminated};
 use nom_supreme::{parse_from_str, ParserExt};
 
@@ -47,6 +47,22 @@ fn any_resource_path_segment<T>(i: T) -> Res<T, T>
 }
 
 
+fn domain<T>(i: T) -> Res<T, T>
+    where
+        T: InputTakeAtPosition,
+        <T as InputTakeAtPosition>::Item: AsChar,
+{
+    i.split_at_position1_complete(
+        |item| {
+            let char_item = item.as_char();
+            !(char_item == '-') &&
+            !(char_item == '.')
+                && !((char_item.is_alpha() && char_item.is_lowercase()) || char_item.is_dec_digit())
+        },
+        ErrorKind::AlphaNumeric,
+    )
+}
+
 
 fn skewer<T>(i: T) -> Res<T, T>
     where
@@ -63,8 +79,44 @@ fn skewer<T>(i: T) -> Res<T, T>
     )
 }
 
+fn filepath<T>(i: T) -> Res<T, T>
+    where
+        T: InputTakeAtPosition,
+        <T as InputTakeAtPosition>::Item: AsChar,
+{
+    i.split_at_position1_complete(
+        |item| {
+            let char_item = item.as_char();
+            !(char_item == '-')
+                && !(char_item == '.')
+                && !(char_item == '/')
+                && !(char_item == '_')
+                && !(char_item.is_alpha() || char_item.is_dec_digit())
+        },
+        ErrorKind::AlphaNumeric,
+    )
+}
 
 
+fn parse_version_major_minor_patch(input: &str) -> Res<&str, (&str, &str, &str)> {
+    context(
+        "version_major_minor_patch",
+        tuple((
+            terminated(digit1, tag(".")),
+            terminated(digit1, tag(".")),
+            terminated(digit1, not(digit1)),
+        )),
+    )(input)
+}
+
+pub fn parse_version(input: &str) -> Res<&str, ((&str,&str,&str), Option<&str>)> {
+        tuple((parse_version_major_minor_patch, opt(preceded(tag("-"), skewer))))(input)
+}
+
+
+pub fn rec_version(input: &str) -> Res<&str, &str> {
+    recognize(parse_version)(input)
+}
 /*
 fn bind(input: &str) -> Res<&str, Bind> {
     preceded( multispace0,tuple((preceded( multispace0,tag("bind")), preceded( multispace0,delimited(tag("{"), preceded( multispace0,request), tag("}")))) ))(input).map( |(next,(_,bind))| {
@@ -263,12 +315,56 @@ pub fn parse_address_segments(input: &str) -> Res<&str, Vec<String>> {
         "address",
         separated_list1(
             nom::character::complete::char(':'),
-            any_resource_path_segment
+            alt((domain,skewer,filepath,recognize(parse_version)))
         ),
     )(input).map( |(next,segments)|{
         let segments = segments.iter().map(|s|s.to_string()).collect();
         (next,segments)
     })
+}
+
+pub fn parse_mechtron_segments(input: &str) -> Res<&str, Vec<String>> {
+    context(
+        "mechtron",
+        separated_list1(
+            nom::character::complete::char(':'),
+            alt((domain,skewer))
+        ),
+    )(input).map( |(next,segments)|{
+        let segments = segments.iter().map(|s|s.to_string()).collect();
+        (next,segments)
+    })
+}
+
+pub fn rec_address(input: &str) -> Res<&str, &str> {
+    recognize(tuple( (domain,many0(preceded(tag(":"), alt((skewer,rec_version,filepath)) )))))(input)
+}
+
+pub fn rec_address_segment(input: &str) -> Res<&str, &str> {
+    recognize(alt((rec_version,skewer,filepath)) )(input)
+}
+
+
+
+pub fn consume_address(input: &str) -> Res<&str, &str> {
+    all_consuming(rec_address)(input)
+}
+
+pub fn rec_artifact(input: &str) -> Res<&str, &str> {
+    recognize(tuple( (domain,many0(preceded(tag(":"), skewer)),preceded(tag(":"), rec_version),preceded(tag(":"),filepath))))(input)
+}
+
+pub fn rec_mechtron(input: &str) -> Res<&str, &str> {
+    recognize(tuple( (domain,many0(preceded(tag(":"), skewer)))))(input)
+}
+
+pub fn consume_artifact(input: &str) -> Res<&str, &str> {
+    all_consuming(rec_artifact )(input)
+}
+
+
+pub fn consume_mechtron(input: &str) -> Res<&str, &str> {
+    all_consuming(rec_mechtron)(input)
 }
 
 pub fn consume_address_segments(input: &str) -> Res<&str, Vec<String>> {
@@ -309,7 +405,6 @@ pub fn port_call_parts(input: &str) -> Res<&str, (Address,&str)> {
     tuple( ( mechtron_address, preceded(tag("!"), skewer)) )(input)
 }
 
-
 pub fn consume_port_call(input: &str) -> Res<&str, PortCall> {
     all_consuming( port_call_parts )(input).map( |(next,(address,port))| {
         let port = port.to_string();
@@ -348,20 +443,58 @@ pub fn payload_validation(input: &str ) -> Res<&str, PayloadValidation> {
      })
 }
 
+
+
 /// use nom_supreme::{parse_from_str, parser_ext::ParserExt};
-pub fn payload_assignment(input: &str ) -> Res<&str, PayloadAssignment> {
+pub fn payload_type_def(input: &str ) -> Res<&str, PayloadTypeDef> {
     tuple( (payload_kind, opt( payload_validation )))(input).map( |(next, (kind, validation)) | {
 
-        ( next, PayloadAssignment{
+        (next, PayloadTypeDef {
             kind,
             validation
         })
     })
 }
 
-pub fn consume_payload_assignment( input: &str ) -> Res<&str, PayloadAssignment> {
-    all_consuming(payload_assignment).parse(input)
+pub fn tagged_payload_type_def(input: &str ) -> Res<&str, PayloadTypeDef> {
+    delimited(tag("<"), payload_type_def, tag(">") )(input)
 }
+
+pub fn opt_tagged_payload_type_def(input: &str ) -> Res<&str, PayloadTypeDef> {
+    alt( ((tagged_payload_type_def, payload_type_def)) ) (input)
+}
+
+
+pub fn labeled_payload_def(input: &str ) -> Res<&str, PayloadDef> {
+    (tuple( (skewer, tagged_payload_type_def))) (input).map( |(next,(label,type_def))| {
+
+        (next,
+         PayloadDef{
+             label: Option::Some(label.to_string()),
+             type_def
+         })
+    } )
+}
+
+pub fn unlabeled_payload_def(input: &str ) -> Res<&str, PayloadDef> {
+    opt_tagged_payload_type_def(input).map ( | (next, type_def) | {
+        (next,
+         PayloadDef{
+             label: Option::None,
+             type_def
+         })
+    } )
+}
+
+pub fn payload_def(input: &str ) -> Res<&str, PayloadDef> {
+    alt( (labeled_payload_def,unlabeled_payload_def) )(input)
+}
+
+pub fn consume_payload_def(input: &str ) -> Res<&str, PayloadDef> {
+    all_consuming(payload_def).parse(input)
+}
+
+
 
 /*
 /// use nom_supreme::{parse_from_str, parser_ext::ParserExt};
@@ -412,18 +545,25 @@ pub enum PayloadFormat {
 }
 
 
+
+pub struct PayloadDef {
+    pub label: Option<String>,
+    pub type_def: PayloadTypeDef
+
+}
+
+
 pub struct PayloadValidation{
     pub format: Option<PayloadFormat>,
     pub validator: Option<PayloadValidator>
 }
-
 
 pub struct PayloadValidator {
     pub mechtron: Address,
     pub schema: Option<Address>
 }
 
-pub struct PayloadAssignment {
+pub struct PayloadTypeDef {
   pub kind: PayloadIdent,
   pub validation: Option<PayloadValidation>,
 }
@@ -520,8 +660,10 @@ pub mod test {
     use nom::Err;
     use nom::error::VerboseError;
 
-    use crate::parse::{payload_kind, block_seg, block_seg2, push_block, payload_assignment, PayloadValidator, PayloadFormat, consume_payload_assignment, MyError, PayloadValidation};
+    use crate::parse::{payload_kind, block_seg, block_seg2, push_block, payload_type_def, PayloadValidator, PayloadFormat, consume_payload_def, MyError, PayloadValidation, rec_mechtron, consume_mechtron, consume_artifact, rec_address, consume_address, rec_version, skewer, rec_address_segment, Res};
     use crate::token::PayloadIdent;
+    use nom::combinator::all_consuming;
+    use nom::branch::alt;
 
     /*
     #[test]
@@ -584,25 +726,79 @@ pub mod test {
         match s {
             None => {"None".to_string()}
             Some(s) => {
-                format!( "format: {}", to_string(s.format) )
+                format!( "format: '{}' validator: {{ {} }}", to_string(s.format), x_to_string(s.validator) )
             }
         }
     }
 
+    pub fn x_to_string( s: Option<PayloadValidator> ) -> String {
+        match s {
+            None => {"None".to_string()}
+            Some(s) => {
+                format!( "mechtron: '{}' schema artifact: '{}'", s.mechtron.to_string(), to_string(s.schema) )
+            }
+        }
+    }
+
+
     pub fn test_payload_assignment( s: &str ) -> Result<(),MyError>{
-        let (_,payload) = consume_payload_assignment(s)?;
-        println!("'{}' type: '{}' validation {{ '{}' }}", s, payload.kind.to_string(), v_to_string(payload.validation));
+        let (_,payload) = consume_payload_def(s)?;
+        println!("'{}' label: '{}' type: '{}' validation {{ '{}' }}", s, to_string(payload.label), payload.type_def.kind.to_string(), v_to_string(payload.type_def.validation));
 
         Ok(())
     }
 
     #[test]
-    pub fn test2() -> Result<(),MyError>{
+    pub fn alt_test() {
+        use nom::bytes::complete::{tag, take_until};
+
+        fn parse( input: &str ) -> Res<&str,&str>{
+            alt((tag("x"),tag("y")))(input)
+        }
+
+        assert!( parse("x").is_ok() );
+        assert!( parse("y").is_ok() );
+    }
+
+    #[test]
+    pub fn addresses() -> Result<(),MyError>{
+
+        assert!(consume_mechtron("mechtron.io").is_ok());
+        assert!(consume_mechtron("mechtron.io:uberscott.io").is_err());
+        assert!(consume_mechtron("mechtron.io:some-more").is_ok());
+        assert!(consume_mechtron("mechtron.io:yet-some-more").is_ok());
+        assert!(consume_mechtron("mechtron.io:yet-some-more:/files").is_err());
+
+        assert!(consume_artifact("mechtron.io").is_err());
+        assert!(consume_artifact("mechtron.io:uberscott.io").is_err());
+        assert!(consume_artifact("mechtron.io:some-more").is_err());
+        assert!(consume_artifact("mechtron.io:yet-some-more").is_err());
+//        assert!(consume_artifact("mechtron.io:yet-some-more:/files").is_err());
+
+        assert!( all_consuming(rec_address_segment)("1.0.0").is_ok());
+
+        assert!( all_consuming( skewer )("1.0.0").is_err() );
+        assert!( rec_version("1.0.0").is_ok());
+
+        assert!(consume_address("mechtron.io:yet-some-more").is_ok());
+        assert!(consume_address("mechtron.io:yet-some-more:1.0.0").is_ok());
+        assert!(consume_address("mechtron.io:yet-some-more:1.0.0:/file.txt").is_ok());
+
+
+
+
+        Ok(())
+    }
+
+
+    #[test]
+    pub fn payload_assignment_tests() -> Result<(),MyError>{
 
         test_payload_assignment("Bin")?;
         test_payload_assignment("Bin~image")?;
+        test_payload_assignment("Bin~~mechtron:from:heaven")?;
         test_payload_assignment("Bin~image~mechtron:from:heaven")?;
-        test_payload_assignment("Bin~image~mechtron:from:heaven+some:artifact:1.0.0/blah.txt")?;
+        test_payload_assignment("Bin~image~mechtron:from:heaven+some:artifact")?;
         test_payload_assignment("<Bin>")?;
         test_payload_assignment("<Bin~image~mechtron:from:heaven>")?;
         test_payload_assignment("label<Bin>")?;

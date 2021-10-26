@@ -83,7 +83,7 @@ impl ToString for Address {
         let mut rtn = String::new();
         for (i, segment) in self.segments.iter().enumerate() {
             rtn.push_str( segment.as_str() );
-            if i != self.segments.len() {
+            if i != self.segments.len()-1 {
                 rtn.push_str(":");
             }
         }
