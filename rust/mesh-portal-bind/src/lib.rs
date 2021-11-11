@@ -7,6 +7,7 @@ extern crate anyhow;
 pub mod parse;
 pub mod token;
 pub mod symbol;
+pub mod pattern;
 
 use serde::*;
 

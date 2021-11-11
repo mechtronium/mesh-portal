@@ -34,10 +34,18 @@ impl RootSelector {
 }
 
 
+#[derive(Debug,Clone,Eq,PartialEq)]
 pub struct PortCall {
     pub address: Address,
     pub port: String
 }
+
+#[derive(Debug,Clone,Eq,PartialEq)]
+pub struct PortCallWithConfig {
+    pub call: PortCall,
+    pub config: Option<Address>
+}
+
 impl FromStr for PortCall{
     type Err = MyError;
 
@@ -52,6 +60,7 @@ impl ToString for PortCall {
     }
 }
 
+#[derive(Debug,Clone,Eq,PartialEq,Hash)]
 pub struct Address {
     segments: Vec<String>
 }
