@@ -78,7 +78,7 @@ fn domain<T>(i: T) -> Res<T, T>
 }
 
 
-fn skewer<T>(i: T) -> Res<T, T>
+pub fn skewer<T>(i: T) -> Res<T, T>
     where
         T: InputTakeAtPosition,
         <T as InputTakeAtPosition>::Item: AsChar,
@@ -825,16 +825,13 @@ pub enum PipeSegEntry {
     Upload
 }
 
-pub struct Pipeline {
 
-}
 
-pub enum PipelineSegment {
-
-}
-
+#[derive(Debug,Clone,Eq,PartialEq)]
 pub enum PipelineStop {
-   Mechtron(Address)
+   Internal,
+   Address(Address),
+   Return
 }
 
 

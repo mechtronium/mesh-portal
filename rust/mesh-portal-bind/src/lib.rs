@@ -11,6 +11,7 @@ pub mod pattern;
 pub mod bind;
 
 use serde::*;
+use crate::bind::Port;
 
 #[derive(Serialize,Deserialize)]
 pub struct Host<T> {
@@ -82,7 +83,7 @@ pub struct Rc {
 }
 
 pub struct Msg {
-
+  pub ports: Vec<Port>
 }
 
 pub struct Http {

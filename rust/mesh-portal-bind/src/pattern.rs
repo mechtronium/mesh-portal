@@ -30,7 +30,7 @@ fn skewer<T>(i: T) -> Res<T, T>
     )
 }
 
-#[derive(Eq,PartialEq)]
+#[derive(Debug,Clone,Eq,PartialEq)]
 pub enum Pattern {
     Any,
     Empty,
@@ -212,10 +212,13 @@ pub fn consume_primitive_def(input: &str) -> Res<&str, PrimitiveDef> {
 }
 
 
+#[derive(Debug,Clone,Eq,PartialEq)]
 pub enum Block {
-    Pattern( PatternBlock )
+    RequestPattern(PatternBlock ),
+    ResponsePattern(PatternBlock )
 }
 
+#[derive(Debug,Clone,Eq,PartialEq)]
 pub struct PatternBlock {
     pub pattern: Pattern
 }
@@ -454,14 +457,20 @@ pub fn pattern_block_def(input: &str) -> Res<&str,PatternBlock> {
 
 
 
-pub fn pattern_block( input: &str ) -> Res<&str,Block> {
+pub fn request_pattern_block(input: &str ) -> Res<&str,Block> {
  delimited( tag("-["), tuple((multispace0,alt((pattern_block_empty,pattern_block_any,pattern_block_def)),multispace0)), tag("]") )(input).map( |(next,(_,block,_))| {
-     (next,Block::Pattern(block))
+     (next,Block::RequestPattern(block))
  })
 }
 
+pub fn response_pattern_block(input: &str ) -> Res<&str,Block> {
+    delimited( tag("=["), tuple((multispace0,alt((pattern_block_empty,pattern_block_any,pattern_block_def)),multispace0)), tag("]") )(input).map( |(next,(_,block,_))| {
+        (next,Block::ResponsePattern(block))
+    })
+}
+
 pub fn pipeline_block(input: &str ) -> Res<&str,Block> {
-    pattern_block(input)
+    alt( (request_pattern_block, response_pattern_block ) )(input)
 }
 
 pub fn consume_pipeline_block(input: &str ) -> Res<&str,Block> {
