@@ -2,7 +2,7 @@ use crate::parse::{Res, port_call, port_call_with_config};
 use nom::{Parser, InputTakeAtPosition, AsChar, Err};
 use nom_supreme::parse_from_str;
 use nom::combinator::{recognize, opt, not, all_consuming};
-use nom::character::complete::{alpha1, alpha0, space0, alphanumeric0, alphanumeric1, digit0, digit1};
+use nom::character::complete::{alpha1, alpha0, space0, alphanumeric0, alphanumeric1, digit0, digit1, multispace0};
 use nom::bytes::complete::tag;
 use crate::token::PayloadPrimitive;
 use crate::symbol::{Address, PortCall, PortCallWithConfig};
@@ -34,13 +34,7 @@ fn skewer<T>(i: T) -> Res<T, T>
 pub enum Pattern {
     Any,
     Empty,
-    Plurality(Plurality),
-}
-
-#[derive(Eq,PartialEq)]
-pub enum Plurality{
-    Single(PrimitiveDef),
-    Array(Array)
+    Data(DataStructDef),
 }
 
 #[derive(Debug,Clone,Eq,PartialEq)]
@@ -218,6 +212,13 @@ pub fn consume_primitive_def(input: &str) -> Res<&str, PrimitiveDef> {
 }
 
 
+pub enum Block {
+    Pattern( PatternBlock )
+}
+
+pub struct PatternBlock {
+    pub pattern: Pattern
+}
 
 #[derive(Debug,Clone,Eq,PartialEq)]
 pub enum Range {
@@ -422,39 +423,56 @@ pub fn data_constraint(input: &str ) -> Res<&str, DataStructConstraint> {
 }
 
 
+pub fn pattern_block_empty(input: &str) -> Res<&str,PatternBlock> {
+    let (next,scan)= tag("]")(input)?;
 
-/*
-pub fn labeled_plurality(input: &str) -> Res<&str, Plurality> {
-    tuple( (labeled_primitive_def, opt(delimited( tag("["), range, tag("]")))) )(input).map( |(next,(primitive_def, plural))| {
-        match plural {
-            None => {
-                (next, Plurality::Single(primitive_def))
-            }
-            Some(range) => {
-                (next, Plurality::Array(Array{ def: primitive_def, range }))
-            }
-        }
-    } )
+    if scan != "]" {
+        Err(nom::Err::Error(VerboseError::from_error_kind(input, ErrorKind::TooLarge)))
+    }
+    else {
+        Ok((input, PatternBlock{
+            pattern: Pattern::Empty
+        }))
+    }
+}
+
+pub fn pattern_block_any(input: &str) -> Res<&str,PatternBlock> {
+    let (next,_)= tag("*")(input)?;
+
+        Ok((next, PatternBlock{
+            pattern: Pattern::Any
+        }))
+}
+
+pub fn pattern_block_def(input: &str) -> Res<&str,PatternBlock> {
+    let (next,data)= data_struct_def(input)?;
+
+    Ok((next, PatternBlock{
+        pattern: Pattern::Data(data)
+    }))
 }
 
 
-pub fn map_def( input: &str ) -> Res<&str,MapDef> {
 
+pub fn pattern_block( input: &str ) -> Res<&str,Block> {
+ delimited( tag("-["), tuple((multispace0,alt((pattern_block_empty,pattern_block_any,pattern_block_def)),multispace0)), tag("]") )(input).map( |(next,(_,block,_))| {
+     (next,Block::Pattern(block))
+ })
 }
 
- */
+pub fn pipeline_block(input: &str ) -> Res<&str,Block> {
+    pattern_block(input)
+}
 
-
-
-pub struct MapDef {
-
+pub fn consume_pipeline_block(input: &str ) -> Res<&str,Block> {
+    all_consuming(pipeline_block)(input)
 }
 
 
 #[cfg(test)]
 pub mod test {
     use anyhow::Error;
-    use crate::pattern::{primitive, primitive_def, consume_primitive_def, consume_data_struct, consume_data_struct_def, DataStruct, Primitive, Array, Range, DataStructDef, Format, Map, MapConstraint, DataStructConstraint, LabelConstraint, consume_map_constraint};
+    use crate::pattern::{primitive, primitive_def, consume_primitive_def, consume_data_struct, consume_data_struct_def, DataStruct, Primitive, Array, Range, DataStructDef, Format, Map, MapConstraint, DataStructConstraint, LabelConstraint, consume_map_constraint, consume_pipeline_block};
     use nom::combinator::all_consuming;
     use crate::symbol::{PortCallWithConfig, PortCall, Address};
     use std::str::FromStr;
@@ -502,6 +520,18 @@ pub mod test {
         //somethign insane
         consume_data_struct_def("Map[first<Text~~verifier!go+std:1.0.0:/firstname.conf>,last<Text~~verifier!go+std:1.0.0:/lastname.conf>]~~verifier!complete")?;
 
+        Ok(())
+    }
+
+    #[test]
+    pub fn test_pattern_block() -> Result<(),Error>{
+
+        consume_pipeline_block( "-[ Text ]")?;
+        consume_pipeline_block( "-[ Text[] ]")?;
+        consume_pipeline_block( "-[*]")?;
+        consume_pipeline_block( "-[ * ]")?;
+        consume_pipeline_block( "-[]")?;
+        consume_pipeline_block( "-[   ]")?;
         Ok(())
     }
 }

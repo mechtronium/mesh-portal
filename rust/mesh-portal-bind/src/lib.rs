@@ -8,6 +8,7 @@ pub mod parse;
 pub mod token;
 pub mod symbol;
 pub mod pattern;
+pub mod bind;
 
 use serde::*;
 
