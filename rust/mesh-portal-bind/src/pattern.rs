@@ -1,11 +1,11 @@
-use crate::parse::{Res, port_call, port_call_with_config};
+use crate::parse::{Res, call, call_with_config};
 use nom::{Parser, InputTakeAtPosition, AsChar, Err};
 use nom_supreme::parse_from_str;
 use nom::combinator::{recognize, opt, not, all_consuming};
 use nom::character::complete::{alpha1, alpha0, space0, alphanumeric0, alphanumeric1, digit0, digit1, multispace0};
 use nom::bytes::complete::tag;
 use crate::token::PayloadPrimitive;
-use crate::symbol::{Address, PortCall, PortCallWithConfig};
+use crate::symbol::{Address, Call, CallWithConfig};
 use nom::sequence::{tuple, preceded, delimited};
 use nom::branch::alt;
 use std::convert::TryInto;
@@ -56,7 +56,7 @@ pub enum DataStruct{
 pub struct DataStructDef {
     pub data: DataStruct,
     pub format: Option<Format>,
-    pub verifier: Option<PortCallWithConfig>,
+    pub verifier: Option<CallWithConfig>,
 }
 
 
@@ -154,7 +154,7 @@ pub struct LabeledPrimitiveDef {
 pub struct PrimitiveDef {
     pub primitive: Primitive,
     pub format: Option<Format>,
-    pub verifier: Option<PortCallWithConfig>,
+    pub verifier: Option<CallWithConfig>,
 }
 
 
@@ -178,7 +178,7 @@ pub fn format(input: &str) -> Res<&str, Format> {
 
 
 pub fn primitive_def(input: &str) -> Res<&str, PrimitiveDef> {
-    tuple( ( primitive, opt(preceded( tag("~"), opt(format)), ),opt(preceded( tag("~"), port_call_with_config), )  ) )(input).map( |(next,(primitive,format,verifier))| {
+    tuple( ( primitive, opt(preceded( tag("~"), opt(format)), ),opt(preceded(tag("~"), call_with_config), )  ) )(input).map( |(next,(primitive,format,verifier))| {
         (next,
 
          PrimitiveDef {
@@ -377,7 +377,7 @@ pub fn data_struct( input: &str ) -> Res< &str, DataStruct > {
 }
 
 pub fn data_struct_def( input: &str ) -> Res< &str, DataStructDef > {
-    tuple( ( data_struct, opt(preceded( tag("~"), opt(format)), ),opt(preceded( tag("~"), port_call_with_config), )  ) )(input).map( |(next,(data,format,verifier))| {
+    tuple( ( data_struct, opt(preceded( tag("~"), opt(format)), ),opt(preceded(tag("~"), call_with_config), )  ) )(input).map( |(next,(data,format,verifier))| {
         (next,
 
          DataStructDef{
@@ -483,7 +483,7 @@ pub mod test {
     use anyhow::Error;
     use crate::pattern::{primitive, primitive_def, consume_primitive_def, consume_data_struct, consume_data_struct_def, DataStruct, Primitive, Array, Range, DataStructDef, Format, Map, MapConstraint, DataStructConstraint, LabelConstraint, consume_map_constraint, consume_pipeline_block};
     use nom::combinator::all_consuming;
-    use crate::symbol::{PortCallWithConfig, PortCall, Address};
+    use crate::symbol::{CallWithConfig, Call, Address};
     use std::str::FromStr;
     use std::collections::HashMap;
 
@@ -493,10 +493,10 @@ pub mod test {
         assert!( consume_data_struct("Text[]")?.1 == DataStruct::Array( Array { primitive: Primitive::Text, range: Range::Any } ) );
         assert!( consume_data_struct("Text[1-3]")?.1 == DataStruct::Array( Array { primitive: Primitive::Text, range: Range::MinMax{min:1,max:3}} ) );
         assert!( consume_data_struct_def("Text~json")?.1 == DataStructDef{data:DataStruct::Primitive(Primitive::Text), format: Option::Some(Format::Json),verifier: Option::None }) ;
-        assert!( consume_data_struct_def("Text~json~verifier!go")?.1 == DataStructDef{data:DataStruct::Primitive(Primitive::Text), format: Option::Some(Format::Json),verifier: Option::Some(PortCallWithConfig{call:PortCall{address: Address::from_str("verifier")?, port:"go".to_string() },config:Option::None})}) ;
-        assert!( consume_data_struct_def("Text~~verifier!go")?.1 == DataStructDef{data:DataStruct::Primitive(Primitive::Text), format: Option::None,verifier: Option::Some(PortCallWithConfig{call:PortCall{address: Address::from_str("verifier")?, port:"go".to_string() },config:Option::None})}) ;
-        assert!( consume_data_struct_def("Text[]~json~verifier!go")?.1 == DataStructDef{data:DataStruct::Array(Array{primitive: Primitive::Text,range:Range::Any}), format: Option::Some(Format::Json),verifier: Option::Some(PortCallWithConfig{call:PortCall{address: Address::from_str("verifier")?, port:"go".to_string() },config:Option::None})}) ;
-        assert!( consume_data_struct_def("Text~json~verifier!go+config:1.0.0:/some-file.conf")?.1 == DataStructDef{data:DataStruct::Primitive(Primitive::Text), format: Option::Some(Format::Json),verifier: Option::Some(PortCallWithConfig{call:PortCall{address: Address::from_str("verifier")?, port:"go".to_string() },config:Option::Some(Address::from_str("config:1.0.0:/some-file.conf")?)})}) ;
+/*        assert!( consume_data_struct_def("Text~json~verifier!go")?.1 == DataStructDef{data:DataStruct::Primitive(Primitive::Text), format: Option::Some(Format::Json),verifier: Option::Some(CallWithConfig {call: Call {address: Address::from_str("verifier")?, port:"go".to_string() },config:Option::None})}) ;
+        assert!( consume_data_struct_def("Text~~verifier!go")?.1 == DataStructDef{data:DataStruct::Primitive(Primitive::Text), format: Option::None,verifier: Option::Some(CallWithConfig {call: Call {address: Address::from_str("verifier")?, port:"go".to_string() },config:Option::None})}) ;
+        assert!( consume_data_struct_def("Text[]~json~verifier!go")?.1 == DataStructDef{data:DataStruct::Array(Array{primitive: Primitive::Text,range:Range::Any}), format: Option::Some(Format::Json),verifier: Option::Some(CallWithConfig {call: Call {address: Address::from_str("verifier")?, port:"go".to_string() },config:Option::None})}) ;
+        assert!( consume_data_struct_def("Text~json~verifier!go+config:1.0.0:/some-file.conf")?.1 == DataStructDef{data:DataStruct::Primitive(Primitive::Text), format: Option::Some(Format::Json),verifier: Option::Some(CallWithConfig {call: Call {address: Address::from_str("verifier")?, port:"go".to_string() },config:Option::Some(Address::from_str("config:1.0.0:/some-file.conf")?)})}) ;*/
         assert!( consume_data_struct_def("Map")?.1 == DataStructDef{data:DataStruct::Map(Map::default()), format: Option::None,verifier: Option::None }) ;
         assert!( consume_data_struct_def("Map[]")?.1 == DataStructDef{data:DataStruct::Map(Map::default()), format: Option::None,verifier: Option::None }) ;
 

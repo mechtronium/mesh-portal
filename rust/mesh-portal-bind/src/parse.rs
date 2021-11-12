@@ -15,7 +15,7 @@ use nom_supreme::{parse_from_str, ParserExt};
 
 use crate::{parse, Bind, Request, Rc, Msg, Http};
 use crate::token::{PayloadType, StackCmd };
-use crate::symbol::{RootSelector, Address, PortCall, PortCallWithConfig};
+use crate::symbol::{RootSelector, Address, Call, CallWithConfig, CallKind};
 use crate::token::generic::{BlockPart, EntityKind, Entity};
 
 pub type Res<I,O>=IResult<I,O, VerboseError<I>>;
@@ -407,38 +407,57 @@ pub fn mechtron_address(input: &str) -> Res<&str, Address> {
     parse_from_str( mechtron_path ).parse(input)
 }
 
-pub fn port_call(input: &str) -> Res<&str, PortCall> {
-    parse_from_str( recognize(parse_port_call_path) ).parse(input)
-}
 
-pub fn port_call_with_config(input: &str) -> Res<&str, PortCallWithConfig> {
-    tuple( (port_call, opt(preceded(tag("+"), address ))) )(input).map( |(next, (call,config)) |{
+pub fn call_with_config(input: &str) -> Res<&str, CallWithConfig> {
+    tuple( (call, opt(preceded(tag("+"), address ))) )(input).map( |(next, (call,config)) |{
 
         (next,
-        PortCallWithConfig{
+         CallWithConfig {
             call,
             config
         })
     } )
 }
 
-
-pub fn parse_port_call_path(input: &str) -> Res<&str, (&str,&str)> {
-    tuple( ( mechtron_path, preceded(tag("!"), skewer)) )(input)
+pub fn rc_command(input: &str) -> Res<&str, RcCommand> {
+    parse_from_str(alpha1).parse(input)
 }
 
-pub fn port_call_parts(input: &str) -> Res<&str, (Address,&str)> {
-    tuple( ( mechtron_address, preceded(tag("!"), skewer)) )(input)
+pub fn rc_call_kind(input: &str) -> Res<&str, CallKind> {
+     delimited( tag("Rc<"), rc_command, tag(">"))(input).map( |(next,rc_command)| {
+         (next,CallKind::Rc(rc_command))
+     })
 }
 
-pub fn consume_port_call(input: &str) -> Res<&str, PortCall> {
-    all_consuming( port_call_parts )(input).map( |(next,(address,port))| {
-        let port = port.to_string();
-        ( next, PortCall {
-            address,
-            port
-        })
+pub fn port_call_kind(input: &str) -> Res<&str, CallKind> {
+    delimited( tag("Msg<"), skewer, tag(">"))(input).map( |(next,port)| {
+        (next,CallKind::Msg(port.to_string()))
     })
+}
+
+pub fn http_call_kind(input: &str) -> Res<&str, CallKind> {
+    tag("Http")(input).map( |(next,_)| {
+        (next,CallKind::Http)
+    })
+}
+
+pub fn call_kind( input: &str ) -> Res<&str,CallKind> {
+    alt( (rc_call_kind,port_call_kind,http_call_kind))(input)
+}
+
+
+
+pub fn call(input: &str) -> Res<&str, Call> {
+    tuple( ( mechtron_address, preceded(tag("^"), call_kind )) )(input).map( |(next,(address,kind))| {
+        (next,Call{
+            address,
+            kind
+        })
+    } )
+}
+
+pub fn consume_call(input: &str) -> Res<&str, Call> {
+    all_consuming( call )(input)
 }
 
 /// use nom_supreme::{parse_from_str, parser_ext::ParserExt};
@@ -452,7 +471,7 @@ pub fn payload_format(input: &str ) -> Res<&str, PayloadFormat> {
 }
 
 pub fn payload_validator(input: &str ) -> Res<&str, PayloadValidator> {
-    tuple(( port_call, opt(preceded(tag("+"), address ))))(input).map( |(next,(port_call,schema))| {
+    tuple(( call, opt(preceded(tag("+"), address ))))(input).map( |(next,(port_call,schema))| {
         (next,PayloadValidator{
             port_call,
             schema
@@ -674,7 +693,7 @@ impl ToString for PayloadValidation{
 
 
 pub struct PayloadValidator {
-    pub port_call: PortCall,
+    pub port_call: Call,
     pub schema: Option<Address>
 }
 
@@ -812,11 +831,13 @@ pub fn entity_def(input: &str) -> Res<&str, EntityKind> {
     parse_from_str(alpha1 ).parse(input)
 }
 
-#[derive(strum_macros::Display,strum_macros::EnumString)]
+#[derive(Debug,Clone,Eq,PartialEq,strum_macros::Display,strum_macros::EnumString)]
 pub enum RcCommand{
     Create,
     Select
 }
+
+
 
 
 pub enum PipeSegEntry {
@@ -830,7 +851,7 @@ pub enum PipeSegEntry {
 #[derive(Debug,Clone,Eq,PartialEq)]
 pub enum PipelineStop {
    Internal,
-   PortCall(PortCall),
+   Call(Call),
    Return
 }
 

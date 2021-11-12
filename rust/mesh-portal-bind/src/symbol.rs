@@ -3,7 +3,7 @@ use anyhow::Error;
 use crate::token::generic::{Span, Block};
 use std::collections::HashMap;
 use std::string::ParseError;
-use crate::parse::{parse_address_segments, MyError, consume_address_segments, consume_port_call};
+use crate::parse::{parse_address_segments, MyError, consume_address_segments, RcCommand, consume_call};
 
 pub enum RootSelector {
     Bind
@@ -35,28 +35,50 @@ impl RootSelector {
 
 
 #[derive(Debug,Clone,Eq,PartialEq)]
-pub struct PortCall {
+pub struct Call {
     pub address: Address,
-    pub port: String
+    pub kind: CallKind
 }
 
 #[derive(Debug,Clone,Eq,PartialEq)]
-pub struct PortCallWithConfig {
-    pub call: PortCall,
-    pub config: Option<Address>
+pub enum CallKind{
+    Rc(RcCommand),
+    Msg(String),
+    Http
 }
 
-impl FromStr for PortCall{
-    type Err = MyError;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        Ok(consume_port_call(s)?.1)
+impl ToString for CallKind {
+    fn to_string(&self) -> String {
+        match self {
+            CallKind::Rc(command) => {
+                format!("Rc<{}>",command.to_string())
+            }
+            CallKind::Msg(port) => {
+                format!("Msg<{}>",port.clone())
+            }
+            CallKind::Http => "Http".to_string()
+        }
     }
 }
 
-impl ToString for PortCall {
+
+#[derive(Debug,Clone,Eq,PartialEq)]
+pub struct CallWithConfig {
+    pub call: Call,
+    pub config: Option<Address>
+}
+
+impl FromStr for Call {
+    type Err = MyError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(consume_call(s)?.1)
+    }
+}
+
+impl ToString for Call {
     fn to_string(&self) -> String {
-        format!("{}!{}", self.address.to_string(), self.port.to_string())
+       format!("{}^{}", self.address.to_string(), self.kind.to_string())
     }
 }
 

@@ -1,4 +1,4 @@
-use crate::parse::{Res, skewer, PipelineStop, address, port_call};
+use crate::parse::{Res, skewer, PipelineStop, address, call};
 use crate::Msg;
 use crate::pattern::{PatternBlock, Block, pipeline_block};
 use nom::sequence::{terminated, delimited, tuple};
@@ -19,6 +19,17 @@ impl Default for Bind {
             msg: Msg::default()
         }
     }
+}
+
+pub enum Whitelist {
+    Any,
+    None,
+    Enumerated(Vec<CallPattern>)
+}
+
+pub enum CallPattern {
+    Any,
+    Call
 }
 
 pub struct Port{
@@ -137,16 +148,16 @@ pub fn return_pipeline_stop(input: &str ) -> Res<&str, PipelineStop> {
    })
 }
 
-pub fn port_call_pipeline_stop(input: &str ) -> Res<&str, PipelineStop> {
-    port_call(input).map( |(next, call)| {
+pub fn call_pipeline_stop(input: &str ) -> Res<&str, PipelineStop> {
+    call(input).map( |(next, call)| {
         (next,
-         PipelineStop::PortCall(call))
+         PipelineStop::Call(call))
     })
 }
 
 
 pub fn pipeline_stop( input: &str ) -> Res<&str, PipelineStop> {
-   alt( (inner_pipeline_stop, return_pipeline_stop, port_call_pipeline_stop))(input)
+   alt( (inner_pipeline_stop, return_pipeline_stop, call_pipeline_stop))(input)
 }
 
 pub fn consume_pipeline_step( input: &str ) -> Res<&str,PipelineStep> {
@@ -206,7 +217,7 @@ pub mod test {
     use anyhow::Error;
     use crate::bind::{consume_pipeline_step, consume_pipeline_stop, consume_pipeline, Pipeline, PipelineStep, PipelineSegment, StepKind, consume_port, bind};
     use crate::parse::PipelineStop;
-    use crate::symbol::{Address, PortCall};
+    use crate::symbol::{Address, Call};
     use std::str::FromStr;
     use crate::pattern::PatternBlock;
 
@@ -224,7 +235,7 @@ pub mod test {
         assert!(consume_pipeline_stop( "&")?.1 == PipelineStop::Return);
         assert!(consume_pipeline_stop( "{}")?.1 == PipelineStop::Internal);
         assert!(consume_pipeline_stop( "{ }")?.1 == PipelineStop::Internal);
-        assert!(consume_pipeline_stop( "some:address!go")?.1 == PipelineStop::PortCall(PortCall::from_str("some:address!go")?));
+        assert!(consume_pipeline_stop( "some:address!go")?.1 == PipelineStop::Call(Call::from_str("some:address!go")?));
 
         Ok(())
     }
@@ -260,7 +271,7 @@ pub mod test {
 
               ping -> { } => &;
 
-              signup -[ Map[username<Text>,password<Text>] ]-> strip:passsword:mechtron!strip -[ Map[username<Text>] ]-> { } =[ Text ]=> &;
+              signup -[ Map[username<Text>,password<Text>] ]-> strip:passsword:mechtron^Msg<strip> -[ Map[username<Text>] ]-> { } =[ Text ]=> &;
 
               do-whatever-you-want -[ * ]-> { } =[ * ]=> &;
 
