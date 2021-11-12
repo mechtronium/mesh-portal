@@ -1,4 +1,4 @@
-use crate::parse::{Res, skewer, PipelineStop, address};
+use crate::parse::{Res, skewer, PipelineStop, address, port_call};
 use crate::Msg;
 use crate::pattern::{PatternBlock, Block, pipeline_block};
 use nom::sequence::{terminated, delimited, tuple};
@@ -8,8 +8,17 @@ use nom::combinator::all_consuming;
 use nom::character::complete::{space0, multispace0};
 use nom::branch::alt;
 
-pub struct MsgPipeline {
 
+pub struct Bind {
+    pub msg: Msg
+}
+
+impl Default for Bind {
+    fn default() -> Self {
+        Self {
+            msg: Msg::default()
+        }
+    }
 }
 
 pub struct Port{
@@ -59,15 +68,39 @@ impl PipelineStep  {
     }
 }
 
-pub enum RootSelector {
+pub enum Section {
     Msg(Msg)
 }
 
+pub fn bind(input: &str ) -> Res<&str,Bind> {
+    delimited( multispace0, tuple((tag("bind"), multispace0, delimited(tag("{"),sections,tag("}")))), multispace0)(input).map(|(next,(_,_,sections))|{
 
-pub fn msg_selector( input: &str ) -> Res<&str,RootSelector> {
-   tuple((tag("Msg"),multispace0, delimited(tag("{"), many0(delimited( multispace0,port, multispace0)),tag("}"))) )(input).map( |(next, (_,_,ports))| {
+        let mut bind = Bind::default();
+        for section in sections {
+            match section {
+                Section::Msg(msg) => {
+                    bind.msg = msg;
+                }
+            }
+        }
+
+        (next,bind)
+    })
+}
+
+pub fn sections(input: &str ) -> Res<&str, Vec<Section>> {
+    delimited(multispace0,many0(delimited( multispace0,section, multispace0)),multispace0)(input)
+}
+
+pub fn section(input: &str ) -> Res<&str, Section> {
+  msg_section(input)
+}
+
+
+pub fn msg_section(input: &str ) -> Res<&str, Section> {
+   tuple((tag("Msg"),multispace0, delimited(tag("{"), delimited(multispace0,many0(delimited( multispace0,port, multispace0)),multispace0),tag("}"))) )(input).map( |(next, (_,_,ports))| {
        (next,
-       RootSelector::Msg(Msg{
+        Section::Msg(Msg{
            ports
        }))
    } )
@@ -104,16 +137,16 @@ pub fn return_pipeline_stop(input: &str ) -> Res<&str, PipelineStop> {
    })
 }
 
-pub fn address_pipeline_stop(input: &str ) -> Res<&str, PipelineStop> {
-    address(input).map( |(next, address)| {
+pub fn port_call_pipeline_stop(input: &str ) -> Res<&str, PipelineStop> {
+    port_call(input).map( |(next, call)| {
         (next,
-         PipelineStop::Address(address))
+         PipelineStop::PortCall(call))
     })
 }
 
 
 pub fn pipeline_stop( input: &str ) -> Res<&str, PipelineStop> {
-   alt( (inner_pipeline_stop, return_pipeline_stop,address_pipeline_stop))(input)
+   alt( (inner_pipeline_stop, return_pipeline_stop, port_call_pipeline_stop))(input)
 }
 
 pub fn consume_pipeline_step( input: &str ) -> Res<&str,PipelineStep> {
@@ -171,9 +204,9 @@ pub fn consume_port( input: &str ) -> Res<&str,Port>{
 #[cfg(test)]
 pub mod test {
     use anyhow::Error;
-    use crate::bind::{consume_pipeline_step, consume_pipeline_stop, consume_pipeline, Pipeline, PipelineStep, PipelineSegment, StepKind, consume_port};
+    use crate::bind::{consume_pipeline_step, consume_pipeline_stop, consume_pipeline, Pipeline, PipelineStep, PipelineSegment, StepKind, consume_port, bind};
     use crate::parse::PipelineStop;
-    use crate::symbol::Address;
+    use crate::symbol::{Address, PortCall};
     use std::str::FromStr;
     use crate::pattern::PatternBlock;
 
@@ -191,7 +224,7 @@ pub mod test {
         assert!(consume_pipeline_stop( "&")?.1 == PipelineStop::Return);
         assert!(consume_pipeline_stop( "{}")?.1 == PipelineStop::Internal);
         assert!(consume_pipeline_stop( "{ }")?.1 == PipelineStop::Internal);
-        assert!(consume_pipeline_stop( "some:address")?.1 == PipelineStop::Address(Address::from_str("some:address")?));
+        assert!(consume_pipeline_stop( "some:address!go")?.1 == PipelineStop::PortCall(PortCall::from_str("some:address!go")?));
 
         Ok(())
     }
@@ -210,6 +243,30 @@ pub mod test {
     pub fn test_port() -> Result<(),Error> {
         consume_port( "tick -> {};")?;
         consume_port( "ping -> {} => &;")?;
+
+        Ok(())
+    }
+
+
+    #[test]
+    pub fn test_bind() -> Result<(),Error> {
+        bind( r#"
+
+        bind {
+
+           Msg{
+
+              tick -> {};
+
+              ping -> { } => &;
+
+              signup -[ Map[username<Text>,password<Text>] ]-> strip:passsword:mechtron!strip -[ Map[username<Text>] ]-> { } =[ Text ]=> &;
+
+              do-whatever-you-want -[ * ]-> { } =[ * ]=> &;
+
+           }
+
+        }   "# )?;
 
         Ok(())
     }

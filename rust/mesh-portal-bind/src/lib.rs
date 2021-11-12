@@ -58,7 +58,9 @@ impl Default for Rc{
 
 impl Default for Msg{
     fn default() -> Self {
-        Self{}
+        Self{
+            ports: vec![]
+        }
     }
 }
 
@@ -85,6 +87,7 @@ pub struct Rc {
 pub struct Msg {
   pub ports: Vec<Port>
 }
+
 
 pub struct Http {
 

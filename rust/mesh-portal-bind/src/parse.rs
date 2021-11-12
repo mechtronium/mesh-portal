@@ -830,7 +830,7 @@ pub enum PipeSegEntry {
 #[derive(Debug,Clone,Eq,PartialEq)]
 pub enum PipelineStop {
    Internal,
-   Address(Address),
+   PortCall(PortCall),
    Return
 }
 
