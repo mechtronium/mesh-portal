@@ -111,8 +111,9 @@ pub mod payload {
     use crate::version::v0_0_1::bin::Bin;
 
     pub type PayloadType = payload::PayloadType;
+    pub type PrimitiveType = payload::PrimitiveType;
     pub type Payload = generic::payload::Payload<Key,Address,Kind,Bin>;
-    pub type PayloadAspect = generic::payload::PayloadAspect<Key,Address,Kind,Bin>;
+    pub type Primitive = generic::payload::Primitive<Key,Address,Kind,Bin>;
 }
 
 pub mod entity {
@@ -141,7 +142,6 @@ pub mod portal {
         use std::convert::TryFrom;
         use std::convert::TryInto;
 
-        use anyhow::Error;
         use serde::{Deserialize, Serialize};
 
         use crate::version::v0_0_1::generic;
@@ -150,7 +150,6 @@ pub mod portal {
         pub type Request=generic::portal::inlet::Request<Key,Address,Kind,ResourceType>;
         pub type Response=generic::portal::inlet::Response<Key,Address,Kind>;
         pub type Frame=generic::portal::inlet::Frame<Key,Address,Kind,ResourceType>;
-
 
         pub mod exchange {
             use crate::version::v0_0_1::generic;
@@ -166,7 +165,6 @@ pub mod portal {
         use std::convert::TryFrom;
         use std::convert::TryInto;
 
-        use anyhow::Error;
         use serde::{Deserialize, Serialize};
         use crate::version::v0_0_1::generic;
         use crate::version::v0_0_1::frame::PrimitiveFrame;

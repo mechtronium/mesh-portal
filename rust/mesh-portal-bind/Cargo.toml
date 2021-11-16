@@ -20,3 +20,4 @@ strum_macros = "0.21.1"
 
 serde = { version="1.0.69", features=['derive','rc'] }
 bincode = "1.3.3"
+mesh-portal-serde = { path = "../mesh-portal-serde", version= "0.0.1"}

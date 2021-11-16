@@ -430,7 +430,7 @@ pub fn rc_call_kind(input: &str) -> Res<&str, CallKind> {
 }
 
 pub fn port_call_kind(input: &str) -> Res<&str, CallKind> {
-    delimited( tag("Msg<"), skewer, tag(">"))(input).map( |(next,port)| {
+    preceded( tag("Msg!"), skewer )(input).map( |(next,port)| {
         (next,CallKind::Msg(port.to_string()))
     })
 }

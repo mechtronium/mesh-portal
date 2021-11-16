@@ -1,16 +1,13 @@
-mod parse;
-
 use std::collections::HashMap;
 use std::convert::From;
 use std::convert::TryInto;
+use std::fmt::Debug;
+use std::hash::Hash;
 use std::sync::Arc;
 
-use anyhow::Error;
 use serde::{Deserialize, Serialize};
-use std::hash::Hash;
-use std::fmt::Debug;
-use crate::version::v0_0_1::bin::Bin;
 
+use crate::version::v0_0_1::bin::Bin;
 
 pub type State=HashMap<String,Bin>;
 
@@ -19,15 +16,24 @@ pub type Artifact=Arc<Vec<u8>>;
 pub type Port=String;
 
 pub mod id {
-    use crate::version::v0_0_1::generic;
-    use serde::{Serialize,Deserialize};
-    use std::str::FromStr;
-    use anyhow::Error;
-    use crate::version::v0_0_1::parse::{parse_address, ParseError, parse_specific, parse_kind, parse_version};
     use std::collections::HashMap;
+    use std::str::FromStr;
+
+    use serde::{Deserialize, Serialize};
+
+    use crate::version::v0_0_1::generic;
 
     pub type Key = String;
+    pub type Address = String;
     pub type ResourceType = String;
+    pub type Kind = String;
+    pub type Specific = String;
+    pub type Version = String;
+    pub type Identifier = generic::id::Identifier<Key,Address>;
+    pub type Identifiers = generic::id::Identifiers<Key,Address>;
+    pub type AddressAndKind = generic::id::AddressAndKind<Address,Kind>;
+    pub type AddressAndType = generic::id::AddressAndType<Address,ResourceType>;
+    pub type Meta=HashMap<String,String>;
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub enum IdentifierKind {
@@ -35,181 +41,11 @@ pub mod id {
         Address
     }
 
-    pub type Identifier = generic::id::Identifier<Key,Address>;
-    pub type Identifiers = generic::id::Identifiers<Key,Address>;
-    pub type AddressAndKind = generic::id::AddressAndKind<Address,Kind>;
-    pub type AddressAndType = generic::id::AddressAndType<Address,ResourceType>;
-    pub type Meta=HashMap<String,String>;
-
-
-    #[derive(Debug, Clone, Hash, Eq, PartialEq, Serialize, Deserialize)]
-    pub struct Kind {
-        pub resource_type: String,
-        pub kind: Option<String>,
-        pub specific: Option<Specific>,
-    }
-
-    impl ToString for Kind {
-        fn to_string(&self) -> String {
-            if self.specific.is_some() && self.kind.is_some() {
-                format!(
-                    "<{}<{}<{}>>>",
-                    self.resource_type,
-                    self.kind.as_ref().unwrap().to_string(),
-                    self.specific.as_ref().unwrap().to_string()
-                )
-            } else if self.kind.is_some() {
-                format!(
-                    "<{}<{}>>",
-                    self.resource_type,
-                    self.kind.as_ref().unwrap().to_string()
-                )
-            } else {
-                format!("<{}>", self.resource_type)
-            }
-        }
-    }
-
-    impl FromStr for Kind {
-        type Err = Error;
-
-        fn from_str(s: &str) -> Result<Self, Self::Err> {
-            let (leftover, rtn) = parse_kind(s)?;
-            if leftover.len() > 0 {
-                return Err(format!(
-                    "ResourceKindParts ERROR: could not parse extra: '{}' in string '{}'",
-                    leftover, s
-                )
-                    .into());
-            }
-            Ok(rtn?)
-        }
-    }
-
-
-    #[derive(Debug,Clone,Serialize,Deserialize,Eq,PartialEq,Hash)]
-    pub struct Address {
-        segments: Vec<String>
-    }
-
-    impl Address {
-        pub fn parent(&self) -> Option<Address> {
-            if self.segments.is_empty() {
-                return Option::None;
-            }
-            let mut segments = self.segments.clone();
-            segments.remove( segments.len() );
-            Option::Some( Self {
-                segments
-            })
-        }
-    }
-
-    impl FromStr for Address {
-        type Err = ParseError;
-
-        fn from_str(s: &str) -> Result<Self, Self::Err> {
-            let (_,segments) = parse_address(s)?;
-            Ok(Self{ segments })
-        }
-    }
-
-    impl ToString for Address {
-        fn to_string(&self) -> String {
-            let mut rtn = String::new();
-            for (i, segment) in self.segments.iter().enumerate() {
-                rtn.push_str( segment.as_str() );
-                if i != self.segments.len() {
-                    rtn.push_str(":");
-                }
-            }
-            rtn.to_string()
-        }
-    }
-
-
-    #[derive(Debug, Clone, Hash, Eq, PartialEq, Serialize, Deserialize)]
-    pub struct Specific {
-        pub vendor: String,
-        pub product: String,
-        pub variant: String,
-        pub version: Version,
-    }
-
-    impl ToString for Specific {
-        fn to_string(&self) -> String {
-            format!(
-                "{}:{}:{}:{}",
-                self.vendor.to_string(),
-                self.product,
-                self.variant,
-                self.version.to_string()
-            )
-        }
-    }
-
-    impl FromStr for Specific {
-        type Err = ParseError;
-
-        fn from_str(s: &str) -> Result<Self, Self::Err> {
-            let (_, specific) = parse_specific(s)?;
-            Ok(specific)
-        }
-    }
-
-    #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
-    pub struct Version {
-        major: usize,
-        minor: usize,
-        patch: usize,
-        release: Option<String>,
-    }
-
-    impl Version {
-        pub fn new(major: usize, minor: usize, patch: usize, release: Option<String>) -> Self {
-            Self {
-                major,
-                minor,
-                patch,
-                release,
-            }
-        }
-    }
-
-
-    impl ToString for Version {
-        fn to_string(&self) -> String {
-            match &self.release {
-                None => {
-                    format!("{}.{}.{}", self.major, self.minor, self.patch)
-                }
-                Some(release) => {
-                    format!(
-                        "{}.{}.{}-{}",
-                        self.major,
-                        self.minor,
-                        self.patch,
-                        release.to_string()
-                    )
-                }
-            }
-        }
-    }
-
-    impl FromStr for Version {
-        type Err = ParseError;
-
-        fn from_str(s: &str) -> Result<Self, Self::Err> {
-            let string = s.to_string();
-            let (_, version) = parse_version(s)?;
-            Ok(version)
-        }
-    }
-
 }
 
 pub mod messaging {
-    use serde::{Serialize,Deserialize};
+    use serde::{Deserialize, Serialize};
+
     pub type ExchangeId = String;
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -231,7 +67,8 @@ pub mod messaging {
 
 
 pub mod log {
-    use serde::{Serialize,Deserialize};
+    use serde::{Deserialize, Serialize};
+
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub enum Log {
         Warn(String),
@@ -254,8 +91,9 @@ pub mod log {
 
 pub mod frame {
     use std::convert::TryInto;
-    use serde::{Serialize,Deserialize};
-    use anyhow::Error;
+    use crate::version::v0_0_1::error::Error;
+
+    use serde::{Deserialize, Serialize};
 
     pub struct PrimitiveFrame {
         pub data: Vec<u8>
@@ -292,9 +130,10 @@ pub mod frame {
 }
 
 pub mod bin {
-    use serde::{Serialize,Deserialize};
-    use std::sync::Arc;
     use std::collections::HashMap;
+    use std::sync::Arc;
+
+    use serde::{Deserialize, Serialize};
 
     pub type BinSrc=String;
     pub type BinRaw=Arc<Vec<u8>>;
@@ -317,17 +156,41 @@ pub mod bin {
 
 pub mod payload {
     use crate::version::v0_0_1::bin::Bin;
-    use crate::version::v0_0_1::id::{Key, Address, Kind};
     use crate::version::v0_0_1::generic;
+    use crate::version::v0_0_1::id::{Address, Key, Kind};
+    use serde::{Serialize,Deserialize};
 
-    pub type PayloadType = generic::payload::PayloadType;
+    pub type Primitive = generic::payload::Primitive<Key,Address,Kind,Bin>;
     pub type Payload = generic::payload::Payload<Key,Address,Kind,Bin>;
-    pub type PayloadAspect = generic::payload::PayloadAspect<Key,Address,Kind,Bin>;
+
+    #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash, strum_macros::Display )]
+    pub enum PayloadType
+    {
+        Empty,
+        Primitive(PrimitiveType),
+        List(PrimitiveType),
+        Map
+    }
+
+    #[derive(Debug,Clone,strum_macros::Display,strum_macros::EnumString,Eq,PartialEq,Hash,Serialize,Deserialize)]
+    pub enum PrimitiveType
+    {
+        Key,
+        Address,
+        Text,
+        Boolean,
+        Code,
+        Int,
+        Meta,
+        Bin,
+        Stub,
+        Status,
+        Resource,
+    }
 }
 
 pub mod command {
-
-    use serde::{Serialize,Deserialize};
+    use serde::{Deserialize, Serialize};
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct Command {
@@ -351,7 +214,6 @@ pub mod command {
 }
 
 pub mod http {
-
     use std::collections::HashMap;
 
     use serde::{Deserialize, Serialize};
@@ -385,13 +247,13 @@ pub mod http {
 
 
 pub mod config {
-
-    use serde::{Serialize,Deserialize};
-    use crate::version::v0_0_1::id::{Key, Address, Kind};
-
-    use crate::version::v0_0_1::generic;
     use std::collections::HashMap;
+
+    use serde::{Deserialize, Serialize};
+
     use crate::version::latest::ArtifactRef;
+    use crate::version::v0_0_1::generic;
+    use crate::version::v0_0_1::id::{Address, Key, Kind};
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub enum PortalKind {
@@ -499,7 +361,7 @@ pub mod entity {
 
     pub mod request {
         use crate::version::v0_0_1::generic;
-        use crate::version::v0_0_1::id::{Key, Address, Kind,ResourceType};
+        use crate::version::v0_0_1::id::{Address, Key, Kind, ResourceType};
 
         pub type ReqEntity = generic::entity::request::ReqEntity<Key,Address,Kind,ResourceType>;
         pub type Rc = generic::entity::request::Rc<Key,Address,Kind,ResourceType>;
@@ -508,8 +370,8 @@ pub mod entity {
     }
 
     pub mod response{
-        use crate::version::v0_0_1::{generic, fail};
-        use crate::version::v0_0_1::id::{Key, Address, Kind};
+        use crate::version::v0_0_1::{fail, generic};
+        use crate::version::v0_0_1::id::{Address, Key, Kind};
 
         pub type RespEntity = generic::entity::response::RespEntity<Key,Address,Kind,fail::Fail>;
     }
@@ -517,9 +379,10 @@ pub mod entity {
 }
 
 pub mod resource {
-    use crate::version::v0_0_1::id::{Key, Address, Kind,ResourceType,Identifier};
     use serde::{Deserialize, Serialize};
+
     use crate::version::v0_0_1::generic;
+    use crate::version::v0_0_1::id::{Address, Identifier, Key, Kind, ResourceType};
 
     #[derive(Debug, Clone, Serialize, Deserialize, strum_macros::Display)]
     pub enum Status {
@@ -542,44 +405,18 @@ pub mod resource {
 
 
     pub mod property {
-        use crate::version::v0_0_1::id::*;
-        use crate::version::v0_0_1::generic::resource::property;
         use crate::version::v0_0_1::bin::BinSet;
+        use crate::version::v0_0_1::generic::resource::property;
+        use crate::version::v0_0_1::id::*;
 
-        pub type ResourceValueSelector=property::ResourceValueSelector<Key,Address,Kind,ResourceType>;
-        pub type BinSetAspectSelector=property::BinSetAspectSelector;
-        pub type ResourcePropertyOp<P> = property::ResourcePropertyOp<P,Key,Address>;
-        pub type ResourcePropertyValueSelector = property::ResourcePropertyValueSelector<Key,Address,Kind,ResourceType>;
-        pub type ResourceHostPropertyValueSelector = property::ResourceHostPropertyValueSelector<Key,Address,Kind,ResourceType>;
-        pub type ResourceRegistryPropertyValueSelector =property::ResourceRegistryPropertyValueSelector;
-        pub type FieldValueSelector = property::FieldValueSelector<Key,Address,Kind,ResourceType>;
-        pub type MetaFieldValueSelector = property::MetaFieldValueSelector<Key,Address,Kind,ResourceType>;
+
+        pub type ResourcePropertyValueSelector = property::ResourcePropertyValueSelector;
         pub type ResourceValue = property::ResourceValue<Key,Address,Kind,ResourceType>;
         pub type ResourceValues<R> = property::ResourceValues<R,Key,Address,Kind,ResourceType>;
-        pub type ResourceRegistryPropertyAssignment = property::ResourceRegistryPropertyAssignment<Key,Address>;
         pub type ResourceProperty = property::ResourceProperty<Address>;
         pub type ResourceRegistryProperty = property::ResourceRegistryProperty<Address>;
         pub type ResourcePropertyAssignment = property::ResourcePropertyAssignment<Key,Address>;
         pub type ResourcePropertiesKind = property::ResourcePropertiesKind;
-
-        impl BinSetAspectSelector {
-            pub fn filter( &self, set: BinSet ) -> ResourceValue {
-                match self {
-                    BinSetAspectSelector::Exact(aspect) => {
-                        let mut rtn = BinSet::new();
-                        if set.contains_key(aspect) {
-                            rtn.insert( aspect.clone(), set.get(aspect).expect(format!("expected aspect: {}", aspect).as_str() ).clone());
-                        }
-                        ResourceValue::BinSet(rtn)
-                    }
-                    BinSetAspectSelector::All => {
-                        ResourceValue::BinSet(set)
-                    }
-                }
-            }
-        }
-
-
     }
 
 
@@ -587,8 +424,8 @@ pub mod resource {
 
 pub mod portal {
     pub mod inlet {
-        use crate::version::v0_0_1::id::{Key, Address, Kind,ResourceType};
         use crate::version::v0_0_1::generic;
+        use crate::version::v0_0_1::id::{Address, Key, Kind, ResourceType};
 
         pub type Request=generic::portal::inlet::Request<Key,Address,Kind,ResourceType>;
         pub type Response=generic::portal::inlet::Response<Key,Address,Kind>;
@@ -596,8 +433,8 @@ pub mod portal {
     }
 
     pub mod outlet {
-        use crate::version::v0_0_1::id::{Key, Address, Kind,ResourceType};
         use crate::version::v0_0_1::generic;
+        use crate::version::v0_0_1::id::{Address, Key, Kind, ResourceType};
 
         pub type Request=generic::portal::outlet::Request<Key,Address,Kind,ResourceType>;
         pub type Response=generic::portal::outlet::Response<Key,Address,Kind>;
@@ -609,22 +446,23 @@ pub mod generic {
     use std::collections::HashMap;
     use std::convert::From;
     use std::convert::TryInto;
+    use std::fmt::Debug;
+    use std::hash::Hash;
+    use std::str::FromStr;
     use std::sync::Arc;
 
-    use anyhow::Error;
     use serde::{Deserialize, Serialize};
-    use std::hash::Hash;
-    use std::fmt::Debug;
-    use std::str::FromStr;
 
-    //pub trait Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync {}
+//pub trait Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync {}
 
     pub mod id {
-        use serde::{Serialize,Deserialize};
-        use crate::version::v0_0_1::generic;
         use std::fmt::Debug;
         use std::hash::Hash;
         use std::str::FromStr;
+
+        use serde::{Deserialize, Serialize};
+
+        use crate::version::v0_0_1::generic;
 
         #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
         pub enum Identifier<KEY: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, ADDRESS: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync> {
@@ -644,6 +482,15 @@ pub mod generic {
             pub kind: KIND,
         }
 
+        impl <ADDRESS: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, KIND: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync>  AddressAndKind<ADDRESS,KIND>{
+            pub fn new( address: ADDRESS, kind: KIND ) -> Self {
+                Self {
+                    address,
+                    kind
+                }
+            }
+        }
+
         #[derive(Debug,Clone,Serialize,Deserialize,Eq,PartialEq,Hash)]
         pub struct AddressAndType<ADDRESS: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, RESOURCE_TYPE: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync>  {
             pub address: ADDRESS,
@@ -656,15 +503,16 @@ pub mod generic {
 
 
     pub mod config {
-        use serde::{Serialize,Deserialize};
-        use crate::version::v0_0_1::config::{PortalKind, Config};
-        use crate::version::v0_0_1::ArtifactRef;
         use std::fmt::Debug;
         use std::hash::Hash;
         use std::str::FromStr;
+
+        use serde::{Deserialize, Serialize};
+
+        use crate::version::v0_0_1::ArtifactRef;
+        use crate::version::v0_0_1::config::{Config, PortalKind};
         use crate::version::v0_0_1::generic::id::{Identifier, Identifiers};
         use crate::version::v0_0_1::generic::resource::Archetype;
-
 
         #[derive(Debug, Clone, Serialize, Deserialize)]
         pub struct Info<KEY: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, ADDRESS: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, KIND: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync> {
@@ -690,15 +538,18 @@ pub mod generic {
 
     pub mod entity {
         pub mod request {
-            use serde::{Serialize, Deserialize};
-            use crate::version::v0_0_1::generic;
-            use crate::version::latest::{State, http};
-            use serde::__private::fmt::Debug;
             use std::hash::Hash;
             use std::str::FromStr;
-            use crate::version::v0_0_1::generic::resource::{Create, Selector};
+
+            use serde::{Deserialize, Serialize};
+            use serde::__private::fmt::Debug;
+
+            use crate::version::latest::{http, State};
             use crate::version::v0_0_1::bin::Bin;
+            use crate::version::v0_0_1::generic;
+            use crate::version::v0_0_1::generic::payload::Primitive;
             use crate::version::v0_0_1::generic::payload::Payload;
+            use crate::version::v0_0_1::generic::resource::{Create, Selector};
 
             #[derive(Debug, Clone, Serialize, Deserialize)]
             pub enum ReqEntity<KEY: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, ADDRESS: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, KIND: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, RESOURCE_TYPE: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync> {
@@ -730,12 +581,15 @@ pub mod generic {
         }
 
         pub mod response {
-            use serde::{Serialize,Deserialize};
-            use crate::version::v0_0_1::generic::payload::Payload;
-            use crate::version::v0_0_1::bin::Bin;
             use std::fmt::Debug;
             use std::hash::Hash;
             use std::str::FromStr;
+
+            use serde::{Deserialize, Serialize};
+
+            use crate::version::v0_0_1::bin::Bin;
+            use crate::version::v0_0_1::generic::payload::Primitive;
+            use crate::version::v0_0_1::generic::payload::Payload;
 
             #[derive(Debug, Clone, Serialize, Deserialize)]
             pub enum RespEntity<KEY: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, ADDRESS: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, KIND: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync,FAIL>  {
@@ -747,16 +601,18 @@ pub mod generic {
 
 
     pub mod resource {
-        use serde::{Deserialize, Serialize};
-        use crate::version::v0_0_1::State;
-        use crate::version::v0_0_1::generic;
+        use std::collections::{HashMap, HashSet};
         use std::fmt::Debug;
         use std::hash::Hash;
         use std::str::FromStr;
-        use crate::version::v0_0_1::generic::id::{Identifier, AddressAndKind};
-        use std::collections::{HashSet, HashMap};
-        use crate::version::latest::fail::http::Error;
+
+        use serde::{Deserialize, Serialize};
+
         use crate::version::v0_0_1::bin::BinSet;
+        use crate::version::v0_0_1::error::Error;
+        use crate::version::v0_0_1::generic;
+        use crate::version::v0_0_1::generic::id::{AddressAndKind, Identifier};
+        use crate::version::v0_0_1::State;
 
         #[derive(Debug, Clone, Serialize, Deserialize)]
         pub struct Archetype<KIND: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync> {
@@ -823,85 +679,6 @@ pub mod generic {
             pub fields: HashSet<select::FieldSelector<KEY,ADDRESS,KIND,RESOURCE_TYPE>>,
         }
 
-        impl<KEY: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync,ADDRESS: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync,KIND: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync,RESOURCE_TYPE: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync> Selector<KEY,ADDRESS,KIND,RESOURCE_TYPE> {
-            pub fn new() -> Self {
-                let fields = HashSet::new();
-                Selector {
-                    meta: select::MetaSelector::None,
-                    fields: fields,
-                }
-            }
-
-            pub fn resource_types(&self) -> HashSet<RESOURCE_TYPE> {
-                let mut rtn = HashSet::new();
-                for field in &self.fields {
-                    if let select::FieldSelector::Type(resource_type) = field {
-                        rtn.insert(resource_type.clone());
-                    }
-                }
-                rtn
-            }
-
-            pub fn add(&mut self, field: select::FieldSelector<KEY,ADDRESS,KIND,RESOURCE_TYPE>) {
-                self.fields.retain(|f| !f.is_matching_kind(&field));
-                self.fields.insert(field);
-            }
-
-            pub fn is_empty(&self) -> bool {
-                if !self.fields.is_empty() {
-                    return false;
-                }
-
-                match &self.meta {
-                    select::MetaSelector::None => {
-                        return true;
-                    }
-                    select::MetaSelector::Name(_) => {
-                        return false;
-                    }
-                    select::MetaSelector::Label(labels) => {
-                        return labels.labels.is_empty();
-                    }
-                };
-            }
-
-            pub fn name(&mut self, name: String) -> Result<(), Error> {
-                match &mut self.meta {
-                    select::MetaSelector::None => {
-                        self.meta = select::MetaSelector::Name(name.clone());
-                        Ok(())
-                    }
-                    select::MetaSelector::Name(_) => {
-                        self.meta = select::MetaSelector::Name(name.clone());
-                        Ok(())
-                    }
-                    select::MetaSelector::Label(_selector) => {
-                        Err("Selector is already set to a LABEL meta selector".into())
-                    }
-                }
-            }
-
-            pub fn add_label(&mut self, label: select::LabelSelection) -> Result<(), Error> {
-                match &mut self.meta {
-                    select::MetaSelector::None => {
-                        self.meta = select::MetaSelector::Label(select::LabelSelector {
-                            labels: HashSet::new(),
-                        });
-                        self.add_label(label)
-                    }
-                    select::MetaSelector::Name(_) => Err("Selector is already set to a NAME meta selector".into()),
-                    select::MetaSelector::Label(selector) => {
-                        selector.labels.insert(label);
-                        Ok(())
-                    }
-                }
-            }
-
-            pub fn add_field(&mut self, field: select::FieldSelector<KEY,ADDRESS,KIND,RESOURCE_TYPE>) {
-                self.fields.insert(field);
-            }
-        }
-
         #[derive(Debug, Clone, Serialize, Deserialize, Hash, Eq, PartialEq)]
         pub enum ConfigSrc<ADDRESS: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync> {
             None,
@@ -911,12 +688,14 @@ pub mod generic {
 
         pub mod select {
             use std::collections::HashSet;
-            use crate::version::v0_0_1::id::Specific;
             use std::fmt::Debug;
-            use serde::{Serialize,Deserialize};
             use std::hash::Hash;
             use std::str::FromStr;
+
+            use serde::{Deserialize, Serialize};
+
             use crate::version::v0_0_1::generic::id::Identifier;
+            use crate::version::v0_0_1::id::Specific;
 
             #[derive(Debug, Clone, Serialize, Deserialize)]
             pub enum MetaSelector {
@@ -967,75 +746,25 @@ pub mod generic {
                 Specific(Specific),
                 Parent(Identifier<KEY,ADDRESS>),
             }
-
-
-            impl <KEY: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync,ADDRESS: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync,KIND: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync,RESOURCE_TYPE: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync>  ToString for FieldSelector<KEY,ADDRESS,KIND,RESOURCE_TYPE> {
-                fn to_string(&self) -> String {
-                    match self {
-                        FieldSelector::Identifier(id) => id.to_string(),
-                        FieldSelector::Type(rt) => rt.to_string(),
-                        FieldSelector::Kind(kind) => kind.to_string(),
-                        FieldSelector::Specific(specific) => specific.to_string(),
-                        FieldSelector::Parent(parent) => parent.to_string(),
-                    }
-                }
-            }
-
-            impl <KEY: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync,ADDRESS: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync,KIND: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync,RESOURCE_TYPE: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync> FieldSelector<KEY,ADDRESS,KIND,RESOURCE_TYPE> {
-                pub fn is_matching_kind(&self, field: &FieldSelector<KEY,ADDRESS,KIND,RESOURCE_TYPE>) -> bool {
-                    match self {
-                        FieldSelector::Identifier(_) => {
-                            if let FieldSelector::Identifier(_) = field {
-                                return true;
-                            }
-                        }
-                        FieldSelector::Type(_) => {
-                            if let FieldSelector::Type(_) = field {
-                                return true;
-                            }
-                        }
-                        FieldSelector::Kind(_) => {
-                            if let FieldSelector::Kind(_) = field {
-                                return true;
-                            }
-                        }
-                        FieldSelector::Specific(_) => {
-                            if let FieldSelector::Specific(_) = field {
-                                return true;
-                            }
-                        }
-                        FieldSelector::Owner(_) => {
-                            if let FieldSelector::Owner(_) = field {
-                                return true;
-                            }
-                        }
-                        FieldSelector::Parent(_) => {
-                            if let FieldSelector::Parent(_) = field {
-                                return true;
-                            }
-                        }
-                    };
-                    return false;
-                }
-            }
         }
 
         pub mod property {
-            use std::str::FromStr;
-            use anyhow::Error;
-            use crate::version::v0_0_1::bin::Bin;
-            use crate::version::v0_0_1::bin::BinSet;
-            use crate::version::v0_0_1::resource::Status;
             use std::collections::HashMap;
             use std::convert::TryInto;
             use std::fmt::Debug;
-            use serde::{Serialize,Deserialize};
             use std::hash::Hash;
-            use crate::version::v0_0_1::generic::resource::{Resource, ConfigSrc};
-            use crate::version::v0_0_1::generic::id::Identifier;
-            use crate::version::v0_0_1::parse::{parse_resource_property_value_selector, parse_resource_property_assignment, parse_resource_value_selector};
-            use crate::version::v0_0_1::id::Meta;
             use std::marker::PhantomData;
+            use std::str::FromStr;
+
+            use serde::{Deserialize, Serialize};
+
+            use crate::version::v0_0_1::bin::Bin;
+            use crate::version::v0_0_1::bin::BinSet;
+            use crate::version::v0_0_1::generic::id::Identifier;
+            use crate::version::v0_0_1::generic::resource::{ConfigSrc, Resource};
+            use crate::version::v0_0_1::id::Meta;
+            use crate::version::v0_0_1::resource::Status;
+            use crate::version::v0_0_1::error::Error;
 
             struct Phantoms<KEY: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync,ADDRESS: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync,KIND: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync,RESOURCE_TYPE: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync>  {
                 key: KEY,
@@ -1044,210 +773,7 @@ pub mod generic {
                 resource_type: RESOURCE_TYPE
             }
 
-            #[derive(Debug, Clone, Serialize, Deserialize)]
-            pub struct ResourceValueSelector<KEY: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync,ADDRESS: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync,KIND: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync,RESOURCE_TYPE: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync> {
-                pub resource: ADDRESS,
-                pub property: ResourcePropertyValueSelector<KEY,ADDRESS,KIND,RESOURCE_TYPE>,
-                phantom: PhantomData<Option<Phantoms<KEY,ADDRESS,KIND,RESOURCE_TYPE>>>,
-            }
-
-            impl <KEY: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync,ADDRESS: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync,KIND: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync,RESOURCE_TYPE: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync> ResourceValueSelector<KEY,ADDRESS,KIND,RESOURCE_TYPE> {
-                pub fn new( resource: ADDRESS, property: ResourcePropertyValueSelector<KEY,ADDRESS,KIND,RESOURCE_TYPE> ) -> Self {
-                    Self{
-                        resource,
-                        property,
-                        phantom: Default::default()
-                    }
-                }
-            }
-
-            impl<KEY: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync,ADDRESS: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync,KIND: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync,RESOURCE_TYPE: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync> FromStr for ResourceValueSelector<KEY,ADDRESS,KIND,RESOURCE_TYPE> {
-                type Err = Error;
-
-                fn from_str(s: &str) -> Result<Self, Self::Err> {
-                    let (leftover, selector ) = parse_resource_value_selector(s)?;
-
-                    if !leftover.is_empty() {
-                        return Err(format!("could not parse ResourceValueSelector: '{}' trailing portion '{}'", s, leftover).into() );
-                    } else {
-                        return Ok(selector?);
-                    }
-                }
-            }
-
-
-
-            #[derive(Debug, Clone, Serialize, Deserialize, Hash, Eq, PartialEq)]
-            pub enum BinSetAspectSelector {
-                All,
-                Exact(String)
-            }
-
-
-            #[derive(Debug, Clone, Serialize, Deserialize)]
-            pub struct ResourcePropertyOp<P,KEY: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync,ADDRESS: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync>{
-                pub resource: Identifier<KEY,ADDRESS>,
-                pub property: P
-            }
-
-            #[derive(Debug, Clone, Serialize, Deserialize, Hash, Eq, PartialEq, strum_macros::Display)]
-            pub enum ResourcePropertyValueSelector<KEY: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync,ADDRESS: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync,KIND: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync,RESOURCE_TYPE: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync> {
-                Registry(ResourceRegistryPropertyValueSelector),
-                Host(ResourceHostPropertyValueSelector<KEY,ADDRESS,KIND,RESOURCE_TYPE>),
-            }
-
-            impl <KEY: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync,ADDRESS: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync,KIND: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync,RESOURCE_TYPE: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync> ResourcePropertyValueSelector<KEY,ADDRESS,KIND,RESOURCE_TYPE> {
-
-                pub fn is_registry(&self) -> bool {
-                    match self {
-                        ResourcePropertyValueSelector::Registry(_)=> true,
-                        _ => false
-                    }
-                }
-
-                pub fn state() -> Self {
-                    Self::Host(ResourceHostPropertyValueSelector::State {
-                        aspect: BinSetAspectSelector::All,
-                        field: FieldValueSelector::All
-                    })
-                }
-
-                pub fn state_aspect(aspect: &str) -> Self {
-                    Self::Host(ResourceHostPropertyValueSelector::State {
-                        aspect: BinSetAspectSelector::Exact(aspect.to_string()),
-                        field: FieldValueSelector::All
-                    })
-                }
-
-                pub fn state_aspect_field(aspect: &str, field: &str) -> Self {
-                    Self::Host(ResourceHostPropertyValueSelector::State {
-                        aspect: BinSetAspectSelector::Exact(aspect.to_string()),
-                        field: FieldValueSelector::Meta(MetaFieldValueSelector::Exact(field.to_string()))
-                    })
-                }
-
-                pub fn filter( &self, resource: Resource<KEY,ADDRESS,KIND,Bin> ) -> ResourceValue<KEY,ADDRESS,KIND,RESOURCE_TYPE> {
-                    match self {
-                        Self::Host(ResourceHostPropertyValueSelector::State{ aspect, field }) => {
-                            field.filter( aspect.filter(resource.state) )
-                        }
-                        Self::Registry(ResourceRegistryPropertyValueSelector::Config)=> {
-                            ResourceValue::Config(resource.archetype.config)
-                        }
-                        Self::Registry(ResourceRegistryPropertyValueSelector::Status) => {
-                            ResourceValue::None
-                        }
-                    }
-                }
-            }
-
-
-            impl <KEY: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync,ADDRESS: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync,KIND: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync,RESOURCE_TYPE: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync>TryInto<ResourceRegistryPropertyValueSelector> for ResourcePropertyValueSelector<KEY,ADDRESS,KIND,RESOURCE_TYPE> {
-                type Error = Error;
-
-                fn try_into(self) -> Result<ResourceRegistryPropertyValueSelector, Self::Error> {
-                    match self {
-                        Self::Registry(registry) => {
-                            Ok(registry)
-                        }
-                        what => {
-                            Err(format!("'{}' is not a Registry Resource Property",what.to_string()).into())
-                        }
-                    }
-                }
-            }
-
-            #[derive(Debug, Clone, Serialize, Deserialize, Hash, Eq, PartialEq)]
-            pub enum ResourceHostPropertyValueSelector<KEY: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync,ADDRESS: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync,KIND: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync,RESOURCE_TYPE: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync> {
-                State{ aspect: BinSetAspectSelector, field: FieldValueSelector<KEY,ADDRESS,KIND,RESOURCE_TYPE> }
-            }
-
-            impl <KEY: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync,ADDRESS: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync,KIND: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync,RESOURCE_TYPE: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync> Into<ResourcePropertyValueSelector<KEY,ADDRESS,KIND,RESOURCE_TYPE>> for ResourceHostPropertyValueSelector<KEY,ADDRESS,KIND,RESOURCE_TYPE> {
-                fn into(self) -> ResourcePropertyValueSelector<KEY,ADDRESS,KIND,RESOURCE_TYPE> {
-                    ResourcePropertyValueSelector::Host(self)
-                }
-            }
-
-            #[derive(Debug, Clone, Serialize, Deserialize, Hash, Eq, PartialEq)]
-            pub enum ResourceRegistryPropertyValueSelector {
-                Status,
-                Config
-            }
-
-            impl <KEY: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync,ADDRESS: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync,KIND: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync,RESOURCE_TYPE: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync>  Into<ResourcePropertyValueSelector<KEY,ADDRESS,KIND,RESOURCE_TYPE>> for ResourceRegistryPropertyValueSelector {
-                fn into(self) -> ResourcePropertyValueSelector<KEY,ADDRESS,KIND,RESOURCE_TYPE> {
-                    ResourcePropertyValueSelector::Registry(self)
-                }
-            }
-
-            impl<KEY: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync,ADDRESS: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync,KIND: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync,RESOURCE_TYPE: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync>  FromStr for ResourcePropertyValueSelector<KEY,ADDRESS,KIND,RESOURCE_TYPE> {
-                type Err = Error;
-
-                fn from_str(s: &str) -> Result<Self, Self::Err> {
-                    let (leftover,selector) = parse_resource_property_value_selector(s)?;
-                    if !leftover.is_empty() {
-                        Err(format!("could not parse entire ResourcePropertyValueSelector: {} because of remaining string: {}", s, leftover ).into())
-                    } else {
-                        Ok(selector?)
-                    }
-                }
-            }
-
-            #[derive(Debug, Clone, Serialize, Deserialize, Hash, Eq, PartialEq)]
-            pub enum FieldValueSelector {
-                All,
-                Meta(MetaFieldValueSelector<KEY,ADDRESS,KIND,RESOURCE_TYPE>)
-            }
-
-            impl <KEY: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync,ADDRESS: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync,KIND: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync,RESOURCE_TYPE: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync> FieldValueSelector {
-                pub fn filter( &self, selection: ResourceValue<KEY,ADDRESS,KIND,RESOURCE_TYPE> ) -> ResourceValue<KEY,ADDRESS,KIND,RESOURCE_TYPE> {
-
-                    match self {
-                        Self::All => {
-                            if let ResourceValue::Meta(meta)  = selection {
-                                ResourceValue::Meta(meta)
-                            } else {
-                                selection
-                            }
-                        }
-                        Self::Meta(selector) => {
-                            if let ResourceValue::Meta(meta)  = selection {
-                                selector.filter(meta)
-                            } else {
-                                ResourceValue::None
-                            }
-                        }
-                    }
-                }
-
-            }
-
-            #[derive(Debug, Clone, Serialize, Deserialize, Hash, Eq, PartialEq)]
-            pub enum MetaFieldValueSelector<KEY: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync,ADDRESS: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync,KIND: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync,RESOURCE_TYPE: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync>  {
-                All,
-                Exact(String)
-            }
-
-            impl <KEY: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync,ADDRESS: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync,KIND: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync,RESOURCE_TYPE: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync> MetaFieldValueSelector<KEY,ADDRESS,KIND,RESOURCE_TYPE> {
-                pub fn filter( &self, meta: Meta ) -> ResourceValue<KEY,ADDRESS,KIND,RESOURCE_TYPE> {
-                    match self {
-                        MetaFieldValueSelector::Exact(field) => {
-                            if meta.contains_key(field) {
-                                let value = meta.get(field).expect(format!("expecting field: {}",field).as_str() );
-                                ResourceValue::String(value.clone())
-                            } else {
-                                ResourceValue::None
-                            }
-                        }
-                        MetaFieldValueSelector::All => {
-                            ResourceValue::Meta(meta)
-                        }
-                    }
-                }
-            }
-
-
-
+            pub type ResourcePropertyValueSelector = String;
 
             #[derive(Debug, Clone, Serialize, Deserialize)]
             pub enum ResourceValue<KEY: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync,ADDRESS: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync,KIND: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync,RESOURCE_TYPE: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync> {
@@ -1261,59 +787,10 @@ pub mod generic {
                 Config(ConfigSrc<ADDRESS>)
             }
 
-            impl <KEY: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync,ADDRESS: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync,KIND: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync,RESOURCE_TYPE: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync>ToString for ResourceValue<KEY,ADDRESS,KIND,RESOURCE_TYPE> {
-                fn to_string(&self) -> String {
-                    match self {
-                        ResourceValue::None => {
-                            "".to_string()
-                        }
-                        ResourceValue::BinSet(data) => {
-                            let mut rtn = String::new();
-                            for (k,v) in data {
-                                match v {
-                                    Bin::Raw(bin) => {
-                                        rtn.push_str( String::from_utf8(bin.to_vec()).unwrap_or("UTF ERROR!".to_string() ).as_str() )
-                                    }
-                                    Bin::Src(src) => {
-                                        rtn.push_str( src.as_str() )
-                                    }
-                                }
-                            }
-                            rtn
-                        }
-                        ResourceValue::BinSrc(v) => {
-                            match v {
-                                Bin::Raw(bin) => {
-                                    String::from_utf8(bin.to_vec()).unwrap_or("UTF ERROR!".to_string() )
-                                }
-                                Bin::Src(src) => {
-                                    src.clone()
-                                }
-                            }
-                        }
-                        ResourceValue::String(string) => {
-                            string.clone()
-                        }
-                        ResourceValue::Meta(_) => {
-                            "Meta printing not supported yet.".to_string()
-                        }
-                        ResourceValue::Resource(_) => {
-                            "Resource string printing not supported yet.".to_string()
-                        }
-                        ResourceValue::Status(status) => {
-                            status.to_string()
-                        }
-                        ResourceValue::Config(config) => {
-                            config.to_string()
-                        }
-                    }
-                }
-            }
-
             #[derive(Debug, Clone, Serialize, Deserialize)]
             pub struct ResourceValues<R,KEY: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync,ADDRESS: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync,KIND: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync,RESOURCE_TYPE: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync> {
                 pub resource: R,
-                pub values: HashMap<ResourcePropertyValueSelector<KEY,ADDRESS,KIND,RESOURCE_TYPE>,ResourceValue<KEY,ADDRESS,KIND,RESOURCE_TYPE>>
+                pub values: HashMap<ResourcePropertyValueSelector,ResourceValue<KEY,ADDRESS,KIND,RESOURCE_TYPE>>
             }
 
             impl <R,KEY: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync,ADDRESS: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync,KIND: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync,RESOURCE_TYPE: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync> ResourceValues <R,KEY,ADDRESS,KIND,RESOURCE_TYPE> {
@@ -1325,7 +802,7 @@ pub mod generic {
                     }
                 }
 
-                pub fn new(resource: R, values: HashMap<ResourcePropertyValueSelector<KEY,ADDRESS,KIND,RESOURCE_TYPE>,ResourceValue<KEY,ADDRESS,KIND,RESOURCE_TYPE>>) -> Self {
+                pub fn new(resource: R, values: HashMap<ResourcePropertyValueSelector,ResourceValue<KEY,ADDRESS,KIND,RESOURCE_TYPE>>) -> Self {
                     Self {
                         resource,
                         values
@@ -1353,12 +830,6 @@ pub mod generic {
                 pub property: ResourceProperty<ADDRESS>
             }
 
-            impl<KEY: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync,ADDRESS: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync> ToString for ResourcePropertyAssignment<KEY,ADDRESS> {
-                fn to_string(&self) -> String {
-                    return format!( "{}::{}", self.resource.to_string(), self.property.to_string() )
-                }
-            }
-
             impl<KEY: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync,ADDRESS: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync> TryInto<ResourceRegistryPropertyAssignment<KEY,ADDRESS>> for ResourcePropertyAssignment<KEY,ADDRESS> {
                 type Error = Error;
 
@@ -1370,20 +841,6 @@ pub mod generic {
                 }
             }
 
-            impl<KEY: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync,ADDRESS: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync> FromStr for ResourcePropertyAssignment<KEY,ADDRESS> {
-                type Err = Error;
-
-                fn from_str(s: &str) -> Result<Self, Self::Err> {
-                    let (leftover,result) = parse_resource_property_assignment(s)?;
-                    if leftover.len() > 0 {
-                        Err(format!("could not parse part of resource property assignment: '{}' unprocessed portion: '{}'", s,leftover ).into())
-                    } else {
-                        result
-                    }
-                }
-            }
-
-
             #[derive(Debug,Clone, Serialize, Deserialize)]
             pub enum ResourceProperty<ADDRESS: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync>  {
                 Registry(ResourceRegistryProperty<ADDRESS>)
@@ -1392,27 +849,6 @@ pub mod generic {
             #[derive(Debug,Clone, Serialize, Deserialize)]
             pub enum ResourceRegistryProperty<ADDRESS: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync>  {
                 Config(ConfigSrc<ADDRESS>)
-            }
-
-            impl <ADDRESS: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync>  ToString for ResourceProperty<ADDRESS> {
-                fn to_string(&self) -> String {
-                    match self {
-                        ResourceProperty::Registry(ResourceRegistryProperty::Config(_)) => {
-                            return "config".to_string()
-                        }
-                    }
-                }
-            }
-
-
-            impl <ADDRESS: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync> ResourceProperty<ADDRESS> {
-                pub fn is_registry_property(&self) -> bool {
-                    match self {
-                        ResourceProperty::Registry(_) => {
-                            true
-                        }
-                    }
-                }
             }
 
             impl <ADDRESS: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync>  TryInto<ResourceRegistryProperty<ADDRESS>> for ResourceProperty<ADDRESS> {
@@ -1440,25 +876,25 @@ pub mod generic {
         pub mod inlet {
             use std::convert::TryFrom;
             use std::convert::TryInto;
-
-            use anyhow::Error;
-            use serde::{Deserialize, Serialize};
-            use crate::version::v0_0_1::messaging::Exchange;
-            use crate::version::v0_0_1::messaging::ExchangeId;
-            use crate::version::v0_0_1::log::Log;
-            use crate::version::v0_0_1::command::Command;
-            use crate::version::v0_0_1::resource::Status;
-            use crate::version::v0_0_1::bin::{BinParcel, Bin};
-            use crate::version::v0_0_1::frame::{CloseReason, PrimitiveFrame};
-            use crate::version::v0_0_1::id::{Address, Kind, Key, ResourceType};
             use std::fmt::Debug;
-            use crate::version::v0_0_1::generic::id::Identifier;
             use std::hash::Hash;
             use std::str::FromStr;
+
+            use serde::{Deserialize, Serialize};
+
+            use crate::version::v0_0_1::bin::{Bin, BinParcel};
+            use crate::version::v0_0_1::command::Command;
+            use crate::version::v0_0_1::fail;
+            use crate::version::v0_0_1::frame::{CloseReason, PrimitiveFrame};
             use crate::version::v0_0_1::generic::entity::request;
             use crate::version::v0_0_1::generic::entity::response;
-            use crate::version::v0_0_1::fail;
-
+            use crate::version::v0_0_1::generic::id::Identifier;
+            use crate::version::v0_0_1::id::{Address, Key, Kind, ResourceType};
+            use crate::version::v0_0_1::log::Log;
+            use crate::version::v0_0_1::messaging::Exchange;
+            use crate::version::v0_0_1::messaging::ExchangeId;
+            use crate::version::v0_0_1::resource::Status;
+            use crate::version::v0_0_1::error::Error;
 
             #[derive(Debug, Clone, Serialize, Deserialize)]
             pub struct Request<KEY: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, ADDRESS: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, KIND: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync,RESOURCE_TYPE: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync>  {
@@ -1505,46 +941,16 @@ pub mod generic {
                 Close(CloseReason)
             }
 
-            impl <KEY: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, ADDRESS: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, KIND: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync,RESOURCE_TYPE: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync> TryInto<PrimitiveFrame> for Frame<KEY,ADDRESS,KIND,RESOURCE_TYPE> {
-                type Error = Error;
-
-                fn try_into(self) -> Result<PrimitiveFrame, Self::Error> {
-                    let data = bincode::serialize(&self)?;
-                    Ok(PrimitiveFrame {
-                        data
-                    })
-                }
-            }
-
-            impl TryFrom<PrimitiveFrame> for Frame<Key,Address,Kind,ResourceType>{
-                type Error = Error;
-
-                fn try_from(value: PrimitiveFrame) -> Result<Self, Self::Error> {
-                    let frame = bincode::deserialize(value.data.as_slice())?;
-                    Ok(frame)
-                }
-            }
-
-            /*
-            impl <KEY: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, ADDRESS: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, KIND: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync> TryFrom<PrimitiveFrame> for Frame<KEY,ADDRESS,KIND>{
-                type Error = Error;
-
-                fn try_from(value: PrimitiveFrame) -> Result<Self, Self::Error> {
-                    let frame = bincode::deserialize(value.data.as_slice())?;
-                    Ok(frame)
-                }
-            }
-
-             */
-
             pub mod exchange {
-                use crate::version::v0_0_1::generic::id::Identifier;
-                use crate::version::latest::messaging::Exchange;
-                use serde::{Serialize,Deserialize};
+                use std::fmt::Debug;
                 use std::hash::Hash;
                 use std::str::FromStr;
-                use std::fmt::Debug;
+
+                use serde::{Deserialize, Serialize};
+
+                use crate::version::latest::messaging::Exchange;
                 use crate::version::v0_0_1::generic::entity::request::ReqEntity;
+                use crate::version::v0_0_1::generic::id::Identifier;
                 use crate::version::v0_0_1::generic::portal::inlet;
 
                 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1553,38 +959,30 @@ pub mod generic {
                     pub entity: ReqEntity<KEY,ADDRESS,KIND,RESOURCE_TYPE>,
                     pub exchange: Exchange
                 }
-
-                impl <KEY: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, ADDRESS: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, KIND: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync,RESOURCE_TYPE: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync> Into<inlet::Request<KEY,ADDRESS,KIND,RESOURCE_TYPE>> for Request<KEY,ADDRESS,KIND,RESOURCE_TYPE> {
-                    fn into(self) -> inlet::Request<KEY, ADDRESS, KIND,RESOURCE_TYPE> {
-                        inlet::Request {
-                            to: self.to,
-                            entity: self.entity
-                        }
-                    }
-                }
             }
         }
 
         pub mod outlet {
             use std::convert::TryFrom;
             use std::convert::TryInto;
-
-            use anyhow::Error;
-            use serde::{Deserialize, Serialize};
-            use crate::version::v0_0_1::messaging::{Exchange, ExchangeId};
-            use crate::version::v0_0_1::{generic, fail};
-            use crate::version::v0_0_1::command::CommandEvent;
-            use crate::version::v0_0_1::bin::{BinParcel, Bin};
-            use crate::version::v0_0_1::frame::{CloseReason, PrimitiveFrame};
             use std::fmt::Debug;
             use std::hash::Hash;
             use std::str::FromStr;
-            use crate::version::v0_0_1::generic::id::Identifier;
+
+            use serde::{Deserialize, Serialize};
+
+            use crate::version::v0_0_1::{fail, generic};
+            use crate::version::v0_0_1::bin::{Bin, BinParcel};
+            use crate::version::v0_0_1::command::CommandEvent;
+            use crate::version::v0_0_1::frame::{CloseReason, PrimitiveFrame};
             use crate::version::v0_0_1::generic::config::Info;
-            use crate::version::v0_0_1::id::{Key, Address, Kind, ResourceType};
-            use crate::version::v0_0_1::generic::payload::Payload;
             use crate::version::v0_0_1::generic::entity::request;
             use crate::version::v0_0_1::generic::entity::response;
+            use crate::version::v0_0_1::generic::id::Identifier;
+            use crate::version::v0_0_1::generic::payload::Primitive;
+            use crate::version::v0_0_1::id::{Address, Key, Kind, ResourceType};
+            use crate::version::v0_0_1::messaging::{Exchange, ExchangeId};
+            use crate::version::v0_0_1::error::Error;
 
             #[derive(Debug, Clone, Serialize, Deserialize)]
             pub struct Request<KEY: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, ADDRESS: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, KIND: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync,RESOURCE_TYPE: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync> {
@@ -1619,35 +1017,16 @@ pub mod generic {
                 Close(CloseReason)
             }
 
-            impl <KEY: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, ADDRESS: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, KIND: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync,RESOURCE_TYPE: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync> TryInto<PrimitiveFrame> for Frame<KEY,ADDRESS,KIND,RESOURCE_TYPE> {
-                type Error = Error;
-
-                fn try_into(self) -> Result<PrimitiveFrame, Self::Error> {
-                    let data = bincode::serialize(&self)?;
-                    Ok(PrimitiveFrame {
-                        data
-                    })
-                }
-            }
-
-
-            impl TryFrom<PrimitiveFrame> for Frame<Key,Address,Kind,ResourceType> {
-                type Error = Error;
-
-                fn try_from(value: PrimitiveFrame) -> Result<Self, Self::Error> {
-                    let frame = bincode::deserialize(value.data.as_slice())?;
-                    Ok(frame)
-                }
-            }
-
             pub mod exchange {
-                use crate::version::v0_0_1::generic::id::Identifier;
-                use crate::version::latest::messaging::Exchange;
-                use serde::{Serialize,Deserialize};
+                use std::fmt::Debug;
                 use std::hash::Hash;
                 use std::str::FromStr;
-                use std::fmt::Debug;
+
+                use serde::{Deserialize, Serialize};
+
+                use crate::version::latest::messaging::Exchange;
                 use crate::version::v0_0_1::generic::entity::request::ReqEntity;
+                use crate::version::v0_0_1::generic::id::Identifier;
                 use crate::version::v0_0_1::generic::portal::outlet;
 
                 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1657,104 +1036,59 @@ pub mod generic {
                     pub exchange: Exchange
                 }
 
-                impl <KEY: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, ADDRESS: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, KIND: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync,RESOURCE_TYPE: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync> Into<outlet::Request<KEY,ADDRESS,KIND,RESOURCE_TYPE>> for Request<KEY,ADDRESS,KIND,RESOURCE_TYPE> {
-                    fn into(self) -> outlet::Request<KEY, ADDRESS, KIND,RESOURCE_TYPE> {
-                        outlet::Request {
-                            from: self.from,
-                            entity: self.entity
-                        }
-                    }
-                }
             }
         }
     }
 
     pub mod payload {
-        use serde::{Deserialize, Serialize};
-
-        use crate::version::v0_0_1::{State, http};
-        use crate::version::v0_0_1::generic;
+        use std::collections::HashMap;
         use std::fmt::Debug;
         use std::hash::Hash;
         use std::str::FromStr;
-        use crate::version::v0_0_1::generic::resource::{ResourceStub, Resource};
-        use crate::version::v0_0_1::bin::Bin;
-        use std::collections::HashMap;
-        use crate::version::latest::resource::Status;
 
-        #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash, strum_macros::Display )]
-        pub enum PayloadType
-        {
-            Empty,
-            Text,
-            Texts,
-            Key,
-            Keys,
-            Address,
-            Addresses,
-            Stub,
-            Stubs,
-            Meta,
-            Bin,
-            Bins,
-            Boolean,
-            Code,
-            Num,
-            Status,
-            Resource
-        }
+        use serde::{Deserialize, Serialize};
+
+        use crate::version::latest::resource::Status;
+        use crate::version::v0_0_1::{http, State};
+        use crate::version::v0_0_1::bin::Bin;
+        use crate::version::v0_0_1::generic;
+        use crate::version::v0_0_1::generic::resource::{Resource, ResourceStub};
+
 
         #[derive(Debug, Clone, Serialize, Deserialize)]
         pub enum Payload<KEY: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, ADDRESS: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, KIND: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, BIN: Debug + Clone + Serialize + Send + Sync>  {
             Empty,
+            Primitive(Primitive<KEY,ADDRESS,KIND,BIN>),
+            List(Primitive<KEY,ADDRESS,KIND,BIN>),
+            Map(HashMap<String,Box<Payload<KEY,ADDRESS,KIND,BIN>>>)
+        }
+
+        #[derive(Debug, Clone, Serialize, Deserialize)]
+        pub enum Primitive<KEY: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, ADDRESS: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, KIND: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, BIN: Debug + Clone + Serialize + Send + Sync>  {
             Text(String),
-            Texts(Vec<String>),
             Key(KEY),
-            Keys(Vec<KEY>),
             Address(ADDRESS),
-            Addresses(Vec<ADDRESS>),
             Stub(ResourceStub<KEY,ADDRESS,KIND>),
-            Stubs(Vec<ResourceStub<KEY,ADDRESS,KIND>>),
             Meta(HashMap<String,String>),
             Bin(BIN),
-            Bins(HashMap<String, BIN>),
-            Mix(HashMap<String,PayloadAspect<KEY,ADDRESS,KIND,BIN>>),
             Boolean(bool),
-            Code(i64),
-            Num(i64),
+            Int(i64),
             Status(Status),
             Resource(Resource<KEY,ADDRESS,KIND,BIN>)
         }
 
-        #[derive(Debug, Clone, Serialize, Deserialize)]
-        pub enum PayloadAspect<KEY: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, ADDRESS: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, KIND: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, BIN: Debug + Clone + Serialize + Send + Sync>  {
-            Empty,
-            Text(String),
-            Key(KEY),
-            Address(ADDRESS),
-            Stub(ResourceStub<KEY,ADDRESS,KIND>),
-            Meta(HashMap<String,String>),
-            Bin(BIN),
-            Boolean(bool),
-            Code(i64),
-            Num(i64),
-            Status(Status)
-        }
-
-
-
     }
-
 
 }
 
 pub mod fail {
     use serde::{Deserialize, Serialize};
-    use crate::version::v0_0_1::id::Specific;
 
+    use crate::version::v0_0_1::id::Specific;
 
     pub mod mesh {
         use serde::{Deserialize, Serialize};
+
         #[derive(Debug, Clone, Serialize, Deserialize)]
         pub enum Fail{
             Error(String),
@@ -1764,7 +1098,8 @@ pub mod fail {
 
     pub mod portal {
         use serde::{Deserialize, Serialize};
-        use crate::version::v0_0_1::fail::{resource, port, http};
+
+        use crate::version::v0_0_1::fail::{http, port, resource};
 
         #[derive(Debug, Clone, Serialize, Deserialize)]
         pub enum Fail{
@@ -1777,8 +1112,9 @@ pub mod fail {
 
     pub mod resource {
         use serde::{Deserialize, Serialize};
+
+        use crate::version::v0_0_1::fail::{Bad, BadRequest, Conditional, Messaging, NotFound};
         use crate::version::v0_0_1::id::Address;
-        use crate::version::v0_0_1::fail::{NotFound, Bad, BadRequest,Conditional,Messaging};
 
         #[derive(Debug, Clone, Serialize, Deserialize)]
         pub enum Fail {
@@ -1804,6 +1140,7 @@ pub mod fail {
 
     pub mod port {
         use serde::{Deserialize, Serialize};
+
         use crate::version::v0_0_1::fail::{BadRequest, Conditional};
 
         #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1895,4 +1232,42 @@ pub mod fail {
         Portal(portal::Fail),
     }
 }
+
+pub mod error {
+    use std::string::FromUtf8Error;
+
+    pub struct Error {
+        pub message: String
+    }
+
+    impl From<String> for Error {
+        fn from(message: String) -> Self {
+            Self {
+                message
+            }
+        }
+    }
+
+
+    impl From<FromUtf8Error> for Error {
+        fn from(message: FromUtf8Error) -> Self {
+            Self {
+                message: message.to_string()
+            }
+        }
+    }
+
+    impl From<&str> for Error {
+        fn from(message: &str) -> Self {
+            Self {
+                message: message.to_string()
+            }
+        }
+    }
+
+
+}
+
+
+
 

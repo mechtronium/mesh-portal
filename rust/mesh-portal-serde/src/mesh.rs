@@ -4,7 +4,6 @@ pub type Request = generic::Request<ReqEntity>;
 pub type Response = generic::Response;
 
 pub mod generic {
-    use anyhow::Error;
     use std::convert::TryInto;
 
     use crate::version::latest::portal::{inlet, outlet};

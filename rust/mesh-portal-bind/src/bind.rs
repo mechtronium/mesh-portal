@@ -136,7 +136,7 @@ pub fn pipeline_step( input: &str ) -> Res<&str, PipelineStep> {
 
 pub fn inner_pipeline_stop( input: &str ) -> Res<&str, PipelineStop> {
 
-  delimited( tag("{"), space0, tag("}") )(input).map( |(next,_)|{
+  delimited( tag("{"), delimited(multispace0,tag("*"),multispace0), tag("}") )(input).map( |(next,_)|{
       (next,PipelineStop::Internal)
   } )
 }
@@ -233,9 +233,9 @@ pub mod test {
     #[test]
     pub fn test_pipeline_stop() -> Result<(),Error> {
         assert!(consume_pipeline_stop( "&")?.1 == PipelineStop::Return);
-        assert!(consume_pipeline_stop( "{}")?.1 == PipelineStop::Internal);
-        assert!(consume_pipeline_stop( "{ }")?.1 == PipelineStop::Internal);
-        assert!(consume_pipeline_stop( "some:address!go")?.1 == PipelineStop::Call(Call::from_str("some:address!go")?));
+        assert!(consume_pipeline_stop( "{*}")?.1 == PipelineStop::Internal);
+        assert!(consume_pipeline_stop( "{ * }")?.1 == PipelineStop::Internal);
+        assert!(consume_pipeline_stop( "some:address^Msg!go")?.1 == PipelineStop::Call(Call::from_str("some:address^Msg!go")?));
 
         Ok(())
     }
@@ -243,17 +243,17 @@ pub mod test {
     #[test]
     pub fn test_pipeline() -> Result<(),Error> {
         assert!(consume_pipeline( "-> &")?.1 == Pipeline { segments: vec![PipelineSegment { step: PipelineStep::new(StepKind::Request), stop: PipelineStop::Return}] });
-        assert!(consume_pipeline( "-> {}")?.1 == Pipeline { segments: vec![PipelineSegment { step: PipelineStep::new(StepKind::Request), stop: PipelineStop::Internal}] });
-        consume_pipeline( "-[Text]-> {} =[ Text ]=> &")?;
-        assert!(consume_pipeline( "-[Text]-> {} =[ Text ]=>").is_err()); // expect an error because does not end in a PipelineStop
+        assert!(consume_pipeline( "-> {*}")?.1 == Pipeline { segments: vec![PipelineSegment { step: PipelineStep::new(StepKind::Request), stop: PipelineStop::Internal}] });
+        consume_pipeline( "-[Text]-> {*} =[ Text ]=> &")?;
+        assert!(consume_pipeline( "-[Text]-> {*} =[ Text ]=>").is_err()); // expect an error because does not end in a PipelineStop
 
         Ok(())
     }
 
     #[test]
     pub fn test_port() -> Result<(),Error> {
-        consume_port( "tick -> {};")?;
-        consume_port( "ping -> {} => &;")?;
+        consume_port( "tick -> {*};")?;
+        consume_port( "ping -> {*} => &;")?;
 
         Ok(())
     }
@@ -267,13 +267,13 @@ pub mod test {
 
            Msg{
 
-              tick -> {};
+              tick -> {*};
 
-              ping -> { } => &;
+              ping -> { * } => &;
 
-              signup -[ Map[username<Text>,password<Text>] ]-> strip:passsword:mechtron^Msg<strip> -[ Map[username<Text>] ]-> { } =[ Text ]=> &;
+              signup -[ Map[username<Text>,password<Text>] ]-> strip:passsword:mechtron^Msg!strip -[ Map[username<Text>] ]-> {*} =[ Text ]=> &;
 
-              do-whatever-you-want -[ * ]-> { } =[ * ]=> &;
+              do-whatever-you-want -[ * ]-> { * } =[ * ]=> &;
 
            }
 

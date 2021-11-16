@@ -16,5 +16,4 @@ serde = { version="1.0.69", features=['derive','rc'] }
 strum = "0.21.0"
 strum_macros = "0.21.1"
 nom = "7"
-anyhow = "1.0.44"
 bincode = "1.3.3"

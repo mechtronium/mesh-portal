@@ -1,19 +1,22 @@
-use crate::parse::{Res, call, call_with_config};
-use nom::{Parser, InputTakeAtPosition, AsChar, Err};
-use nom_supreme::parse_from_str;
-use nom::combinator::{recognize, opt, not, all_consuming};
-use nom::character::complete::{alpha1, alpha0, space0, alphanumeric0, alphanumeric1, digit0, digit1, multispace0};
-use nom::bytes::complete::tag;
-use crate::token::PayloadPrimitive;
-use crate::symbol::{Address, Call, CallWithConfig};
-use nom::sequence::{tuple, preceded, delimited};
-use nom::branch::alt;
+use std::collections::HashMap;
 use std::convert::TryInto;
 use std::str::FromStr;
-use nom::error::{VerboseError, ParseError, ErrorKind};
-use nom::multi::separated_list1;
-use std::collections::HashMap;
 
+use nom::{AsChar, Err, InputTakeAtPosition, Parser};
+use nom::branch::alt;
+use nom::bytes::complete::tag;
+use nom::character::complete::{alpha0, alpha1, alphanumeric0, alphanumeric1, digit0, digit1, multispace0, space0};
+use nom::combinator::{all_consuming, not, opt, recognize};
+use nom::error::{ErrorKind, ParseError, VerboseError};
+use nom::multi::separated_list1;
+use nom::sequence::{delimited, preceded, tuple};
+use nom_supreme::parse_from_str;
+
+use mesh_portal_serde::version::latest::payload::PrimitiveType;
+
+use crate::parse::{call, call_with_config, Res};
+use crate::symbol::{Address, Call, CallWithConfig};
+use crate::token::PayloadPrimitiveType;
 
 fn skewer<T>(i: T) -> Res<T, T>
     where
@@ -39,13 +42,13 @@ pub enum Pattern {
 
 #[derive(Debug,Clone,Eq,PartialEq)]
 pub struct Array{
-    pub primitive: Primitive,
+    pub primitive: PrimitiveType,
     pub range: Range,
 }
 
 #[derive(Debug,Clone,Eq,PartialEq)]
 pub enum DataStruct{
-    Primitive(Primitive),
+    PrimitiveType(PrimitiveType),
     Array(Array),
     Map(Map)
 }
@@ -124,35 +127,15 @@ pub enum LabelConstraint {
     Exact(String)
 }
 
-
-
-
-
-#[derive(Debug,Clone,strum_macros::Display,strum_macros::EnumString,Eq,PartialEq,Hash)]
-pub enum Primitive
-{
-    Key,
-    Address,
-    Text,
-    Boolean,
-    Code,
-    Int,
-    Meta,
-    Bin,
-    Stub,
-    Status,
-    Resource,
-}
-
 #[derive(Eq,PartialEq)]
-pub struct LabeledPrimitiveDef {
+pub struct LabeledPrimitiveTypeDef {
     pub label: String,
-    pub def: PrimitiveDef
+    pub def: PrimitiveTypeDef
 }
 
 #[derive(Eq,PartialEq)]
-pub struct PrimitiveDef {
-    pub primitive: Primitive,
+pub struct PrimitiveTypeDef {
+    pub primitive: PrimitiveType,
     pub format: Option<Format>,
     pub verifier: Option<CallWithConfig>,
 }
@@ -167,7 +150,7 @@ pub enum Format{
 }
 
 
-pub fn primitive(input: &str) -> Res<&str, Primitive> {
+pub fn primitive(input: &str) -> Res<&str, PrimitiveType> {
      parse_from_str(recognize(alpha1) ).parse(input)
 }
 
@@ -177,11 +160,11 @@ pub fn format(input: &str) -> Res<&str, Format> {
 
 
 
-pub fn primitive_def(input: &str) -> Res<&str, PrimitiveDef> {
+pub fn primitive_def(input: &str) -> Res<&str, PrimitiveTypeDef> {
     tuple( ( primitive, opt(preceded( tag("~"), opt(format)), ),opt(preceded(tag("~"), call_with_config), )  ) )(input).map( |(next,(primitive,format,verifier))| {
         (next,
 
-         PrimitiveDef {
+         PrimitiveTypeDef {
              primitive,
              format: match format {
                  Some(Some(format)) => {
@@ -194,16 +177,16 @@ pub fn primitive_def(input: &str) -> Res<&str, PrimitiveDef> {
 
     })
 }
-pub fn consume_primitive_def(input: &str) -> Res<&str, PrimitiveDef> {
+pub fn consume_primitive_def(input: &str) -> Res<&str, PrimitiveTypeDef> {
     all_consuming(primitive_def)(input)
 }
 
 
 
-    pub fn labeled_primitive_def(input: &str) -> Res<&str, LabeledPrimitiveDef> {
+    pub fn labeled_primitive_def(input: &str) -> Res<&str, LabeledPrimitiveTypeDef> {
     tuple( ( skewer, delimited(tag("<"), primitive_def, tag(">") ) ))(input).map( |(next,(label,primitive_def))| {
 
-        let labeled_def = LabeledPrimitiveDef {
+        let labeled_def = LabeledPrimitiveTypeDef {
             label: label.to_string(),
             def: primitive_def
         };
@@ -271,7 +254,7 @@ pub fn range( input: &str ) -> Res<&str,Range> {
 
 pub fn primitive_data_struct( input: &str ) -> Res< &str, DataStruct > {
     primitive(input).map( |(next,primitive)| {
-        (next,DataStruct::Primitive(primitive))
+        (next,DataStruct::PrimitiveType(primitive))
     } )
 }
 
@@ -480,37 +463,42 @@ pub fn consume_pipeline_block(input: &str ) -> Res<&str,Block> {
 
 #[cfg(test)]
 pub mod test {
-    use anyhow::Error;
-    use crate::pattern::{primitive, primitive_def, consume_primitive_def, consume_data_struct, consume_data_struct_def, DataStruct, Primitive, Array, Range, DataStructDef, Format, Map, MapConstraint, DataStructConstraint, LabelConstraint, consume_map_constraint, consume_pipeline_block};
-    use nom::combinator::all_consuming;
-    use crate::symbol::{CallWithConfig, Call, Address};
-    use std::str::FromStr;
     use std::collections::HashMap;
+    use std::str::FromStr;
+
+    use anyhow::Error;
+    use nom::combinator::all_consuming;
+
+    use mesh_portal_serde::version::v0_0_1::PrimitiveType;
+
+    use crate::pattern::{Array, consume_data_struct, consume_data_struct_def, consume_map_constraint, consume_pipeline_block, consume_primitive_def, DataStruct, DataStructConstraint, DataStructDef, Format, LabelConstraint, Map, MapConstraint, primitive, primitive_def, Range};
+    use crate::symbol::{Address, Call, CallWithConfig};
+    use mesh_portal_serde::version::latest::payload::PrimitiveType;
 
     #[test]
     pub fn test_primative() -> Result<(),Error>{
-        assert!( consume_data_struct("Text")?.1 == DataStruct::Primitive( Primitive::Text ) );
-        assert!( consume_data_struct("Text[]")?.1 == DataStruct::Array( Array { primitive: Primitive::Text, range: Range::Any } ) );
-        assert!( consume_data_struct("Text[1-3]")?.1 == DataStruct::Array( Array { primitive: Primitive::Text, range: Range::MinMax{min:1,max:3}} ) );
-        assert!( consume_data_struct_def("Text~json")?.1 == DataStructDef{data:DataStruct::Primitive(Primitive::Text), format: Option::Some(Format::Json),verifier: Option::None }) ;
-/*        assert!( consume_data_struct_def("Text~json~verifier!go")?.1 == DataStructDef{data:DataStruct::Primitive(Primitive::Text), format: Option::Some(Format::Json),verifier: Option::Some(CallWithConfig {call: Call {address: Address::from_str("verifier")?, port:"go".to_string() },config:Option::None})}) ;
-        assert!( consume_data_struct_def("Text~~verifier!go")?.1 == DataStructDef{data:DataStruct::Primitive(Primitive::Text), format: Option::None,verifier: Option::Some(CallWithConfig {call: Call {address: Address::from_str("verifier")?, port:"go".to_string() },config:Option::None})}) ;
-        assert!( consume_data_struct_def("Text[]~json~verifier!go")?.1 == DataStructDef{data:DataStruct::Array(Array{primitive: Primitive::Text,range:Range::Any}), format: Option::Some(Format::Json),verifier: Option::Some(CallWithConfig {call: Call {address: Address::from_str("verifier")?, port:"go".to_string() },config:Option::None})}) ;
-        assert!( consume_data_struct_def("Text~json~verifier!go+config:1.0.0:/some-file.conf")?.1 == DataStructDef{data:DataStruct::Primitive(Primitive::Text), format: Option::Some(Format::Json),verifier: Option::Some(CallWithConfig {call: Call {address: Address::from_str("verifier")?, port:"go".to_string() },config:Option::Some(Address::from_str("config:1.0.0:/some-file.conf")?)})}) ;*/
+        assert!( consume_data_struct("Text")?.1 == DataStruct::PrimitiveType( PrimitiveType::Text ) );
+        assert!( consume_data_struct("Text[]")?.1 == DataStruct::Array( Array { primitive: PrimitiveType::Text, range: Range::Any } ) );
+        assert!( consume_data_struct("Text[1-3]")?.1 == DataStruct::Array( Array { primitive: PrimitiveType::Text, range: Range::MinMax{min:1,max:3}} ) );
+        assert!( consume_data_struct_def("Text~json")?.1 == DataStructDef{data:DataStruct::PrimitiveType(PrimitiveType::Text), format: Option::Some(Format::Json),verifier: Option::None }) ;
+/*        assert!( consume_data_struct_def("Text~json~verifier!go")?.1 == DataStructDef{data:DataStruct::PrimitiveType(PrimitiveType::Text), format: Option::Some(Format::Json),verifier: Option::Some(CallWithConfig {call: Call {address: Address::from_str("verifier")?, port:"go".to_string() },config:Option::None})}) ;
+        assert!( consume_data_struct_def("Text~~verifier!go")?.1 == DataStructDef{data:DataStruct::PrimitiveType(PrimitiveType::Text), format: Option::None,verifier: Option::Some(CallWithConfig {call: Call {address: Address::from_str("verifier")?, port:"go".to_string() },config:Option::None})}) ;
+        assert!( consume_data_struct_def("Text[]~json~verifier!go")?.1 == DataStructDef{data:DataStruct::Array(Array{primitive: PrimitiveType::Text,range:Range::Any}), format: Option::Some(Format::Json),verifier: Option::Some(CallWithConfig {call: Call {address: Address::from_str("verifier")?, port:"go".to_string() },config:Option::None})}) ;
+        assert!( consume_data_struct_def("Text~json~verifier!go+config:1.0.0:/some-file.conf")?.1 == DataStructDef{data:DataStruct::PrimitiveType(PrimitiveType::Text), format: Option::Some(Format::Json),verifier: Option::Some(CallWithConfig {call: Call {address: Address::from_str("verifier")?, port:"go".to_string() },config:Option::Some(Address::from_str("config:1.0.0:/some-file.conf")?)})}) ;*/
         assert!( consume_data_struct_def("Map")?.1 == DataStructDef{data:DataStruct::Map(Map::default()), format: Option::None,verifier: Option::None }) ;
         assert!( consume_data_struct_def("Map[]")?.1 == DataStructDef{data:DataStruct::Map(Map::default()), format: Option::None,verifier: Option::None }) ;
 
 
-        assert!( consume_map_constraint("label<Bin>")?.1==MapConstraint{ label: LabelConstraint::Exact("label".to_string()), data: DataStructConstraint::Exact(DataStructDef{data:DataStruct::Primitive(Primitive::Bin), format: Option::None,verifier: Option::None })});
-        assert!( consume_map_constraint("label<Bin~json>")?.1==MapConstraint{ label: LabelConstraint::Exact("label".to_string()), data: DataStructConstraint::Exact(DataStructDef{data:DataStruct::Primitive(Primitive::Bin), format: Option::Some(Format::Json),verifier: Option::None })});
+        assert!( consume_map_constraint("label<Bin>")?.1==MapConstraint{ label: LabelConstraint::Exact("label".to_string()), data: DataStructConstraint::Exact(DataStructDef{data:DataStruct::PrimitiveType(PrimitiveType::Bin), format: Option::None,verifier: Option::None })});
+        assert!( consume_map_constraint("label<Bin~json>")?.1==MapConstraint{ label: LabelConstraint::Exact("label".to_string()), data: DataStructConstraint::Exact(DataStructDef{data:DataStruct::PrimitiveType(PrimitiveType::Bin), format: Option::Some(Format::Json),verifier: Option::None })});
         assert!( consume_map_constraint("*")?.1==MapConstraint{ label: LabelConstraint::Any, data: DataStructConstraint::Any });
         assert!( consume_map_constraint("*<*>")?.1==MapConstraint{ label: LabelConstraint::Any, data: DataStructConstraint::Any });
-        assert!( consume_map_constraint("*<Bin>")?.1==MapConstraint{ label: LabelConstraint::Any, data: DataStructConstraint::Exact(DataStructDef{data:DataStruct::Primitive(Primitive::Bin), format: Option::None,verifier: Option::None })});
+        assert!( consume_map_constraint("*<Bin>")?.1==MapConstraint{ label: LabelConstraint::Any, data: DataStructConstraint::Exact(DataStructDef{data:DataStruct::PrimitiveType(PrimitiveType::Bin), format: Option::None,verifier: Option::None })});
         assert!( consume_map_constraint("label<*>")?.1==MapConstraint{ label: LabelConstraint::Exact("label".to_string()), data: DataStructConstraint::Any });
 
         let mut map = HashMap::new();
-        map.insert( "first".to_string(), DataStructConstraint::Exact(DataStructDef { data: DataStruct::Primitive(Primitive::Text), format: Option::None, verifier: Option::None }) );
-        map.insert( "last".to_string(), DataStructConstraint::Exact(DataStructDef { data: DataStruct::Primitive(Primitive::Text), format: Option::None, verifier: Option::None }) );
+        map.insert( "first".to_string(), DataStructConstraint::Exact(DataStructDef { data: DataStruct::PrimitiveType(PrimitiveType::Text), format: Option::None, verifier: Option::None }) );
+        map.insert( "last".to_string(), DataStructConstraint::Exact(DataStructDef { data: DataStruct::PrimitiveType(PrimitiveType::Text), format: Option::None, verifier: Option::None }) );
 
         let def = consume_data_struct_def("Map[first<Text>,last<Text>]")?;
         println!("{:?}",def);
@@ -522,7 +510,7 @@ pub mod test {
 
         assert!(consume_data_struct_def("Map[first<Text>,last<Text>,*<Bin>]")?.1==DataStructDef{format: Option::None, verifier:Option::None, data:DataStruct::Map(Map{
             required: map,
-            allowed: Box::new(DataStructConstraint::Exact(DataStructDef{data:DataStruct::Primitive(Primitive::Bin),verifier:Option::None,format:Option::None}))
+            allowed: Box::new(DataStructConstraint::Exact(DataStructDef{data:DataStruct::PrimitiveType(PrimitiveType::Bin),verifier:Option::None,format:Option::None}))
         })});
 
 
