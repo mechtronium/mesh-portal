@@ -30,7 +30,7 @@ pub mod id {
     pub type AddressAndKind = generic::id::AddressAndKind<Address,Kind>;
     pub type AddressAndType = generic::id::AddressAndType<Address,ResourceType>;
     pub type Meta=id::Meta;
-    pub type IdentityKind = id::IdentifierKind;
+    pub type IdentifierKind = id::IdentifierKind;
 }
 
 pub mod messaging {
@@ -188,10 +188,10 @@ pub mod generic {
 
         use crate::version::v0_0_1::generic;
 
-        pub type Identifier<KEY: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, ADDRESS: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync> = generic::id::Identifier<KEY,ADDRESS>;
-        pub type Identifiers<KEY: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, ADDRESS: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync> = generic::id::Identifiers<KEY,ADDRESS>;
-        pub type AddressAndKind<KEY: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, ADDRESS: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync> = generic::id::AddressAndKind<KEY,ADDRESS>;
-        pub type AddressAndType<KEY: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, RESOURCE_TYPE: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync> = generic::id::AddressAndType<KEY,RESOURCE_TYPE>;
+        pub type Identifier<KEY, ADDRESS> = generic::id::Identifier<KEY,ADDRESS>;
+        pub type Identifiers<KEY, ADDRESS> = generic::id::Identifiers<KEY,ADDRESS>;
+        pub type AddressAndKind<KEY, ADDRESS> = generic::id::AddressAndKind<KEY,ADDRESS>;
+        pub type AddressAndType<KEY, RESOURCE_TYPE> = generic::id::AddressAndType<KEY,RESOURCE_TYPE>;
     }
 
     pub mod config {
@@ -207,7 +207,7 @@ pub mod generic {
         use crate::version::latest::generic::resource::Archetype;
         use crate::version::v0_0_1::generic;
 
-        pub type Info<KEY: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, ADDRESS: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, KIND: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync>=generic::config::Info<KEY,ADDRESS,KIND>;
+        pub type Info<KEY, ADDRESS, KIND>=generic::config::Info<KEY,ADDRESS,KIND>;
     }
 
     pub mod entity {
@@ -224,9 +224,9 @@ pub mod generic {
             use crate::version::latest::generic::payload::Primitive;
             use crate::version::latest::generic::payload::Payload;
 
-            pub type ReqEntity<KEY: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, ADDRESS: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, KIND: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, RESOURCE_TYPE: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync> = generic::entity::request::ReqEntity<KEY,ADDRESS,KIND,RESOURCE_TYPE>;
-            pub type Rc<RESOURCE_TYPE: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync> = generic::entity::request::Rc<RESOURCE_TYPE>;
-            pub type Msg<KEY: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, ADDRESS: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, KIND: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync> = generic::entity::request::Msg<KEY,ADDRESS,KIND>;
+            pub type ReqEntity<KEY, ADDRESS, KIND, RESOURCE_TYPE> = generic::entity::request::ReqEntity<KEY,ADDRESS,KIND,RESOURCE_TYPE>;
+            pub type Rc<RESOURCE_TYPE> = generic::entity::request::Rc<RESOURCE_TYPE>;
+            pub type Msg<KEY, ADDRESS, KIND> = generic::entity::request::Msg<KEY,ADDRESS,KIND>;
             pub type Http = generic::entity::request::Http;
         }
 
@@ -240,7 +240,7 @@ pub mod generic {
 
             use serde::{Deserialize, Serialize};
 
-            pub type RespEntity<KEY: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, ADDRESS: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, KIND: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync,FAIL> = generic::entity::response::RespEntity<KEY,ADDRESS,KIND,FAIL>;
+            pub type RespEntity<KEY, ADDRESS, KIND,FAIL> = generic::entity::response::RespEntity<KEY,ADDRESS,KIND,FAIL>;
         }
     }
 
@@ -259,9 +259,9 @@ pub mod generic {
         use crate::version::v0_0_1::generic::id::{AddressAndKind, Identifier};
         use crate::version::v0_0_1::State;
 
-        pub type Archetype<KIND: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync>=generic::resource::Archetype<KIND>;
-        pub type ResourceStub<KEY: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, ADDRESS: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, KIND: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync > = generic::resource::ResourceStub<KEY,ADDRESS,KIND>;
-        pub type Resource<KEY: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, ADDRESS: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, KIND: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync,BIN: Debug + Clone + Serialize + Send + Sync > = generic::resource::Resource<KEY,ADDRESS,KIND,BIN>;
+        pub type Archetype<KIND>=generic::resource::Archetype<KIND>;
+        pub type ResourceStub<KEY, ADDRESS, KIND > = generic::resource::ResourceStub<KEY,ADDRESS,KIND>;
+        pub type Resource<KEY, ADDRESS, KIND,BIN > = generic::resource::Resource<KEY,ADDRESS,KIND,BIN>;
     }
 
     pub mod portal {
@@ -276,9 +276,9 @@ pub mod generic {
 
             use crate::version::v0_0_1::generic::portal::inlet;
 
-            pub type Request<KEY: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, ADDRESS: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, KIND: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync,RESOURCE_TYPE: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync> = inlet::Request<KEY,ADDRESS,KIND,RESOURCE_TYPE>;
-            pub type Response<KEY: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, ADDRESS: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, KIND: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync> = inlet::Response<KEY,ADDRESS,KIND>;
-            pub type Frame<KEY: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, ADDRESS: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, KIND: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync,RESOURCE_TYPE: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync> = inlet::Frame<KEY,ADDRESS,KIND,RESOURCE_TYPE>;
+            pub type Request<KEY, ADDRESS, KIND,RESOURCE_TYPE> = inlet::Request<KEY,ADDRESS,KIND,RESOURCE_TYPE>;
+            pub type Response<KEY, ADDRESS, KIND> = inlet::Response<KEY,ADDRESS,KIND>;
+            pub type Frame<KEY, ADDRESS, KIND,RESOURCE_TYPE> = inlet::Frame<KEY,ADDRESS,KIND,RESOURCE_TYPE>;
 
             pub mod exchange {
                 use std::fmt::Debug;
@@ -288,7 +288,7 @@ pub mod generic {
                 use serde::{Deserialize, Serialize};
                 use crate::version::v0_0_1::generic::portal::inlet::exchange;
 
-                pub type Request<KEY: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, ADDRESS: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, KIND: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync,RESOURCE_TYPE: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync> = exchange::Request<KEY,ADDRESS,KIND,RESOURCE_TYPE>;
+                pub type Request<KEY, ADDRESS, KIND,RESOURCE_TYPE> = exchange::Request<KEY,ADDRESS,KIND,RESOURCE_TYPE>;
             }
         }
 
@@ -303,9 +303,9 @@ pub mod generic {
 
             use crate::version::v0_0_1::generic::portal::outlet;
 
-            pub type Request<KEY: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, ADDRESS: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, KIND: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync,RESOURCE_TYPE: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync> =  outlet::Request<KEY,ADDRESS,KIND,RESOURCE_TYPE>;
-            pub type Response<KEY: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, ADDRESS: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, KIND: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync> =  outlet::Response<KEY,ADDRESS,KIND>;
-            pub type Frame<KEY: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, ADDRESS: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, KIND: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync,RESOURCE_TYPE: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync> =  outlet::Frame<KEY,ADDRESS,KIND,RESOURCE_TYPE>;
+            pub type Request<KEY, ADDRESS, KIND,RESOURCE_TYPE> =  outlet::Request<KEY,ADDRESS,KIND,RESOURCE_TYPE>;
+            pub type Response<KEY, ADDRESS, KIND> =  outlet::Response<KEY,ADDRESS,KIND>;
+            pub type Frame<KEY, ADDRESS, KIND,RESOURCE_TYPE> =  outlet::Frame<KEY,ADDRESS,KIND,RESOURCE_TYPE>;
 
             pub mod exchange {
                 use std::fmt::Debug;
@@ -316,7 +316,7 @@ pub mod generic {
 
                 use crate::version::v0_0_1::generic::portal::outlet::exchange;
 
-                pub type Request<KEY: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, ADDRESS: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, KIND: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync,RESOURCE_TYPE: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync> = exchange::Request<KEY,ADDRESS,KIND,RESOURCE_TYPE>;
+                pub type Request<KEY, ADDRESS, KIND,RESOURCE_TYPE> = exchange::Request<KEY,ADDRESS,KIND,RESOURCE_TYPE>;
             }
         }
     }
@@ -331,8 +331,8 @@ pub mod generic {
 
         use crate::version::v0_0_1::generic::payload;
 
-        pub type Payload<KEY: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, ADDRESS: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, KIND: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, BIN: Debug + Clone + Serialize + Send + Sync> = payload::Payload<KEY,ADDRESS,KIND,BIN>;
-        pub type Primitive<KEY: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, ADDRESS: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, KIND: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, BIN: Debug + Clone + Serialize + Send + Sync> = payload::Primitive<KEY,ADDRESS,KIND,BIN>;
+        pub type Payload<KEY, ADDRESS, KIND, BIN> = payload::Payload<KEY,ADDRESS,KIND,BIN>;
+        pub type Primitive<KEY, ADDRESS, KIND, BIN> = payload::Primitive<KEY,ADDRESS,KIND,BIN>;
     }
 
 }

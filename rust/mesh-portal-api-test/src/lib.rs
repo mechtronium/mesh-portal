@@ -192,7 +192,6 @@ lazy_static! {
                 parent: Identifier::Address("parent".to_string()),
                 archetype: Archetype {
                     kind: "Portal".to_string(),
-                    specific: None,
                     config_src: None,
                 },
                 config: Default::default(),

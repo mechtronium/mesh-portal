@@ -459,6 +459,8 @@ pub mod generic {
         use serde::{Deserialize, Serialize};
 
         use crate::version::v0_0_1::generic;
+        use std::convert::{TryFrom, TryInto};
+        use crate::version::v0_0_1::error::Error;
 
         #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
         pub enum Identifier<KEY: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, ADDRESS: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync> {
@@ -585,6 +587,8 @@ pub mod generic {
             use crate::version::v0_0_1::bin::Bin;
             use crate::version::v0_0_1::generic::payload::Primitive;
             use crate::version::v0_0_1::generic::payload::Payload;
+            use std::convert::{TryFrom, TryInto};
+            use crate::version::latest::error::Error;
 
             #[derive(Debug, Clone, Serialize, Deserialize)]
             pub enum RespEntity<KEY: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, ADDRESS: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, KIND: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync,FAIL>  {
@@ -608,11 +612,11 @@ pub mod generic {
         use crate::version::v0_0_1::generic;
         use crate::version::v0_0_1::generic::id::{AddressAndKind, Identifier};
         use crate::version::v0_0_1::State;
+        use std::convert::{TryFrom, TryInto};
 
         #[derive(Debug, Clone, Serialize, Deserialize)]
         pub struct Archetype<KIND: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync> {
             pub kind: KIND,
-            pub specific: Option<String>,
             pub config_src: Option<String>
         }
 
@@ -629,6 +633,7 @@ pub mod generic {
             pub stub: ResourceStub<KEY,ADDRESS,KIND>,
             pub state: HashMap<String,BIN>
         }
+
     }
 
     pub mod portal {
@@ -654,6 +659,7 @@ pub mod generic {
             use crate::version::v0_0_1::messaging::ExchangeId;
             use crate::version::v0_0_1::resource::Status;
             use crate::version::v0_0_1::error::Error;
+            use crate::version::v0_0_1::generic::entity::request::ReqEntity;
 
             #[derive(Debug, Clone, Serialize, Deserialize)]
             pub struct Request<KEY: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, ADDRESS: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, KIND: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync,RESOURCE_TYPE: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync>  {
@@ -729,6 +735,8 @@ pub mod generic {
                 use crate::version::v0_0_1::generic::entity::request::ReqEntity;
                 use crate::version::v0_0_1::generic::id::Identifier;
                 use crate::version::v0_0_1::generic::portal::inlet;
+                use std::convert::{TryFrom, TryInto};
+                use crate::version::latest::error::Error;
 
                 #[derive(Debug, Clone, Serialize, Deserialize)]
                 pub struct Request<KEY: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, ADDRESS: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, KIND: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync,RESOURCE_TYPE: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync>  {
@@ -784,6 +792,9 @@ pub mod generic {
                         exchange
                     }
                 }
+
+
+
             }
 
             #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -824,6 +835,8 @@ pub mod generic {
                 use crate::version::v0_0_1::generic::entity::request::ReqEntity;
                 use crate::version::v0_0_1::generic::id::Identifier;
                 use crate::version::v0_0_1::generic::portal::outlet;
+                use std::convert::{TryFrom, TryInto};
+                use crate::version::latest::error::Error;
 
                 #[derive(Debug, Clone, Serialize, Deserialize)]
                 pub struct Request<KEY: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, ADDRESS: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, KIND: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync,RESOURCE_TYPE: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync> {
@@ -831,7 +844,6 @@ pub mod generic {
                     pub entity: ReqEntity<KEY,ADDRESS,KIND,RESOURCE_TYPE>,
                     pub exchange: Exchange
                 }
-
             }
         }
     }
@@ -849,6 +861,8 @@ pub mod generic {
         use crate::version::v0_0_1::bin::Bin;
         use crate::version::v0_0_1::generic;
         use crate::version::v0_0_1::generic::resource::{Resource, ResourceStub};
+        use std::convert::{TryFrom, TryInto};
+        use crate::version::latest::error::Error;
 
 
         #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -872,7 +886,6 @@ pub mod generic {
             Status(Status),
             Resource(Resource<KEY,ADDRESS,KIND,BIN>)
         }
-
     }
 
 }
