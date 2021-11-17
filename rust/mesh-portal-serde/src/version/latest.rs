@@ -86,6 +86,7 @@ pub mod resource {
     pub type Selector=generic::resource::Selector<Key,Address,Kind,ResourceType>;
     pub type FieldSelector =generic::resource::select::FieldSelector<Key,Address,Kind,ResourceType>;
     pub type ResourceStub = generic::resource::ResourceStub<Key,Address,Kind>;
+    pub type Archetype = generic::resource::Archetype<Kind>;
 }
 
 pub mod config {

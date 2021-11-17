@@ -47,13 +47,13 @@ lazy_static! {
     use mesh_portal_serde::version::latest::config::{Info, PortalKind};
     use mesh_portal_serde::version::latest::id::{Identifier, Address};
     use mesh_portal_serde::version::latest::messaging::Exchange;
-    use mesh_portal_serde::version::latest::payload::Payload;
-    use mesh_portal_serde::version::latest::resource::Archetype;
+    use mesh_portal_serde::version::latest::payload::{Payload, Primitive};
     use mesh_portal_serde::version::latest::portal::{inlet, outlet};
     use mesh_portal_serde::mesh;
     use mesh_portal_serde::version::latest::entity::request::{ReqEntity, Rc, Msg};
     use mesh_portal_serde::version::latest::entity::response;
     use std::str::FromStr;
+    use mesh_portal_serde::version::latest::resource::Archetype;
 
     #[derive(Clone)]
     pub enum GlobalEvent {
@@ -189,7 +189,7 @@ lazy_static! {
                 key,
                 address: address.clone(),
                 owner: user,
-                parent: Identifier::Address(address.parent().unwrap()),
+                parent: Identifier::Address("parent".to_string()),
                 archetype: Archetype {
                     kind: "Portal".to_string(),
                     specific: None,
@@ -363,37 +363,39 @@ lazy_static! {
 println!("FriendlyPortalCtrl::exchange...");
             match self.skel.api().exchange(request).await {
                 Ok(response) => match response.entity {
-                    response::RespEntity::Ok(Payload::Stubs(resources)) => {
+                    response::RespEntity::Ok(Payload::List(resources)) => {
 println!("FriendlyPortalCtrl::Ok");
                         for resource in resources {
-                            if resource.key != self.skel.info.key {
-                                (self.skel.logger)(format!(
-                                    "INFO: found resource: {}",
-                                    resource.address.to_string()
-                                ).as_str());
-                                let mut request = inlet::Request::new(ReqEntity::Msg (
-                                    Msg{
-                                        port: "greet".to_string(),
-                                        payload: Payload::Text(format!(
-                                            "Hello, my name is '{}' and I live at '{}'",
-                                            self.skel.info.owner, self.skel.info.address.to_string()
-                                        )),
-                                    }));
-                                let result = self.skel.api().exchange(request).await;
-                                match result {
-                                    Ok(response) => {
-                                        match &response.entity {
-                                            response::RespEntity::Ok(Payload::Text(response)) => {
-                                                println!("got response: {}", response );
-                                                GLOBAL_TX.send(GlobalEvent::Finished(self.skel.info.owner.clone()));
-                                            }
-                                            _ => {
-                                                GLOBAL_TX.send(GlobalEvent::Fail(self.skel.info.owner.clone()));
+                            if let Primitive::Stub(resource) = resource {
+                                if resource.key != self.skel.info.key {
+                                    (self.skel.logger)(format!(
+                                        "INFO: found resource: {}",
+                                        resource.address.to_string()
+                                    ).as_str());
+                                    let mut request = inlet::Request::new(ReqEntity::Msg(
+                                        Msg {
+                                            port: "greet".to_string(),
+                                            payload: Payload::Single(Primitive::Text(format!(
+                                                "Hello, my name is '{}' and I live at '{}'",
+                                                self.skel.info.owner, self.skel.info.address.to_string()
+                                            ))),
+                                        }));
+                                    let result = self.skel.api().exchange(request).await;
+                                    match result {
+                                        Ok(response) => {
+                                            match &response.entity {
+                                                response::RespEntity::Ok(Payload::Single(Primitive::Text(response))) => {
+                                                    println!("got response: {}", response);
+                                                    GLOBAL_TX.send(GlobalEvent::Finished(self.skel.info.owner.clone()));
+                                                }
+                                                _ => {
+                                                    GLOBAL_TX.send(GlobalEvent::Fail(self.skel.info.owner.clone()));
+                                                }
                                             }
                                         }
-                                    }
-                                    Err(_) => {
-                                        GLOBAL_TX.send(GlobalEvent::Fail(self.skel.info.owner.clone()));
+                                        Err(_) => {
+                                            GLOBAL_TX.send(GlobalEvent::Fail(self.skel.info.owner.clone()));
+                                        }
                                     }
                                 }
                             }
@@ -417,8 +419,8 @@ println!("FriendlyPortalCtrl::Ok");
             impl PortCtrl for GreetPort {
                 async fn request( &self, request: outlet::Request ) -> Result<Option<response::RespEntity>,Error>{
                     match &request.entity {
-                        ReqEntity::Msg(Msg { port:_, payload:Payload::Text(text) } ) => Ok(Option::Some(response::RespEntity::Ok(
-                            Payload::Text("Hello, <username>".to_string()),
+                        ReqEntity::Msg(Msg { port:_, payload:Payload::Single(Primitive::Text(text)) } ) => Ok(Option::Some(response::RespEntity::Ok(
+                            Payload::Single(Primitive::Text("Hello, <username>".to_string())),
                         ))),
                         _ => Err(anyhow!("unexpected request entity")),
                     }

@@ -2,6 +2,7 @@
 <project version="4">
   <component name="ProjectModuleManager">
     <modules>
+      <module fileurl="file://$PROJECT_DIR$/mesh-portal-api/mesh-portal-api.iml" filepath="$PROJECT_DIR$/mesh-portal-api/mesh-portal-api.iml" />
       <module fileurl="file://$PROJECT_DIR$/mesh-portal-bind/mesh-portal-bind.iml" filepath="$PROJECT_DIR$/mesh-portal-bind/mesh-portal-bind.iml" />
       <module fileurl="file://$PROJECT_DIR$/resource-mesh-portal-tcp-client/resource-mesh-portal-tcp-client.iml" filepath="$PROJECT_DIR$/resource-mesh-portal-tcp-client/resource-mesh-portal-tcp-client.iml" />
       <module fileurl="file://$PROJECT_DIR$/resource-mesh-portal-tcp-common/resource-mesh-portal-tcp-common.iml" filepath="$PROJECT_DIR$/resource-mesh-portal-tcp-common/resource-mesh-portal-tcp-common.iml" />

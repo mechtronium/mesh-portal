@@ -395,6 +395,7 @@ pub mod resource {
 
 
     pub type Create=generic::resource::Create<Key,Address,Kind>;
+    pub type Archetype= generic::resource::Archetype<Kind>;
 
     pub type ResourceStub = generic::resource::ResourceStub<Key,Address,Kind>;
     pub type StateSrc=generic::resource::StateSrc;
@@ -426,19 +427,41 @@ pub mod portal {
     pub mod inlet {
         use crate::version::v0_0_1::generic;
         use crate::version::v0_0_1::id::{Address, Key, Kind, ResourceType};
+        use std::convert::TryFrom;
+        use crate::version::v0_0_1::frame::PrimitiveFrame;
+        use crate::version::v0_0_1::error::Error;
 
         pub type Request=generic::portal::inlet::Request<Key,Address,Kind,ResourceType>;
         pub type Response=generic::portal::inlet::Response<Key,Address,Kind>;
         pub type Frame=generic::portal::inlet::Frame<Key,Address,Kind,ResourceType>;
+
+        impl TryFrom<PrimitiveFrame> for generic::portal::inlet::Frame<Key,Address,Kind,ResourceType>{
+            type Error = Error;
+
+            fn try_from(value: PrimitiveFrame) -> Result<Self, Self::Error> {
+                Ok(bincode::deserialize(value.data.as_slice() )?)
+            }
+        }
     }
 
     pub mod outlet {
         use crate::version::v0_0_1::generic;
         use crate::version::v0_0_1::id::{Address, Key, Kind, ResourceType};
+        use crate::version::v0_0_1::frame::PrimitiveFrame;
+        use std::convert::TryFrom;
+        use crate::version::v0_0_1::error::Error;
 
         pub type Request=generic::portal::outlet::Request<Key,Address,Kind,ResourceType>;
         pub type Response=generic::portal::outlet::Response<Key,Address,Kind>;
         pub type Frame=generic::portal::outlet::Frame<Key,Address,Kind,ResourceType>;
+
+        impl TryFrom<PrimitiveFrame> for generic::portal::outlet::Frame<Key,Address,Kind,ResourceType>{
+            type Error = Error;
+
+            fn try_from(value: PrimitiveFrame) -> Result<Self, Self::Error> {
+                Ok(bincode::deserialize(value.data.as_slice() )?)
+            }
+        }
     }
 }
 
@@ -679,6 +702,15 @@ pub mod generic {
             pub fields: HashSet<select::FieldSelector<KEY,ADDRESS,KIND,RESOURCE_TYPE>>,
         }
 
+        impl <KEY: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync,ADDRESS: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync,KIND: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync,RESOURCE_TYPE: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync> Selector<KEY,ADDRESS,KIND,RESOURCE_TYPE> {
+            pub fn new()->Self {
+                Self {
+                    meta: select::MetaSelector::None,
+                    fields: HashSet::new()
+                }
+            }
+        }
+
         #[derive(Debug, Clone, Serialize, Deserialize, Hash, Eq, PartialEq)]
         pub enum ConfigSrc<ADDRESS: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync> {
             None,
@@ -902,6 +934,15 @@ pub mod generic {
                 pub entity: request::ReqEntity<KEY,ADDRESS,KIND,RESOURCE_TYPE>,
             }
 
+            impl <KEY: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, ADDRESS: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, KIND: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync,RESOURCE_TYPE: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync> From<exchange::Request<KEY,ADDRESS,KIND,RESOURCE_TYPE>> for Request<KEY,ADDRESS,KIND,RESOURCE_TYPE> {
+                fn from(request: exchange::Request<KEY, ADDRESS, KIND, RESOURCE_TYPE>) -> Self {
+                    Request {
+                        to: request.to,
+                        entity: request.entity
+                    }
+                }
+            }
+
 
             impl <KEY: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, ADDRESS: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, KIND: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync,RESOURCE_TYPE: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync> Request<KEY,ADDRESS,KIND,RESOURCE_TYPE> {
                 pub fn new(entity: request::ReqEntity<KEY,ADDRESS,KIND,RESOURCE_TYPE>) -> Self {
@@ -940,6 +981,18 @@ pub mod generic {
                 BinParcel(BinParcel),
                 Close(CloseReason)
             }
+
+            impl <KEY: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, ADDRESS: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, KIND: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync,RESOURCE_TYPE: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync>TryInto<PrimitiveFrame> for Frame<KEY,ADDRESS,KIND,RESOURCE_TYPE>{
+                type Error = Error;
+
+                fn try_into(self) -> Result<PrimitiveFrame, Self::Error> {
+                    Ok(PrimitiveFrame {
+                        data: bincode::serialize(&self)?
+                    })
+                }
+            }
+
+
 
             pub mod exchange {
                 use std::fmt::Debug;
@@ -990,6 +1043,15 @@ pub mod generic {
                 pub entity: request::ReqEntity<KEY,ADDRESS,KIND,RESOURCE_TYPE>
             }
 
+            impl <KEY: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, ADDRESS: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, KIND: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync,RESOURCE_TYPE: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync> From<exchange::Request<KEY,ADDRESS,KIND,RESOURCE_TYPE>> for Request<KEY,ADDRESS,KIND,RESOURCE_TYPE> {
+                fn from(request: exchange::Request<KEY, ADDRESS, KIND, RESOURCE_TYPE>) -> Self {
+                    Request {
+                        from: request.from,
+                        entity: request.entity
+                    }
+                }
+            }
+
             impl <KEY: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, ADDRESS: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, KIND: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync,RESOURCE_TYPE: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync> Request<KEY,ADDRESS,KIND,RESOURCE_TYPE> {
                 pub fn exchange(self, exchange: Exchange) -> exchange::Request<KEY,ADDRESS,KIND,RESOURCE_TYPE> {
                     exchange::Request {
@@ -1015,6 +1077,16 @@ pub mod generic {
                 Response(Response<KEY,ADDRESS,KIND>),
                 BinParcel(BinParcel),
                 Close(CloseReason)
+            }
+
+            impl <KEY: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, ADDRESS: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, KIND: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync,RESOURCE_TYPE: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync>TryInto<PrimitiveFrame> for Frame<KEY,ADDRESS,KIND,RESOURCE_TYPE>{
+                type Error = Error;
+
+                fn try_into(self) -> Result<PrimitiveFrame, Self::Error> {
+                    Ok(PrimitiveFrame {
+                        data: bincode::serialize(&self)?
+                    })
+                }
             }
 
             pub mod exchange {
@@ -1058,8 +1130,8 @@ pub mod generic {
         #[derive(Debug, Clone, Serialize, Deserialize)]
         pub enum Payload<KEY: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, ADDRESS: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, KIND: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, BIN: Debug + Clone + Serialize + Send + Sync>  {
             Empty,
-            Primitive(Primitive<KEY,ADDRESS,KIND,BIN>),
-            List(Primitive<KEY,ADDRESS,KIND,BIN>),
+            Single(Primitive<KEY,ADDRESS,KIND,BIN>),
+            List(Vec<Primitive<KEY,ADDRESS,KIND,BIN>>),
             Map(HashMap<String,Box<Payload<KEY,ADDRESS,KIND,BIN>>>)
         }
 
@@ -1235,9 +1307,21 @@ pub mod fail {
 
 pub mod error {
     use std::string::FromUtf8Error;
+    use std::fmt::{Display, Formatter};
 
+    #[derive(Debug)]
     pub struct Error {
         pub message: String
+    }
+
+    impl Display for Error {
+        fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+            f.write_str(self.message.as_str())
+        }
+    }
+
+    impl std::error::Error for Error {
+
     }
 
     impl From<String> for Error {
@@ -1264,6 +1348,15 @@ pub mod error {
             }
         }
     }
+
+    impl From<Box<bincode::ErrorKind>> for Error {
+        fn from(message: Box<bincode::ErrorKind>) -> Self {
+            Self {
+                message: message.to_string()
+            }
+        }
+    }
+
 
 
 }

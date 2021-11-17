@@ -425,7 +425,7 @@ pub mod example {
     use crate::{InletApi, PortalCtrl, PortalSkel, Request, inlet};
     use std::collections::HashMap;
     use mesh_portal_serde::version::latest::id::Identifier;
-    use mesh_portal_serde::version::latest::payload::Payload;
+    use mesh_portal_serde::version::latest::payload::{Payload, Primitive};
     use mesh_portal_serde::version::latest::entity;
     use mesh_portal_serde::version::latest::entity::request::Msg;
 
@@ -456,7 +456,7 @@ pub mod example {
 
             let response = self.inlet_api.exchange(request).await?;
 
-            if let entity::response::RespEntity::Ok(Payload::Text(text)) = response.entity {
+            if let entity::response::RespEntity::Ok(Payload::Single(Primitive::Text(text))) = response.entity {
                 println!("{}",text);
             } else {
                 return Err(anyhow!("unexpected signal"));
