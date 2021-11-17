@@ -43,7 +43,7 @@ lazy_static! {
     use tokio::sync::mpsc::Sender;
     use tokio::sync::oneshot::error::RecvError;
     use tokio::time::Duration;
-    use mesh_portal_serde::version::latest::resource::{Status, ResourceStub, Selector};
+    use mesh_portal_serde::version::latest::resource::{Status, ResourceStub};
     use mesh_portal_serde::version::latest::config::{Info, PortalKind};
     use mesh_portal_serde::version::latest::id::{Identifier, Address};
     use mesh_portal_serde::version::latest::messaging::Exchange;
@@ -356,7 +356,7 @@ lazy_static! {
             tokio::time::sleep(Duration::from_millis(50)).await;
 
             let mut request = inlet::Request::new(ReqEntity::Rc(
-                Rc::Select(Selector::new()),
+                Rc::Select("".to_string()),
             ));
             request.to.push(self.skel.info.parent.clone());
 
