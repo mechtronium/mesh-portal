@@ -10,24 +10,25 @@ extern crate strum_macros;
 
 use std::convert::{TryFrom, TryInto};
 use std::sync::Arc;
+use std::thread;
 use std::time::Duration;
 
 use anyhow::Error;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
-use tokio::sync::{mpsc, oneshot, broadcast, Mutex};
+use tokio::runtime::Runtime;
+use tokio::sync::{broadcast, mpsc, Mutex, oneshot};
 use tokio::sync::mpsc::error::SendTimeoutError;
 
-use mesh_portal_api_server::{MuxCall, Portal, PortalMuxer, Router, message};
-use mesh_portal_tcp_common::{FrameReader, FrameWriter, PrimitiveFrameReader, PrimitiveFrameWriter};
+use mesh_portal_api_server::{MuxCall, Portal, PortalMuxer, Router};
 use mesh_portal_serde::version::latest::config::Info;
-use tokio::runtime::Runtime;
-use std::thread;
 use mesh_portal_serde::version::latest::frame::CloseReason;
-use mesh_portal_serde::version::latest::resource::Status;
-use mesh_portal_serde::version::latest::portal::{inlet, outlet};
 use mesh_portal_serde::version::latest::log::Log;
+use mesh_portal_serde::version::latest::portal::{inlet, outlet};
+use mesh_portal_serde::version::latest::resource::Status;
+use mesh_portal_tcp_common::{FrameReader, FrameWriter, PrimitiveFrameReader, PrimitiveFrameWriter};
+use resource_mesh_portal_api::message;
 
 #[derive(Clone,strum_macros::Display)]
 pub enum Event {

@@ -16,14 +16,15 @@ use uuid::Uuid;
 
 use mesh_portal_serde::mesh;
 use mesh_portal_serde::version::latest::config::Info;
+use mesh_portal_serde::version::latest::entity::response;
+use mesh_portal_serde::version::latest::fail;
 use mesh_portal_serde::version::latest::frame::CloseReason;
 use mesh_portal_serde::version::latest::id::{Address, Identifier, Key};
 use mesh_portal_serde::version::latest::log::Log;
-use mesh_portal_serde::version::latest::messaging::{ExchangeId, Exchange};
+use mesh_portal_serde::version::latest::messaging::{Exchange, ExchangeId};
 use mesh_portal_serde::version::latest::portal::{inlet, outlet};
 use mesh_portal_serde::version::latest::resource::Status;
-use mesh_portal_serde::version::latest::entity::response;
-use mesh_portal_serde::version::latest::fail;
+use resource_mesh_portal_api::message;
 
 #[derive(Clone,Eq,PartialEq,Hash)]
 pub enum PortalStatus{
@@ -322,40 +323,6 @@ pub enum MuxCall {
     MessageIn(message::Message),
     MessageOut(message::Message)
 }
-
-pub mod message {
-
-    use mesh_portal_serde::version::latest::entity::request::ReqEntity;
-
-    pub type Message = generic::Message<ReqEntity>;
-
-    pub mod generic {
-        use mesh_portal_serde::mesh::generic::{Request, Response};
-        use mesh_portal_serde::version::latest::id::Identifier;
-
-        pub enum Message<OPERATION> {
-            Request(Request<OPERATION>),
-            Response(Response)
-        }
-
-        impl<OPERATION> Message<OPERATION> {
-            pub fn to(&self) -> Identifier {
-                match self {
-                    Message::Request(request) => {
-                        request.to.clone()
-                    }
-                    Message::Response(response) => {
-                        response.to.clone()
-                    }
-                }
-            }
-        }
-    }
-
-}
-
-
-
 
 
 pub trait Router: Send+Sync {

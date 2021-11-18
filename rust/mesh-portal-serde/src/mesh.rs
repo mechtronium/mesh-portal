@@ -1,7 +1,8 @@
 use crate::version::latest::entity::request::ReqEntity;
+use crate::version::latest::id::Identifier;
 
-pub type Request = generic::Request<ReqEntity>;
-pub type Response = generic::Response;
+pub type Request = generic::Request<ReqEntity,Identifier>;
+pub type Response = generic::Response<Identifier>;
 
 pub mod generic {
     use std::convert::TryInto;
@@ -14,15 +15,15 @@ pub mod generic {
     use crate::version::latest::{portal, entity};
 
     #[derive(Clone)]
-    pub struct Request<ENTITY> {
-        pub to: Identifier,
-        pub from: Identifier,
+    pub struct Request<ENTITY,ID> where ID:Clone, ENTITY: Clone {
+        pub to: ID,
+        pub from: ID,
         pub entity: ENTITY,
         pub exchange: Exchange
     }
 
-    impl<ENTITY> Request<ENTITY> {
-        pub fn new(to: Identifier, from: Identifier, entity: ENTITY, exchange: Exchange) -> Self {
+    impl<ENTITY,ID> Request<ENTITY,ID>  where ID:Clone, ENTITY: Clone{
+        pub fn new(to: ID, from: ID, entity: ENTITY, exchange: Exchange) -> Self {
             Request {
                 to,
                 from,
@@ -32,9 +33,8 @@ pub mod generic {
         }
     }
 
-
-    impl Request<ReqEntity> {
-        pub fn from(request: inlet::Request, from: Identifier, to: Identifier, exchange: Exchange) -> Self {
+    impl <ID> Request<ReqEntity,ID> where ID:Clone{
+        pub fn from(request: inlet::Request, from: ID, to: ID, exchange: Exchange) -> Self {
             Self {
                 to,
                 from,
@@ -44,17 +44,17 @@ pub mod generic {
         }
     }
 
-    impl Into<inlet::exchange::Request> for Request<ReqEntity> {
+    impl Into<inlet::exchange::Request> for Request<ReqEntity,Identifier> {
         fn into(self) -> inlet::exchange::Request {
             inlet::exchange::Request {
-                to: vec![self.to],
+                to: vec![self.to.into()],
                 entity: self.entity,
                 exchange: self.exchange
             }
         }
     }
 
-    impl Into<portal::outlet::exchange::Request> for Request<ReqEntity>{
+    impl Into<portal::outlet::exchange::Request> for Request<ReqEntity,Identifier> {
         fn into(self) ->  portal::outlet::exchange::Request{
             portal::outlet::exchange::Request{
                 from: self.from,
@@ -64,17 +64,16 @@ pub mod generic {
         }
     }
 
-
     #[derive(Clone)]
-    pub struct Response {
-        pub to: Identifier,
-        pub from: Identifier,
+    pub struct Response<ID> where ID:Clone {
+        pub to: ID,
+        pub from: ID,
         pub exchange: ExchangeId,
         pub entity: response::RespEntity
     }
 
-    impl Response {
-        pub fn from(response: outlet::Response, from: Identifier, to: Identifier) -> Self {
+    impl <ID> Response<ID> where ID:Clone {
+        pub fn from(response: outlet::Response, from: ID, to: ID) -> Self {
             Self {
                 to,
                 from,
@@ -97,7 +96,7 @@ pub mod generic {
 
      */
 
-    impl Into<outlet::Response> for Response {
+    impl Into<outlet::Response> for Response<Identifier> {
         fn into(self) -> outlet::Response {
             outlet::Response {
                 from: self.from,

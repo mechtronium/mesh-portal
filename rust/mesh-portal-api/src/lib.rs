@@ -1,14 +1,15 @@
-use tokio::sync::mpsc;
-use mesh_portal_serde::version::latest::generic::portal::inlet;
-use mesh_portal_serde::version::latest::generic::portal::outlet;
-use mesh_portal_serde::version::latest::error::Error;
+use std::convert::{TryFrom, TryInto};
 use std::fmt::Debug;
 use std::hash::Hash;
 use std::str::FromStr;
-use std::convert::{TryInto, TryFrom};
-use tokio::sync::mpsc::error::SendError;
-use serde::{Serialize,Deserialize};
 
+use serde::{Deserialize, Serialize};
+use tokio::sync::mpsc;
+use tokio::sync::mpsc::error::SendError;
+
+use mesh_portal_serde::version::latest::error::Error;
+use mesh_portal_serde::version::latest::generic::portal::inlet;
+use mesh_portal_serde::version::latest::generic::portal::outlet;
 
 pub fn inlet_converter<FROM_KEY,FROM_ADDRESS,FROM_KIND,FROM_RESOURCE_TYPE,TO_KEY,TO_ADDRESS,TO_KIND,TO_RESOURCE_TYPE>(handle_error:fn (error:Error) ) -> (mpsc::Sender<inlet::Frame<FROM_KEY,FROM_ADDRESS,FROM_KIND,FROM_RESOURCE_TYPE>>, mpsc::Receiver<inlet::Frame<TO_KEY,TO_ADDRESS,TO_KIND,TO_RESOURCE_TYPE>>) where
         FROM_KEY: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync+ 'static,
@@ -84,4 +85,33 @@ pub fn outlet_converter<FROM_KEY,FROM_ADDRESS,FROM_KIND,FROM_RESOURCE_TYPE,TO_KE
     });
 
     (from_tx, to_rx)
+}
+
+pub mod message {
+    use mesh_portal_serde::version::latest::entity::request::ReqEntity;
+    use mesh_portal_serde::version::latest::id::Identifier;
+
+    pub type Message = generic::Message<ReqEntity,Identifier>;
+
+    pub mod generic {
+        use mesh_portal_serde::mesh::generic::{Request, Response};
+
+        pub enum Message<OPERATION,ID> where ID: Clone, OPERATION: Clone{
+            Request(Request<OPERATION,ID>),
+            Response(Response<ID>)
+        }
+
+        impl<OPERATION,ID> Message<OPERATION,ID> where ID: Clone, OPERATION: Clone {
+            pub fn to(&self) -> ID {
+                match self {
+                    Message::Request(request) => {
+                        request.to.clone()
+                    }
+                    Message::Response(response) => {
+                        response.to.clone()
+                    }
+                }
+            }
+        }
+    }
 }

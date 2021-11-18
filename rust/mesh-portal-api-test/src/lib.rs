@@ -10,50 +10,49 @@ extern crate lazy_static;
 
 #[cfg(test)]
 mod tests {
-
-lazy_static! {
-    static ref GLOBAL_TX : tokio::sync::broadcast::Sender<GlobalEvent> = {
-        tokio::sync::broadcast::channel(128).0
-    };
-}
-
-    use std::sync::atomic::{AtomicU32, Ordering};
+    use std::collections::HashMap;
+    use std::convert::TryInto;
+    use std::io::Write;
+    use std::str::FromStr;
     use std::sync::Arc;
+    use std::sync::atomic::{AtomicU32, Ordering};
+    use std::thread;
 
+    use anyhow::Error;
+    use tokio::io;
+    use tokio::io::AsyncWriteExt;
     use tokio::net::TcpStream;
     use tokio::runtime::{Builder, Runtime};
     use tokio::sync::{mpsc, oneshot};
+    use tokio::sync::broadcast::Receiver;
+    use tokio::sync::mpsc::Sender;
+    use tokio::sync::oneshot::error::RecvError;
+    use tokio::time::Duration;
 
-    use anyhow::Error;
-    use mesh_portal_api_client::{InletApi, PortalCtrl, PortalSkel, client, PortCtrl};
-    use mesh_portal_api_server::{MuxCall, Portal, PortalMuxer, Router, message};
-
+    use mesh_portal_api_client::{client, InletApi, PortalCtrl, PortalSkel, PortCtrl};
+    use mesh_portal_api_server::{MuxCall, Portal, PortalMuxer, Router};
+    use mesh_portal_serde::mesh;
+    use mesh_portal_serde::version::latest::config::{Info, PortalKind};
+    use mesh_portal_serde::version::latest::entity::request::{Msg, Rc, ReqEntity};
+    use mesh_portal_serde::version::latest::entity::response;
+    use mesh_portal_serde::version::latest::id::{Address, Identifier};
+    use mesh_portal_serde::version::latest::messaging::Exchange;
+    use mesh_portal_serde::version::latest::payload::{Payload, Primitive};
+    use mesh_portal_serde::version::latest::portal::{inlet, outlet};
+    use mesh_portal_serde::version::latest::resource::{ResourceStub, Status};
+    use mesh_portal_serde::version::latest::resource::Archetype;
     use mesh_portal_tcp_client::{PortalClient, PortalTcpClient};
     use mesh_portal_tcp_common::{
         FrameReader, FrameWriter, PrimitiveFrameReader, PrimitiveFrameWriter,
     };
     use mesh_portal_tcp_server::{Call, Event, PortalServer, PortalTcpServer};
-    use std::collections::HashMap;
-    use std::convert::TryInto;
-    use std::io::Write;
-    use std::thread;
-    use tokio::io;
-    use tokio::io::AsyncWriteExt;
-    use tokio::sync::broadcast::Receiver;
-    use tokio::sync::mpsc::Sender;
-    use tokio::sync::oneshot::error::RecvError;
-    use tokio::time::Duration;
-    use mesh_portal_serde::version::latest::resource::{Status, ResourceStub};
-    use mesh_portal_serde::version::latest::config::{Info, PortalKind};
-    use mesh_portal_serde::version::latest::id::{Identifier, Address};
-    use mesh_portal_serde::version::latest::messaging::Exchange;
-    use mesh_portal_serde::version::latest::payload::{Payload, Primitive};
-    use mesh_portal_serde::version::latest::portal::{inlet, outlet};
-    use mesh_portal_serde::mesh;
-    use mesh_portal_serde::version::latest::entity::request::{ReqEntity, Rc, Msg};
-    use mesh_portal_serde::version::latest::entity::response;
-    use std::str::FromStr;
-    use mesh_portal_serde::version::latest::resource::Archetype;
+    use resource_mesh_portal_api::message;
+
+    lazy_static! {
+    static ref GLOBAL_TX : tokio::sync::broadcast::Sender<GlobalEvent> = {
+        tokio::sync::broadcast::channel(128).0
+    };
+}
 
     #[derive(Clone)]
     pub enum GlobalEvent {
