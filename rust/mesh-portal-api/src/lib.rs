@@ -10,7 +10,7 @@ use tokio::sync::mpsc::error::SendError;
 use serde::{Serialize,Deserialize};
 
 
-pub fn converter<FROM_KEY,FROM_ADDRESS,FROM_KIND,FROM_RESOURCE_TYPE,TO_KEY,TO_ADDRESS,TO_KIND,TO_RESOURCE_TYPE>(handle_error:fn (error:Error) ) -> (mpsc::Sender<inlet::Frame<FROM_KEY,FROM_ADDRESS,FROM_KIND,FROM_RESOURCE_TYPE>>, mpsc::Receiver<inlet::Frame<TO_KEY,TO_ADDRESS,TO_KIND,TO_RESOURCE_TYPE>>) where
+pub fn inlet_converter<FROM_KEY,FROM_ADDRESS,FROM_KIND,FROM_RESOURCE_TYPE,TO_KEY,TO_ADDRESS,TO_KIND,TO_RESOURCE_TYPE>(handle_error:fn (error:Error) ) -> (mpsc::Sender<inlet::Frame<FROM_KEY,FROM_ADDRESS,FROM_KIND,FROM_RESOURCE_TYPE>>, mpsc::Receiver<inlet::Frame<TO_KEY,TO_ADDRESS,TO_KIND,TO_RESOURCE_TYPE>>) where
         FROM_KEY: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync+ 'static,
         FROM_ADDRESS: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync + 'static,
         FROM_KIND: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync + 'static,
@@ -48,32 +48,40 @@ pub fn converter<FROM_KEY,FROM_ADDRESS,FROM_KIND,FROM_RESOURCE_TYPE,TO_KEY,TO_AD
     (from_tx, to_rx)
 }
 
-/*
-pub fn convert<FROM,TO>(handle_error:fn (error:String) ) -> (mpsc::Sender<FROM>, mpsc::Receiver<TO>) where FROM: Send+Sync+TryInto<TO>, TO: Send+Sync+Debug {
-  let (from_tx,mut from_rx) : (mpsc::Sender<FROM>,mpsc::Receiver<FROM>)= mpsc::channel(128);
-  let (to_tx, to_rx) : (mpsc::Sender<TO>,mpsc::Receiver<TO>) = mpsc::channel(128);
+pub fn outlet_converter<FROM_KEY,FROM_ADDRESS,FROM_KIND,FROM_RESOURCE_TYPE,TO_KEY,TO_ADDRESS,TO_KIND,TO_RESOURCE_TYPE>(handle_error:fn (error:Error) ) -> (mpsc::Sender<outlet::Frame<FROM_KEY,FROM_ADDRESS,FROM_KIND,FROM_RESOURCE_TYPE>>, mpsc::Receiver<outlet::Frame<TO_KEY,TO_ADDRESS,TO_KIND,TO_RESOURCE_TYPE>>) where
+    FROM_KEY: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync+ 'static,
+    FROM_ADDRESS: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync + 'static,
+    FROM_KIND: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync + 'static,
+    FROM_RESOURCE_TYPE: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync + 'static,
+    TO_KEY: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync+ TryFrom<FROM_KEY,Error=Error>  + 'static,
+    TO_ADDRESS: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync+ TryFrom<FROM_ADDRESS,Error=Error> + 'static,
+    TO_KIND: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync+ TryFrom<FROM_KIND,Error=Error>  + 'static,
+    TO_RESOURCE_TYPE: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync+ TryFrom<FROM_RESOURCE_TYPE,Error=Error> + 'static
 
-  tokio::spawn ( async move {
-      while let Option::Some(from) = from_rx.recv().await{
-          match from.try_into() {
-              Ok(to) => {
-                  match to_tx.send(to).await {
-                      Err(err) => {
-                          handle_error(err.to_string());
-                          break;
-                      }
-                      _ => {}
-                  }
-              }
-              Err(err) => {
-                  handle_error("ERROR: conversion failed.".to_string())
-              }
-          }
-      }
-  });
+{
+    let (from_tx,mut from_rx) : (mpsc::Sender<outlet::Frame<FROM_KEY,FROM_ADDRESS,FROM_KIND,FROM_RESOURCE_TYPE>>,mpsc::Receiver<outlet::Frame<FROM_KEY,FROM_ADDRESS,FROM_KIND,FROM_RESOURCE_TYPE>>)= mpsc::channel(128);
+    let (to_tx,mut to_rx) : (mpsc::Sender<outlet::Frame<TO_KEY,TO_ADDRESS,TO_KIND,TO_RESOURCE_TYPE>>,mpsc::Receiver<outlet::Frame<TO_KEY,TO_ADDRESS,TO_KIND,TO_RESOURCE_TYPE>>)= mpsc::channel(128);
 
- (from_tx, to_rx)
+    tokio::spawn ( async move {
+        while let Option::Some(from) = from_rx.recv().await{
+            let to : Result<outlet::Frame<TO_KEY,TO_ADDRESS,TO_KIND,TO_RESOURCE_TYPE>,Error> = from.convert();
+            match to {
+                Ok(to) => {
+                    match to_tx.send(to).await {
+                        Err(err) => {
+                            let err = Error { message : err.to_string() };
+                            handle_error(err);
+                            break;
+                        }
+                        _ => {}
+                    }
+                }
+                Err(err) => {
+                    handle_error(err.into())
+                }
+            }
+        }
+    });
+
+    (from_tx, to_rx)
 }
-
-
- */
