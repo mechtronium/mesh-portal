@@ -137,7 +137,7 @@ pub mod resource {
 
     pub type Status = resource::Status;
 
-    pub type Archetype= generic::resource::Archetype<Kind>;
+    pub type Archetype= generic::resource::Archetype<Kind,Address>;
     pub type ResourceStub = generic::resource::ResourceStub<Key,Address,Kind>;
 }
 
@@ -259,7 +259,7 @@ pub mod generic {
         use crate::version::v0_0_1::generic::id::{AddressAndKind, Identifier};
         use crate::version::v0_0_1::State;
 
-        pub type Archetype<KIND>=generic::resource::Archetype<KIND>;
+        pub type Archetype<KIND,ADDRESS>=generic::resource::Archetype<KIND,ADDRESS>;
         pub type ResourceStub<KEY, ADDRESS, KIND > = generic::resource::ResourceStub<KEY,ADDRESS,KIND>;
         pub type Resource<KEY, ADDRESS, KIND,BIN > = generic::resource::Resource<KEY,ADDRESS,KIND,BIN>;
     }

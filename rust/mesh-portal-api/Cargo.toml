@@ -8,3 +8,5 @@ edition = "2021"
 [dependencies]
 tokio = { version = "1.4.0", features = ["full"] }
 mesh-portal-serde = { path = "../mesh-portal-serde", version= "0.0.1"}
+anyhow = "1.0.44"
+serde = { version="1.0.69", features=['derive','rc'] }

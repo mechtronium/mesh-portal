@@ -393,7 +393,7 @@ pub mod resource {
         Done
     }
 
-    pub type Archetype= generic::resource::Archetype<Kind>;
+    pub type Archetype= generic::resource::Archetype<Kind,Address>;
     pub type ResourceStub = generic::resource::ResourceStub<Key,Address,Kind>;
 
 }
@@ -461,11 +461,33 @@ pub mod generic {
         use crate::version::v0_0_1::generic;
         use std::convert::{TryFrom, TryInto};
         use crate::version::v0_0_1::error::Error;
+        use crate::version::v0_0_1::util::Convert;
 
         #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
         pub enum Identifier<KEY: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, ADDRESS: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync> {
             Key(KEY),
             Address(ADDRESS)
+        }
+
+        impl <FromKey,FromAddress> Identifier<FromKey,FromAddress>
+
+            where
+                FromKey: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync,
+                FromAddress: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync,
+        {
+            pub fn convert<ToKey,ToAddress>(self) -> Result<Identifier<ToKey,ToAddress>,Error>
+                where ToKey: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync + TryFrom<FromKey,Error=Error>,
+                      ToAddress: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync+ TryFrom<FromAddress,Error=Error>,
+            {
+                match self {
+                    Identifier::Key(key) => {
+                        Ok(Identifier::Key(key.try_into()?))
+                    }
+                    Identifier::Address(address) => {
+                        Ok(Identifier::Address(address.try_into()?))
+                    }
+                }
+            }
         }
 
         #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
@@ -518,7 +540,7 @@ pub mod generic {
             pub address: ADDRESS,
             pub owner: String,
             pub parent: Identifier<KEY,ADDRESS>,
-            pub archetype: Archetype<KIND>,
+            pub archetype: Archetype<KIND,ADDRESS>,
             pub config: Config,
             pub ext_config: Option<ArtifactRef>,
             pub kind: PortalKind
@@ -547,12 +569,43 @@ pub mod generic {
             use crate::version::v0_0_1::generic;
             use crate::version::v0_0_1::generic::payload::Primitive;
             use crate::version::v0_0_1::generic::payload::Payload;
+            use crate::version::v0_0_1::error::Error;
+            use std::convert::{TryFrom, TryInto};
 
             #[derive(Debug, Clone, Serialize, Deserialize)]
             pub enum ReqEntity<KEY: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, ADDRESS: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, KIND: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, RESOURCE_TYPE: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync> {
                 Rc(Rc<RESOURCE_TYPE>),
                 Msg(Msg<KEY, ADDRESS, KIND>),
                 Http(Http)
+            }
+
+            impl <FromKey,FromAddress,FromKind,FromResourceType> ReqEntity<FromKey,FromAddress,FromKind,FromResourceType>
+
+                where
+                    FromKey: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync,
+                    FromAddress: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync,
+                    FromKind: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync,
+                    FromResourceType: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync,
+            {
+                pub fn convert<ToKey,ToAddress,ToKind,ToResourceType>(self) -> Result<ReqEntity<ToKey,ToAddress,ToKind,ToResourceType>, Error>
+                    where ToKey: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync + TryFrom<FromKey,Error=Error>,
+                          ToAddress: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync + TryFrom<FromAddress,Error=Error>,
+                          ToKind: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync + TryFrom<FromKind,Error=Error>,
+                          ToResourceType: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync + TryFrom<FromResourceType,Error=Error>
+
+                {
+                    match self {
+                        ReqEntity::Rc(rc) => {
+                            Ok(ReqEntity::Rc(rc.convert()?))
+                        }
+                        ReqEntity::Msg(msg) => {
+                            Ok(ReqEntity::Msg(msg.convert()?))
+                        }
+                        ReqEntity::Http(http) => {
+                            Ok(ReqEntity::Http(http))
+                        }
+                    }
+                }
             }
 
             #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -565,10 +618,62 @@ pub mod generic {
                 Unique(RESOURCE_TYPE)
             }
 
+            impl <FromResourceType> Rc<FromResourceType>
+
+                where
+                    FromResourceType: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync,
+            {
+                pub fn convert<ToResourceType>(self) -> Result<Rc<ToResourceType>, Error>
+                    where ToResourceType: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync + TryFrom<FromResourceType,Error=Error>
+
+                {
+                    match self {
+                        Rc::Create(create) => {
+                            Ok(Rc::Create(create))
+                        }
+                        Rc::Select(select) => {
+                            Ok(Rc::Select(select))
+                        }
+                        Rc::Read => {
+                            Ok(Rc::Read)
+                        }
+                        Rc::Update(update) => {
+                            Ok(Rc::Update(update))
+                        }
+                        Rc::Delete => {
+                            Ok(Rc::Delete)
+                        }
+                        Rc::Unique(unique) => {
+                            Ok(Rc::Unique(unique.try_into()?))
+                        }
+                    }
+                }
+            }
+
             #[derive(Debug, Clone, Serialize, Deserialize)]
             pub struct Msg<KEY: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, ADDRESS: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, KIND: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync> {
                 pub port: String,
                 pub payload: Payload<KEY, ADDRESS, KIND, Bin>
+            }
+
+            impl <FromKey,FromAddress,FromKind> Msg<FromKey,FromAddress,FromKind>
+
+                where
+                    FromKey: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync,
+                    FromAddress: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync,
+                    FromKind: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync,
+            {
+                pub fn convert<ToKey,ToAddress,ToKind>(self) -> Result<Msg<ToKey,ToAddress,ToKind>, Error>
+                    where ToKey: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync + TryFrom<FromKey,Error=Error>,
+                          ToAddress: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync + TryFrom<FromAddress,Error=Error>,
+                          ToKind: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync + TryFrom<FromKind,Error=Error>,
+
+                {
+                    Ok( Msg {
+                        port: self.port,
+                        payload: self.payload.convert()?
+                    })
+                }
             }
 
             #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -587,6 +692,7 @@ pub mod generic {
             use crate::version::v0_0_1::bin::Bin;
             use crate::version::v0_0_1::generic::payload::Primitive;
             use crate::version::v0_0_1::generic::payload::Payload;
+            use crate::version::v0_0_1::fail::portal::Fail;
             use std::convert::{TryFrom, TryInto};
             use crate::version::latest::error::Error;
 
@@ -595,6 +701,31 @@ pub mod generic {
                 Ok(Payload<KEY,ADDRESS,KIND,Bin>),
                 Fail(FAIL)
             }
+
+            impl <FromKey,FromAddress,FromKind> RespEntity<FromKey,FromAddress,FromKind,Fail>
+
+                where
+                    FromKey: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync,
+                    FromAddress: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync,
+                    FromKind: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync
+            {
+                pub fn convert<ToKey,ToAddress,ToKind>(self) -> Result<RespEntity<ToKey,ToAddress,ToKind,Fail>, Error>
+                    where ToKey: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync + TryFrom<FromKey,Error=Error>,
+                          ToAddress: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync + TryFrom<FromAddress,Error=Error>,
+                          ToKind: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync + TryFrom<FromKind,Error=Error>,
+
+                {
+                    match self {
+                        RespEntity::Ok(ok) => {
+                            Ok(RespEntity::Ok(ok.convert()?))
+                        }
+                        RespEntity::Fail(fail) => {
+                            Ok(RespEntity::Fail(fail))
+                        }
+                    }
+                }
+            }
+
         }
     }
 
@@ -607,7 +738,7 @@ pub mod generic {
 
         use serde::{Deserialize, Serialize};
 
-        use crate::version::v0_0_1::bin::BinSet;
+        use crate::version::v0_0_1::bin::{BinSet, Bin};
         use crate::version::v0_0_1::error::Error;
         use crate::version::v0_0_1::generic;
         use crate::version::v0_0_1::generic::id::{AddressAndKind, Identifier};
@@ -615,9 +746,33 @@ pub mod generic {
         use std::convert::{TryFrom, TryInto};
 
         #[derive(Debug, Clone, Serialize, Deserialize)]
-        pub struct Archetype<KIND: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync> {
+        pub struct Archetype<KIND: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync,ADDRESS: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync> {
             pub kind: KIND,
-            pub config_src: Option<String>
+            pub config_src: Option<ADDRESS>
+        }
+
+        impl <FromKind,FromAddress> Archetype<FromKind,FromAddress>
+
+            where
+                FromKind: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync,
+                FromAddress: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync,
+        {
+            pub fn convert<ToKind,ToAddress>(self) -> Result<Archetype<ToKind,ToAddress>, Error>
+                where ToKind: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync + TryFrom<FromKind,Error=Error>,
+                      ToAddress: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync + TryFrom<FromAddress,Error=Error>,
+
+            {
+                let config_src = match self.config_src {
+                    None => {None}
+                    Some(config_src) => {
+                        Some(config_src.try_into()?)
+                    }
+                };
+                Ok( Archetype {
+                    kind: self.kind.try_into()?,
+                    config_src
+                })
+            }
         }
 
         #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -625,13 +780,54 @@ pub mod generic {
             pub id: Identifier<KEY,ADDRESS>,
             pub key: KEY,
             pub address: ADDRESS,
-            pub archetype: Archetype<KIND>
+            pub archetype: Archetype<KIND,ADDRESS>
+        }
+
+        impl <FromKey,FromAddress,FromKind> ResourceStub<FromKey,FromAddress,FromKind>
+
+            where
+                FromKey: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync,
+                FromAddress: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync,
+                FromKind: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync,
+        {
+            pub fn convert<ToKey,ToAddress,ToKind>(self) -> Result<ResourceStub<ToKey,ToAddress,ToKind>, Error>
+                where ToKey: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync + TryFrom<FromKey,Error=Error>,
+                      ToAddress: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync + TryFrom<FromAddress,Error=Error>,
+                      ToKind: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync + TryFrom<FromKind,Error=Error>,
+            {
+                Ok( ResourceStub {
+                    id: self.id.convert()?,
+                    key: self.key.try_into()?,
+                    address: self.address.try_into()?,
+                    archetype: self.archetype.convert()?
+                })
+            }
         }
 
         #[derive(Debug, Clone, Serialize, Deserialize)]
         pub struct Resource<KEY: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, ADDRESS: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, KIND: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync,BIN: Debug + Clone + Serialize + Send + Sync> {
             pub stub: ResourceStub<KEY,ADDRESS,KIND>,
             pub state: HashMap<String,BIN>
+        }
+
+        impl <FromKey,FromAddress,FromKind> Resource<FromKey,FromAddress,FromKind,Bin>
+
+            where
+                FromKey: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync,
+                FromAddress: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync,
+                FromKind: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync,
+        {
+            pub fn convert<ToKey,ToAddress,ToKind>(self) -> Result<Resource<ToKey,ToAddress,ToKind,Bin>, Error>
+                where ToKey: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync + TryFrom<FromKey,Error=Error>,
+                      ToAddress: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync + TryFrom<FromAddress,Error=Error>,
+                      ToKind: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync + TryFrom<FromKind,Error=Error>,
+
+            {
+                Ok( Resource{
+                    stub: self.stub.convert()?,
+                    state: self.state
+                })
+            }
         }
 
     }
@@ -703,6 +899,27 @@ pub mod generic {
                 pub entity: response::RespEntity<KEY,ADDRESS,KIND,fail::portal::Fail>,
             }
 
+            impl <FromKey,FromAddress,FromKind> Response<FromKey,FromAddress,FromKind>
+
+                where
+                    FromKey: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync,
+                    FromAddress: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync,
+                    FromKind: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync
+            {
+                pub fn convert<ToKey,ToAddress,ToKind>(self) -> Result<Response<ToKey,ToAddress,ToKind>, Error>
+                    where ToKey: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync + TryFrom<FromKey,Error=Error>,
+                          ToAddress: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync + TryFrom<FromAddress,Error=Error>,
+                          ToKind: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync + TryFrom<FromKind,Error=Error>,
+
+                {
+                    Ok(Response{
+                        to: self.to.convert()?,
+                        entity: self.entity.convert()?,
+                        exchange: self.exchange
+                    })
+                }
+            }
+
             #[derive(Debug, Clone, Serialize, Deserialize, strum_macros::Display)]
             pub enum Frame<KEY: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, ADDRESS: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, KIND: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync,RESOURCE_TYPE: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync> {
                 Log(Log),
@@ -724,6 +941,51 @@ pub mod generic {
                 }
             }
 
+            impl <FromKey,FromAddress,FromKind,FromResourceType> Frame<FromKey,FromAddress,FromKind,FromResourceType>
+
+                where
+                    FromKey: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync,
+                    FromAddress: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync,
+                    FromKind: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync,
+                    FromResourceType: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync,
+
+
+            {
+                pub fn convert<ToKey,ToAddress,ToKind,ToResourceType>(self) -> Result<Frame<ToKey,ToAddress,ToKind,ToResourceType>, Error>
+                where ToKey: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync + TryFrom<FromKey,Error=Error>,
+                      ToAddress: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync + TryFrom<FromAddress,Error=Error>,
+                      ToKind: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync + TryFrom<FromKind,Error=Error>,
+                      ToResourceType: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync + TryFrom<FromResourceType,Error=Error>,
+
+                {
+                    match self{
+                        Frame::Log(log) => {
+                            Ok(Frame::Log(log))
+                        }
+                        Frame::Command(command) => {
+                            Ok(Frame::Command(command))
+                        }
+                        Frame::Request(request) => {
+                            Ok(Frame::Request(request.convert()?))
+                        }
+                        Frame::Response(response) => {
+                            Ok(Frame::Response(response.convert()?))
+                        }
+                        Frame::Status(status) => {
+                            Ok(Frame::Status(status))
+                        }
+                        Frame::BinParcel(parcel) => {
+                            Ok(Frame::BinParcel(parcel))
+                        }
+                        Frame::Close(close) => {
+                            Ok(Frame::Close(close))
+                        }
+                    }
+                }
+            }
+
+
+
             pub mod exchange {
                 use std::fmt::Debug;
                 use std::hash::Hash;
@@ -743,6 +1005,33 @@ pub mod generic {
                     pub to: Vec<Identifier<KEY,ADDRESS>>,
                     pub entity: ReqEntity<KEY,ADDRESS,KIND,RESOURCE_TYPE>,
                     pub exchange: Exchange
+                }
+
+                impl <FromKey,FromAddress,FromKind,FromResourceType> Request<FromKey,FromAddress,FromKind,FromResourceType>
+
+                    where
+                        FromKey: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync,
+                        FromAddress: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync,
+                        FromKind: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync,
+                        FromResourceType: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync,
+                {
+                    pub fn convert<ToKey,ToAddress,ToKind,ToResourceType>(self) -> Result<Request<ToKey,ToAddress,ToKind,ToResourceType>, Error>
+                        where ToKey: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync + TryFrom<FromKey,Error=Error>,
+                              ToAddress: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync + TryFrom<FromAddress,Error=Error>,
+                              ToKind: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync + TryFrom<FromKind,Error=Error>,
+                              ToResourceType: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync + TryFrom<FromResourceType,Error=Error>
+
+                    {
+                        let mut to_list = vec![];
+                        for to in self.to {
+                            to_list.push( to.convert()? )
+                        }
+                        Ok(Request {
+                            to: to_list,
+                            entity: self.entity.convert()?,
+                            exchange: self.exchange
+                        })
+                    }
                 }
             }
         }
@@ -873,6 +1162,44 @@ pub mod generic {
             Map(HashMap<String,Box<Payload<KEY,ADDRESS,KIND,BIN>>>)
         }
 
+        impl <FromKey,FromAddress,FromKind> Payload<FromKey,FromAddress,FromKind,Bin>
+
+            where
+                FromKey: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync,
+                FromAddress: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync,
+                FromKind: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync,
+        {
+            pub fn convert<ToKey,ToAddress,ToKind>(self) -> Result<Payload<ToKey,ToAddress,ToKind,Bin>, Error>
+                where ToKey: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync + TryFrom<FromKey,Error=Error>,
+                      ToAddress: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync + TryFrom<FromAddress,Error=Error>,
+                      ToKind: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync + TryFrom<FromKind,Error=Error>,
+
+            {
+                match self {
+                    Payload::Empty => {
+                        Ok(Payload::Empty)
+                    }
+                    Payload::Single(primitive) => {
+                       Ok(Payload::Single(primitive.convert()?))
+                    }
+                    Payload::List(list) => {
+                        let mut rtn = vec![];
+                        for p in list {
+                            rtn.push( p.convert()? );
+                        }
+                        Ok(Payload::List(rtn))
+                    }
+                    Payload::Map(map) => {
+                        let mut rtn :HashMap<String,Box<Payload<ToKey,ToAddress,ToKind,Bin>>>= HashMap::new();
+                        for (k,v) in map {
+                            rtn.insert(k, Box::new(v.convert()?) );
+                        }
+                        Ok(Payload::Map(rtn))
+                    }
+                }
+            }
+        }
+
         #[derive(Debug, Clone, Serialize, Deserialize)]
         pub enum Primitive<KEY: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, ADDRESS: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, KIND: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, BIN: Debug + Clone + Serialize + Send + Sync>  {
             Text(String),
@@ -886,6 +1213,64 @@ pub mod generic {
             Status(Status),
             Resource(Resource<KEY,ADDRESS,KIND,BIN>)
         }
+
+        impl <FromKey,FromAddress,FromKind> Primitive<FromKey,FromAddress,FromKind,Bin>
+
+            where
+                FromKey: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync,
+                FromAddress: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync,
+                FromKind: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync,
+        {
+            pub fn convert<ToKey,ToAddress,ToKind>(self) -> Result<Primitive<ToKey,ToAddress,ToKind,Bin>, Error>
+                where ToKey: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync + TryFrom<FromKey,Error=Error>,
+                      ToAddress: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync + TryFrom<FromAddress,Error=Error>,
+                      ToKind: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync + TryFrom<FromKind,Error=Error>,
+
+            {
+                match self {
+                    Primitive::Text(text) => {
+                        Ok(Primitive::Text(text))
+                    }
+                    Primitive::Key(key) => {
+                        Ok(Primitive::Key(key.try_into()?))
+                    }
+                    Primitive::Address(address) => {
+                        Ok(Primitive::Address(address.try_into()?))
+                    }
+                    Primitive::Stub(stub) => {
+                        Ok(Primitive::Stub(stub.convert()?))
+                    }
+                    Primitive::Meta(meta) => {
+                        Ok(Primitive::Meta(meta))
+                    }
+                    Primitive::Bin(bin) => {
+                        Ok(Primitive::Bin(bin))
+                    }
+                    Primitive::Boolean(boolean) => {
+                        Ok(Primitive::Boolean(boolean))
+                    }
+                    Primitive::Int(int) => {
+                        Ok(Primitive::Int(int))
+                    }
+                    Primitive::Status(status) => {
+                        Ok(Primitive::Status(status))
+                    }
+                    Primitive::Resource(resource) => {
+                        Ok(Primitive::Resource(resource.convert()?))
+                    }
+                }
+            }
+        }
+    }
+
+}
+
+pub mod util {
+
+    use crate::version::v0_0_1::error::Error;
+
+    pub trait Convert<A> {
+        fn convert(self)->Result<A,Error>;
     }
 
 }
@@ -1045,6 +1430,7 @@ pub mod fail {
 pub mod error {
     use std::string::FromUtf8Error;
     use std::fmt::{Display, Formatter};
+    use std::convert::Infallible;
 
     #[derive(Debug)]
     pub struct Error {
@@ -1094,9 +1480,30 @@ pub mod error {
         }
     }
 
+    impl From<Infallible> for Error {
+        fn from(i: Infallible) -> Self {
+            Self {
+                message: i.to_string()
+            }
+        }
+    }
+    /*
+    impl <T> From<tokio::sync::mpsc::error::SendError<T>> for Error {
+        fn from(error: tokio::sync::mpsc::error::SendError<T>) -> Self {
+            Self {
+                message: error.to_string()
+            }
+        }
+    }
+
+     */
+
 
 
 }
+
+
+
 
 
 
