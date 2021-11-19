@@ -94,14 +94,16 @@ pub mod message {
     pub type Message = generic::Message<ReqEntity,Identifier>;
 
     pub mod generic {
+        use serde::{Serialize,Deserialize};
         use mesh_portal_serde::mesh::generic::{Request, Response};
 
-        pub enum Message<OPERATION,ID> where ID: Clone, OPERATION: Clone{
+        #[derive(Clone,Serialize,Deserialize)]
+        pub enum Message<OPERATION,ID> where ID: Clone {
             Request(Request<OPERATION,ID>),
             Response(Response<ID>)
         }
 
-        impl<OPERATION,ID> Message<OPERATION,ID> where ID: Clone, OPERATION: Clone {
+        impl<OPERATION,ID> Message<OPERATION,ID> where ID: Clone {
             pub fn to(&self) -> ID {
                 match self {
                     Message::Request(request) => {

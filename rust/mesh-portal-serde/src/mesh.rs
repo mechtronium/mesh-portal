@@ -6,6 +6,7 @@ pub type Response = generic::Response<Identifier>;
 
 pub mod generic {
     use std::convert::TryInto;
+    use serde::{Serialize,Deserialize};
 
     use crate::version::latest::portal::{inlet, outlet};
     use crate::version::latest::id::Identifier;
@@ -14,15 +15,15 @@ pub mod generic {
     use crate::version::latest::entity::response;
     use crate::version::latest::{portal, entity};
 
-    #[derive(Clone)]
-    pub struct Request<ENTITY,ID> where ID:Clone, ENTITY: Clone {
+    #[derive(Clone,Serialize,Deserialize)]
+    pub struct Request<ENTITY,ID>{
         pub to: ID,
         pub from: ID,
         pub entity: ENTITY,
         pub exchange: Exchange
     }
 
-    impl<ENTITY,ID> Request<ENTITY,ID>  where ID:Clone, ENTITY: Clone{
+    impl<ENTITY,ID> Request<ENTITY,ID> {
         pub fn new(to: ID, from: ID, entity: ENTITY, exchange: Exchange) -> Self {
             Request {
                 to,
@@ -33,7 +34,7 @@ pub mod generic {
         }
     }
 
-    impl <ID> Request<ReqEntity,ID> where ID:Clone{
+    impl <ID> Request<ReqEntity,ID>{
         pub fn from(request: inlet::Request, from: ID, to: ID, exchange: Exchange) -> Self {
             Self {
                 to,
@@ -64,15 +65,15 @@ pub mod generic {
         }
     }
 
-    #[derive(Clone)]
-    pub struct Response<ID> where ID:Clone {
+    #[derive(Clone,Serialize,Deserialize)]
+    pub struct Response<ID>{
         pub to: ID,
         pub from: ID,
         pub exchange: ExchangeId,
         pub entity: response::RespEntity
     }
 
-    impl <ID> Response<ID> where ID:Clone {
+    impl <ID> Response<ID>  {
         pub fn from(response: outlet::Response, from: ID, to: ID) -> Self {
             Self {
                 to,

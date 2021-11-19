@@ -13,6 +13,8 @@ use nom::sequence::{delimited, preceded, tuple};
 use nom_supreme::parse_from_str;
 
 use mesh_portal_serde::version::latest::payload::PrimitiveType;
+use mesh_portal_serde::version::latest::payload::Primitive;
+use mesh_portal_serde::version::latest::payload::Payload;
 
 use crate::parse::{call, call_with_config, Res};
 use crate::symbol::{Address, Call, CallWithConfig};
@@ -28,6 +30,36 @@ fn skewer<T>(i: T) -> Res<T, T>
             let char_item = item.as_char();
             !(char_item == '-')
                 && !((char_item.is_alpha() && char_item.is_lowercase()) || char_item.is_dec_digit())
+        },
+        ErrorKind::AlphaNumeric,
+    )
+}
+
+fn not_quote<T>(i: T) -> Res<T, T>
+    where
+        T: InputTakeAtPosition,
+        <T as InputTakeAtPosition>::Item: AsChar,
+{
+    i.split_at_position1_complete(
+        |item| {
+            let char_item = item.as_char();
+            (char_item == '"')
+        },
+        ErrorKind::AlphaNumeric,
+    )
+}
+
+
+fn filename<T>(i: T) -> Res<T, T>
+    where
+        T: InputTakeAtPosition,
+        <T as InputTakeAtPosition>::Item: AsChar,
+{
+    i.split_at_position1_complete(
+        |item| {
+            let char_item = item.as_char();
+            !(char_item == '-')
+                && !(char_item.is_alpha()  || char_item.is_dec_digit())
         },
         ErrorKind::AlphaNumeric,
     )
@@ -197,9 +229,23 @@ pub fn consume_primitive_def(input: &str) -> Res<&str, PrimitiveTypeDef> {
 
 #[derive(Debug,Clone,Eq,PartialEq)]
 pub enum Block {
-    RequestPattern(PatternBlock ),
-    ResponsePattern(PatternBlock )
+    Upload(UploadBlock),
+    RequestPattern(PatternBlock),
+    ResponsePattern(PatternBlock),
+    Payload(Payload),
 }
+
+
+#[derive(Debug,Clone,Eq,PartialEq)]
+pub struct UploadBlock{
+    pub name: String
+}
+
+#[derive(Debug,Clone,Eq,PartialEq)]
+pub struct CreateBlock{
+    pub payload: Payload
+}
+
 
 #[derive(Debug,Clone,Eq,PartialEq)]
 pub struct PatternBlock {
@@ -438,7 +484,29 @@ pub fn pattern_block_def(input: &str) -> Res<&str,PatternBlock> {
     }))
 }
 
+fn upload_block_payload(input: &str) -> Res<&str,UploadBlock> {
+    delimited(multispace0,filename, multispace0 )(input).map( |(next,filename) | {
+        (next,
+        UploadBlock{
+            name: filename.to_string()
+        })
+    } )
+}
 
+
+
+pub fn text_payload_block(input: &str ) -> Res<&str,Block> {
+    delimited( tag("+["), tuple((multispace0,delimited(tag("\""), not_quote, tag("\"")),multispace0)), tag("]") )(input).map( |(next,(_,text,_))| {
+        (next,Block::Payload(Payload::Single(Primitive::Text(text.to_string()))))
+    })
+}
+
+pub fn upload_pattern_block(input: &str ) -> Res<&str,Block> {
+    delimited( tag("^["), tuple((multispace0,filename,multispace0)), tag("]") )(input).map( |(next,(_,block,filename))| {
+
+        (next,Block::Upload(UploadBlock{name:filename.to_string()}))
+    })
+}
 
 pub fn request_pattern_block(input: &str ) -> Res<&str,Block> {
  delimited( tag("-["), tuple((multispace0,alt((pattern_block_empty,pattern_block_any,pattern_block_def)),multispace0)), tag("]") )(input).map( |(next,(_,block,_))| {

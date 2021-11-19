@@ -112,9 +112,10 @@ pub mod entity {
     pub mod request {
         use crate::version::v0_0_1::generic;
         use crate::version::v0_0_1::id::{Address, Key, Kind, ResourceType};
+        use crate::version::latest::bin::Bin;
 
         pub type ReqEntity = generic::entity::request::ReqEntity<Key,Address,Kind,ResourceType>;
-        pub type Rc = generic::entity::request::Rc<ResourceType>;
+        pub type Rc = generic::entity::request::Rc<Key,Address,Kind,Bin>;
         pub type Msg = generic::entity::request::Msg<Key,Address,Kind>;
         pub type Http = generic::entity::request::Http;
     }
@@ -225,7 +226,7 @@ pub mod generic {
             use crate::version::latest::generic::payload::Payload;
 
             pub type ReqEntity<KEY, ADDRESS, KIND, RESOURCE_TYPE> = generic::entity::request::ReqEntity<KEY,ADDRESS,KIND,RESOURCE_TYPE>;
-            pub type Rc<RESOURCE_TYPE> = generic::entity::request::Rc<RESOURCE_TYPE>;
+            pub type Rc<KEY,ADDRESS,KIND,BIN> = generic::entity::request::Rc<KEY,ADDRESS,KIND,BIN>;
             pub type Msg<KEY, ADDRESS, KIND> = generic::entity::request::Msg<KEY,ADDRESS,KIND>;
             pub type Http = generic::entity::request::Http;
         }

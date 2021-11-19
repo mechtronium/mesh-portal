@@ -24,7 +24,7 @@ use mesh_portal_serde::version::latest::log::Log;
 use mesh_portal_serde::version::latest::messaging::{Exchange, ExchangeId};
 use mesh_portal_serde::version::latest::portal::{inlet, outlet};
 use mesh_portal_serde::version::latest::resource::Status;
-use resource_mesh_portal_api::message;
+use mesh_portal_api::message;
 
 #[derive(Clone,Eq,PartialEq,Hash)]
 pub enum PortalStatus{

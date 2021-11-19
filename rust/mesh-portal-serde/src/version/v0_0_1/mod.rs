@@ -362,9 +362,10 @@ pub mod entity {
     pub mod request {
         use crate::version::v0_0_1::generic;
         use crate::version::v0_0_1::id::{Address, Key, Kind, ResourceType};
+        use crate::version::v0_0_1::bin::Bin;
 
         pub type ReqEntity = generic::entity::request::ReqEntity<Key,Address,Kind,ResourceType>;
-        pub type Rc = generic::entity::request::Rc<ResourceType>;
+        pub type Rc = generic::entity::request::Rc<Key,Address,Kind,Bin>;
         pub type Msg = generic::entity::request::Msg<Key,Address,Kind>;
         pub type Http = generic::entity::request::Http;
     }
@@ -603,7 +604,7 @@ pub mod generic {
 
             #[derive(Debug, Clone, Serialize, Deserialize)]
             pub enum ReqEntity<KEY: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, ADDRESS: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, KIND: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, RESOURCE_TYPE: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync> {
-                Rc(Rc<RESOURCE_TYPE>),
+                Rc(Rc<KEY,ADDRESS,KIND,Bin>),
                 Msg(Msg<KEY, ADDRESS, KIND>),
                 Http(Http)
             }
@@ -638,44 +639,26 @@ pub mod generic {
             }
 
             #[derive(Debug, Clone, Serialize, Deserialize)]
-            pub enum Rc<RESOURCE_TYPE: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync> {
-                Create(String),
-                Select(String),
-                Read,
-                Update(State),
-                Delete,
-                Unique(RESOURCE_TYPE)
+            pub struct Rc<KEY: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, ADDRESS: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, KIND: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync, BIN: Debug + Clone + Serialize + Send + Sync>{
+                pub command: String,
+                pub payload: Payload<KEY,ADDRESS,KIND,Bin>
             }
 
-            impl <FromResourceType> Rc<FromResourceType>
+            impl <FromKey,FromAddress,FromKind> Rc<FromKey,FromAddress,FromKind,Bin>
 
                 where
-                    FromResourceType: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync,
+                    FromKey: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync,
+                    FromAddress: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync,
+                    FromKind: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync,
             {
-                pub fn convert<ToResourceType>(self) -> Result<Rc<ToResourceType>, Error>
-                    where ToResourceType: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync + TryFrom<FromResourceType,Error=Error>
+                pub fn convert<ToKey,ToAddress,ToKind>(self) -> Result<Rc<ToKey,ToAddress,ToKind,Bin>, Error>
+                    where ToKey: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync + TryFrom<FromKey,Error=Error>,
+                          ToAddress: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync + TryFrom<FromAddress,Error=Error>,
+                          ToKind: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync + TryFrom<FromKind,Error=Error>,
 
                 {
-                    match self {
-                        Rc::Create(create) => {
-                            Ok(Rc::Create(create))
-                        }
-                        Rc::Select(select) => {
-                            Ok(Rc::Select(select))
-                        }
-                        Rc::Read => {
-                            Ok(Rc::Read)
-                        }
-                        Rc::Update(update) => {
-                            Ok(Rc::Update(update))
-                        }
-                        Rc::Delete => {
-                            Ok(Rc::Delete)
-                        }
-                        Rc::Unique(unique) => {
-                            Ok(Rc::Unique(unique.try_into()?))
-                        }
-                    }
+                    Ok(Rc{command: self.command,
+                          payload: self.payload.convert()? })
                 }
             }
 
