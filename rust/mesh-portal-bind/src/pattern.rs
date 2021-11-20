@@ -18,7 +18,8 @@ use mesh_portal_serde::version::latest::payload::Payload;
 
 use crate::parse::{call, call_with_config, Res};
 use crate::symbol::{Address, Call, CallWithConfig};
-use crate::token::PayloadPrimitiveType;
+use crate::token::{PayloadPrimitiveType, PayloadType};
+use mesh_portal_serde::version::v0_0_1::generic::id::Identifier;
 
 fn skewer<T>(i: T) -> Res<T, T>
     where
@@ -66,10 +67,28 @@ fn filename<T>(i: T) -> Res<T, T>
 }
 
 #[derive(Debug,Clone,Eq,PartialEq)]
-pub enum Pattern {
+pub enum PayloadPattern {
     Any,
     Empty,
     Data(DataStructDef),
+}
+
+impl PayloadPattern {
+    pub fn is_match( &self, payload: Payload ) -> bool {
+        if self == Self::Any {
+            return true;
+        }
+        match payload {
+            Payload::Empty => {
+                self == Self::Empty
+            }
+            Payload::Single(primitive) => {
+
+            }
+            Payload::List(_) => {}
+            Payload::Map(_) => {}
+        }
+    }
 }
 
 #[derive(Debug,Clone,Eq,PartialEq)]
@@ -92,6 +111,12 @@ pub struct DataStructDef {
     pub data: DataStruct,
     pub format: Option<Format>,
     pub verifier: Option<CallWithConfig>,
+}
+
+impl DataStructDef {
+    pub fn is_match( &self, primitive: Primitive ) {
+        Payloadype
+    }
 }
 
 
@@ -249,7 +274,7 @@ pub struct CreateBlock{
 
 #[derive(Debug,Clone,Eq,PartialEq)]
 pub struct PatternBlock {
-    pub pattern: Pattern
+    pub pattern: PayloadPattern
 }
 
 #[derive(Debug,Clone,Eq,PartialEq)]
@@ -463,7 +488,7 @@ pub fn pattern_block_empty(input: &str) -> Res<&str,PatternBlock> {
     }
     else {
         Ok((input, PatternBlock{
-            pattern: Pattern::Empty
+            pattern: PayloadPattern::Empty
         }))
     }
 }
@@ -472,7 +497,7 @@ pub fn pattern_block_any(input: &str) -> Res<&str,PatternBlock> {
     let (next,_)= tag("*")(input)?;
 
         Ok((next, PatternBlock{
-            pattern: Pattern::Any
+            pattern: PayloadPattern::Any
         }))
 }
 
@@ -480,7 +505,7 @@ pub fn pattern_block_def(input: &str) -> Res<&str,PatternBlock> {
     let (next,data)= data_struct_def(input)?;
 
     Ok((next, PatternBlock{
-        pattern: Pattern::Data(data)
+        pattern: PayloadPattern::Data(data)
     }))
 }
 

@@ -54,12 +54,7 @@ pub mod frame {
 
 pub mod bin {
     use crate::version::v0_0_1::bin;
-
-    pub type BinSrc = bin::BinSrc;
-    pub type BinRaw = bin::BinRaw;
-    pub type BinSet = bin::BinSet;
     pub type Bin = bin::Bin;
-    pub type BinParcel = bin::BinParcel;
 }
 
 pub mod payload {
@@ -67,11 +62,14 @@ pub mod payload {
     use crate::version::latest::bin::Bin;
     use crate::version::latest::id::{Address, Key, Kind};
     use crate::version::v0_0_1::payload;
+    use crate::version::latest::id::Identifier;
 
-    pub type Primitive = generic::payload::Primitive<Key,Address,Kind,Bin>;
-    pub type Payload = generic::payload::Payload<Key,Address,Kind,Bin>;
+    pub type Primitive = generic::payload::Primitive<Key,Address,Identifier,Kind>;
+    pub type Payload = generic::payload::Payload<Key,Address,Identifier,Kind>;
     pub type PayloadType = payload::PayloadType;
     pub type PrimitiveType= payload::PrimitiveType;
+    pub type PayloadRef = payload::PayloadRef;
+    pub type PayloadDelivery = generic::payload::PayloadDelivery<Payload,PayloadRef>;
 }
 
 pub mod command {
@@ -111,20 +109,22 @@ pub mod entity {
 
     pub mod request {
         use crate::version::v0_0_1::generic;
-        use crate::version::v0_0_1::id::{Address, Key, Kind, ResourceType};
+        use crate::version::latest::id::{Address, Key, Kind, ResourceType};
         use crate::version::latest::bin::Bin;
+        use crate::version::latest::payload::PayloadDelivery;
 
-        pub type ReqEntity = generic::entity::request::ReqEntity<Key,Address,Kind,ResourceType>;
-        pub type Rc = generic::entity::request::Rc<Key,Address,Kind,Bin>;
-        pub type Msg = generic::entity::request::Msg<Key,Address,Kind>;
+        pub type ReqEntity = generic::entity::request::ReqEntity<PayloadDelivery>;
+        pub type Rc = generic::entity::request::Rc<PayloadDelivery>;
+        pub type Msg = generic::entity::request::Msg<PayloadDelivery>;
         pub type Http = generic::entity::request::Http;
     }
 
     pub mod response{
         use crate::version::v0_0_1::{fail, generic};
-        use crate::version::v0_0_1::id::{Address, Key, Kind};
+        use crate::version::latest::id::{Address, Key, Kind};
+        use crate::version::latest::payload::PayloadDelivery;
 
-        pub type RespEntity = generic::entity::response::RespEntity<Key,Address,Kind,fail::Fail>;
+        pub type RespEntity = generic::entity::response::RespEntity<PayloadDelivery,fail::Fail>;
     }
 
 }
@@ -146,35 +146,40 @@ pub mod portal {
 
     pub mod inlet {
         use crate::version::latest::generic;
-        use crate::version::latest::id::{Address, Key, Kind, ResourceType};
+        use crate::version::latest::id::{Address, Key, Kind, ResourceType,Identifier};
         use crate::version::latest::frame::PrimitiveFrame;
         use crate::version::latest::error::Error;
+        use crate::version::latest::payload::PayloadDelivery;
 
-        pub type Request=generic::portal::inlet::Request<Key,Address,Kind,ResourceType>;
-        pub type Response=generic::portal::inlet::Response<Key,Address,Kind>;
-        pub type Frame=generic::portal::inlet::Frame<Key,Address,Kind,ResourceType>;
+        pub type Request=generic::portal::inlet::Request<Identifier,PayloadDelivery>;
+        pub type Response=generic::portal::inlet::Response<Identifier,PayloadDelivery>;
+        pub type Frame=generic::portal::inlet::Frame<Identifier,PayloadDelivery>;
 
         pub mod exchange {
-            use crate::version::latest::id::{Address, Key, Kind, ResourceType};
+            use crate::version::latest::id::{Address, Key, Kind, ResourceType, Identifier};
             use crate::version::latest::generic;
-            pub type Request=generic::portal::inlet::exchange::Request<Key,Address,Kind,ResourceType>;
+            use crate::version::latest::payload::PayloadDelivery;
+            pub type Request=generic::portal::inlet::exchange::Request<Identifier,PayloadDelivery>;
         }
     }
 
     pub mod outlet {
         use crate::version::latest::generic;
-        use crate::version::latest::id::{Address, Key, Kind, ResourceType};
+        use crate::version::latest::id::{Address, Key, Kind, ResourceType, Identifier};
         use crate::version::latest::frame::PrimitiveFrame;
         use crate::version::latest::error::Error;
+        use crate::version::latest::payload::PayloadDelivery;
 
-        pub type Request=generic::portal::outlet::Request<Key,Address,Kind,ResourceType>;
-        pub type Response=generic::portal::outlet::Response<Key,Address,Kind>;
-        pub type Frame=generic::portal::outlet::Frame<Key,Address,Kind,ResourceType>;
+        pub type Request=generic::portal::outlet::Request<Identifier,PayloadDelivery>;
+        pub type Response=generic::portal::outlet::Response<Identifier,PayloadDelivery>;
+        pub type Frame=generic::portal::outlet::Frame<Key,Address,Identifier,Kind,ResourceType>;
 
         pub mod exchange {
-            use crate::version::latest::id::{Address, Key, Kind, ResourceType};
+            use crate::version::latest::id::{Address, Key, Kind, ResourceType,Identifier};
             use crate::version::latest::generic;
-            pub type Request=generic::portal::outlet::exchange::Request<Key,Address,Kind,ResourceType>;
+            use crate::version::latest::payload::PayloadDelivery;
+
+            pub type Request=generic::portal::outlet::exchange::Request<Identifier,PayloadDelivery>;
         }
     }
 }
@@ -225,9 +230,9 @@ pub mod generic {
             use crate::version::latest::generic::payload::Primitive;
             use crate::version::latest::generic::payload::Payload;
 
-            pub type ReqEntity<KEY, ADDRESS, KIND, RESOURCE_TYPE> = generic::entity::request::ReqEntity<KEY,ADDRESS,KIND,RESOURCE_TYPE>;
-            pub type Rc<KEY,ADDRESS,KIND,BIN> = generic::entity::request::Rc<KEY,ADDRESS,KIND,BIN>;
-            pub type Msg<KEY, ADDRESS, KIND> = generic::entity::request::Msg<KEY,ADDRESS,KIND>;
+            pub type ReqEntity<PAYLOAD> = generic::entity::request::ReqEntity<PAYLOAD>;
+            pub type Rc<PAYLOAD> = generic::entity::request::Rc<PAYLOAD>;
+            pub type Msg<PAYLOAD> = generic::entity::request::Msg<PAYLOAD>;
             pub type Http = generic::entity::request::Http;
         }
 
@@ -241,7 +246,7 @@ pub mod generic {
 
             use serde::{Deserialize, Serialize};
 
-            pub type RespEntity<KEY, ADDRESS, KIND,FAIL> = generic::entity::response::RespEntity<KEY,ADDRESS,KIND,FAIL>;
+            pub type RespEntity<PAYLOAD,FAIL> = generic::entity::response::RespEntity<PAYLOAD,FAIL>;
         }
     }
 
@@ -254,15 +259,14 @@ pub mod generic {
 
         use serde::{Deserialize, Serialize};
 
-        use crate::version::v0_0_1::bin::BinSet;
         use crate::version::v0_0_1::error::Error;
         use crate::version::v0_0_1::generic;
         use crate::version::v0_0_1::generic::id::{AddressAndKind, Identifier};
         use crate::version::v0_0_1::State;
 
         pub type Archetype<KIND,ADDRESS>=generic::resource::Archetype<KIND,ADDRESS>;
-        pub type ResourceStub<KEY, ADDRESS, KIND > = generic::resource::ResourceStub<KEY,ADDRESS,KIND>;
-        pub type Resource<KEY, ADDRESS, KIND,BIN > = generic::resource::Resource<KEY,ADDRESS,KIND,BIN>;
+        pub type ResourceStub<KEY, ADDRESS, KIND > = generic::resource::ResourceStub<KEY,ADDRESS, KIND>;
+        pub type Resource<KEY, ADDRESS, IDENTIFIER, KIND> = generic::resource::Resource<KEY,ADDRESS,IDENTIFIER,KIND>;
     }
 
     pub mod portal {
@@ -277,9 +281,9 @@ pub mod generic {
 
             use crate::version::v0_0_1::generic::portal::inlet;
 
-            pub type Request<KEY, ADDRESS, KIND,RESOURCE_TYPE> = inlet::Request<KEY,ADDRESS,KIND,RESOURCE_TYPE>;
-            pub type Response<KEY, ADDRESS, KIND> = inlet::Response<KEY,ADDRESS,KIND>;
-            pub type Frame<KEY, ADDRESS, KIND,RESOURCE_TYPE> = inlet::Frame<KEY,ADDRESS,KIND,RESOURCE_TYPE>;
+            pub type Request<IDENTIFIER, PAYLOAD> = inlet::Request<IDENTIFIER,PAYLOAD>;
+            pub type Response<IDENTIFIER, PAYLOAD> = inlet::Response<IDENTIFIER,PAYLOAD>;
+            pub type Frame<IDENTIFIER, PAYLOAD> = inlet::Frame<IDENTIFIER,PAYLOAD>;
 
             pub mod exchange {
                 use std::fmt::Debug;
@@ -289,7 +293,7 @@ pub mod generic {
                 use serde::{Deserialize, Serialize};
                 use crate::version::v0_0_1::generic::portal::inlet::exchange;
 
-                pub type Request<KEY, ADDRESS, KIND,RESOURCE_TYPE> = exchange::Request<KEY,ADDRESS,KIND,RESOURCE_TYPE>;
+                pub type Request<IDENTIFIER, PAYLOAD> = exchange::Request<IDENTIFIER,PAYLOAD>;
             }
         }
 
@@ -304,9 +308,9 @@ pub mod generic {
 
             use crate::version::v0_0_1::generic::portal::outlet;
 
-            pub type Request<KEY, ADDRESS, KIND,RESOURCE_TYPE> =  outlet::Request<KEY,ADDRESS,KIND,RESOURCE_TYPE>;
-            pub type Response<KEY, ADDRESS, KIND> =  outlet::Response<KEY,ADDRESS,KIND>;
-            pub type Frame<KEY, ADDRESS, KIND,RESOURCE_TYPE> =  outlet::Frame<KEY,ADDRESS,KIND,RESOURCE_TYPE>;
+            pub type Request<IDENTIFIER, PAYLOAD> =  outlet::Request<IDENTIFIER,PAYLOAD>;
+            pub type Response<IDENTIFIER, PAYLOAD> =  outlet::Response<IDENTIFIER,PAYLOAD>;
+            pub type Frame<KEY, ADDRESS, IDENTIFIER, KIND,PAYLOAD> =  outlet::Frame<KEY,ADDRESS,IDENTIFIER,KIND,PAYLOAD>;
 
             pub mod exchange {
                 use std::fmt::Debug;
@@ -317,7 +321,7 @@ pub mod generic {
 
                 use crate::version::v0_0_1::generic::portal::outlet::exchange;
 
-                pub type Request<KEY, ADDRESS, KIND,RESOURCE_TYPE> = exchange::Request<KEY,ADDRESS,KIND,RESOURCE_TYPE>;
+                pub type Request<IDENTIFIER, PAYLOAD> = exchange::Request<IDENTIFIER,PAYLOAD>;
             }
         }
     }
@@ -332,8 +336,9 @@ pub mod generic {
 
         use crate::version::v0_0_1::generic::payload;
 
-        pub type Payload<KEY, ADDRESS, KIND, BIN> = payload::Payload<KEY,ADDRESS,KIND,BIN>;
-        pub type Primitive<KEY, ADDRESS, KIND, BIN> = payload::Primitive<KEY,ADDRESS,KIND,BIN>;
+        pub type Payload<KEY, ADDRESS, IDENTIFIER,KIND> = payload::Payload<KEY,ADDRESS,IDENTIFIER,KIND>;
+        pub type Primitive<KEY, ADDRESS, IDENTIFIER,KIND> = payload::Primitive<KEY,ADDRESS,IDENTIFIER,KIND>;
+        pub type PayloadDelivery<PAYLOAD,PAYLOAD_REF> = payload::PayloadDelivery<PAYLOAD,PAYLOAD_REF>;
     }
 
 }

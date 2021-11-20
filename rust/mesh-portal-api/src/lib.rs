@@ -8,26 +8,19 @@ use tokio::sync::mpsc;
 use tokio::sync::mpsc::error::SendError;
 
 use mesh_portal_serde::version::latest::error::Error;
-use mesh_portal_serde::version::latest::generic::portal::inlet;
-use mesh_portal_serde::version::latest::generic::portal::outlet;
+use mesh_portal_serde::version::v0_0_1::util::ConvertFrom;
+use mesh_portal_serde::version::latest::portal::inlet;
 
-pub fn inlet_converter<FROM_KEY,FROM_ADDRESS,FROM_KIND,FROM_RESOURCE_TYPE,TO_KEY,TO_ADDRESS,TO_KIND,TO_RESOURCE_TYPE>(handle_error:fn (error:Error) ) -> (mpsc::Sender<inlet::Frame<FROM_KEY,FROM_ADDRESS,FROM_KIND,FROM_RESOURCE_TYPE>>, mpsc::Receiver<inlet::Frame<TO_KEY,TO_ADDRESS,TO_KIND,TO_RESOURCE_TYPE>>) where
-        FROM_KEY: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync+ 'static,
-        FROM_ADDRESS: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync + 'static,
-        FROM_KIND: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync + 'static,
-        FROM_RESOURCE_TYPE: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync + 'static,
-        TO_KEY: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync+ TryFrom<FROM_KEY,Error=Error>  + 'static,
-        TO_ADDRESS: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync+ TryFrom<FROM_ADDRESS,Error=Error> + 'static,
-        TO_KIND: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync+ TryFrom<FROM_KIND,Error=Error>  + 'static,
-        TO_RESOURCE_TYPE: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync+ TryFrom<FROM_RESOURCE_TYPE,Error=Error> + 'static
 
+pub fn converter<From,To>(handle_error:fn (error:Error) ) -> (mpsc::Sender<From>, mpsc::Receiver<To>) where
+    From: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync+ TryInto<To,Error=Error> + 'static,
+    To: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync + 'static,
 {
-    let (from_tx,mut from_rx) : (mpsc::Sender<inlet::Frame<FROM_KEY,FROM_ADDRESS,FROM_KIND,FROM_RESOURCE_TYPE>>,mpsc::Receiver<inlet::Frame<FROM_KEY,FROM_ADDRESS,FROM_KIND,FROM_RESOURCE_TYPE>>)= mpsc::channel(128);
-    let (to_tx,mut to_rx) : (mpsc::Sender<inlet::Frame<TO_KEY,TO_ADDRESS,TO_KIND,TO_RESOURCE_TYPE>>,mpsc::Receiver<inlet::Frame<TO_KEY,TO_ADDRESS,TO_KIND,TO_RESOURCE_TYPE>>)= mpsc::channel(128);
-
+    let (from_tx,mut from_rx) : (mpsc::Sender<From>,mpsc::Receiver<From>)= mpsc::channel(128);
+    let (to_tx,mut to_rx) : (mpsc::Sender<To>,mpsc::Receiver<To>)= mpsc::channel(128);
     tokio::spawn ( async move {
         while let Option::Some(from) = from_rx.recv().await{
-            let to : Result<inlet::Frame<TO_KEY,TO_ADDRESS,TO_KIND,TO_RESOURCE_TYPE>,Error> = from.convert();
+            let to : Result<To,Error> = from.try_into();
             match to {
                 Ok(to) => {
                     match to_tx.send(to).await {
@@ -46,46 +39,11 @@ pub fn inlet_converter<FROM_KEY,FROM_ADDRESS,FROM_KIND,FROM_RESOURCE_TYPE,TO_KEY
         }
     });
 
-    (from_tx, to_rx)
+    (from_tx,to_rx)
 }
 
-pub fn outlet_converter<FROM_KEY,FROM_ADDRESS,FROM_KIND,FROM_RESOURCE_TYPE,TO_KEY,TO_ADDRESS,TO_KIND,TO_RESOURCE_TYPE>(handle_error:fn (error:Error) ) -> (mpsc::Sender<outlet::Frame<FROM_KEY,FROM_ADDRESS,FROM_KIND,FROM_RESOURCE_TYPE>>, mpsc::Receiver<outlet::Frame<TO_KEY,TO_ADDRESS,TO_KIND,TO_RESOURCE_TYPE>>) where
-    FROM_KEY: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync+ 'static,
-    FROM_ADDRESS: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync + 'static,
-    FROM_KIND: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync + 'static,
-    FROM_RESOURCE_TYPE: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync + 'static,
-    TO_KEY: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync+ TryFrom<FROM_KEY,Error=Error>  + 'static,
-    TO_ADDRESS: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync+ TryFrom<FROM_ADDRESS,Error=Error> + 'static,
-    TO_KIND: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync+ TryFrom<FROM_KIND,Error=Error>  + 'static,
-    TO_RESOURCE_TYPE: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync+ TryFrom<FROM_RESOURCE_TYPE,Error=Error> + 'static
 
-{
-    let (from_tx,mut from_rx) : (mpsc::Sender<outlet::Frame<FROM_KEY,FROM_ADDRESS,FROM_KIND,FROM_RESOURCE_TYPE>>,mpsc::Receiver<outlet::Frame<FROM_KEY,FROM_ADDRESS,FROM_KIND,FROM_RESOURCE_TYPE>>)= mpsc::channel(128);
-    let (to_tx,mut to_rx) : (mpsc::Sender<outlet::Frame<TO_KEY,TO_ADDRESS,TO_KIND,TO_RESOURCE_TYPE>>,mpsc::Receiver<outlet::Frame<TO_KEY,TO_ADDRESS,TO_KIND,TO_RESOURCE_TYPE>>)= mpsc::channel(128);
 
-    tokio::spawn ( async move {
-        while let Option::Some(from) = from_rx.recv().await{
-            let to : Result<outlet::Frame<TO_KEY,TO_ADDRESS,TO_KIND,TO_RESOURCE_TYPE>,Error> = from.convert();
-            match to {
-                Ok(to) => {
-                    match to_tx.send(to).await {
-                        Err(err) => {
-                            let err = Error { message : err.to_string() };
-                            handle_error(err);
-                            break;
-                        }
-                        _ => {}
-                    }
-                }
-                Err(err) => {
-                    handle_error(err.into())
-                }
-            }
-        }
-    });
-
-    (from_tx, to_rx)
-}
 
 pub mod message {
     use mesh_portal_serde::version::latest::entity::request::ReqEntity;
@@ -98,7 +56,7 @@ pub mod message {
         use mesh_portal_serde::mesh::generic::{Request, Response};
 
         #[derive(Clone,Serialize,Deserialize)]
-        pub enum Message<OPERATION,ID> where ID: Clone {
+        pub enum Message<OPERATION,ID> {
             Request(Request<OPERATION,ID>),
             Response(Response<ID>)
         }
@@ -115,5 +73,19 @@ pub mod message {
                 }
             }
         }
+
+        impl<OPERATION,ID> From<Request<OPERATION,ID>> for Message<OPERATION,ID> {
+            fn from(request: Request<OPERATION, ID>) -> Self {
+                Self::Request(request)
+            }
+        }
+
+        impl<OPERATION,ID> From<Response<ID>> for Message<OPERATION,ID> {
+            fn from(response: Response<ID>) -> Self {
+                Self::Response(response)
+            }
+        }
+
     }
+
 }

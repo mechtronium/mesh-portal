@@ -14,9 +14,11 @@ pub mod generic {
     use crate::version::latest::entity::request::ReqEntity;
     use crate::version::latest::entity::response;
     use crate::version::latest::{portal, entity};
+    use crate::version::v0_0_1::util::{unique_id, ConvertFrom};
 
     #[derive(Clone,Serialize,Deserialize)]
     pub struct Request<ENTITY,ID>{
+        pub id: String,
         pub to: ID,
         pub from: ID,
         pub entity: ENTITY,
@@ -26,6 +28,7 @@ pub mod generic {
     impl<ENTITY,ID> Request<ENTITY,ID> {
         pub fn new(to: ID, from: ID, entity: ENTITY, exchange: Exchange) -> Self {
             Request {
+                id: unique_id(),
                 to,
                 from,
                 entity,
@@ -37,6 +40,7 @@ pub mod generic {
     impl <ID> Request<ReqEntity,ID>{
         pub fn from(request: inlet::Request, from: ID, to: ID, exchange: Exchange) -> Self {
             Self {
+                id: request.id,
                 to,
                 from,
                 entity: request.entity,
@@ -48,6 +52,7 @@ pub mod generic {
     impl Into<inlet::exchange::Request> for Request<ReqEntity,Identifier> {
         fn into(self) -> inlet::exchange::Request {
             inlet::exchange::Request {
+                id: self.id,
                 to: vec![self.to.into()],
                 entity: self.entity,
                 exchange: self.exchange
@@ -67,6 +72,7 @@ pub mod generic {
 
     #[derive(Clone,Serialize,Deserialize)]
     pub struct Response<ID>{
+        pub id: String,
         pub to: ID,
         pub from: ID,
         pub exchange: ExchangeId,
@@ -76,6 +82,7 @@ pub mod generic {
     impl <ID> Response<ID>  {
         pub fn from(response: outlet::Response, from: ID, to: ID) -> Self {
             Self {
+                id: response.id,
                 to,
                 from,
                 exchange: response.exchange,
@@ -100,6 +107,7 @@ pub mod generic {
     impl Into<outlet::Response> for Response<Identifier> {
         fn into(self) -> outlet::Response {
             outlet::Response {
+                id: self.id,
                 from: self.from,
                 exchange: self.exchange,
                 entity: self.entity
