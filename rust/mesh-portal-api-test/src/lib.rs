@@ -373,7 +373,7 @@ println!("FriendlyPortalCtrl::Ok");
                                     let mut request = inlet::Request::new(ReqEntity::Msg(
                                         Msg {
                                             port: "greet".to_string(),
-                                            payload: Payload::Single(Primitive::Text(format!(
+                                            payload: Payload::Primitive(Primitive::Text(format!(
                                                 "Hello, my name is '{}' and I live at '{}'",
                                                 self.skel.info.owner, self.skel.info.address.to_string()
                                             ))),
@@ -382,7 +382,7 @@ println!("FriendlyPortalCtrl::Ok");
                                     match result {
                                         Ok(response) => {
                                             match &response.entity {
-                                                response::RespEntity::Ok(Payload::Single(Primitive::Text(response))) => {
+                                                response::RespEntity::Ok(Payload::Primitive(Primitive::Text(response))) => {
                                                     println!("got response: {}", response);
                                                     GLOBAL_TX.send(GlobalEvent::Finished(self.skel.info.owner.clone()));
                                                 }
@@ -417,8 +417,8 @@ println!("FriendlyPortalCtrl::Ok");
             impl PortCtrl for GreetPort {
                 async fn request( &self, request: outlet::Request ) -> Result<Option<response::RespEntity>,Error>{
                     match &request.entity {
-                        ReqEntity::Msg(Msg { port:_, payload:Payload::Single(Primitive::Text(text)) } ) => Ok(Option::Some(response::RespEntity::Ok(
-                            Payload::Single(Primitive::Text("Hello, <username>".to_string())),
+                        ReqEntity::Msg(Msg { port:_, payload:Payload::Primitive(Primitive::Text(text)) } ) => Ok(Option::Some(response::RespEntity::Ok(
+                            Payload::Primitive(Primitive::Text("Hello, <username>".to_string())),
                         ))),
                         _ => Err(anyhow!("unexpected request entity")),
                     }

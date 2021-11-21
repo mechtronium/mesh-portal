@@ -70,6 +70,8 @@ pub mod payload {
     pub type PrimitiveType= payload::PrimitiveType;
     pub type PayloadRef = payload::PayloadRef;
     pub type PayloadDelivery = generic::payload::PayloadDelivery<Payload,PayloadRef>;
+    pub type MapConstraints<V> = generic::payload::MapConstraints<V>;
+    pub type ValueConstraint<V> = generic::payload::ValueConstraint<V>;
 }
 
 pub mod command {
@@ -335,10 +337,13 @@ pub mod generic {
         use serde::{Deserialize, Serialize};
 
         use crate::version::v0_0_1::generic::payload;
+        use crate::version::v0_0_1::generic::payload::ValuePattern;
 
         pub type Payload<KEY, ADDRESS, IDENTIFIER,KIND> = payload::Payload<KEY,ADDRESS,IDENTIFIER,KIND>;
         pub type Primitive<KEY, ADDRESS, IDENTIFIER,KIND> = payload::Primitive<KEY,ADDRESS,IDENTIFIER,KIND>;
         pub type PayloadDelivery<PAYLOAD,PAYLOAD_REF> = payload::PayloadDelivery<PAYLOAD,PAYLOAD_REF>;
+        pub type MapConstraints<V> = payload::MapConstraints<V>;
+        pub type ValueConstraint<V> = payload::ValueConstraint<V>;
     }
 
 }

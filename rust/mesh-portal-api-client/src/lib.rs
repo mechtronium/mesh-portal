@@ -456,7 +456,7 @@ pub mod example {
 
             let response = self.inlet_api.exchange(request).await?;
 
-            if let entity::response::RespEntity::Ok(Payload::Single(Primitive::Text(text))) = response.entity {
+            if let entity::response::RespEntity::Ok(Payload::Primitive(Primitive::Text(text))) = response.entity {
                 println!("{}",text);
             } else {
                 return Err(anyhow!("unexpected signal"));
