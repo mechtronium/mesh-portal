@@ -171,6 +171,7 @@ pub mod payload {
         Serialize,
         Deserialize,
     )]
+
     pub enum PrimitiveType {
         Key,
         Address,
@@ -186,91 +187,7 @@ pub mod payload {
         Resource,
     }
 
-    impl PrimitiveType {
-        pub fn is_match<KEY, ADDRESS, IDENTIFIER, KIND>( &self, primitive: &generic::payload::Primitive<KEY, ADDRESS, IDENTIFIER, KIND>) -> Result<(),Error>
-            where KEY: Clone, ADDRESS: Clone, IDENTIFIER: Clone, KIND: Clone
-        {
-            match primitive {
-                Primitive::Text(_) => {
-                    if *self == Self::Text {
-                        Ok(())
-                    } else {
-                        Err("expected Text primitive".into())
-                    }
-                }
-                Primitive::Key(_) => {
-                    if *self == Self::Key{
-                        Ok(())
-                    } else {
-                        Err("expected Key primitive".into())
-                    }
-                }
-                Primitive::Address(_) => {
-                    if *self == Self::Address{
-                        Ok(())
-                    } else {
-                        Err("expected Address primitive".into())
-                    }
-                }
-                Primitive::Identifier(_) => {
-                    if *self == Self::Identifier{
-                        Ok(())
-                    } else {
-                        Err("expected Identifier primitive".into())
-                    }
-                }
-                Primitive::Stub(_) => {
-                    if *self == Self::Stub{
-                        Ok(())
-                    } else {
-                        Err("expected Stub primitive".into())
-                    }
-                }
-                Primitive::Meta(_) => {
-                    if *self == Self::Meta{
-                        Ok(())
-                    } else {
-                        Err("expected Meta primitive".into())
-                    }
-                }
-                Primitive::Bin(_) => {
-                    if *self == Self::Bin {
-                        Ok(())
-                    } else {
-                        Err("expected Bin primitive".into())
-                    }
-                }
-                Primitive::Boolean(_) => {
-                    if *self == Self::Boolean{
-                        Ok(())
-                    } else {
-                        Err("expected Boolean primitive".into())
-                    }
-                }
-                Primitive::Int(_) => {
-                    if *self == Self::Int{
-                        Ok(())
-                    } else {
-                        Err("expected Int primitive".into())
-                    }
-                }
-                Primitive::Status(_) => {
-                    if *self == Self::Status{
-                        Ok(())
-                    } else {
-                        Err("expected Status primitive".into())
-                    }
-                }
-                Primitive::Resource(_) => {
-                    if *self == Self::Resource{
-                        Ok(())
-                    } else {
-                        Err("expected Resource primitive".into())
-                    }
-                }
-            }
-        }
-    }
+
 }
 
 pub mod command {
@@ -1340,7 +1257,7 @@ pub mod generic {
         use std::ops::{Deref, DerefMut};
 
         #[derive(
-            Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash, strum_macros::Display,
+            Debug, Clone, Serialize, Deserialize, Eq, PartialEq, strum_macros::Display,
         )]
         pub enum PayloadType
         {
@@ -1349,7 +1266,91 @@ pub mod generic {
             List(PrimitiveType),
             Map(Box<MapConstraints<PayloadType>>),
         }
-
+        impl PrimitiveType {
+            pub fn is_match<KEY, ADDRESS, IDENTIFIER, KIND>( &self, primitive: &generic::payload::Primitive<KEY, ADDRESS, IDENTIFIER, KIND>) -> Result<(),Error>
+                where KEY: Clone, ADDRESS: Clone, IDENTIFIER: Clone, KIND: Clone
+            {
+                match primitive {
+                    Primitive::Text(_) => {
+                        if *self == Self::Text {
+                            Ok(())
+                        } else {
+                            Err("expected Text primitive".into())
+                        }
+                    }
+                    Primitive::Key(_) => {
+                        if *self == Self::Key{
+                            Ok(())
+                        } else {
+                            Err("expected Key primitive".into())
+                        }
+                    }
+                    Primitive::Address(_) => {
+                        if *self == Self::Address{
+                            Ok(())
+                        } else {
+                            Err("expected Address primitive".into())
+                        }
+                    }
+                    Primitive::Identifier(_) => {
+                        if *self == Self::Identifier{
+                            Ok(())
+                        } else {
+                            Err("expected Identifier primitive".into())
+                        }
+                    }
+                    Primitive::Stub(_) => {
+                        if *self == Self::Stub{
+                            Ok(())
+                        } else {
+                            Err("expected Stub primitive".into())
+                        }
+                    }
+                    Primitive::Meta(_) => {
+                        if *self == Self::Meta{
+                            Ok(())
+                        } else {
+                            Err("expected Meta primitive".into())
+                        }
+                    }
+                    Primitive::Bin(_) => {
+                        if *self == Self::Bin {
+                            Ok(())
+                        } else {
+                            Err("expected Bin primitive".into())
+                        }
+                    }
+                    Primitive::Boolean(_) => {
+                        if *self == Self::Boolean{
+                            Ok(())
+                        } else {
+                            Err("expected Boolean primitive".into())
+                        }
+                    }
+                    Primitive::Int(_) => {
+                        if *self == Self::Int{
+                            Ok(())
+                        } else {
+                            Err("expected Int primitive".into())
+                        }
+                    }
+                    Primitive::Status(_) => {
+                        if *self == Self::Status{
+                            Ok(())
+                        } else {
+                            Err("expected Status primitive".into())
+                        }
+                    }
+                    Primitive::Resource(_) => {
+                        if *self == Self::Resource{
+                            Ok(())
+                        } else {
+                            Err("expected Resource primitive".into())
+                        }
+                    }
+                }
+            }
+        }
        impl <KEY,ADDRESS,IDENTIFIER,KIND> ValuePattern<Payload<KEY,ADDRESS,IDENTIFIER,KIND>> for PayloadType
            where KEY: Clone, ADDRESS: Clone, IDENTIFIER: Clone, KIND: Clone
        {
@@ -1371,7 +1372,11 @@ pub mod generic {
                     }
                     PayloadType::List(list_primitive) => {
                         if let Payload::List(found)= payload {
-                            list_primitive.is_match(&found.primitive_type)
+                            if *list_primitive == found.primitive_type {
+                                Ok(())
+                            } else {
+                                Err(format!("Payload list primitive does not match expected: '{}' found: '{}'", list_primitive.to_string(), found.to_string()).into() )
+                            }
                         } else {
                             Err(format!("Payload expected: '{}' found: '{}'", list_primitive.to_string(), payload.to_string()).into() )
                         }
@@ -1389,7 +1394,7 @@ pub mod generic {
         }
 
 
-        #[derive(Clone)]
+        #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
         pub struct MapConstraints<V> {
             pub required: HashMap<String, ValueConstraint<V>>,
             pub allowed: ValueConstraint<V>
@@ -1414,7 +1419,7 @@ pub mod generic {
             {
 
                 // if Any keys are allowed then skip
-                    for (key, payload) in map {
+                    for (key, payload) in &map.map {
                         if !self.required.contains_key(key)
                         {
                             match &self.allowed {
@@ -1435,7 +1440,7 @@ pub mod generic {
                     if !map.contains_key(key) {
                         return Err(format!("missing required key : '{}' defined in Map constraints", key).into())
                     }
-                    constraint.is_match(&map.get(key))?;
+                    constraint.is_match(&map.get(key).expect("expected map element after testing for it"))?;
                 }
 
                 Ok(())
@@ -1443,7 +1448,7 @@ pub mod generic {
         }
 
 
-        #[derive(Clone)]
+        #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
         pub enum ValueConstraint<T> {
             Any,
             None,
@@ -1623,7 +1628,7 @@ pub mod generic {
         impl <KEY, ADDRESS, IDENTIFIER, KIND>Deref for PayloadMap<KEY, ADDRESS, IDENTIFIER, KIND>
             where KEY: Clone, ADDRESS: Clone, IDENTIFIER: Clone, KIND: Clone
         {
-            type Target = HashMap<String,Box<Payload<KEY, ADDRESS, IDENTIFIER, KIND>>>;
+            type Target = HashMap<String,Payload<KEY, ADDRESS, IDENTIFIER, KIND>>;
 
             fn deref(&self) -> &Self::Target {
                 &self.map
@@ -1671,7 +1676,7 @@ pub mod generic {
                     Payload::Primitive(primitive) => Ok(Payload::Primitive(ConvertFrom::convert_from(primitive)?)),
                     Payload::List(list) => {
                         let mut rtn: PrimitiveList<ToKey, ToAddress, ToIdentifier, ToKind> = PrimitiveList::new(list.primitive_type);
-                        for p in list {
+                        for p in list.list {
                             rtn.push(ConvertFrom::convert_from(p)?);
                         }
                         Ok(Payload::List(rtn))
@@ -1679,8 +1684,8 @@ pub mod generic {
                     Payload::Map(map) => {
                         let mut rtn = PayloadMap::new(map.constraints);
 
-                        for (key, payload) in map {
-                            rtn.insert(key, Box::new(ConvertFrom::convert_from(*payload)?));
+                        for (key, payload) in map.map {
+                            rtn.insert(key, ConvertFrom::convert_from(payload)?);
                         }
 
                         Ok(Payload::Map(rtn))
@@ -1758,6 +1763,14 @@ pub mod generic {
            pub list: Vec<Primitive<KEY,ADDRESS,IDENTIFIER,KIND>>
         }
 
+        impl <KEY,ADDRESS,IDENTIFIER,KIND>ToString for PrimitiveList<KEY,ADDRESS,IDENTIFIER,KIND>
+            where KEY: Clone, ADDRESS: Clone, IDENTIFIER: Clone, KIND: Clone
+        {
+            fn to_string(&self) -> String {
+                format!("{}[]",self.primitive_type.to_string())
+            }
+        }
+
         impl <KEY,ADDRESS,IDENTIFIER,KIND> PrimitiveList<KEY,ADDRESS,IDENTIFIER,KIND>
             where KEY: Clone, ADDRESS: Clone, IDENTIFIER: Clone, KIND: Clone
         {
@@ -1770,7 +1783,7 @@ pub mod generic {
             pub fn validate( &self ) -> Result<(),Error> {
                 for primitive in &self.list {
                     if primitive.primitive_type() != self.primitive_type {
-                        Err(format!("PrimitiveList type mismatch expected: {} received: {}", self.primitive_type.to_string(), primitive.primitive_type().to_string() ).into())
+                        return Err(format!("PrimitiveList type mismatch expected: {} received: {}", self.primitive_type.to_string(), primitive.primitive_type().to_string() ).into());
                     }
                 }
                 Ok(())
