@@ -16,13 +16,13 @@ use mesh_portal_serde::version::latest::payload::{PrimitiveType, PayloadType};
 use mesh_portal_serde::version::latest::payload::Primitive;
 use mesh_portal_serde::version::latest::payload::Payload;
 
-use crate::parse::{call, call_with_config, Res};
+use crate::parse::{call, call_with_config, Res, path_regex, camel_case, camel_case_to_string};
 use mesh_portal_serde::version::latest::error::Error;
 use std::iter::Map;
-use mesh_portal_serde::version::latest::util::{ValuePattern, RegexMatcher};
+use mesh_portal_serde::version::latest::util::{ValuePattern, RegexMatcher, StringMatcher};
 use mesh_portal_serde::version::latest::payload::MapPattern;
 use mesh_portal_serde::version::latest::payload::PayloadPattern;
-use mesh_portal_serde::version::latest::payload::PayloatTypePattern;
+use mesh_portal_serde::version::latest::payload::PayloadTypePattern;
 use mesh_portal_serde::version::latest::payload::ListPattern;
 use mesh_portal_serde::version::latest::payload::PayloadMap;
 use mesh_portal_serde::version::latest::payload::CallWithConfig;
@@ -31,11 +31,12 @@ use mesh_portal_serde::version::latest::payload::Range;
 use mesh_portal_serde::version::latest::payload::PayloadFormat;
 use std::ops::RangeTo;
 use mesh_portal_serde::version::latest::generic::entity::request::{ReqEntity, Rc,Msg,Http};
-use mesh_portal_serde::version::v0_0_1::generic::payload::{PayloadDelivery, PayloadRef, HttpMethod};
+use mesh_portal_serde::version::latest::payload::{PayloadDelivery, PayloadRef};
 use mesh_portal_serde::version::v0_0_1::generic::id::Identifier;
 use mesh_portal_serde::version::v0_0_1::id::Address;
 use mesh_portal_serde::version::v0_0_1::util::ValueMatcher;
 use mesh_portal_serde::version::latest::generic::payload::RcCommand;
+use mesh_portal_serde::version::v0_0_1::generic::payload::{HttpMethod};
 
 fn skewer<T>(i: T) -> Res<T, T>
     where
@@ -115,9 +116,9 @@ pub enum Format{
 }
 
 pub enum EntityPattern {
-   Rc(ValuePattern<RcPattern>),
-   Msg(ValuePattern<MsgPattern>),
-   Http(ValuePattern<HttpPattern>)
+   Rc(RcPattern),
+   Msg(MsgPattern),
+   Http(HttpPattern)
 }
 
 impl <P> ValueMatcher<ReqEntity<P>> for EntityPattern {
@@ -167,7 +168,7 @@ impl ToString for EntityPattern {
 
 
 pub struct RcPattern {
-    pub command: RcCommand
+    pub command: ValuePattern<RcCommand>
 }
 
 impl ToString for RcPattern {
@@ -178,16 +179,12 @@ impl ToString for RcPattern {
 
 impl <P> ValueMatcher<Rc<P>> for RcPattern {
     fn is_match(&self, found: &Rc<P>) -> Result<(), Error> {
-        if found.command == self.command {
-            Ok(())
-        } else {
-            Err(format!("Rc entity pattern mismatch. command expected : '{}' found: '{}'",self.command.to_string(), found.command.to_string()).into())
-        }
+        self.command.is_match(&found.command )
     }
 }
 
 pub struct MsgPattern{
-    pub action: ValuePattern<RegexMatcher>,
+    pub action: ValuePattern<StringMatcher>,
     pub path_regex: String
 }
 
@@ -342,17 +339,17 @@ pub fn range( input: &str ) -> Res<&str,Range> {
 
 
 
-pub fn primitive_data_struct( input: &str ) -> Res< &str, PayloatTypePattern> {
+pub fn primitive_data_struct( input: &str ) -> Res< &str, PayloadTypePattern> {
     primitive(input).map( |(next,primitive)| {
-        (next, PayloatTypePattern::Primitive(primitive))
+        (next, PayloadTypePattern::Primitive(primitive))
     } )
 }
 
 
-pub fn array_data_struct( input: &str ) -> Res< &str, PayloatTypePattern> {
+pub fn array_data_struct( input: &str ) -> Res< &str, PayloadTypePattern> {
     tuple( (primitive, delimited(tag("["), range, tag("]") ) ) )(input).map( |(next, (primitive,range))| {
 
-        (next, PayloatTypePattern::List(ListPattern {
+        (next, PayloadTypePattern::List(ListPattern {
             primitive,
             range
         }))
@@ -447,20 +444,74 @@ pub fn map_pattern(input: &str ) -> Res<&str, MapPattern> {
             }
         };
 
-        (next, con)
+        (next, con )
     } )
 }
 
-fn value_pattern<V>(input: &str) -> Res<&str,ValuePattern<V>> {
-    alt((tag("*"),multispace0))(input).map( |(next,tag)|{
+/*
+fn value_pattern<I,O,E>(input: I) -> IResult<I, ValuePattern<O>, E>
+    where
+        I: InputTake + Clone + Compare<I>+ InputTakeAtPosition, <I as InputTakeAtPosition>::Item: AsChar + Clone,
+        E: ParseError<I>
+
+{
+    alt((tag("*"),multispace0))(input).map( |(next,tag):(&str,&str)|{
         let rtn = match tag{
             "*" => ValuePattern::Any,
             _ => ValuePattern::None
         };
         (next,rtn)
     })
+}*/
+
+pub fn value_pattern<V>(input: &str, parser: fn(&str)->Res<&str,V> ) -> Res<&str,ValuePattern<V>> {
+    let result = alt((tag("*"),multispace0))(input).map( |(next,tag)|{
+        let rtn = match tag{
+            "*" => ValuePattern::Any,
+            _ => ValuePattern::None
+        };
+        (next,rtn)
+    });
+
+    if result.is_ok() {
+        return result;
+    }
+
+    let (next,pattern) = parser(input)?;
+    Ok((next,ValuePattern::Pattern(pattern)))
 }
 
+
+
+/*
+pub fn value_pattern_wrapper<'a,'b,V,F>( mut parser: F ) -> impl FnMut(&'a str) -> Res<&'b str,ValuePattern<V>>
+  where F: 'a+ Parser<&'a str,ValuePattern<V>,VerboseError<&'b str>>
+{
+    move |input: &str| {
+        parser.parse(input)
+    }
+}
+
+ */
+
+/*
+pub fn value_pattern_wrapper<I:Clone, O, E: ParseError<I>, F>(
+    mut first: F,
+) -> impl FnMut(I) -> IResult<I, ValuePattern<O>, E>
+
+    where
+        F: Parser<I, ValuePattern<O>, E>,
+        I: InputTake + Clone + Compare<I>+ InputTakeAtPosition, <I as InputTakeAtPosition>::Item: AsChar + Clone
+{
+    move |input: I| {
+        //let result1 = value_pattern(input.clone());
+        first.parse(input)//.or(result1)
+    }
+}
+
+ */
+
+/*
 pub fn value_pattern_wrapper<O>(
     mut parser: F,
 ) -> impl FnMut(&str) -> Res<&str,ValuePattern<O>>
@@ -479,22 +530,92 @@ pub fn value_pattern_wrapper<O>(
     }
 }
 
+ */
+
 
 pub fn value_constrained_map_pattern(input: &str ) -> Res<&str, ValuePattern<MapPattern>> {
-    value_pattern_wrapper(map_pattern)(input)
+    value_pattern(input, map_pattern)
 }
 
-pub fn map_pattern_payload_structure(input: &str ) -> Res<&str, PayloatTypePattern> {
+pub fn msg_action (input: &str) -> Res<&str,ValuePattern<StringMatcher>>{
+  value_pattern( input, camel_case_to_string)
+}
+
+pub fn msg_pattern( input: &str ) -> Res<&str,MsgPattern> {
+    tuple((tag("Msg"), delimited(tag("<"), msg_action, tag(">") ), path_regex))(input).map( |(next,(_,action,filepath_regex))| {
+        let rtn = MsgPattern{
+            action,
+            path_regex: filepath_regex.to_string()
+        };
+        (next,rtn)
+    } )
+}
+
+pub fn http_method( input: &str ) -> Res<&str,HttpMethod> {
+    parse_from_str(alpha1).parse(input)
+}
+
+pub fn http_method_pattern( input: &str ) -> Res<&str,ValuePattern<HttpMethod>> {
+    value_pattern(input, http_method )
+}
+
+pub fn http_pattern( input: &str ) -> Res<&str,HttpPattern> {
+    tuple((tag("Http"), delimited(tag("<"), http_method_pattern, tag(">") ), path_regex))(input).map( |(next,(_,method,path_regex))| {
+        let rtn = HttpPattern{
+            method,
+            path_regex: path_regex.to_string()
+        };
+        (next,rtn)
+    } )
+}
+
+pub fn rc_command( input: &str ) -> Res<&str,RcCommand> {
+    parse_from_str(alpha1).parse(input)
+}
+
+pub fn rc_command_pattern( input: &str ) -> Res<&str,ValuePattern<RcCommand>> {
+    value_pattern(input, rc_command )
+}
+pub fn rc_pattern( input: &str ) -> Res<&str,RcPattern> {
+    tuple((tag("Rc"), delimited(tag("<"), rc_command_pattern, tag(">") )))(input).map( |(next,(_,command))| {
+
+        (next,RcPattern{ command })
+    } )
+}
+
+pub fn map_pattern_payload_structure(input: &str ) -> Res<&str, PayloadTypePattern> {
     map_pattern(input).map( |(next,con)| {
-        (next, PayloatTypePattern::Map(Box::new(con)))
+        (next, PayloadTypePattern::Map(Box::new(con)))
     } )
 }
 
 
-pub fn payload_structure(input: &str ) -> Res< &str, PayloatTypePattern> {
-    alt( (array_data_struct, primitive_data_struct,map_pattern))(input)
-
+pub fn payload_structure(input: &str ) -> Res< &str, PayloadTypePattern> {
+    alt( (array_data_struct, primitive_data_struct,map_pattern_payload_structure))(input)
 }
+
+pub fn msg_entity_pattern( input: &str ) -> Res<&str,EntityPattern> {
+    msg_pattern(input).map( |(next,pattern)| {
+        (input,EntityPattern::Msg(pattern))
+    } )
+}
+pub fn http_entity_pattern( input: &str ) -> Res<&str,EntityPattern> {
+    http_pattern(input).map( |(next,pattern)| {
+        (input,EntityPattern::Http(pattern))
+    } )
+}
+
+pub fn rc_entity_pattern( input: &str ) -> Res<&str,EntityPattern> {
+    rc_pattern(input).map( |(next,pattern)| {
+        (input,EntityPattern::Rc(pattern))
+    } )
+}
+
+pub fn entity_pattern( input: &str ) -> Res<&str,EntityPattern> {
+    alt( (msg_entity_pattern,http_entity_pattern,rc_entity_pattern) )(input)
+}
+
+
 
 pub fn payload_structure_with_validation(input: &str ) -> Res< &str, PayloadPattern> {
     tuple( (payload_structure, opt(preceded(tag("~"), opt(format)), ), opt(preceded(tag("~"), call_with_config), )  ) )(input).map( |(next,(data,format,verifier))| {
@@ -514,7 +635,7 @@ pub fn payload_structure_with_validation(input: &str ) -> Res< &str, PayloadPatt
     })
 }
 
-pub fn consume_payload_structure(input: &str) -> Res<&str, PayloatTypePattern> {
+pub fn consume_payload_structure(input: &str) -> Res<&str, PayloadTypePattern> {
     all_consuming(payload_structure)(input)
 }
 
@@ -625,31 +746,31 @@ pub mod test {
     use nom::combinator::all_consuming;
 
 
-    use crate::pattern::{ListPattern, consume_payload_structure, consume_data_struct_def, consume_map_entry_pattern, consume_pipeline_block, consume_primitive_def, PayloatTypePattern, ValuePattern, PayloadPattern, Format, primitive, primitive_def, Range, MapEntryPattern};
+    use crate::pattern::{ListPattern, consume_payload_structure, consume_data_struct_def, consume_map_entry_pattern, consume_pipeline_block, consume_primitive_def, PayloadTypePattern, ValuePattern, PayloadPattern, Format, primitive, primitive_def, Range, MapEntryPattern};
     use mesh_portal_serde::version::latest::payload::{PrimitiveType, MapPattern};
     use mesh_portal_serde::version::latest::generic::payload::PayloadFormat;
 
     #[test]
     pub fn test_primative() -> Result<(),Error>{
-        assert!( consume_payload_structure("Text")?.1 == PayloatTypePattern::Primitive( PrimitiveType::Text ) );
-        assert!( consume_payload_structure("Text[]")?.1 == PayloatTypePattern::List( ListPattern { primitive: PrimitiveType::Text, range: Range::Any } ) );
-        assert!( consume_payload_structure("Text[1-3]")?.1 == PayloatTypePattern::List( ListPattern { primitive: PrimitiveType::Text, range: Range::MinMax{min:1,max:3}} ) );
-        assert!( consume_data_struct_def("Text~json")?.1 == PayloadPattern { structure: PayloatTypePattern::Primitive(PrimitiveType::Text), format: Option::Some(PayloadFormat::Json), validator: Option::None }) ;
+        assert!( consume_payload_structure("Text")?.1 == PayloadTypePattern::Primitive( PrimitiveType::Text ) );
+        assert!( consume_payload_structure("Text[]")?.1 == PayloadTypePattern::List( ListPattern { primitive: PrimitiveType::Text, range: Range::Any } ) );
+        assert!( consume_payload_structure("Text[1-3]")?.1 == PayloadTypePattern::List( ListPattern { primitive: PrimitiveType::Text, range: Range::MinMax{min:1,max:3}} ) );
+        assert!( consume_data_struct_def("Text~json")?.1 == PayloadPattern { structure: PayloadTypePattern::Primitive(PrimitiveType::Text), format: Option::Some(PayloadFormat::Json), validator: Option::None }) ;
 /*        assert!( consume_data_struct_def("Text~json~verifier!go")?.1 == DataStructDef{data:DataStruct::PrimitiveType(PrimitiveType::Text), format: Option::Some(Format::Json),verifier: Option::Some(CallWithConfig {call: Call {address: Address::from_str("verifier")?, port:"go".to_string() },config:Option::None})}) ;
         assert!( consume_data_struct_def("Text~~verifier!go")?.1 == DataStructDef{data:DataStruct::PrimitiveType(PrimitiveType::Text), format: Option::None,verifier: Option::Some(CallWithConfig {call: Call {address: Address::from_str("verifier")?, port:"go".to_string() },config:Option::None})}) ;
         assert!( consume_data_struct_def("Text[]~json~verifier!go")?.1 == DataStructDef{data:DataStruct::Array(Array{primitive: PrimitiveType::Text,range:Range::Any}), format: Option::Some(Format::Json),verifier: Option::Some(CallWithConfig {call: Call {address: Address::from_str("verifier")?, port:"go".to_string() },config:Option::None})}) ;
         assert!( consume_data_struct_def("Text~json~verifier!go+config:1.0.0:/some-file.conf")?.1 == DataStructDef{data:DataStruct::PrimitiveType(PrimitiveType::Text), format: Option::Some(Format::Json),verifier: Option::Some(CallWithConfig {call: Call {address: Address::from_str("verifier")?, port:"go".to_string() },config:Option::Some(Address::from_str("config:1.0.0:/some-file.conf")?)})}) ;*/
-        assert!( consume_data_struct_def("Map")?.1 == PayloadPattern { structure: PayloatTypePattern::Map(Default::default()), format: Option::None, validator: Option::None }) ;
-        assert!( consume_data_struct_def("Map[]")?.1 == PayloadPattern { structure: PayloatTypePattern::Map(Default::default()), format: Option::None, validator: Option::None }) ;
+        assert!( consume_data_struct_def("Map")?.1 == PayloadPattern { structure: PayloadTypePattern::Map(Default::default()), format: Option::None, validator: Option::None }) ;
+        assert!( consume_data_struct_def("Map[]")?.1 == PayloadPattern { structure: PayloadTypePattern::Map(Default::default()), format: Option::None, validator: Option::None }) ;
 
 
-        assert!( consume_map_entry_pattern("label<Bin>")?.1== MapEntryPattern { key: "label".to_string(), payload: ValuePattern::Pattern(PayloadPattern { structure: PayloatTypePattern::Primitive(PrimitiveType::Bin), format: Option::None, validator: Option::None })});
-        assert!( consume_map_entry_pattern("label<Bin~json>")?.1== MapEntryPattern { key: "label".to_string(), payload: ValuePattern::Pattern(PayloadPattern { structure: PayloatTypePattern::Primitive(PrimitiveType::Bin), format: Option::Some(PayloadFormat::Json), validator: Option::None })});
+        assert!( consume_map_entry_pattern("label<Bin>")?.1== MapEntryPattern { key: "label".to_string(), payload: ValuePattern::Pattern(PayloadPattern { structure: PayloadTypePattern::Primitive(PrimitiveType::Bin), format: Option::None, validator: Option::None })});
+        assert!( consume_map_entry_pattern("label<Bin~json>")?.1== MapEntryPattern { key: "label".to_string(), payload: ValuePattern::Pattern(PayloadPattern { structure: PayloadTypePattern::Primitive(PrimitiveType::Bin), format: Option::Some(PayloadFormat::Json), validator: Option::None })});
         assert!( consume_map_entry_pattern("label<*>")?.1== MapEntryPattern { key: "label".to_string(), payload: ValuePattern::Any });
 
         let mut map = HashMap::new();
-        map.insert("first".to_string(), ValuePattern::Pattern(PayloadPattern { structure: PayloatTypePattern::Primitive(PrimitiveType::Text), format: Option::None, validator: Option::None }) );
-        map.insert("last".to_string(), ValuePattern::Pattern(PayloadPattern { structure: PayloatTypePattern::Primitive(PrimitiveType::Text), format: Option::None, validator: Option::None }) );
+        map.insert("first".to_string(), ValuePattern::Pattern(PayloadPattern { structure: PayloadTypePattern::Primitive(PrimitiveType::Text), format: Option::None, validator: Option::None }) );
+        map.insert("last".to_string(), ValuePattern::Pattern(PayloadPattern { structure: PayloadTypePattern::Primitive(PrimitiveType::Text), format: Option::None, validator: Option::None }) );
 
         let def = consume_data_struct_def("Map[first<Text>,last<Text>]")?;
 //        println!("{:?}",def.1);

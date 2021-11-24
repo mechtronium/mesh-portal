@@ -11,7 +11,6 @@ pub mod pattern;
 pub mod bind;
 
 use serde::*;
-use crate::bind::MsgSelector;
 
 #[derive(Serialize,Deserialize)]
 pub struct Host<T> {

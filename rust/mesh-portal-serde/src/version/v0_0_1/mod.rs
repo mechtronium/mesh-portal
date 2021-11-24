@@ -1745,6 +1745,15 @@ pub mod generic {
             Select
         }
 
+        impl ValueMatcher<RcCommand> for RcCommand {
+            fn is_match(&self, x: &RcCommand) -> Result<(), crate::version::v0_0_1::error::Error> {
+                if *self == *x {
+                    Ok(())
+                } else {
+                    Err(format!("Rc command expected: '{}' found: '{}'", self.to_string(),x.to_string()).into())
+                }
+            }
+        }
 
 
 
@@ -2522,6 +2531,38 @@ pub mod util {
             }
         }
     }
+
+
+
+    pub struct StringMatcher {
+        pub pattern: String
+    }
+
+    impl ToString for StringMatcher {
+        fn to_string(&self) -> String {
+            self.pattern.clone()
+        }
+    }
+
+    impl StringMatcher {
+        pub fn new(string: String) -> Self {
+            Self {
+                pattern: string
+            }
+        }
+    }
+
+    impl ValueMatcher<String> for StringMatcher {
+        fn is_match(&self, x: &String) -> Result<(), Error> {
+            if self.pattern == *x {
+                Ok(())
+            } else {
+                Err(format!("expecting pattern: '{}' found: '{}'", self.pattern, x).into())
+            }
+        }
+    }
+
+
 
     pub trait Convert<A> {
         fn convert(self) -> Result<A, Error>;

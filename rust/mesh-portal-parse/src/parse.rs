@@ -5,8 +5,8 @@ use anyhow::Error;
 use nom::{AsChar, InputTakeAtPosition, IResult, Needed, InputTake, Compare, InputLength};
 use nom::{Err, Parser};
 use nom::branch::alt;
-use nom::bytes::complete::{tag, take_until, take_till, escaped};
-use nom::character::complete::{alpha0, alpha1, digit0, digit1, multispace0, multispace1, anychar, alphanumeric1};
+use nom::bytes::complete::{tag, take_until, take_till, escaped, is_not,take};
+use nom::character::complete::{alpha0, alpha1, digit0, digit1, multispace0, multispace1, anychar, alphanumeric1, alphanumeric0};
 use nom::combinator::{all_consuming, opt, recognize, not};
 use nom::error::{context, ErrorKind, ParseError, VerboseError, VerboseErrorKind, FromExternalError};
 use nom::multi::{fold_many0, separated_list0, many1, separated_list1, many0};
@@ -17,7 +17,7 @@ use crate::symbol::{RootSelector };
 use mesh_portal_serde::version::latest::payload::{PayloadType, PrimitiveType};
 use mesh_portal_serde::version::latest::payload::Payload;
 use crate::pattern::{primitive};
-use mesh_portal_serde::version::latest::util::ValuePattern;
+use mesh_portal_serde::version::latest::util::{ValuePattern, StringMatcher};
 use mesh_portal_serde::version::latest::payload::{CallWithConfig, RcCommand};
 use mesh_portal_serde::version::latest::payload::{CallKind, Call};
 use mesh_portal_serde::version::latest::payload::{PayloadFormat, PayloadPattern};
@@ -37,6 +37,15 @@ pub fn asterisk<T, E: nom::error::ParseError<T>>(input: T) -> IResult<T, T, E>
         <T as InputTakeAtPosition>::Item: AsChar,
 {
     input.split_at_position_complete(|item| item.as_char() != '*' )
+}
+
+
+pub fn upper<T, E: nom::error::ParseError<T>>(input: T) -> IResult<T, T, E>
+    where
+        T: InputTakeAtPosition,
+        <T as InputTakeAtPosition>::Item: AsChar,
+{
+    input.split_at_position_complete(|item| !item.as_char().is_uppercase() )
 }
 
 fn any_resource_path_segment<T>(i: T) -> Res<T, T>
@@ -104,7 +113,7 @@ pub fn skewer<T>(i: T) -> Res<T, T>
     )
 }
 
-fn filepath<T>(i: T) -> Res<T, T>
+pub fn filepath_chars<T>(i: T) -> Res<T, T>
     where
         T: InputTakeAtPosition,
         <T as InputTakeAtPosition>::Item: AsChar,
@@ -122,6 +131,23 @@ fn filepath<T>(i: T) -> Res<T, T>
     )
 }
 
+pub fn not_space(input: &str)->Res<&str,&str> {
+    is_not(" \n\r\t")(input)
+}
+
+pub fn path(input: &str ) -> Res<&str,&str> {
+    recognize(tuple((tag("/"), filepath_chars)) )(input)
+}
+pub fn path_regex(input: &str ) -> Res<&str,&str> {
+    recognize(tuple((tag("/"), not_space)) )(input)
+}
+pub fn camel_case( input: &str ) -> Res<&str,&str> {
+    recognize(tuple((upper, alphanumeric0)) )(input)
+}
+
+pub fn camel_case_to_string( input: &str ) -> Res<&str,StringMatcher> {
+    camel_case(input).map(|(next,camel)| { (next,StringMatcher::new(camel.to_string()))}  )
+}
 
 fn parse_version_major_minor_patch(input: &str) -> Res<&str, (&str, &str, &str)> {
     context(
@@ -199,7 +225,7 @@ pub fn parse_address_segments(input: &str) -> Res<&str, Vec<String>> {
         "address",
         separated_list1(
             nom::character::complete::char(':'),
-            alt((domain,skewer,filepath,recognize(parse_version)))
+            alt((domain, skewer, filepath_chars, recognize(parse_version)))
         ),
     )(input).map( |(next,segments)|{
         let segments = segments.iter().map(|s|s.to_string()).collect();
@@ -221,11 +247,11 @@ pub fn parse_mechtron_segments(input: &str) -> Res<&str, Vec<String>> {
 }
 
 pub fn rec_address(input: &str) -> Res<&str, &str> {
-    recognize(tuple( (domain,many0(preceded(tag(":"), alt((skewer,rec_version,filepath)) )))))(input)
+    recognize(tuple( (domain,many0(preceded(tag(":"), alt((skewer, rec_version, filepath_chars)) )))))(input)
 }
 
 pub fn rec_address_segment(input: &str) -> Res<&str, &str> {
-    recognize(alt((rec_version,skewer,filepath)) )(input)
+    recognize(alt((rec_version, skewer, filepath_chars)) )(input)
 }
 
 
@@ -235,7 +261,7 @@ pub fn consume_address(input: &str) -> Res<&str, &str> {
 }
 
 pub fn rec_artifact(input: &str) -> Res<&str, &str> {
-    recognize(tuple( (domain,many0(preceded(tag(":"), skewer)),preceded(tag(":"), rec_version),preceded(tag(":"),filepath))))(input)
+    recognize(tuple( (domain,many0(preceded(tag(":"), skewer)),preceded(tag(":"), rec_version),preceded(tag(":"), filepath_chars))))(input)
 }
 
 pub fn rec_mechtron(input: &str) -> Res<&str, &str> {
@@ -297,13 +323,13 @@ pub fn rc_call_kind(input: &str) -> Res<&str, CallKind> {
 }
 
 pub fn msg_call(input: &str) -> Res<&str, CallKind> {
-    tuple( (delimited( tag("Msg<"), alphanumeric1, tag(">") ),recognize(preceded(tag("/"), filepath))))(input).map( |(next,(action,path))| {
+    tuple( (delimited( tag("Msg<"), alphanumeric1, tag(">") ),recognize(path)))(input).map( |(next,(action,path))| {
         (next,CallKind::Msg(MsgCall::new(action.to_string(), path.to_string())))
     })
 }
 
 pub fn http_call(input: &str) -> Res<&str, CallKind> {
-    tuple( (delimited( tag("Http<"), parse_from_str(alphanumeric1), tag(">") ),recognize(preceded(tag("/"), filepath))))(input).map( |(next,(method,path))| {
+    tuple( (delimited( tag("Http<"), parse_from_str(alphanumeric1), tag(">") ),recognize(preceded(tag("/"), filepath_chars))))(input).map( |(next,(method,path))| {
         (next,CallKind::Http(HttpCall::new(method, path.to_string())))
     })
 }

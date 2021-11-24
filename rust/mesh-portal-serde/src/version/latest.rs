@@ -74,7 +74,7 @@ pub mod payload {
     pub type CallKind = generic::payload::CallKind;
     pub type CallWithConfig = generic::payload::CallWithConfig<Address>;
     pub type MapPattern = generic::payload::MapPattern<Key,Address,Identifier,Kind>;
-    pub type PayloatTypePattern = generic::payload::PayloadListPattern<Key,Address,Identifier,Kind>;
+    pub type PayloadTypePattern = generic::payload::PayloadListPattern<Key,Address,Identifier,Kind>;
     pub type PayloadPattern = generic::payload::PayloadPattern<Key,Address,Identifier,Kind>;
     pub type ListPattern = generic::payload::ListPattern;
     pub type PayloadMap = generic::payload::PayloadMap<Key,Address,Identifier,Kind>;
@@ -410,6 +410,7 @@ pub mod util {
     pub type ValuePattern<V> = util::ValuePattern<V>;
     pub type ValueMatcher<V> = dyn util::ValueMatcher<V>;
     pub type RegexMatcher = util::RegexMatcher;
+    pub type StringMatcher= util::StringMatcher;
 }
 
 pub mod error {
