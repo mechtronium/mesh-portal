@@ -1,12 +1,13 @@
 use crate::parse::{Res, skewer, PipelineStop, call};
-use crate::Msg;
 use crate::pattern::{PatternBlock, Block, pipeline_block};
 use nom::sequence::{terminated, delimited, tuple};
 use nom::bytes::complete::tag;
 use nom::multi::{many0, many1};
 use nom::combinator::all_consuming;
-use nom::character::complete::{space0, multispace0};
+use nom::character::complete::{space0, multispace0, alphanumeric1};
 use nom::branch::alt;
+use mesh_portal_serde::version::latest::entity::request::Msg;
+use mesh_portal_serde::version::latest::util::ValuePattern;
 
 
 pub struct Bind {
@@ -32,8 +33,9 @@ pub enum CallPattern {
     Call
 }
 
-pub struct Port{
-    pub name: String,
+pub struct MsgSelector {
+    pub action: ValuePattern<String>,
+    pub path: String,
     pub pipeline: Pipeline
 }
 
@@ -109,7 +111,7 @@ pub fn section(input: &str ) -> Res<&str, Section> {
 
 
 pub fn msg_section(input: &str ) -> Res<&str, Section> {
-   tuple((tag("Msg"),multispace0, delimited(tag("{"), delimited(multispace0,many0(delimited( multispace0,port, multispace0)),multispace0),tag("}"))) )(input).map( |(next, (_,_,ports))| {
+   tuple((tag("Msg"),multispace0, delimited(tag("{"), delimited(multispace0, many0(delimited(multispace0, msg_selector, multispace0)), multispace0), tag("}"))) )(input).map( |(next, (_,_,ports))| {
        (next,
         Section::Msg(Msg{
            ports
@@ -169,8 +171,8 @@ pub fn consume_pipeline_stop( input: &str ) -> Res<&str,PipelineStop> {
 }
 
 
-pub fn port_selector( input: &str ) -> Res<&str, &str> {
-    skewer(input)
+pub fn entity_pattern(input: &str ) -> Res<&str, &str> {
+    alphanumeric1(input)
 }
 
 pub fn pipeline_segment( input: &str ) -> Res<&str, PipelineSegment> {
@@ -197,17 +199,17 @@ pub fn consume_pipeline( input: &str ) -> Res<&str,Pipeline>{
     all_consuming(pipeline)(input)
 }
 
-pub fn port(input: &str ) -> Res<&str,Port> {
-    tuple( ( port_selector, multispace0, pipeline,tag(";") ) )(input).map( |(next,(name,_,pipeline,_))| {
+pub fn msg_selector(input: &str ) -> Res<&str, MsgSelector> {
+    tuple( (entity_pattern, multispace0, pipeline, tag(";") ) )(input).map( |(next,(name,_,pipeline,_))| {
         (next,
-         Port{ name: name.to_string(),
+         MsgSelector { name: name.to_string(),
                pipeline})
 
     } )
 }
 
-pub fn consume_port( input: &str ) -> Res<&str,Port>{
-    all_consuming(port)(input)
+pub fn consume_port( input: &str ) -> Res<&str, MsgSelector>{
+    all_consuming(msg_selector)(input)
 }
 
 

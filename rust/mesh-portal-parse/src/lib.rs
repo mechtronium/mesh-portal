@@ -11,7 +11,7 @@ pub mod pattern;
 pub mod bind;
 
 use serde::*;
-use crate::bind::Port;
+use crate::bind::MsgSelector;
 
 #[derive(Serialize,Deserialize)]
 pub struct Host<T> {
@@ -19,79 +19,10 @@ pub struct Host<T> {
 }
 
 
-pub struct Bind {
-  pub init: Init,
-  pub request: Request,
-}
-
-impl Default for Bind{
-    fn default() -> Self {
-
-        Self {
-            init: Default::default(),
-            request: Default::default()
-        }
-    }
-}
-
-pub struct Request {
-    pub rc: Rc,
-    pub msg: Msg,
-    pub http: Http,
-}
-
-impl Default for Request {
-    fn default() -> Self {
-        Request {
-            rc: Default::default(),
-            msg: Default::default(),
-            http: Default::default()
-        }
-    }
-}
-
-impl Default for Rc{
-    fn default() -> Self {
-        Self{}
-    }
-}
-
-impl Default for Msg{
-    fn default() -> Self {
-        Self{
-            ports: vec![]
-        }
-    }
-}
-
-impl Default for Http{
-    fn default() -> Self {
-        Self{}
-    }
-}
-
-impl Default for Init {
-    fn default() -> Self {
-        Self{}
-    }
-}
-pub struct Init {
-
-}
 
 
-pub struct Rc {
-
-}
-
-pub struct Msg {
-  pub ports: Vec<Port>
-}
 
 
-pub struct Http {
-
-}
 
 
 

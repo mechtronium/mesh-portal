@@ -19,17 +19,23 @@ use mesh_portal_serde::version::latest::payload::Payload;
 use crate::parse::{call, call_with_config, Res};
 use mesh_portal_serde::version::latest::error::Error;
 use std::iter::Map;
-use mesh_portal_serde::version::latest::util::ValueConstraint;
-use mesh_portal_serde::version::latest::payload::MapConstraints;
-use mesh_portal_serde::version::latest::payload::PayloadConstraints;
-use mesh_portal_serde::version::latest::payload::PayloadTypeConstraints;
-use mesh_portal_serde::version::latest::payload::PayloadListConstraints;
+use mesh_portal_serde::version::latest::util::{ValuePattern, RegexMatcher};
+use mesh_portal_serde::version::latest::payload::MapPattern;
+use mesh_portal_serde::version::latest::payload::PayloadPattern;
+use mesh_portal_serde::version::latest::payload::PayloatTypePattern;
+use mesh_portal_serde::version::latest::payload::ListPattern;
 use mesh_portal_serde::version::latest::payload::PayloadMap;
 use mesh_portal_serde::version::latest::payload::CallWithConfig;
 use mesh_portal_serde::version::latest::payload::Call;
 use mesh_portal_serde::version::latest::payload::Range;
 use mesh_portal_serde::version::latest::payload::PayloadFormat;
 use std::ops::RangeTo;
+use mesh_portal_serde::version::latest::generic::entity::request::{ReqEntity, Rc,Msg,Http};
+use mesh_portal_serde::version::v0_0_1::generic::payload::{PayloadDelivery, PayloadRef, HttpMethod};
+use mesh_portal_serde::version::v0_0_1::generic::id::Identifier;
+use mesh_portal_serde::version::v0_0_1::id::Address;
+use mesh_portal_serde::version::v0_0_1::util::ValueMatcher;
+use mesh_portal_serde::version::latest::generic::payload::RcCommand;
 
 fn skewer<T>(i: T) -> Res<T, T>
     where
@@ -76,87 +82,6 @@ fn filename<T>(i: T) -> Res<T, T>
     )
 }
 
-#[derive(Debug,Clone,Eq,PartialEq)]
-pub enum PayloadPattern {
-    Any,
-    Empty,
-    Structure(PayloadConstraints),
-}
-
-impl PayloadPattern {
-    pub fn is_match( &self, payload: &Payload ) -> Result<(),Error> {
-        if *self == Self::Any {
-           return Ok(());
-        }
-        match self {
-            PayloadPattern::Any => {
-                Ok(())
-            }
-            PayloadPattern::Empty => {
-                if *payload == Payload::Empty {
-                    Ok(())
-                } else {
-                    Err("expected Empty payload".into())
-                }
-            }
-            PayloadPattern::Structure(data) => {
-                match &data.structure {
-                    PayloadTypeConstraints::Primitive(primitive_type) => {
-                        if let Payload::Primitive(primitive) = payload {
-                            primitive_type.is_match( primitive )
-                        } else {
-                            Err("expected single primitive".into())
-                        }
-                    }
-                    PayloadTypeConstraints::List(list_type) => {
-                        if let Payload::List(list) = payload {
-                           if list.first().is_none() {
-                               Ok(())
-                           }  else {
-                               list_type.primitive.is_match(list.first().expect("expected first"))
-                           }
-                        } else {
-                            Err("expected primitive[] list".into())
-                        }
-                    }
-                    PayloadTypeConstraints::Map(map_type) => {
-
-                        if let Payload::Map(map) = payload {
-                            for (key,structure) in &map_type.required {
-                                if !map.contains_key(key) {
-                                    return Err(format!("missing required Map key: '{}' ",key).into());
-                                }
-                                match structure {
-                                    ValueConstraint::Any => {
-                                        // so far so good
-                                    }
-                                    ValueConstraint::Pattern(exact) => {
-                                       let payload = map.get(key).expect("expected payload entry");
-                                    }
-                                    ValueConstraint::None => {
-
-                                    }
-                                }
-                            }
-                            Ok(())
-                       } else {
-                            Err("expected Map Payload".into())
-                        }
-                    }
-                    PayloadTypeConstraints::Empty => {
-                        if let Payload::Empty = payload {
-                            Ok(())
-                        } else {
-                            Err("expected Empty Payload".into())
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-
 
 
 
@@ -189,7 +114,126 @@ pub enum Format{
     Image
 }
 
+pub enum EntityPattern {
+   Rc(ValuePattern<RcPattern>),
+   Msg(ValuePattern<MsgPattern>),
+   Http(ValuePattern<HttpPattern>)
+}
 
+impl <P> ValueMatcher<ReqEntity<P>> for EntityPattern {
+    fn is_match( &self, entity: &ReqEntity<P> ) -> Result<(),Error>{
+        match entity {
+            ReqEntity::Rc(found) => {
+                if let EntityPattern::Rc(pattern) = self {
+                    pattern.is_match(found)
+                } else {
+                    Err(format!("Entity pattern mismatch. expected: '{}' found: '{}'", self.to_string(), found.to_string() ).into())
+                }
+            }
+            ReqEntity::Msg(found) => {
+                if let EntityPattern::Msg(pattern) = self {
+                    pattern.is_match(found)
+                } else {
+                    Err(format!("Entity pattern mismatch. expected: '{}' found: '{}'", self.to_string(), found.to_string() ).into())
+                }
+            }
+            ReqEntity::Http(found) => {
+                if let EntityPattern::Http(pattern) = self {
+                    pattern.is_match(found)
+                } else {
+                    Err(format!("Entity pattern mismatch. expected: '{}' found: '{}'", self.to_string(), found.to_string() ).into())
+                }
+            }
+        }
+    }
+}
+
+impl ToString for EntityPattern {
+    fn to_string(&self) -> String {
+        match self{
+            EntityPattern::Rc(rc) => {
+                rc.to_string()
+            }
+            EntityPattern::Msg(msg) => {
+                msg.to_string()
+            }
+            EntityPattern::Http(http) => {
+                http.to_string()
+            }
+        }
+    }
+}
+
+
+
+pub struct RcPattern {
+    pub command: RcCommand
+}
+
+impl ToString for RcPattern {
+    fn to_string(&self) -> String {
+        format!("Rc<{}>",self.command.to_string())
+    }
+}
+
+impl <P> ValueMatcher<Rc<P>> for RcPattern {
+    fn is_match(&self, found: &Rc<P>) -> Result<(), Error> {
+        if found.command == self.command {
+            Ok(())
+        } else {
+            Err(format!("Rc entity pattern mismatch. command expected : '{}' found: '{}'",self.command.to_string(), found.command.to_string()).into())
+        }
+    }
+}
+
+pub struct MsgPattern{
+    pub action: ValuePattern<RegexMatcher>,
+    pub path_regex: String
+}
+
+impl ToString for MsgPattern {
+    fn to_string(&self) -> String {
+        format!("Msg<{}>{}", self.action.to_string(),self.path_regex)
+    }
+}
+
+impl <P> ValueMatcher<Msg<P>> for MsgPattern{
+    fn is_match(&self, found: &Msg<P>) -> Result<(), Error> {
+        self.action.is_match(&found.action )?;
+        let matches = found.path.matches(&self.path_regex);
+        if matches.count() > 0 {
+            Ok(())
+        } else {
+            Err(format!("Could not match Msg path: '{}' with: '{}'", found.path, self.path_regex).into())
+        }
+    }
+}
+
+
+pub struct HttpPattern{
+    pub method: ValuePattern<HttpMethod>,
+    pub path_regex: String
+}
+
+impl ToString for HttpPattern {
+    fn to_string(&self) -> String {
+        format!("Http<{}>{}", self.method.to_string(),self.path_regex)
+    }
+}
+
+impl <P> ValueMatcher<Http<P>> for HttpPattern{
+    fn is_match(&self, found: &Http<P>) -> Result<(), Error> {
+
+        self.method.is_match(&found.method)?;
+
+        let matches = found.path.matches(&self.path_regex);
+        if matches.count() > 0 {
+            Ok(())
+        } else {
+            Err(format!("Could not match Msg path: '{}' with: '{}'", found.path, self.path_regex).into())
+        }
+    }
+}
 pub fn primitive(input: &str) -> Res<&str, PrimitiveType> {
      parse_from_str(recognize(alpha1) ).parse(input)
 }
@@ -235,7 +279,7 @@ pub fn consume_primitive_def(input: &str) -> Res<&str, PrimitiveTypeDef> {
 }
 
 
-#[derive(Debug,Clone,Eq,PartialEq)]
+#[derive(Clone,Eq,PartialEq)]
 pub enum Block {
     Upload(UploadBlock),
     RequestPattern(PatternBlock),
@@ -255,10 +299,7 @@ pub struct CreateBlock{
 }
 
 
-#[derive(Debug,Clone,Eq,PartialEq)]
-pub struct PatternBlock {
-    pub pattern: PayloadPattern
-}
+pub type PatternBlock = ValuePattern<PayloadPattern>;
 
 
 
@@ -301,17 +342,17 @@ pub fn range( input: &str ) -> Res<&str,Range> {
 
 
 
-pub fn primitive_data_struct( input: &str ) -> Res< &str, PayloadTypeConstraints> {
+pub fn primitive_data_struct( input: &str ) -> Res< &str, PayloatTypePattern> {
     primitive(input).map( |(next,primitive)| {
-        (next, PayloadTypeConstraints::Primitive(primitive))
+        (next, PayloatTypePattern::Primitive(primitive))
     } )
 }
 
 
-pub fn array_data_struct( input: &str ) -> Res< &str, PayloadTypeConstraints> {
+pub fn array_data_struct( input: &str ) -> Res< &str, PayloatTypePattern> {
     tuple( (primitive, delimited(tag("["), range, tag("]") ) ) )(input).map( |(next, (primitive,range))| {
 
-        (next, PayloadTypeConstraints::List(PayloadListConstraints {
+        (next, PayloatTypePattern::List(ListPattern {
             primitive,
             range
         }))
@@ -319,49 +360,49 @@ pub fn array_data_struct( input: &str ) -> Res< &str, PayloadTypeConstraints> {
 }
 
 
-pub fn map_entry_constraint_any(input: &str ) -> Res<&str, ValueConstraint<MapEntryConstraint>> {
+pub fn map_entry_pattern_any(input: &str ) -> Res<&str, ValuePattern<MapEntryPattern>> {
     delimited( multispace0,tag("*"),multispace0 )(input).map( |(next,_)| {
-        (next, ValueConstraint::Any)
+        (next, ValuePattern::Any)
     })
 }
 
-pub fn map_entry_constraint(input: &str ) -> Res<&str, MapEntryConstraint> {
-    tuple((skewer, opt(delimited(tag("<"), payload_constraint, tag(">")))))(input).map(|(next,(key_con, payload_con))| {
+pub fn map_entry_pattern(input: &str ) -> Res<&str, MapEntryPattern> {
+    tuple((skewer, opt(delimited(tag("<"), payload_pattern, tag(">")))))(input).map(|(next,(key_con, payload_con))| {
         let payload_con = match payload_con {
-            None => ValueConstraint::Any,
+            None => ValuePattern::Any,
             Some(payload_con) => payload_con
         };
 
-       let map_entry_con = MapEntryConstraint { key: key_con.to_string(), payload: payload_con };
+       let map_entry_con = MapEntryPattern { key: key_con.to_string(), payload: payload_con };
         (next,map_entry_con)
     })
 }
 
 
-pub fn map_entry_constraints(input: &str ) -> Res<&str, Vec<MapEntryConstraint>> {
-    separated_list0( delimited(multispace0,tag(","),multispace0), map_entry_constraint )(input)
+pub fn map_entry_patterns(input: &str ) -> Res<&str, Vec<MapEntryPattern>> {
+    separated_list0( delimited(multispace0,tag(","),multispace0), map_entry_pattern )(input)
 }
 
-pub fn consume_map_entry_constraint(input: &str ) -> Res<&str, Vec<MapEntryConstraint>> {
-    all_consuming(map_entry_constraints)(input)
+pub fn consume_map_entry_pattern(input: &str ) -> Res<&str, MapEntryPattern> {
+    all_consuming(map_entry_pattern)(input)
 }
 
-pub fn required_map_entry_constraints( input: &str ) -> Res<&str, Vec<MapEntryConstraint>> {
-    delimited(tag("["), map_entry_constraints, tag("]"))(input).map( |(next,params)|{
+pub fn required_map_entry_pattern( input: &str ) -> Res<&str, Vec<MapEntryPattern>> {
+    delimited(tag("["), map_entry_patterns, tag("]"))(input).map( |(next,params)|{
         (next,params)
     } )
 }
 
-pub fn allowed_map_entry_constraints( input: &str ) -> Res<&str, ValueConstraint<PayloadConstraints>> {
-    payload_constraint(input).map( |(next,con)|{
+pub fn allowed_map_entry_pattern( input: &str ) -> Res<&str, ValuePattern<PayloadPattern>> {
+    payload_pattern(input).map( |(next,con)|{
         (next,con)
     } )
 }
 
 
 //  [ required1<Bin>, required2<Text> ] *<Bin>
-pub fn map_constraints_params(input: &str ) -> Res<&str, MapConstraints> {
-    tuple( (opt(required_map_entry_constraints),multispace0,opt(allowed_map_entry_constraints)))(input).map( |(next,(required,_,allowed)) | {
+pub fn map_pattern_params(input: &str ) -> Res<&str, MapPattern> {
+    tuple( (opt(required_map_entry_pattern),multispace0,opt(allowed_map_entry_pattern)))(input).map( |(next,(required,_,allowed)) | {
 
         let mut required_map = HashMap::new();
         match required {
@@ -375,10 +416,10 @@ pub fn map_constraints_params(input: &str ) -> Res<&str, MapConstraints> {
 
         let allowed = match allowed {
             Some(allowed) => allowed,
-            None => ValueConstraint::None
+            None => ValuePattern::None
         };
 
-        let con = MapConstraints::new( required_map, allowed );
+        let con = MapPattern::new(required_map, allowed );
 
         (next,con)
 
@@ -386,20 +427,20 @@ pub fn map_constraints_params(input: &str ) -> Res<&str, MapConstraints> {
 }
 
 enum MapConParam{
-    Required(Vec<ValueConstraint<MapEntryConstraint>>),
-    Allowed(ValueConstraint<PayloadConstraints>)
+    Required(Vec<ValuePattern<MapEntryPattern>>),
+    Allowed(ValuePattern<PayloadPattern>)
 }
 
 
 // EXAMPLE:
 //  Map { [ required1<Bin>, required2<Text> ] *<Bin> }
-pub fn map_constraints(input: &str ) -> Res<&str, MapConstraints> {
-    tuple( (tag("Map"), opt(delimited(delimited(multispace0,tag("{"),multispace0),  map_constraints_params,delimited(multispace0,tag("}"),multispace0) ) ) ) )(input).map( |(next, (_, entries))| {
+pub fn map_pattern(input: &str ) -> Res<&str, MapPattern> {
+    tuple( (tag("Map"), opt(delimited(delimited(multispace0,tag("{"),multispace0),  map_pattern_params,delimited(multispace0,tag("}"),multispace0) ) ) ) )(input).map( |(next, (_, entries))| {
 
         let mut entries = entries;
         let con = match entries {
             None => {
-                MapConstraints::any()
+                MapPattern::any()
             },
             Some(con) => {
                 con
@@ -410,58 +451,56 @@ pub fn map_constraints(input: &str ) -> Res<&str, MapConstraints> {
     } )
 }
 
-fn value_constraint<I: Clone + Offset + Slice<RangeTo<usize>>, O, E: ParseError<I>>(input: &str ) -> IResult<I, ValueConstraint<O>, E> {
-    alt((tag("Any"),tag("None")))(input).map( |(next,tag)|{
+fn value_pattern<V>(input: &str) -> Res<&str,ValuePattern<V>> {
+    alt((tag("*"),multispace0))(input).map( |(next,tag)|{
         let rtn = match tag{
-            "Any" => ValueConstraint::Any,
-            "None" => ValueConstraint::None,
-            _ => panic!("The only valid ValueConstraitn values should be Any or None")
+            "*" => ValuePattern::Any,
+            _ => ValuePattern::None
         };
         (next,rtn)
     })
 }
 
-pub fn value_constraint_wrapper<I: Clone + Offset + Slice<RangeTo<usize>>, O, E: ParseError<I>, F>(
+pub fn value_pattern_wrapper<O>(
     mut parser: F,
-) -> impl FnMut(I) -> IResult<I, ValueConstraint<O>, E>
+) -> impl FnMut(&str) -> Res<&str,ValuePattern<O>>
     where
-        F: Parser<I, O, E>,
+        F: Parser<Res<&str,ValyePattern<O>>>,
 {
-    move |input: I| {
-        let i = input.clone();
-        match parser.parse(i) {
+    move |input: &str| {
+        match parser.parse(input ).or( ) {
             Ok((i, out)) => {
-                Ok((i, ValueConstraint::Pattern(out)))
+                Ok((i, ValuePattern::Pattern(out)))
             }
             Err(e) => {
-                value_constraint(input)
+                value_pattern::<O>(input)
             }
         }
     }
 }
 
 
-pub fn value_constrained_map_constraints(input: &str ) -> Res<&str, ValueConstraint<MapConstraints>> {
-    value_constraint_wrapper(map_constraints)(input)
+pub fn value_constrained_map_pattern(input: &str ) -> Res<&str, ValuePattern<MapPattern>> {
+    value_pattern_wrapper(map_pattern)(input)
 }
 
-pub fn map_constraints_payload_structure(input: &str ) -> Res<&str, PayloadTypeConstraints> {
-    map_constraints(input).map( |(next,con)| {
-        (next, PayloadTypeConstraints::Map(Box::new(con)))
+pub fn map_pattern_payload_structure(input: &str ) -> Res<&str, PayloatTypePattern> {
+    map_pattern(input).map( |(next,con)| {
+        (next, PayloatTypePattern::Map(Box::new(con)))
     } )
 }
 
 
-pub fn payload_structure(input: &str ) -> Res< &str, PayloadTypeConstraints> {
-    alt( (array_data_struct, primitive_data_struct,map_constraints))(input)
+pub fn payload_structure(input: &str ) -> Res< &str, PayloatTypePattern> {
+    alt( (array_data_struct, primitive_data_struct,map_pattern))(input)
 
 }
 
-pub fn payload_structure_with_validation(input: &str ) -> Res< &str, PayloadConstraints> {
+pub fn payload_structure_with_validation(input: &str ) -> Res< &str, PayloadPattern> {
     tuple( (payload_structure, opt(preceded(tag("~"), opt(format)), ), opt(preceded(tag("~"), call_with_config), )  ) )(input).map( |(next,(data,format,verifier))| {
         (next,
 
-         PayloadConstraints {
+         PayloadPattern {
              structure: data,
              format: match format {
                  Some(Some(format)) => {
@@ -475,33 +514,33 @@ pub fn payload_structure_with_validation(input: &str ) -> Res< &str, PayloadCons
     })
 }
 
-pub fn consume_payload_structure(input: &str) -> Res<&str, PayloadTypeConstraints> {
+pub fn consume_payload_structure(input: &str) -> Res<&str, PayloatTypePattern> {
     all_consuming(payload_structure)(input)
 }
 
-pub fn consume_data_struct_def( input: &str) -> Res<&str, PayloadConstraints> {
+pub fn consume_data_struct_def( input: &str) -> Res<&str, PayloadPattern> {
     all_consuming(payload_structure_with_validation)(input)
 }
 
 
-pub fn payload_constraint_any(input: &str ) -> Res<&str, ValueConstraint<PayloadConstraints>> {
+pub fn payload_pattern_any(input: &str ) -> Res<&str, ValuePattern<PayloadPattern>> {
     tag("*")(input).map( |(next,_)|{
-        (next,ValueConstraint::Any)
+        (next, ValuePattern::Any)
     } )
 }
 
-pub fn payload_constraint(input: &str ) -> Res<&str, ValueConstraint<PayloadConstraints>> {
-    payload_structure_with_validation(input).map( |(next,payload_constraint)|{
-        (next, ValueConstraint::Exact(payload_constraint))
+pub fn payload_pattern(input: &str ) -> Res<&str, ValuePattern<PayloadPattern>> {
+    payload_structure_with_validation(input).map( |(next,payload_pattern)|{
+        (next, ValuePattern::Pattern(payload_pattern))
     } )
 }
 
-pub fn payload_constraints(input: &str ) -> Res<&str, ValueConstraint<PayloadConstraints>> {
+pub fn payload_patterns(input: &str ) -> Res<&str, ValuePattern<PayloadPattern>> {
     alt( (tag("*"), recognize(payload_structure_with_validation)) )(input).map( |(next,data)|{
 
         let data = match data{
-            "*" => ValueConstraint::Any,
-            exact => ValueConstraint::Pattern(payload_structure_with_validation(input).expect("recognize already passed this...").1)
+            "*" => ValuePattern::Any,
+            exact => ValuePattern::Pattern(payload_structure_with_validation(input).expect("recognize already passed this...").1)
         };
         (next,data)
     } )
@@ -509,32 +548,22 @@ pub fn payload_constraints(input: &str ) -> Res<&str, ValueConstraint<PayloadCon
 
 
 pub fn pattern_block_empty(input: &str) -> Res<&str,PatternBlock> {
-    let (next,scan)= tag("]")(input)?;
-
-    if scan != "]" {
-        Err(nom::Err::Error(VerboseError::from_error_kind(input, ErrorKind::TooLarge)))
-    }
-    else {
-        Ok((input, PatternBlock{
-            pattern: PayloadPattern::Empty
-        }))
-    }
+    multispace0(input).map( |(next,_)| {
+        (input, PatternBlock::None )
+    } )
 }
 
 pub fn pattern_block_any(input: &str) -> Res<&str,PatternBlock> {
-    let (next,_)= tag("*")(input)?;
+    let (next,_)= delimited(multispace0,tag("*"),multispace0)(input)?;
 
-        Ok((next, PatternBlock{
-            pattern: PayloadPattern::Any
-        }))
+        Ok((next, PatternBlock::Any))
 }
 
 pub fn pattern_block_def(input: &str) -> Res<&str,PatternBlock> {
-    let (next,data)= payload_structure_with_validation(input)?;
+    payload_structure_with_validation(input).map ( |(next,pattern)|{
+        (next,PatternBlock::Pattern(pattern))
+    })
 
-    Ok((next, PatternBlock{
-        pattern: PayloadPattern::Structure(data)
-    }))
 }
 
 fn insert_block_pattern(input: &str) -> Res<&str,UploadBlock> {
@@ -582,9 +611,9 @@ pub fn consume_pipeline_block(input: &str ) -> Res<&str,Block> {
 }
 
 #[derive(Clone,Eq,PartialEq)]
-pub struct MapEntryConstraint {
+pub struct MapEntryPattern {
     pub key: String,
-    pub payload: ValueConstraint<PayloadConstraints>
+    pub payload: ValuePattern<PayloadPattern>
 }
 
 #[cfg(test)]
@@ -596,31 +625,31 @@ pub mod test {
     use nom::combinator::all_consuming;
 
 
-    use crate::pattern::{PayloadListConstraints, consume_payload_structure, consume_data_struct_def, consume_map_entry_constraint, consume_pipeline_block, consume_primitive_def, PayloadTypeConstraints, ValueConstraint, PayloadConstraints, Format, primitive, primitive_def, Range, MapEntryConstraint};
-    use mesh_portal_serde::version::latest::payload::{PrimitiveType, MapConstraints};
+    use crate::pattern::{ListPattern, consume_payload_structure, consume_data_struct_def, consume_map_entry_pattern, consume_pipeline_block, consume_primitive_def, PayloatTypePattern, ValuePattern, PayloadPattern, Format, primitive, primitive_def, Range, MapEntryPattern};
+    use mesh_portal_serde::version::latest::payload::{PrimitiveType, MapPattern};
     use mesh_portal_serde::version::latest::generic::payload::PayloadFormat;
 
     #[test]
     pub fn test_primative() -> Result<(),Error>{
-        assert!( consume_payload_structure("Text")?.1 == PayloadTypeConstraints::Primitive( PrimitiveType::Text ) );
-        assert!( consume_payload_structure("Text[]")?.1 == PayloadTypeConstraints::List( PayloadListConstraints { primitive: PrimitiveType::Text, range: Range::Any } ) );
-        assert!( consume_payload_structure("Text[1-3]")?.1 == PayloadTypeConstraints::List( PayloadListConstraints { primitive: PrimitiveType::Text, range: Range::MinMax{min:1,max:3}} ) );
-        assert!( consume_data_struct_def("Text~json")?.1 == PayloadConstraints { structure: PayloadTypeConstraints::Primitive(PrimitiveType::Text), format: Option::Some(PayloadFormat::Json), validator: Option::None }) ;
+        assert!( consume_payload_structure("Text")?.1 == PayloatTypePattern::Primitive( PrimitiveType::Text ) );
+        assert!( consume_payload_structure("Text[]")?.1 == PayloatTypePattern::List( ListPattern { primitive: PrimitiveType::Text, range: Range::Any } ) );
+        assert!( consume_payload_structure("Text[1-3]")?.1 == PayloatTypePattern::List( ListPattern { primitive: PrimitiveType::Text, range: Range::MinMax{min:1,max:3}} ) );
+        assert!( consume_data_struct_def("Text~json")?.1 == PayloadPattern { structure: PayloatTypePattern::Primitive(PrimitiveType::Text), format: Option::Some(PayloadFormat::Json), validator: Option::None }) ;
 /*        assert!( consume_data_struct_def("Text~json~verifier!go")?.1 == DataStructDef{data:DataStruct::PrimitiveType(PrimitiveType::Text), format: Option::Some(Format::Json),verifier: Option::Some(CallWithConfig {call: Call {address: Address::from_str("verifier")?, port:"go".to_string() },config:Option::None})}) ;
         assert!( consume_data_struct_def("Text~~verifier!go")?.1 == DataStructDef{data:DataStruct::PrimitiveType(PrimitiveType::Text), format: Option::None,verifier: Option::Some(CallWithConfig {call: Call {address: Address::from_str("verifier")?, port:"go".to_string() },config:Option::None})}) ;
         assert!( consume_data_struct_def("Text[]~json~verifier!go")?.1 == DataStructDef{data:DataStruct::Array(Array{primitive: PrimitiveType::Text,range:Range::Any}), format: Option::Some(Format::Json),verifier: Option::Some(CallWithConfig {call: Call {address: Address::from_str("verifier")?, port:"go".to_string() },config:Option::None})}) ;
         assert!( consume_data_struct_def("Text~json~verifier!go+config:1.0.0:/some-file.conf")?.1 == DataStructDef{data:DataStruct::PrimitiveType(PrimitiveType::Text), format: Option::Some(Format::Json),verifier: Option::Some(CallWithConfig {call: Call {address: Address::from_str("verifier")?, port:"go".to_string() },config:Option::Some(Address::from_str("config:1.0.0:/some-file.conf")?)})}) ;*/
-        assert!( consume_data_struct_def("Map")?.1 == PayloadConstraints { structure: PayloadTypeConstraints::Map(MapConstraints::default()), format: Option::None, validator: Option::None }) ;
-        assert!( consume_data_struct_def("Map[]")?.1 == PayloadConstraints { structure: PayloadTypeConstraints::Map(MapConstraints::default()), format: Option::None, validator: Option::None }) ;
+        assert!( consume_data_struct_def("Map")?.1 == PayloadPattern { structure: PayloatTypePattern::Map(Default::default()), format: Option::None, validator: Option::None }) ;
+        assert!( consume_data_struct_def("Map[]")?.1 == PayloadPattern { structure: PayloatTypePattern::Map(Default::default()), format: Option::None, validator: Option::None }) ;
 
 
-        assert!( consume_map_entry_constraint("label<Bin>")?.1== MapEntryConstraint { key: "label".to_string(), payload: ValueConstraint::Pattern(PayloadConstraints { structure: PayloadTypeConstraints::Primitive(PrimitiveType::Bin), format: Option::None, validator: Option::None })});
-        assert!( consume_map_entry_constraint("label<Bin~json>")?.1== MapEntryConstraint { key: "label".to_string(), payload: ValueConstraint::Pattern(PayloadConstraints { structure: PayloadTypeConstraints::Primitive(PrimitiveType::Bin), format: Option::Some(PayloadFormat::Json), validator: Option::None })});
-        assert!( consume_map_entry_constraint("label<*>")?.1== MapEntryConstraint { key: "label".to_string(), payload: ValueConstraint::Any });
+        assert!( consume_map_entry_pattern("label<Bin>")?.1== MapEntryPattern { key: "label".to_string(), payload: ValuePattern::Pattern(PayloadPattern { structure: PayloatTypePattern::Primitive(PrimitiveType::Bin), format: Option::None, validator: Option::None })});
+        assert!( consume_map_entry_pattern("label<Bin~json>")?.1== MapEntryPattern { key: "label".to_string(), payload: ValuePattern::Pattern(PayloadPattern { structure: PayloatTypePattern::Primitive(PrimitiveType::Bin), format: Option::Some(PayloadFormat::Json), validator: Option::None })});
+        assert!( consume_map_entry_pattern("label<*>")?.1== MapEntryPattern { key: "label".to_string(), payload: ValuePattern::Any });
 
         let mut map = HashMap::new();
-        map.insert("first".to_string(), ValueConstraint::Pattern(PayloadConstraints { structure: PayloadTypeConstraints::Primitive(PrimitiveType::Text), format: Option::None, validator: Option::None }) );
-        map.insert("last".to_string(), ValueConstraint::Pattern(PayloadConstraints { structure: PayloadTypeConstraints::Primitive(PrimitiveType::Text), format: Option::None, validator: Option::None }) );
+        map.insert("first".to_string(), ValuePattern::Pattern(PayloadPattern { structure: PayloatTypePattern::Primitive(PrimitiveType::Text), format: Option::None, validator: Option::None }) );
+        map.insert("last".to_string(), ValuePattern::Pattern(PayloadPattern { structure: PayloatTypePattern::Primitive(PrimitiveType::Text), format: Option::None, validator: Option::None }) );
 
         let def = consume_data_struct_def("Map[first<Text>,last<Text>]")?;
 //        println!("{:?}",def.1);

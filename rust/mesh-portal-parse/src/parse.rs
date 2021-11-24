@@ -6,29 +6,28 @@ use nom::{AsChar, InputTakeAtPosition, IResult, Needed, InputTake, Compare, Inpu
 use nom::{Err, Parser};
 use nom::branch::alt;
 use nom::bytes::complete::{tag, take_until, take_till, escaped};
-use nom::character::complete::{alpha0, alpha1, digit0, digit1, multispace0, multispace1, anychar};
+use nom::character::complete::{alpha0, alpha1, digit0, digit1, multispace0, multispace1, anychar, alphanumeric1};
 use nom::combinator::{all_consuming, opt, recognize, not};
 use nom::error::{context, ErrorKind, ParseError, VerboseError, VerboseErrorKind, FromExternalError};
 use nom::multi::{fold_many0, separated_list0, many1, separated_list1, many0};
 use nom::sequence::{delimited, tuple, preceded, terminated};
 use nom_supreme::{parse_from_str, ParserExt};
 
-use crate::{parse, Bind, Request, Rc, Msg, Http};
 use crate::symbol::{RootSelector };
 use mesh_portal_serde::version::latest::payload::{PayloadType, PrimitiveType};
 use mesh_portal_serde::version::latest::payload::Payload;
-use crate::pattern::{primitive, map_constraints, value_constrained_map_constraints};
-use mesh_portal_serde::version::latest::util::ValueConstraint;
+use crate::pattern::{primitive};
 use mesh_portal_serde::version::latest::util::ValuePattern;
 use mesh_portal_serde::version::latest::payload::{CallWithConfig, RcCommand};
 use mesh_portal_serde::version::latest::payload::{CallKind, Call};
-use mesh_portal_serde::version::latest::payload::{PayloadFormat, PayloadConstraints};
+use mesh_portal_serde::version::latest::payload::{PayloadFormat, PayloadPattern};
 use mesh_portal_serde::version::v0_0_1::parse::address;
 use mesh_portal_serde::version::latest::id::Address;
-use mesh_portal_serde::version::latest::payload::MapConstraints;
+use mesh_portal_serde::version::latest::payload::MapPattern;
 use mesh_portal_serde::version::v0_0_1::generic::id::Identifier;
 use std::iter::Map;
 use std::collections::HashMap;
+use mesh_portal_serde::version::v0_0_1::generic::payload::{MsgCall, HttpCall};
 
 pub type Res<I,O>=IResult<I,O, VerboseError<I>>;
 
@@ -162,34 +161,34 @@ fn bind(input: &str) -> Res<&str, Bind> {
 
 
 pub enum BindSection {
-    Request(Request)
+    Request(RequestSection)
 }
 
-impl From<Request> for BindSection {
-    fn from(request: Request) -> Self {
+impl From<RequestSection> for BindSection {
+    fn from(request: RequestSection) -> Self {
         Self::Request(request)
     }
 }
 
 pub enum RequestSection {
-    Rc(Rc),
-    Msg(Msg),
-    Http(Http),
+    Rc(RcCommand),
+    Msg(MsgCall),
+    Http(HttpCall),
 }
 
-impl From<Rc> for RequestSection{
-    fn from(rc: Rc) -> Self {
+impl From<RcCommand> for RequestSection{
+    fn from(rc: RcCommand) -> Self {
         Self::Rc(rc)
     }
 }
 
-impl From<Msg> for RequestSection{
-    fn from(rc: Msg) -> Self {
+impl From<MsgCall> for RequestSection{
+    fn from(rc: MsgCall) -> Self {
         Self::Msg(rc)
     }
 }
-impl From<Http> for RequestSection{
-    fn from(rc: Http) -> Self {
+impl From<HttpCall> for RequestSection{
+    fn from(rc: HttpCall) -> Self {
         Self::Http(rc)
     }
 }
@@ -297,20 +296,21 @@ pub fn rc_call_kind(input: &str) -> Res<&str, CallKind> {
      })
 }
 
-pub fn port_call_kind(input: &str) -> Res<&str, CallKind> {
-    preceded( tag("Msg!"), skewer )(input).map( |(next,port)| {
-        (next,CallKind::Msg(port.to_string()))
+pub fn msg_call(input: &str) -> Res<&str, CallKind> {
+    tuple( (delimited( tag("Msg<"), alphanumeric1, tag(">") ),recognize(preceded(tag("/"), filepath))))(input).map( |(next,(action,path))| {
+        (next,CallKind::Msg(MsgCall::new(action.to_string(), path.to_string())))
     })
 }
 
-pub fn http_call_kind(input: &str) -> Res<&str, CallKind> {
-    tag("Http")(input).map( |(next,_)| {
-        (next,CallKind::Http)
+pub fn http_call(input: &str) -> Res<&str, CallKind> {
+    tuple( (delimited( tag("Http<"), parse_from_str(alphanumeric1), tag(">") ),recognize(preceded(tag("/"), filepath))))(input).map( |(next,(method,path))| {
+        (next,CallKind::Http(HttpCall::new(method, path.to_string())))
     })
 }
+
 
 pub fn call_kind( input: &str ) -> Res<&str,CallKind> {
-    alt( (rc_call_kind,port_call_kind,http_call_kind))(input)
+    alt( (rc_call_kind, msg_call, http_call))(input)
 }
 
 
@@ -329,7 +329,7 @@ pub fn consume_call(input: &str) -> Res<&str, Call> {
 }
 
 fn payload_type_empty(input: &str ) -> Res<&str, PayloadTypeDef> {
-    alt((tag("Empty"), multispace0 )) (input).map( |(next,(_,_))| {
+    alt((tag("Empty"), multispace0 )) (input).map( |(next,_)| {
         (next,PayloadTypeDef::Empty)
     } )
 }
@@ -366,6 +366,23 @@ pub enum PayloadTypeDef {
     Primitive(PrimitiveType),
     List(PrimitiveType),
     Map,
+}
+
+impl ToString for PayloadTypeDef {
+    fn to_string(&self) -> String {
+        match self {
+            PayloadTypeDef::Empty => "Empty".to_string(),
+            PayloadTypeDef::Primitive(primitive) => {
+                primitive.to_string()
+            }
+            PayloadTypeDef::List(primitive) => {
+                format!("{}[]",primitive.to_string())
+            }
+            PayloadTypeDef::Map => {
+                "Map".to_string()
+            }
+        }
+    }
 }
 
 

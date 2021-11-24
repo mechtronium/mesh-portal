@@ -73,10 +73,10 @@ pub mod payload {
     pub type Call = generic::payload::Call<Address>;
     pub type CallKind = generic::payload::CallKind;
     pub type CallWithConfig = generic::payload::CallWithConfig<Address>;
-    pub type MapConstraints = generic::payload::MapConstraints<Key,Address,Identifier,Kind>;
-    pub type PayloadTypeConstraints = generic::payload::PayloadTypeConstraints<Key,Address,Identifier,Kind>;
-    pub type PayloadConstraints = generic::payload::PayloadConstraints<Key,Address,Identifier,Kind>;
-    pub type PayloadListConstraints = generic::payload::PayloadListConstraints;
+    pub type MapPattern = generic::payload::MapPattern<Key,Address,Identifier,Kind>;
+    pub type PayloatTypePattern = generic::payload::PayloadListPattern<Key,Address,Identifier,Kind>;
+    pub type PayloadPattern = generic::payload::PayloadPattern<Key,Address,Identifier,Kind>;
+    pub type ListPattern = generic::payload::ListPattern;
     pub type PayloadMap = generic::payload::PayloadMap<Key,Address,Identifier,Kind>;
     pub type PayloadFormat= generic::payload::PayloadFormat;
     pub type Range = generic::payload::Range;
@@ -128,7 +128,7 @@ pub mod entity {
         pub type ReqEntity = generic::entity::request::ReqEntity<PayloadDelivery>;
         pub type Rc = generic::entity::request::Rc<PayloadDelivery>;
         pub type Msg = generic::entity::request::Msg<PayloadDelivery>;
-        pub type Http = generic::entity::request::Http;
+        pub type Http = generic::entity::request::Http<PayloadDelivery>;
     }
 
     pub mod response{
@@ -245,7 +245,7 @@ pub mod generic {
             pub type ReqEntity<PAYLOAD> = generic::entity::request::ReqEntity<PAYLOAD>;
             pub type Rc<PAYLOAD> = generic::entity::request::Rc<PAYLOAD>;
             pub type Msg<PAYLOAD> = generic::entity::request::Msg<PAYLOAD>;
-            pub type Http = generic::entity::request::Http;
+            pub type Http<PAYLOAD> = generic::entity::request::Http<PAYLOAD>;
         }
 
         pub mod response {
@@ -355,10 +355,10 @@ pub mod generic {
         pub type Call<ADDRESS> = payload::Call<ADDRESS>;
         pub type CallKind = payload::CallKind;
         pub type CallWithConfig<ADDRESS> = payload::CallWithConfig<ADDRESS>;
-        pub type MapConstraints<KEY, ADDRESS, IDENTIFIER,KIND>= payload::MapConstraints<KEY,ADDRESS,IDENTIFIER,KIND>;
-        pub type PayloadListConstraints = payload::PayloadListConstraints;
-        pub type PayloadTypeConstraints<KEY, ADDRESS, IDENTIFIER,KIND>= payload::PayloadTypeConstraints<KEY, ADDRESS, IDENTIFIER,KIND>;
-        pub type PayloadConstraints<KEY, ADDRESS, IDENTIFIER,KIND> = payload::PayloadConstraints<KEY, ADDRESS, IDENTIFIER,KIND>;
+        pub type MapPattern<KEY, ADDRESS, IDENTIFIER,KIND>= payload::MapPattern<KEY,ADDRESS,IDENTIFIER,KIND>;
+        pub type ListPattern = payload::ListPattern;
+        pub type PayloadListPattern<KEY, ADDRESS, IDENTIFIER,KIND>= payload::PayloadTypePattern<KEY, ADDRESS, IDENTIFIER,KIND>;
+        pub type PayloadPattern<KEY, ADDRESS, IDENTIFIER,KIND> = payload::PayloadPattern<KEY, ADDRESS, IDENTIFIER,KIND>;
         pub type Range= payload::Range;
         pub type RcCommand = payload::RcCommand;
         pub type PayloadFormat = payload::PayloadFormat;
@@ -407,8 +407,9 @@ pub mod fail {
 pub mod util {
     use crate::version::v0_0_1::util;
 
-    pub type ValueConstraint<V> = util::ValueConstraint<V>;
-    pub type ValuePattern<V> = dyn util::ValuePattern<V>;
+    pub type ValuePattern<V> = util::ValuePattern<V>;
+    pub type ValueMatcher<V> = dyn util::ValueMatcher<V>;
+    pub type RegexMatcher = util::RegexMatcher;
 }
 
 pub mod error {
