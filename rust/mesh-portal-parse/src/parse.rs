@@ -16,8 +16,10 @@ use nom_supreme::{parse_from_str, ParserExt};
 use crate::{parse, Bind, Request, Rc, Msg, Http};
 use crate::symbol::{RootSelector, Address, Call, CallWithConfig, CallKind};
 use mesh_portal_serde::version::latest::payload::PayloadType;
-use crate::pattern::{KeyConstraint, PayloadStructureWithValidation};
+use mesh_portal_serde::version::latest::payload::Payload;
+use crate::pattern::{KeyConstraint, PayloadStructureAndValidation, primitive, map_constraints};
 use mesh_portal_serde::version::latest::generic::payload::ValueConstraint;
+use mesh_portal_serde::version::v0_0_1::generic::payload::ValuePattern;
 
 pub type Res<I,O>=IResult<I,O, VerboseError<I>>;
 
@@ -320,9 +322,42 @@ pub fn consume_call(input: &str) -> Res<&str, Call> {
     all_consuming( call )(input)
 }
 
+fn payload_type_empty(input: &str ) -> Res<&str, PayloadType> {
+    alt((tag("Empty"), multispace0 )) (input).map( |(next,(_,_))| {
+        (next,PayloadType::Empty)
+    } )
+}
+
+fn payload_type_primitive(input: &str ) -> Res<&str, PayloadType> {
+    primitive(input).map( |(next,primitive)| {
+        (next,PayloadType::Primitive(primitive))
+    } )
+}
+
+fn payload_type_list(input: &str ) -> Res<&str, PayloadType> {
+    tuple((primitive,tag("[]")))(input).map( |(next,(primitive,_))| {
+        (next,PayloadType::List(primitive))
+    } )
+}
+
+fn payload_type_map(input: &str ) -> Res<&str, PayloadType> {
+    tuple((tag("Map"),opt(delimited(tag("{"),map_constraints, tag("}")))))(input).map( |(next,(_,c))| {
+        (next,PayloadType::Map(primitive))
+    } )
+}
+
+
 /// use nom_supreme::{parse_from_str, parser_ext::ParserExt};
-pub fn payload_kind(input: &str ) -> Res<&str, PayloadType> {
-    parse_from_str(alpha1).parse(input)
+pub fn payload_type(input: &str ) -> Res<&str, PayloadType> {
+    alt( (payload_type_list,payload_type_primitive,payload_type_empty))(input)
+
+/*    , strum_macros::Display
+    Empty,
+    Primitive(PrimitiveType),
+    List(PrimitiveType),
+    Map(Box<MapConstraints<PAYLOAD,PayloadType<PAYLOAD>>>),
+
+ */
 }
 
 /// use nom_supreme::{parse_from_str, parser_ext::ParserExt};
@@ -352,7 +387,7 @@ pub fn payload_validation(input: &str ) -> Res<&str, PayloadValidation> {
 
 /// use nom_supreme::{parse_from_str, parser_ext::ParserExt};
 pub fn payload_type_def(input: &str ) -> Res<&str, PayloadTypeDef> {
-    tuple( (payload_kind, opt( payload_validation )))(input).map( |(next, (kind, validation)) | {
+    tuple( (payload_type, opt( payload_validation )))(input).map( |(next, (kind, validation)) | {
 
         (next, PayloadTypeDef {
             kind,
@@ -666,11 +701,6 @@ impl From<strum::ParseError> for MyError {
 
 
 
-#[derive(Debug,Clone,Eq,PartialEq,strum_macros::Display,strum_macros::EnumString)]
-pub enum RcCommand{
-    Create,
-    Select
-}
 
 
 
@@ -691,8 +721,23 @@ pub enum PipelineStop {
 }
 
 
-pub struct MapEntryConstraint {
-    pub key: KeyConstraint,
-    pub data: ValueConstraint<PayloadStructureWithValidation>
+#[derive(Clone)]
+pub struct RequiredMapEntryConstraint {
+    pub key: String,
+    pub payload: ValueConstraint<PayloadStructureAndValidation>
 }
+
+impl ValuePattern<(&String,&Payload)> for RequiredMapEntryConstraint {
+
+    fn is_match(&self, x: &(&String, &Payload)) -> Result<(), mesh_portal_serde::version::latest::error::Error> {
+        let (key,payload ) = *x;
+        if self.key != *key {
+
+        }
+        self.payload.is_match(payload)?;
+        Ok(())
+    }
+}
+
+
 

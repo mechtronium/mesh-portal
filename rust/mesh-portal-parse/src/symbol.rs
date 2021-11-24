@@ -24,39 +24,8 @@ impl FromStr for RootSelector {
 
 
 
-#[derive(Debug,Clone,Eq,PartialEq)]
-pub struct Call {
-    pub address: Address,
-    pub kind: CallKind
-}
-
-#[derive(Debug,Clone,Eq,PartialEq)]
-pub enum CallKind{
-    Rc(RcCommand),
-    Msg(String),
-    Http
-}
-
-impl ToString for CallKind {
-    fn to_string(&self) -> String {
-        match self {
-            CallKind::Rc(command) => {
-                format!("Rc<{}>",command.to_string())
-            }
-            CallKind::Msg(port) => {
-                format!("Msg<{}>",port.clone())
-            }
-            CallKind::Http => "Http".to_string()
-        }
-    }
-}
 
 
-#[derive(Debug,Clone,Eq,PartialEq)]
-pub struct CallWithConfig {
-    pub call: Call,
-    pub config: Option<Address>
-}
 
 impl FromStr for Call {
     type Err = MyError;

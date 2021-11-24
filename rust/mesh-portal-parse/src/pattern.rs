@@ -8,20 +8,19 @@ use nom::bytes::complete::tag;
 use nom::character::complete::{alpha0, alpha1, alphanumeric0, alphanumeric1, digit0, digit1, multispace0, space0};
 use nom::combinator::{all_consuming, not, opt, recognize};
 use nom::error::{ErrorKind, ParseError, VerboseError};
-use nom::multi::separated_list1;
+use nom::multi::{separated_list1, separated_list0};
 use nom::sequence::{delimited, preceded, tuple};
 use nom_supreme::parse_from_str;
 
 use mesh_portal_serde::version::latest::payload::{PrimitiveType, PayloadType};
 use mesh_portal_serde::version::latest::payload::Primitive;
 use mesh_portal_serde::version::latest::payload::Payload;
-use mesh_portal_serde::version::latest::payload::MapConstraints;
-use mesh_portal_serde::version::latest::payload::ValueConstraint;
 
-use crate::parse::{call, call_with_config, Res, MapEntryConstraint};
+use crate::parse::{call, call_with_config, Res };
 use crate::symbol::{Address, Call, CallWithConfig};
 use mesh_portal_serde::version::latest::error::Error;
 use std::iter::Map;
+use mesh_portal_serde::version::latest::generic::payload::{MapConstraints, ValueConstraint};
 use mesh_portal_serde::version::v0_0_1::generic::payload::ValuePattern;
 
 fn skewer<T>(i: T) -> Res<T, T>
@@ -73,7 +72,7 @@ fn filename<T>(i: T) -> Res<T, T>
 pub enum PayloadPattern {
     Any,
     Empty,
-    Structure(PayloadStructureWithValidation),
+    Structure(PayloadStructureAndValidation),
 }
 
 impl PayloadPattern {
@@ -148,18 +147,57 @@ impl PayloadPattern {
     }
 }
 
-#[derive(Debug,Clone,Eq,PartialEq)]
-pub struct List {
-    pub primitive: PrimitiveType,
-    pub range: Range,
-}
 
 #[derive(Debug,Clone,Eq,PartialEq)]
 pub enum PayloadStructure {
     Empty,
     Primitive(PrimitiveType),
-    List(List),
-    Map(Box<MapConstraints<PayloadStructure>>)
+    List(PayloadListConstraints),
+    Map(Box<MapConstraints<Payload, PayloadStructureAndValidation>>)
+}
+
+impl ValuePattern<Payload> for PayloadStructure {
+    fn is_match(&self, x: &Payload) -> Result<(), Error> {
+        match self {
+            PayloadStructure::Empty => {
+                if Payload::Empty == *x {
+                    Ok(())
+                } else {
+                    Err("expected Empty payload".into())
+                }
+            }
+            PayloadStructure::Primitive(primitive) => {
+                if let Payload::Primitive(found) = x {
+                    if found.primitive_type() == primitive {
+                        Ok(())
+                    } else {
+                        Err(format!("primitive Payload expected: '{}' found: '{}'", primitive.to_string(), found.to_string() ).into())
+                    }
+                }  else {
+
+                    Err(format!("Payload expected: '{}' found: '{}'", primitive.to_string(), x.to_string() ).into())
+                }
+            }
+            PayloadStructure::List(list) => {
+                if let Payload::List(found) = x {
+                    if found.primitive_type == list.primitive {
+                        Ok(())
+                    } else {
+                        Err(format!("Payload expected: '{}[]' found: '{}[]'", primitive.to_string(), found.to_string() ).into())
+                    }
+                }  else {
+                    Err(format!("Payload expected: '{}[]' found: '{}'", primitive.to_string(), x.to_string() ).into())
+                }
+            }
+            PayloadStructure::Map(map) => {
+                if let Payload::Map(found) = x {
+                    map.is_match(found)?
+                } else {
+                    Err(format!("Payload expected: '{}' found: '{}'", map.to_string(), x.to_string() ).into())
+                }
+            }
+        }
+    }
 }
 
 impl ValuePattern<PayloadType> for PayloadStructure {
@@ -196,8 +234,9 @@ impl ValuePattern<PayloadType> for PayloadStructure {
                 }
             }
             PayloadStructure::Map(map) => {
-                if let PayloadType::Map(found) = x {
-                    map.is_match(found)?
+                if let PayloadType::Map(con) = x {
+                    let x = map.as_ref();
+                    con.is_match(map.as_ref())
                 } else {
                     Err(format!("Payload expected: '{}' found: '{}'", map.to_string(), x.to_string() ).into())
                 }
@@ -228,19 +267,6 @@ unimplemented!()
     }
 }
 
-#[derive(Debug,Clone,Eq,PartialEq)]
-pub struct PayloadStructureWithValidation {
-    pub structure: PayloadStructure,
-    pub format: Option<Format>,
-    pub validator: Option<CallWithConfig>,
-}
-
-impl PayloadStructureWithValidation {
-    pub fn is_match( &self, primitive: Primitive ) {
-
-    }
-}
-
 
 
 
@@ -248,6 +274,24 @@ impl PayloadStructureWithValidation {
 pub enum KeyConstraint {
     Any,
     Exact(String)
+}
+
+impl KeyConstraint {
+    pub fn is_match( &self, key: &String ) -> Result<(),Error>
+    {
+        match self {
+            KeyConstraint::Any => {
+                Ok(())
+            }
+            KeyConstraint::Exact(v) => {
+                if *key == *v {
+                    Ok(())
+                } else {
+                    Err(format!("Key constraint violated.  expected: '{}' found: '{}'",v,key).into())
+                }
+            }
+        }
+    }
 }
 
 #[derive(Eq,PartialEq)]
@@ -343,12 +387,7 @@ pub struct PatternBlock {
     pub pattern: PayloadPattern
 }
 
-#[derive(Debug,Clone,Eq,PartialEq)]
-pub enum Range {
-    MinMax { min: usize, max: usize },
-    Exact(usize),
-    Any
-}
+
 
 pub fn digit_range( input: &str ) -> Res<&str,Range> {
   tuple( ( digit1, tag("-"), digit1 ) )(input).map( |(next,(min,_,max))| {
@@ -399,109 +438,122 @@ pub fn primitive_data_struct( input: &str ) -> Res< &str, PayloadStructure> {
 pub fn array_data_struct( input: &str ) -> Res< &str, PayloadStructure> {
     tuple( (primitive, delimited(tag("["), range, tag("]") ) ) )(input).map( |(next, (primitive,range))| {
 
-        (next, PayloadStructure::List(List {
+        (next, PayloadStructure::List(PayloadListConstraints {
             primitive,
             range
         }))
     } )
 }
 
-pub fn map_constraint(input: &str ) -> Res<&str, MapEntryConstraint> {
-    alt( (recognize( tuple((label_constraint,delimited(tag("<"), data_constraint, tag(">"))))),tag("*")) )(input).map( | (next,con)| {
-        let con = match con {
-            "*" => MapEntryConstraint {
-                key: KeyConstraint::Any,
-                data: ValueConstraint::Any,
-            },
-            _ => {
-                tuple((label_constraint,delimited(tag("<"), data_constraint, tag(">"))))(input).map( | (next,(label,data))| {
 
-                    (next, MapEntryConstraint {
-                        key: label,
-                        data
-                    })
-                } ).expect("expected this to work since Recognize passed").1
-            }
+pub fn map_entry_constraint_any(input: &str ) -> Res<&str, ValueConstraint<MapEntryConstraint>> {
+    delimited( multispace0,tag("*"),multispace0 )(input).map( |(next,_)| {
+        (next, ValueConstraint::Any)
+    })
+}
+
+pub fn map_entry_constraint(input: &str ) -> Res<&str, MapEntryConstraint> {
+    tuple((skewer, opt(delimited(tag("<"), payload_constraint, tag(">")))))(input).map(|(next,(key_con, payload_con))| {
+        let payload_con = match payload_con {
+            None => ValueConstraint::Any,
+            Some(payload_con) => payload_con
         };
 
+       let map_entry_con = MapEntryConstraint { key: key_con.to_string(), payload: payload_con };
+        (next,map_entry_con)
+    })
+}
+
+
+pub fn map_entry_constraints(input: &str ) -> Res<&str, Vec<MapEntryConstraint>> {
+    separated_list0( delimited(multispace0,tag(","),multispace0), map_entry_constraint )(input)
+}
+
+pub fn consume_map_entry_constraint(input: &str ) -> Res<&str, Vec<MapEntryConstraint>> {
+    all_consuming(map_entry_constraints)(input)
+}
+
+pub fn required_map_entry_constraints( input: &str ) -> Res<&str, Vec<MapEntryConstraint>> {
+    delimited(tag("["), map_entry_constraints, tag("]"))(input).map( |(next,params)|{
+        (next,params)
+    } )
+}
+
+pub fn allowed_map_entry_constraints( input: &str ) -> Res<&str, ValueConstraint<PayloadStructureAndValidation>> {
+    payload_constraint(input).map( |(next,con)|{
         (next,con)
     } )
 }
 
-pub fn consume_map_constraint(input: &str ) -> Res<&str, MapEntryConstraint> {
-    all_consuming(map_constraint)(input)
-}
 
+//  [ required1<Bin>, required2<Text> ] *<Bin>
+pub fn map_constraints_params(input: &str ) -> Res<&str, MapConstraints<Payload, PayloadStructureAndValidation>> {
+    tuple( (opt(required_map_entry_constraints),multispace0,opt(allowed_map_entry_constraints)))(input).map( |(next,(required,_,allowed)) | {
 
-
-pub fn any_map_con(input: &str) -> Res<&str, MapConstraints> {
-    let (next,scan)= tag("[")(input)?;
-    if scan != "]" {
-        Err(nom::Err::Error(VerboseError::from_error_kind(input, ErrorKind::TooLarge)))
-    }
-    else {
-        Ok((input, MapConstraints::default() ))
-    }
-}
-
-pub fn sep_map_con(input: &str) -> Res<&str, MapConstraints> {
-    separated_list1( tag(","), map_constraints  )(input).map( |(next,cons)|{
-        let mut map = MapConstraints::empty();
-        for con in cons {
-            match con.key {
-                KeyConstraint::Any => {
-                    map.allowed = Box::new(con.data);
+        let mut required_map = HashMap::new();
+        match required {
+            Option::Some(required) => {
+                for require in required {
+                    required_map.insert( require.key, require.payload );
                 }
-                KeyConstraint::Exact(label) => {
-                    map.required.insert(label, con.data);
-                }
-
             }
+            Option::None => {}
         }
 
-        (next, map)
+        let allowed = match allowed {
+            Some(allowed) => allowed,
+            None => ValueConstraint::None
+        };
+
+        let con = MapConstraints::new( required_map, allowed );
+
+        (next,con)
+
     } )
 }
 
-/*
-pub fn sep_list_map_con(input: &str) -> Res<&str,Map> {
-  separated_list1( tag(","),  )
+enum MapConParam{
+    Required(Vec<ValueConstraint<MapEntryConstraint>>),
+    Allowed(ValueConstraint<PayloadStructureAndValidation>)
 }
 
-pub fn map_constraints( input: &str ) -> Res<&str,Map> {
-    alt( (any_map_con) )(input)
-}
 
- */
+// EXAMPLE:
+//  Map { [ required1<Bin>, required2<Text> ] *<Bin> }
+pub fn map_constraints(input: &str ) -> Res<&str, MapConstraints<Payload, PayloadStructureAndValidation>> {
+    tuple( (tag("Map"), opt(delimited(delimited(multispace0,tag("{"),multispace0),  map_constraints_params,delimited(multispace0,tag("}"),multispace0) ) ) ) )(input).map( |(next, (_, entries))| {
 
-pub fn map_constraints( input: &str ) -> Res<&str, MapConstraints> {
-    alt( (any_map_con,sep_map_con) )(input)
-}
-pub fn map_data_struct( input: &str ) -> Res<&str, PayloadStructure> {
-    tuple( (tag("Map"), opt(delimited(tag("["), map_constraints, tag("]") ) ) ) )(input).map( |(next, (primitive, map))| {
-
-        let map = match map {
+        let mut entries = entries;
+        let con = match entries {
             None => {
-                MapConstraints::default()
-            }
-            Some(map) => {
-                map
+                MapConstraints::any()
+            },
+            Some(con) => {
+                con
             }
         };
 
-        (next, PayloadStructure::Map(map))
+        (next, con)
     } )
 }
 
-pub fn data_struct( input: &str ) -> Res< &str, PayloadStructure> {
-    alt( (array_data_struct, primitive_data_struct,map_data_struct ))(input)
+pub fn map_constraints_payload_structure(input: &str ) -> Res<&str, PayloadStructure> {
+    map_constraints(input).map( |(next,con)| {
+        (next, PayloadStructure::Map(Box::new(con)))
+    } )
 }
 
-pub fn data_struct_def( input: &str ) -> Res< &str, PayloadStructureWithValidation> {
+
+pub fn data_struct( input: &str ) -> Res< &str, PayloadStructure> {
+    alt( (array_data_struct, primitive_data_struct,map_constraints))(input)
+
+}
+
+pub fn payload_structure_with_validation(input: &str ) -> Res< &str, PayloadStructureAndValidation> {
     tuple( ( data_struct, opt(preceded( tag("~"), opt(format)), ),opt(preceded(tag("~"), call_with_config), )  ) )(input).map( |(next,(data,format,verifier))| {
         (next,
 
-         PayloadStructureWithValidation {
+         PayloadStructureAndValidation {
              structure: data,
              format: match format {
                  Some(Some(format)) => {
@@ -519,11 +571,11 @@ pub fn consume_data_struct( input: &str) -> Res<&str, PayloadStructure> {
     all_consuming(data_struct)(input)
 }
 
-pub fn consume_data_struct_def( input: &str) -> Res<&str, PayloadStructureWithValidation> {
-    all_consuming(data_struct_def)(input)
+pub fn consume_data_struct_def( input: &str) -> Res<&str, PayloadStructureAndValidation> {
+    all_consuming(payload_structure_with_validation)(input)
 }
 
-pub fn label_constraint(input: &str ) -> Res<&str, KeyConstraint> {
+pub fn key_constraint(input: &str ) -> Res<&str, KeyConstraint> {
     alt( (tag("*"), skewer ) )(input).map( | (next,label)|{
 
         let label = match label {
@@ -533,13 +585,24 @@ pub fn label_constraint(input: &str ) -> Res<&str, KeyConstraint> {
         (next,label)
     } )
 }
+pub fn payload_constraint_any(input: &str ) -> Res<&str, ValueConstraint<PayloadStructureAndValidation>> {
+    tag("*")(input).map( |(next,_)|{
+        (next,ValueConstraint::Any)
+    } )
+}
 
-pub fn data_constraint(input: &str ) -> Res<&str, ValueConstraint> {
-    alt( (tag("*"), recognize( data_struct_def )) )(input).map( | (next,data)|{
+pub fn payload_constraint(input: &str ) -> Res<&str, ValueConstraint<PayloadStructureAndValidation>> {
+    payload_structure_with_validation(input).map( |(next,payload_constraint)|{
+        (next, ValueConstraint::Exact(payload_constraint))
+    } )
+}
+
+pub fn payload_constraints(input: &str ) -> Res<&str, ValueConstraint<PayloadStructureAndValidation>> {
+    alt( (tag("*"), recognize(payload_structure_with_validation)) )(input).map( |(next,data)|{
 
         let data = match data{
             "*" => ValueConstraint::Any,
-            exact => ValueConstraint::Pattern(data_struct_def(input).expect("recognize already passed this...").1)
+            exact => ValueConstraint::Pattern(payload_structure_with_validation(input).expect("recognize already passed this...").1)
         };
         (next,data)
     } )
@@ -568,7 +631,7 @@ pub fn pattern_block_any(input: &str) -> Res<&str,PatternBlock> {
 }
 
 pub fn pattern_block_def(input: &str) -> Res<&str,PatternBlock> {
-    let (next,data)= data_struct_def(input)?;
+    let (next,data)= payload_structure_with_validation(input)?;
 
     Ok((next, PatternBlock{
         pattern: PayloadPattern::Structure(data)
@@ -619,6 +682,10 @@ pub fn consume_pipeline_block(input: &str ) -> Res<&str,Block> {
     all_consuming(pipeline_block)(input)
 }
 
+pub struct MapEntryConstraint {
+    pub key: String,
+    pub payload: ValueConstraint<PayloadStructureAndValidation>
+}
 
 #[cfg(test)]
 pub mod test {
@@ -629,39 +696,36 @@ pub mod test {
     use nom::combinator::all_consuming;
 
 
-    use crate::pattern::{List, consume_data_struct, consume_data_struct_def, consume_map_constraint, consume_pipeline_block, consume_primitive_def, PayloadStructure, ValueConstraint, PayloadStructureWithValidation, Format, KeyConstraint, MapConstraints, MapEntryConstraint, primitive, primitive_def, Range};
+    use crate::pattern::{PayloadListConstraints, consume_data_struct, consume_data_struct_def, consume_map_entry_constraint, consume_pipeline_block, consume_primitive_def, PayloadStructure, ValueConstraint, PayloadStructureAndValidation, Format, KeyConstraint, MapConstraints, primitive, primitive_def, Range, MapEntryConstraint};
     use crate::symbol::{Address, Call, CallWithConfig};
     use mesh_portal_serde::version::latest::payload::PrimitiveType;
 
     #[test]
     pub fn test_primative() -> Result<(),Error>{
         assert!( consume_data_struct("Text")?.1 == PayloadStructure::Primitive( PrimitiveType::Text ) );
-        assert!( consume_data_struct("Text[]")?.1 == PayloadStructure::List( List { primitive: PrimitiveType::Text, range: Range::Any } ) );
-        assert!( consume_data_struct("Text[1-3]")?.1 == PayloadStructure::List( List { primitive: PrimitiveType::Text, range: Range::MinMax{min:1,max:3}} ) );
-        assert!( consume_data_struct_def("Text~json")?.1 == PayloadStructureWithValidation { structure: PayloadStructure::Primitive(PrimitiveType::Text), format: Option::Some(Format::Json), validator: Option::None }) ;
+        assert!( consume_data_struct("Text[]")?.1 == PayloadStructure::List( PayloadListConstraints { primitive: PrimitiveType::Text, range: Range::Any } ) );
+        assert!( consume_data_struct("Text[1-3]")?.1 == PayloadStructure::List( PayloadListConstraints { primitive: PrimitiveType::Text, range: Range::MinMax{min:1,max:3}} ) );
+        assert!( consume_data_struct_def("Text~json")?.1 == PayloadStructureAndValidation { structure: PayloadStructure::Primitive(PrimitiveType::Text), format: Option::Some(Format::Json), validator: Option::None }) ;
 /*        assert!( consume_data_struct_def("Text~json~verifier!go")?.1 == DataStructDef{data:DataStruct::PrimitiveType(PrimitiveType::Text), format: Option::Some(Format::Json),verifier: Option::Some(CallWithConfig {call: Call {address: Address::from_str("verifier")?, port:"go".to_string() },config:Option::None})}) ;
         assert!( consume_data_struct_def("Text~~verifier!go")?.1 == DataStructDef{data:DataStruct::PrimitiveType(PrimitiveType::Text), format: Option::None,verifier: Option::Some(CallWithConfig {call: Call {address: Address::from_str("verifier")?, port:"go".to_string() },config:Option::None})}) ;
         assert!( consume_data_struct_def("Text[]~json~verifier!go")?.1 == DataStructDef{data:DataStruct::Array(Array{primitive: PrimitiveType::Text,range:Range::Any}), format: Option::Some(Format::Json),verifier: Option::Some(CallWithConfig {call: Call {address: Address::from_str("verifier")?, port:"go".to_string() },config:Option::None})}) ;
         assert!( consume_data_struct_def("Text~json~verifier!go+config:1.0.0:/some-file.conf")?.1 == DataStructDef{data:DataStruct::PrimitiveType(PrimitiveType::Text), format: Option::Some(Format::Json),verifier: Option::Some(CallWithConfig {call: Call {address: Address::from_str("verifier")?, port:"go".to_string() },config:Option::Some(Address::from_str("config:1.0.0:/some-file.conf")?)})}) ;*/
-        assert!( consume_data_struct_def("Map")?.1 == PayloadStructureWithValidation { structure: PayloadStructure::Map(MapConstraints::default()), format: Option::None, validator: Option::None }) ;
-        assert!( consume_data_struct_def("Map[]")?.1 == PayloadStructureWithValidation { structure: PayloadStructure::Map(MapConstraints::default()), format: Option::None, validator: Option::None }) ;
+        assert!( consume_data_struct_def("Map")?.1 == PayloadStructureAndValidation { structure: PayloadStructure::Map(MapConstraints::default()), format: Option::None, validator: Option::None }) ;
+        assert!( consume_data_struct_def("Map[]")?.1 == PayloadStructureAndValidation { structure: PayloadStructure::Map(MapConstraints::default()), format: Option::None, validator: Option::None }) ;
 
 
-        assert!( consume_map_constraint("label<Bin>")?.1== MapEntryConstraint { key: KeyConstraint::Exact("label".to_string()), data: ValueConstraint::Pattern(PayloadStructureWithValidation { structure: PayloadStructure::Primitive(PrimitiveType::Bin), format: Option::None, validator: Option::None })});
-        assert!( consume_map_constraint("label<Bin~json>")?.1== MapEntryConstraint { key: KeyConstraint::Exact("label".to_string()), data: ValueConstraint::Pattern(PayloadStructureWithValidation { structure: PayloadStructure::Primitive(PrimitiveType::Bin), format: Option::Some(Format::Json), validator: Option::None })});
-        assert!( consume_map_constraint("*")?.1== MapEntryConstraint { key: KeyConstraint::Any, data: ValueConstraint::Any });
-        assert!( consume_map_constraint("*<*>")?.1== MapEntryConstraint { key: KeyConstraint::Any, data: ValueConstraint::Any });
-        assert!( consume_map_constraint("*<Bin>")?.1== MapEntryConstraint { key: KeyConstraint::Any, data: ValueConstraint::Pattern(PayloadStructureWithValidation { structure: PayloadStructure::Primitive(PrimitiveType::Bin), format: Option::None, validator: Option::None })});
-        assert!( consume_map_constraint("label<*>")?.1== MapEntryConstraint { key: KeyConstraint::Exact("label".to_string()), data: ValueConstraint::Any });
+        assert!( consume_map_entry_constraint("label<Bin>")?.1== MapEntryConstraint { key: "label".to_string(), payload: ValueConstraint::Pattern(PayloadStructureAndValidation { structure: PayloadStructure::Primitive(PrimitiveType::Bin), format: Option::None, validator: Option::None })});
+        assert!( consume_map_entry_constraint("label<Bin~json>")?.1== MapEntryConstraint { key: "label".to_string(), payload: ValueConstraint::Pattern(PayloadStructureAndValidation { structure: PayloadStructure::Primitive(PrimitiveType::Bin), format: Option::Some(Format::Json), validator: Option::None })});
+        assert!( consume_map_entry_constraint("label<*>")?.1== MapEntryConstraint { key: "label".to_string(), payload: ValueConstraint::Any });
 
         let mut map = HashMap::new();
-        map.insert("first".to_string(), ValueConstraint::Pattern(PayloadStructureWithValidation { structure: PayloadStructure::Primitive(PrimitiveType::Text), format: Option::None, validator: Option::None }) );
-        map.insert("last".to_string(), ValueConstraint::Pattern(PayloadStructureWithValidation { structure: PayloadStructure::Primitive(PrimitiveType::Text), format: Option::None, validator: Option::None }) );
+        map.insert("first".to_string(), ValueConstraint::Pattern(PayloadStructureAndValidation { structure: PayloadStructure::Primitive(PrimitiveType::Text), format: Option::None, validator: Option::None }) );
+        map.insert("last".to_string(), ValueConstraint::Pattern(PayloadStructureAndValidation { structure: PayloadStructure::Primitive(PrimitiveType::Text), format: Option::None, validator: Option::None }) );
 
         let def = consume_data_struct_def("Map[first<Text>,last<Text>]")?;
         println!("{:?}",def);
 
-        assert!(consume_data_struct_def("Map[first<Text>,last<Text>]")?.1== PayloadStructureWithValidation {format: Option::None, validator:Option::None, structure: PayloadStructure::Map(MapConstraints {
+/*        assert!(consume_data_struct_def("Map[first<Text>,last<Text>]")?.1== PayloadStructureWithValidation {format: Option::None, validator:Option::None, structure: PayloadStructure::Map(MapConstraints {
             required: map.clone(),
             allowed: Box::new(ValueConstraint::None)
         })});
@@ -671,6 +735,8 @@ pub mod test {
             allowed: Box::new(ValueConstraint::Pattern(PayloadStructureWithValidation { structure: PayloadStructure::Primitive(PrimitiveType::Bin), validator:Option::None,format:Option::None}))
         })});
 
+
+ */
 
         //somethign insane
         consume_data_struct_def("Map[first<Text~~verifier!go+std:1.0.0:/firstname.conf>,last<Text~~verifier!go+std:1.0.0:/lastname.conf>]~~verifier!complete")?;

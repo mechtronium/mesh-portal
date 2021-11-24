@@ -762,7 +762,7 @@ pub mod generic {
         use crate::version::v0_0_1::error::Error;
         use crate::version::v0_0_1::generic;
         use crate::version::v0_0_1::generic::id::{AddressAndKind, Identifier};
-        use crate::version::v0_0_1::generic::payload::Payload;
+        use crate::version::v0_0_1::generic::payload::{Payload, MapConstraints, PayloadType};
         use crate::version::v0_0_1::generic::payload::Primitive;
         use crate::version::v0_0_1::util::ConvertFrom;
         use crate::version::v0_0_1::State;
@@ -860,7 +860,6 @@ pub mod generic {
 
         #[derive(Debug, Clone, Serialize, Deserialize)]
         pub struct Resource<KEY, ADDRESS, IDENTIFIER, KIND>
-            where KEY: Clone, ADDRESS: Clone, IDENTIFIER: Clone, KIND: Clone
         {
             pub stub: ResourceStub<KEY, ADDRESS, KIND>,
             pub state: Box<Payload<KEY, ADDRESS, IDENTIFIER, KIND>>,
@@ -1242,6 +1241,7 @@ pub mod generic {
         use std::fmt::Debug;
         use std::hash::Hash;
         use std::str::FromStr;
+        use std::marker::PhantomData;
 
         use serde::{Deserialize, Serialize};
 
@@ -1257,15 +1257,328 @@ pub mod generic {
         use std::ops::{Deref, DerefMut};
 
         #[derive(
-            Debug, Clone, Serialize, Deserialize, Eq, PartialEq, strum_macros::Display,
+            Debug, Clone, Serialize, Deserialize, Eq, PartialEq,strum_macros::Display,strum_macros::EnumString
         )]
         pub enum PayloadType
         {
             Empty,
-            Primitive(PrimitiveType),
-            List(PrimitiveType),
-            Map(Box<MapConstraints<PayloadType>>),
+            Primitive,
+            List,
+            Map,
         }
+
+        #[derive(Clone)]
+        pub struct PayloadListConstraints {
+            pub primitive: PrimitiveType,
+            pub range: Range,
+        }
+
+        impl PayloadListConstraints {
+            pub fn is_match<KEY,ADDRESS,IDENTIFIER,KIND>( &self, list: &PrimitiveList<KEY,ADDRESS,IDENTIFIER,KIND> ) -> Result<(),Error> {
+                for i in &list.list {
+                    if self.primitive != i.primitive_type()  {
+                        return Err(format!("Primitive List expected: {} found: {}",self.primitive.to_string(),i.primitive_type().to_string()).into());
+                    }
+                }
+
+                Ok(())
+            }
+        }
+
+        #[derive(Debug,Clone,Eq,PartialEq)]
+        pub enum Range {
+            MinMax { min: usize, max: usize },
+            Exact(usize),
+            Any
+        }
+
+        #[derive(Clone)]
+        pub enum PayloadStructure<KEY,ADDRESS,IDENTIFIER,KIND> {
+            Empty,
+            Primitive(PrimitiveType),
+            List(PayloadListConstraints),
+            Map(Box<MapConstraints<KEY,ADDRESS,IDENTIFIER,KIND>>)
+        }
+
+        impl <KEY,ADDRESS,IDENTIFIER,KIND> PayloadStructure<KEY,ADDRESS,IDENTIFIER,KIND> {
+            pub fn is_match( &self, payload: &Payload<KEY,ADDRESS,IDENTIFIER,KIND> ) -> Result<(),Error> {
+                match self {
+                    PayloadStructure::Empty => {
+                        if payload.payload_type() == PayloadType::Empty {
+                            Ok(())
+                        } else {
+
+                            Err(format!("Payload expected: Empty found: {}",payload.payload_type().to_string()).into())
+                        }
+                    }
+                    PayloadStructure::Primitive(expected ) => {
+                        if let Payload::Primitive(found) = payload {
+                            if *expected == found.primitive_type() {
+                                Ok(())
+                            } else {
+                                Err(format!("Payload Primitive expected: {} found: {}", expected.to_string(), found.primitive_type().to_string()).into())
+                            }
+                        } else {
+                            Err(format!("Payload expected: {} found: {}", expected.to_string(), payload.payload_type().to_string()).into())
+                        }
+                    }
+                    PayloadStructure::List(expected) => {
+                        if let Payload::List(found) = payload {
+                            expected.is_match(found )
+                        } else {
+                            Err(format!("Payload expected: List found: {}", payload.payload_type().to_string()).into())
+                        }
+                    }
+                    PayloadStructure::Map(expected) => {
+                        if let Payload::Map(found) = payload {
+                            expected.is_match(found)
+                        } else {
+                            Err(format!("Payload expected: {} found: {}",expected.to_string(), payload.payload_type().to_string()).into())
+                        }
+                    }
+                }
+
+            }
+        }
+
+        #[derive(Clone)]
+        pub struct PayloadStructureAndValidation<KEY,ADDRESS,IDENTIFIER,KIND> {
+            pub structure: PayloadStructure<KEY,ADDRESS,IDENTIFIER,KIND>,
+            pub format: Option<PayloadFormat>,
+            pub validator: Option<CallWithConfig<ADDRESS>>,
+        }
+
+        impl<
+            FromKey,
+            FromAddress,
+            FromIdentifier,
+            FromKind,
+            ToKey,
+            ToAddress,
+            ToIdentifier,
+            ToKind,
+        > ConvertFrom<Option<PayloadStructureAndValidation<FromKey, FromAddress, FromIdentifier, FromKind>>>
+        for Option<PayloadStructureAndValidation<ToKey, ToAddress, ToIdentifier, ToKind>>
+            where
+                FromKey: TryInto<ToKey, Error = Error> + Clone,
+                FromAddress: TryInto<ToAddress, Error = Error> + Clone,
+                FromIdentifier: TryInto<ToIdentifier, Error = Error> + Clone,
+                FromKind: TryInto<ToKind, Error = Error> + Clone,
+                ToKey: Clone,
+                ToAddress: Clone,
+                ToIdentifier: Clone,
+                ToKind: Clone,
+                PayloadStructure<ToKey,ToAddress,ToIdentifier,ToKind>: ConvertFrom<PayloadStructure<FromKey,FromAddress,FromIdentifier,FromKind>>,
+                PayloadStructureAndValidation<ToKey,ToAddress,ToIdentifier,ToKind>: ConvertFrom<PayloadStructureAndValidation<FromKey,FromAddress,FromIdentifier,FromKind>>
+
+        {
+            fn convert_from(
+                a: Option<PayloadStructureAndValidation<FromKey, FromAddress, FromIdentifier, FromKind>>,
+            ) -> Result<Self, Error>
+                where
+                    Self: Sized,
+            {
+                let rtn = match a{
+                    None => None,
+                    Some(rtn) => {
+                        Option::Some(ConvertFrom::convert_from(rtn)?)
+                    }
+                };
+                Ok(rtn)
+            }
+        }
+
+        impl<
+            FromKey,
+            FromAddress,
+            FromIdentifier,
+            FromKind,
+            ToKey,
+            ToAddress,
+            ToIdentifier,
+            ToKind,
+        > ConvertFrom<PayloadStructureAndValidation<FromKey, FromAddress, FromIdentifier, FromKind>>
+        for PayloadStructureAndValidation<ToKey, ToAddress, ToIdentifier, ToKind>
+            where
+                FromKey: TryInto<ToKey, Error = Error> + Clone,
+                FromAddress: TryInto<ToAddress, Error = Error> + Clone,
+                FromIdentifier: TryInto<ToIdentifier, Error = Error> + Clone,
+                FromKind: TryInto<ToKind, Error = Error> + Clone,
+                ToKey: Clone,
+                ToAddress: Clone,
+                ToIdentifier: Clone,
+                ToKind: Clone,
+                PayloadStructure<ToKey,ToAddress,ToIdentifier,ToKind>: ConvertFrom<PayloadStructure<FromKey,FromAddress,FromIdentifier,FromKind>>,
+                PayloadStructureAndValidation<ToKey,ToAddress,ToIdentifier,ToKind>: ConvertFrom<PayloadStructureAndValidation<FromKey,FromAddress,FromIdentifier,FromKind>>,
+                Call<ToAddress>: From<Call<FromAddress>>,
+                Option<ToAddress> :From<Option<FromAddress>>
+
+        {
+            fn convert_from(
+                a: PayloadStructureAndValidation<FromKey, FromAddress, FromIdentifier, FromKind>,
+            ) -> Result<Self, Error>
+                where
+                    Self: Sized,
+            {
+                Ok(Self {
+                    structure: ConvertFrom::convert_from(a.structure)?,
+                    format: a.format,
+                    validator: ConvertFrom::convert_from(a.validator)?
+                })
+            }
+        }
+
+        impl<
+            FromKey,
+            FromAddress,
+            FromIdentifier,
+            FromKind,
+            ToKey,
+            ToAddress,
+            ToIdentifier,
+            ToKind,
+        > ConvertFrom<PayloadStructure<FromKey, FromAddress, FromIdentifier, FromKind>>
+        for PayloadStructure<ToKey, ToAddress, ToIdentifier, ToKind>
+            where
+                FromKey: TryInto<ToKey, Error = Error> + Clone,
+                FromAddress: TryInto<ToAddress, Error = Error> + Clone,
+                FromIdentifier: TryInto<ToIdentifier, Error = Error> + Clone,
+                FromKind: TryInto<ToKind, Error = Error> + Clone,
+                ToKey: Clone,
+                ToAddress: Clone,
+                ToIdentifier: Clone,
+                ToKind: Clone,
+                PayloadStructure<ToKey,ToAddress,ToIdentifier,ToKind>: ConvertFrom<PayloadStructure<FromKey,FromAddress,FromIdentifier,FromKind>>,
+        {
+            fn convert_from(
+                a: PayloadStructure<FromKey, FromAddress, FromIdentifier, FromKind>,
+            ) -> Result<Self, Error>
+                where
+                    Self: Sized,
+            {
+                let rtn = match a {
+                    PayloadStructure::Empty => {
+                        PayloadStructure::Empty
+                    }
+                    PayloadStructure::Primitive(primitive) => {
+                        PayloadStructure::Primitive(primitive)
+                    }
+                    PayloadStructure::List(list) => {
+                        PayloadStructure::List(list)
+                    }
+                    PayloadStructure::Map(map) => {
+                        PayloadStructure::Map(Box::new(ConvertFrom::convert_from(*map)?))
+                    }
+                };
+
+                Ok(rtn)
+            }
+        }
+
+
+        impl<KEY,ADDRESS,IDENTIFIER,KIND> ValuePattern<Payload<KEY,ADDRESS,IDENTIFIER,KIND>> for  PayloadStructureAndValidation<KEY,ADDRESS,IDENTIFIER,KIND> {
+            fn is_match(&self, payload: &Payload<KEY, ADDRESS, IDENTIFIER, KIND>) -> Result<(), Error> {
+                self.structure.is_match(&payload)?;
+
+                // more validation to come...
+                Ok(())
+            }
+        }
+        #[derive(Clone)]
+        pub struct CallWithConfig<ADDRESS> {
+            pub call: Call<ADDRESS>,
+            pub config: Option<ADDRESS>
+        }
+
+
+        impl <FromAddress,ToAddress> ConvertFrom<Option<CallWithConfig<FromAddress>>> for Option<CallWithConfig<ToAddress>>
+            where FromAddress: TryInto<ToAddress,Error=Error>, Call<ToAddress>: From<Call<FromAddress>>, Option<ToAddress>: From<Option<FromAddress>>
+        {
+            fn convert_from(a: Option<CallWithConfig<FromAddress>>) -> Result<Self, crate::version::v0_0_1::error::Error> where Self: Sized {
+                let rtn = match a{
+                    None => None,
+                    Some(some) => {
+                        Option::Some(ConvertFrom::convert_from(some)?)
+                    }
+                };
+
+                Ok(rtn)
+            }
+        }
+
+        impl <FromAddress,ToAddress> ConvertFrom<CallWithConfig<FromAddress>> for CallWithConfig<ToAddress>
+          where FromAddress: TryInto<ToAddress,Error=Error>, Call<ToAddress>: From<Call<FromAddress>>
+        {
+            fn convert_from(a: CallWithConfig<FromAddress>) -> Result<Self, crate::version::v0_0_1::error::Error> where Self: Sized {
+                let config = match a.config {
+                    None => None,
+                    Some(from) => {
+                        Some(from.try_into()?)
+                    }
+                };
+                Ok(Self {
+                    call: a.call.try_into()?,
+                    config: config
+                })
+            }
+        }
+
+        #[derive(Debug,Clone,Eq,PartialEq)]
+        pub struct Call<ADDRESS> {
+            pub address: ADDRESS,
+            pub kind: CallKind
+        }
+
+        #[derive(Debug,Clone,Eq,PartialEq)]
+        pub enum CallKind{
+            Rc(RcCommand),
+            Msg(String),
+            Http
+        }
+
+        #[derive(Debug,Clone,Eq,PartialEq,strum_macros::Display,strum_macros::EnumString)]
+        pub enum RcCommand{
+            Create,
+            Select
+        }
+
+
+        impl ToString for CallKind {
+            fn to_string(&self) -> String {
+                match self {
+                    CallKind::Rc(command) => {
+                        format!("Rc<{}>",command.to_string())
+                    }
+                    CallKind::Msg(port) => {
+                        format!("Msg<{}>",port.clone())
+                    }
+                    CallKind::Http => "Http".to_string()
+                }
+            }
+        }
+
+
+        #[derive(Clone,strum_macros::Display,strum_macros::EnumString)]
+        pub enum PayloadFormat {
+            #[strum(serialize = "json")]
+            Json,
+            #[strum(serialize = "image")]
+            Image
+        }
+
+
+        /*
+        impl <KEY,ADDRESS,IDENTIFIER,KIND> ValuePattern<Payload<KEY,ADDRESS,IDENTIFIER,KIND>> for PayloadStructureAndValidation<KEY,ADDRESS,IDENTIFIER,KIND>
+            where KEY: Clone, ADDRESS: Clone, IDENTIFIER: Clone, KIND: Clone,
+                  Payload<KEY,ADDRESS,IDENTIFIER,KIND> : Clone,
+                  PayloadStructureAndValidation<KEY,ADDRESS,IDENTIFIER,KIND>: Clone
+        {
+
+        }
+
+         */
+
+
         impl PrimitiveType {
             pub fn is_match<KEY, ADDRESS, IDENTIFIER, KIND>( &self, primitive: &generic::payload::Primitive<KEY, ADDRESS, IDENTIFIER, KIND>) -> Result<(),Error>
                 where KEY: Clone, ADDRESS: Clone, IDENTIFIER: Clone, KIND: Clone
@@ -1351,71 +1664,63 @@ pub mod generic {
                 }
             }
         }
-       impl <KEY,ADDRESS,IDENTIFIER,KIND> ValuePattern<Payload<KEY,ADDRESS,IDENTIFIER,KIND>> for PayloadType
-           where KEY: Clone, ADDRESS: Clone, IDENTIFIER: Clone, KIND: Clone
-       {
-            fn is_match(&self, payload: &Payload<KEY,ADDRESS,IDENTIFIER,KIND>) -> Result<(), Error> {
-                match self {
-                    PayloadType::Empty => {
-                        if let Payload::Empty = payload {
-                            Ok(())
-                        } else {
-                            Err(format!("Payload expected: Empty found: '{}'", payload.to_string()).into() )
-                        }
-                    }
-                    PayloadType::Primitive(primitive) => {
-                        if let Payload::Primitive(found)= payload {
-                            primitive.is_match(found)
-                        } else {
-                            Err(format!("Payload expected: '{}' found: '{}'", primitive.to_string(), payload.to_string()).into() )
-                        }
-                    }
-                    PayloadType::List(list_primitive) => {
-                        if let Payload::List(found)= payload {
-                            if *list_primitive == found.primitive_type {
-                                Ok(())
-                            } else {
-                                Err(format!("Payload list primitive does not match expected: '{}' found: '{}'", list_primitive.to_string(), found.to_string()).into() )
-                            }
-                        } else {
-                            Err(format!("Payload expected: '{}' found: '{}'", list_primitive.to_string(), payload.to_string()).into() )
-                        }
-                    }
-                    PayloadType::Map(map) => {
-                        if let Payload::Map(found)= payload {
-                            map.is_match(found)
-                        } else {
-                            Err(format!("Payload expected: '{}' found: '{}'", map.to_string(), payload.to_string()).into() )
-                        }
-                    }
-                }
 
-            }
+        #[derive(Clone)]
+        pub struct MapConstraints<KEY,ADDRESS,IDENTIFIER,KIND> {
+            key_phantom: PhantomData<KEY>,
+            address_phantom: PhantomData<ADDRESS>,
+            identifier_phantom: PhantomData<IDENTIFIER>,
+            kind_phantom: PhantomData<KIND>,
+            pub required: HashMap<String, ValueConstraint<PayloadStructureAndValidation<KEY,ADDRESS,IDENTIFIER,KIND>>>,
+            pub allowed: ValueConstraint<PayloadStructureAndValidation<KEY,ADDRESS,IDENTIFIER,KIND>>
         }
 
-
-        #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
-        pub struct MapConstraints<V> {
-            pub required: HashMap<String, ValueConstraint<V>>,
-            pub allowed: ValueConstraint<V>
-        }
-
-        impl <V> ToString for MapConstraints<V> {
+        impl <KEY,ADDRESS,IDENTIFIER,KIND> ToString for MapConstraints<KEY,ADDRESS,IDENTIFIER,KIND> {
             fn to_string(&self) -> String {
-                "Map".to_string()
+                "Map?".to_string()
             }
         }
 
-        impl <V> MapConstraints<V> {
+        impl <KEY,ADDRESS,IDENTIFIER,KIND> MapConstraints<KEY,ADDRESS,IDENTIFIER,KIND> {
+            pub fn new( required: HashMap<String, ValueConstraint<PayloadStructureAndValidation<KEY,ADDRESS,IDENTIFIER,KIND>>>, allowed: ValueConstraint<PayloadStructureAndValidation<KEY,ADDRESS,IDENTIFIER,KIND>>) -> Self {
+                MapConstraints{
+                    key_phantom: Default::default(),
+                    address_phantom: Default::default(),
+                    identifier_phantom: Default::default(),
+                    kind_phantom: Default::default(),
+                    required,
+                    allowed
+                }
+            }
+        }
+
+
+
+        impl <KEY,ADDRESS,IDENTIFIER,KIND> MapConstraints<KEY,ADDRESS,IDENTIFIER,KIND> {
             pub fn empty() -> Self {
                 Self {
+                    key_phantom: Default::default(),
+                    address_phantom: Default::default(),
+                    identifier_phantom: Default::default(),
+                    kind_phantom: Default::default(),
                     required: HashMap::new(),
                     allowed: ValueConstraint::None
                 }
             }
 
-            pub fn is_match<KEY,ADDRESS,IDENTIFIER,KIND>( &self, map:&PayloadMap<KEY,ADDRESS,IDENTIFIER,KIND> ) -> Result<(),Error>
-                where KEY: Clone, ADDRESS: Clone, IDENTIFIER: Clone, KIND: Clone, V: ValuePattern<Payload<KEY,ADDRESS,IDENTIFIER,KIND>>
+            pub fn any() -> Self {
+                Self {
+                    key_phantom: Default::default(),
+                    address_phantom: Default::default(),
+                    identifier_phantom: Default::default(),
+                    kind_phantom: Default::default(),
+                    required: HashMap::new(),
+                    allowed: ValueConstraint::Any
+                }
+            }
+
+
+            pub fn is_match( &self, map:&PayloadMap<KEY,ADDRESS,IDENTIFIER,KIND> ) -> Result<(),Error>
             {
 
                 // if Any keys are allowed then skip
@@ -1423,9 +1728,9 @@ pub mod generic {
                         if !self.required.contains_key(key)
                         {
                             match &self.allowed {
-                                ValueConstraint::Any => {}
+                                ValueConstraint::Any => { }
                                 ValueConstraint::None => {
-                                    return Err(format!("key: '{}' not required or allowed by Map constraints", key).into())
+                                    return Err(format!("key: '{}' not required or allowed by Map constraints", key).into());
                                 }
                                 ValueConstraint::Pattern(pattern) => {
                                     pattern.is_match(payload)?;
@@ -1434,7 +1739,7 @@ pub mod generic {
                         }
                     }
 
-                // now make sure all required are preset and meet constraints
+                // now make sure all required are present and meet constraints
                 for (key,constraint) in &self.required
                 {
                     if !map.contains_key(key) {
@@ -1444,6 +1749,116 @@ pub mod generic {
                 }
 
                 Ok(())
+            }
+        }
+        impl<
+            FromKey,
+            FromAddress,
+            FromIdentifier,
+            FromKind,
+            ToKey,
+            ToAddress,
+            ToIdentifier,
+            ToKind,
+        > ConvertFrom<MapConstraints<FromKey, FromAddress, FromIdentifier, FromKind>>
+        for MapConstraints<ToKey, ToAddress, ToIdentifier, ToKind>
+            where
+                FromKey: TryInto<ToKey, Error = Error> + Clone,
+                FromAddress: TryInto<ToAddress, Error = Error> + Clone,
+                FromIdentifier: TryInto<ToIdentifier, Error = Error> + Clone,
+                FromKind: TryInto<ToKind, Error = Error> + Clone,
+                ToKey: Clone,
+                ToAddress: Clone,
+                ToIdentifier: Clone,
+                ToKind: Clone,
+        {
+            fn convert_from(
+                a: MapConstraints<FromKey, FromAddress, FromIdentifier, FromKind>,
+            ) -> Result<Self, Error>
+                where
+                    Self: Sized,
+            {
+                Ok(Self::new( ConvertFrom::convert_from(a.required)?, ConvertFrom::convert_from(a.allowed)? ))
+            }
+        }
+
+
+        impl<
+            FromKey,
+            FromAddress,
+            FromIdentifier,
+            FromKind,
+            ToKey,
+            ToAddress,
+            ToIdentifier,
+            ToKind,
+        > ConvertFrom<ValueConstraint<PayloadStructureAndValidation<FromKey,FromAddress,FromIdentifier,FromKind>>>
+        for ValueConstraint<PayloadStructureAndValidation<ToKey,ToAddress,ToIdentifier,ToKind>>
+            where
+                FromKey: TryInto<ToKey, Error = Error> + Clone,
+                FromAddress: TryInto<ToAddress, Error = Error> + Clone,
+                FromIdentifier: TryInto<ToIdentifier, Error = Error> + Clone,
+                FromKind: TryInto<ToKind, Error = Error> + Clone,
+                ToKey: Clone,
+                ToAddress: Clone,
+                ToIdentifier: Clone,
+                ToKind: Clone,
+        {
+            fn convert_from(
+                a: ValueConstraint<PayloadStructureAndValidation<FromKey,FromAddress,FromIdentifier,FromKind>>
+            ) -> Result<Self, Error>
+                where Self: Sized,
+            {
+                let rtn = match a {
+                    ValueConstraint::Any => {
+                        ValueConstraint::Any
+                    }
+                    ValueConstraint::None => {
+                        ValueConstraint::None
+                    }
+                    ValueConstraint::Pattern(pattern) => {
+//                        ValueConstraint::None
+                        unimplemented!()
+
+                    }
+                };
+                Ok(rtn)
+            }
+        }
+
+
+        impl<
+            FromKey,
+            FromAddress,
+            FromIdentifier,
+            FromKind,
+            ToKey,
+            ToAddress,
+            ToIdentifier,
+            ToKind,
+        > ConvertFrom<HashMap<String,ValueConstraint<PayloadStructureAndValidation<FromKey,FromAddress,FromIdentifier,FromKind>>>>
+        for HashMap<String,ValueConstraint<PayloadStructureAndValidation<ToKey,ToAddress,ToIdentifier,ToKind>>>
+            where
+                FromKey: TryInto<ToKey, Error = Error> + Clone,
+                FromAddress: TryInto<ToAddress, Error = Error> + Clone,
+                FromIdentifier: TryInto<ToIdentifier, Error = Error> + Clone,
+                FromKind: TryInto<ToKind, Error = Error> + Clone,
+                ToKey: Clone,
+                ToAddress: Clone,
+                ToIdentifier: Clone,
+                ToKind: Clone,
+        {
+            fn convert_from(
+                a: HashMap<String,ValueConstraint<PayloadStructureAndValidation<FromKey,FromAddress,FromIdentifier,FromKind>>>
+            ) -> Result<Self, Error>
+                where
+                    Self: Sized,
+            {
+                let mut rtn = HashMap::new();
+                for (k,v) in a {
+                    rtn.insert( k, ConvertFrom::convert_from(v)?);
+                }
+                Ok(rtn)
             }
         }
 
@@ -1511,7 +1926,7 @@ pub mod generic {
 
          */
 
-        pub trait ValuePattern<X> : Clone {
+        pub trait ValuePattern<X>  {
            fn is_match(&self, x: &X) -> Result<(),Error>;
         }
 
@@ -1577,7 +1992,6 @@ pub mod generic {
 
         #[derive(Debug, Clone, Serialize, Deserialize, strum_macros::Display )]
         pub enum Payload<KEY, ADDRESS, IDENTIFIER, KIND>
-            where KEY: Clone, ADDRESS: Clone, IDENTIFIER: Clone, KIND: Clone
         {
             Empty,
             Primitive(Primitive<KEY, ADDRESS, IDENTIFIER, KIND>),
@@ -1586,7 +2000,6 @@ pub mod generic {
         }
 
         impl<KEY, ADDRESS, IDENTIFIER, KIND> Payload<KEY, ADDRESS, IDENTIFIER, KIND>
-            where KEY: Clone, ADDRESS: Clone, IDENTIFIER: Clone, KIND: Clone
         {
             pub fn payload_type(&self) -> PayloadType {
                 match self {
@@ -1594,49 +2007,53 @@ pub mod generic {
                         PayloadType::Empty
                     }
                     Payload::Primitive(primitive) => {
-                       PayloadType::Primitive(primitive.primitive_type())
+                       PayloadType::Primitive
                     }
                     Payload::List(list) => {
-                        PayloadType::List(list.primitive_type.clone())
+                        PayloadType::List
                     }
                     Payload::Map(map) => {
-                       PayloadType::Map(Box::new(map.constraints.clone() ))
+                       PayloadType::Map
                     }
                 }
             }
         }
 
         #[derive(Debug, Clone, Serialize, Deserialize)]
-        pub struct PayloadMap<KEY, ADDRESS, IDENTIFIER, KIND>
-            where KEY: Clone, ADDRESS: Clone, IDENTIFIER: Clone, KIND: Clone
+        pub struct PayloadMap<KEY,ADDRESS,IDENTIFIER,KIND>
         {
-            pub constraints: MapConstraints<PayloadType>,
-            pub map: HashMap<String,Payload<KEY, ADDRESS, IDENTIFIER, KIND>>
+            pub map: HashMap<String,Payload<KEY,ADDRESS,IDENTIFIER,KIND>>
         }
 
-        impl <KEY, ADDRESS, IDENTIFIER, KIND> PayloadMap<KEY, ADDRESS, IDENTIFIER, KIND>
-            where KEY: Clone, ADDRESS: Clone, IDENTIFIER: Clone, KIND: Clone
+        impl <KEY,ADDRESS,IDENTIFIER,KIND> PayloadMap<KEY,ADDRESS,IDENTIFIER,KIND>
         {
-            pub fn new(constraints: MapConstraints<PayloadType> ) -> Self {
+            /*
+            pub fn new(constraints: MapConstraints<KEY,ADDRESS,IDENTIFIER,KIND> ) -> Self {
                 Self{
-                    constraints,
+            //        constraints,
+                    map: HashMap::new()
+                }
+            }
+
+             */
+
+            pub fn new() -> Self {
+                Self{
                     map: HashMap::new()
                 }
             }
         }
 
-        impl <KEY, ADDRESS, IDENTIFIER, KIND>Deref for PayloadMap<KEY, ADDRESS, IDENTIFIER, KIND>
-            where KEY: Clone, ADDRESS: Clone, IDENTIFIER: Clone, KIND: Clone
+        impl <KEY,ADDRESS,IDENTIFIER,KIND> Deref for PayloadMap<KEY,ADDRESS,IDENTIFIER,KIND>
         {
-            type Target = HashMap<String,Payload<KEY, ADDRESS, IDENTIFIER, KIND>>;
+            type Target = HashMap<String,Payload<KEY,ADDRESS,IDENTIFIER,KIND>>;
 
             fn deref(&self) -> &Self::Target {
                 &self.map
             }
         }
 
-        impl <KEY, ADDRESS, IDENTIFIER, KIND>DerefMut for PayloadMap<KEY, ADDRESS, IDENTIFIER, KIND>
-            where KEY: Clone, ADDRESS: Clone, IDENTIFIER: Clone, KIND: Clone
+        impl <KEY,ADDRESS,IDENTIFIER,KIND> DerefMut for PayloadMap<KEY,ADDRESS,IDENTIFIER,KIND>
         {
             fn deref_mut(&mut self) -> &mut Self::Target {
                 &mut self.map
@@ -1682,7 +2099,8 @@ pub mod generic {
                         Ok(Payload::List(rtn))
                     }
                     Payload::Map(map) => {
-                        let mut rtn = PayloadMap::new(map.constraints);
+                        //let mut rtn: PayloadMap<ToKey,ToAddress,ToIdentifier,ToKind> = PayloadMap::new(ConvertFrom::convert_from(map.constraints )? );
+                        let mut rtn: PayloadMap<ToKey,ToAddress,ToIdentifier,ToKind> = PayloadMap::new();
 
                         for (key, payload) in map.map {
                             rtn.insert(key, ConvertFrom::convert_from(payload)?);
@@ -1696,7 +2114,6 @@ pub mod generic {
 
         #[derive(Debug, Clone, Serialize, Deserialize)]
         pub enum Primitive<KEY, ADDRESS, IDENTIFIER, KIND>
-            where KEY: Clone, ADDRESS: Clone, IDENTIFIER: Clone, KIND: Clone
         {
             Text(String),
             Key(KEY),
@@ -1712,7 +2129,6 @@ pub mod generic {
         }
 
         impl <KEY,ADDRESS,IDENTIFIER,KIND> Primitive<KEY,ADDRESS,IDENTIFIER,KIND>
-            where KEY: Clone, ADDRESS: Clone, IDENTIFIER: Clone, KIND: Clone
         {
 
            pub fn primitive_type(&self) -> PrimitiveType  {
@@ -1757,7 +2173,6 @@ pub mod generic {
 
         #[derive(Debug, Clone, Serialize, Deserialize)]
         pub struct PrimitiveList<KEY,ADDRESS,IDENTIFIER,KIND>
-            where KEY: Clone, ADDRESS: Clone, IDENTIFIER: Clone, KIND: Clone
         {
            pub primitive_type: PrimitiveType,
            pub list: Vec<Primitive<KEY,ADDRESS,IDENTIFIER,KIND>>
@@ -1864,10 +2279,8 @@ pub mod util {
         fn convert(self) -> Result<A, Error>;
     }
 
-    pub trait ConvertFrom<A> {
-        fn convert_from(a: A) -> Result<Self, Error>
-        where
-            Self: Sized;
+    pub trait ConvertFrom<A> where Self:Sized {
+        fn convert_from(a: A) -> Result<Self, Error>;
     }
 
     /*
