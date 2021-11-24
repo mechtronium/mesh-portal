@@ -1,4 +1,4 @@
-use crate::parse::{Res, skewer, PipelineStop, address, call};
+use crate::parse::{Res, skewer, PipelineStop, call};
 use crate::Msg;
 use crate::pattern::{PatternBlock, Block, pipeline_block};
 use nom::sequence::{terminated, delimited, tuple};
@@ -217,6 +217,7 @@ pub mod test {
     use anyhow::Error;
     use crate::bind::{consume_pipeline_step, consume_pipeline_stop, consume_pipeline, Pipeline, PipelineStep, PipelineSegment, StepKind, consume_port, bind};
     use crate::parse::PipelineStop;
+    use mesh_portal_serde::version::latest::payload::Call;
     use std::str::FromStr;
     use crate::pattern::PatternBlock;
 

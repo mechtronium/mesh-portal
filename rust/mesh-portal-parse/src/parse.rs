@@ -22,11 +22,13 @@ use mesh_portal_serde::version::latest::util::ValueConstraint;
 use mesh_portal_serde::version::latest::util::ValuePattern;
 use mesh_portal_serde::version::latest::payload::{CallWithConfig, RcCommand};
 use mesh_portal_serde::version::latest::payload::{CallKind, Call};
-use mesh_portal_serde::version::latest::payload::{PayloadFormat, PayloadStructureAndValidation};
+use mesh_portal_serde::version::latest::payload::{PayloadFormat, PayloadConstraints};
 use mesh_portal_serde::version::v0_0_1::parse::address;
 use mesh_portal_serde::version::latest::id::Address;
 use mesh_portal_serde::version::latest::payload::MapConstraints;
 use mesh_portal_serde::version::v0_0_1::generic::id::Identifier;
+use std::iter::Map;
+use std::collections::HashMap;
 
 pub type Res<I,O>=IResult<I,O, VerboseError<I>>;
 
@@ -344,21 +346,16 @@ fn payload_type_list(input: &str ) -> Res<&str, PayloadTypeDef> {
     } )
 }
 
-fn payload_type_map(input: &str ) -> Res<&str, PayloadType> {
-    tuple((tag("Map"),opt(delimited(tag("{"),value_constrained_map_constraints, tag("}")))))(input).map( |(next,(_,c))| {
-        let cons = match c {
-            None => ValueConstraint::Any,
-            Some(c) => c
-        };
-
-        (next,PayloadTypeDef::Map(cons))
+fn payload_type_map(input: &str ) -> Res<&str, PayloadTypeDef> {
+    tag("Map")(input).map( |(next,_)| {
+        (next,PayloadTypeDef::Map)
     } )
 }
 
 
 
 /// use nom_supreme::{parse_from_str, parser_ext::ParserExt};
-pub fn payload_type(input: &str ) -> Res<&str, PayloadTypeDef> {
+pub fn payload_type_def(input: &str ) -> Res<&str, PayloadTypeDef> {
     alt((payload_type_list, payload_type_primitive, payload_type_empty))(input)
 }
 
@@ -368,8 +365,9 @@ pub enum PayloadTypeDef {
     Empty,
     Primitive(PrimitiveType),
     List(PrimitiveType),
-    Map(ValueConstraint<MapConstraints>),
+    Map,
 }
+
 
 /// use nom_supreme::{parse_from_str, parser_ext::ParserExt};
 pub fn payload_format(input: &str ) -> Res<&str, PayloadFormat> {
@@ -395,17 +393,6 @@ pub fn payload_validation(input: &str ) -> Res<&str, PayloadValidation> {
 }
 
 
-
-
-pub fn payload_type_def(input: &str ) -> Res<&str, PayloadTypeDef> {
-    tuple( (payload_type, opt( payload_validation )))(input).map( |(next, (kind, validation)) | {
-
-        (next, PayloadTypeDef {
-            kind,
-            validation
-        })
-    })
-}
 
 pub fn tagged_payload_type_def(input: &str ) -> Res<&str, PayloadTypeDef> {
     delimited(tag("<"), payload_type_def, tag(">") )(input)
@@ -436,6 +423,7 @@ pub fn unlabeled_payload_def(input: &str ) -> Res<&str, PayloadDef> {
          })
     } )
 }
+
 
 
 pub fn payload_def(input: &str ) -> Res<&str, PayloadDef> {
@@ -493,45 +481,7 @@ pub fn consume_pipeline_step(input: &str ) -> Res<&str, PayloadAssign> {
     all_consuming(payload_assignment)(input)
 }
 
-/*
-/// use nom_supreme::{parse_from_str, parser_ext::ParserExt};
-pub fn payload_assignment(input: &str ) -> Res<&str, PayloadAssignment> {
-  tuple( (payload_type,opt( tuple( ( preceded(tag("~"), opt(parse_from_str ) ), opt(preceded(tag("~"),address)))))) )(input).map( |(next,(payload_type, validation)) | {
 
-      let validation = match validation {
-          None => {Option::None}
-          Some((format, validator)) => {
-              let format : Option<PayloadFormat> = match format {
-                  None => { Option::None }
-                  Some(format) => {
-                     Option::Some(format)
-                  }
-              };
-
-              let validator: Option<Address> = match validator {
-                  None => { Option::None }
-                  Some(valdator) => {
-                      Option::Some(valdator)
-                  }
-              };
-
-
-              Option::Some( PayloadValidation {
-                 format,
-                  validator
-              });
-          }
-      };
-
-      (next, PayloadAssignment{
-          payload_ident: payload_type,
-          validation
-      } )
-
-  })
-}
-
- */
 
 
 
@@ -630,26 +580,7 @@ impl ToString for PayloadValidationPattern {
 }
 
 
-/*
-pub struct PayloadTypeDef {
-  pub kind: PayloadType,
-  pub validation: Option<PayloadValidation>,
-}
 
-impl ToString for PayloadTypeDef {
-    fn to_string(&self) -> String {
-        match &self.validation {
-            None => {
-                format!("{}",self.kind.to_string() )
-            }
-            Some(validation) => {
-                format!("{}{}",self.kind.to_string(),validation.to_string()  )
-            }
-        }
-    }
-}
-
- */
 
 /*
 /// use nom_supreme::{parse_from_str, parser_ext::ParserExt};

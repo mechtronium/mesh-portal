@@ -74,8 +74,8 @@ pub mod payload {
     pub type CallKind = generic::payload::CallKind;
     pub type CallWithConfig = generic::payload::CallWithConfig<Address>;
     pub type MapConstraints = generic::payload::MapConstraints<Key,Address,Identifier,Kind>;
-    pub type PayloadStructure = generic::payload::PayloadStructure<Key,Address,Identifier,Kind>;
-    pub type PayloadStructureAndValidation = generic::payload::PayloadStructureAndValidation<Key,Address,Identifier,Kind>;
+    pub type PayloadTypeConstraints = generic::payload::PayloadTypeConstraints<Key,Address,Identifier,Kind>;
+    pub type PayloadConstraints = generic::payload::PayloadConstraints<Key,Address,Identifier,Kind>;
     pub type PayloadListConstraints = generic::payload::PayloadListConstraints;
     pub type PayloadMap = generic::payload::PayloadMap<Key,Address,Identifier,Kind>;
     pub type PayloadFormat= generic::payload::PayloadFormat;
@@ -357,8 +357,8 @@ pub mod generic {
         pub type CallWithConfig<ADDRESS> = payload::CallWithConfig<ADDRESS>;
         pub type MapConstraints<KEY, ADDRESS, IDENTIFIER,KIND>= payload::MapConstraints<KEY,ADDRESS,IDENTIFIER,KIND>;
         pub type PayloadListConstraints = payload::PayloadListConstraints;
-        pub type PayloadStructure<KEY, ADDRESS, IDENTIFIER,KIND>= payload::PayloadStructure<KEY, ADDRESS, IDENTIFIER,KIND>;
-        pub type PayloadStructureAndValidation<KEY, ADDRESS, IDENTIFIER,KIND> = payload::PayloadStructureAndValidation<KEY, ADDRESS, IDENTIFIER,KIND>;
+        pub type PayloadTypeConstraints<KEY, ADDRESS, IDENTIFIER,KIND>= payload::PayloadTypeConstraints<KEY, ADDRESS, IDENTIFIER,KIND>;
+        pub type PayloadConstraints<KEY, ADDRESS, IDENTIFIER,KIND> = payload::PayloadConstraints<KEY, ADDRESS, IDENTIFIER,KIND>;
         pub type Range= payload::Range;
         pub type RcCommand = payload::RcCommand;
         pub type PayloadFormat = payload::PayloadFormat;

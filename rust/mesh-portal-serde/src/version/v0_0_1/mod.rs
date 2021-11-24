@@ -200,8 +200,8 @@ pub mod payload {
     pub type Call = generic::payload::Call<Address>;
     pub type CallWithConfig = generic::payload::CallWithConfig<Address>;
     pub type MapConstraints = generic::payload::MapConstraints<Key,Address,Identifier,Kind>;
-    pub type PayloadStructure = generic::payload::PayloadStructure<Key,Address,Identifier,Kind>;
-    pub type PayloadStructureAndValidation = generic::payload::PayloadStructureAndValidation<Key,Address,Identifier,Kind>;
+    pub type PayloadTypeConstraints = generic::payload::PayloadTypeConstraints<Key,Address,Identifier,Kind>;
+    pub type PayloadConstraints = generic::payload::PayloadConstraints<Key,Address,Identifier,Kind>;
     pub type PayloadListConstraints = generic::payload::PayloadListConstraints;
     pub type PayloadMap = generic::payload::PayloadMap<Key,Address,Identifier,Kind>;
     pub type RcCommand = generic::payload::RcCommand;
@@ -433,7 +433,7 @@ pub mod resource {
     use crate::version::v0_0_1::generic;
     use crate::version::v0_0_1::id::{Address, Identifier, Key, Kind, ResourceType};
 
-    #[derive(Debug, Clone, Serialize, Deserialize, strum_macros::Display)]
+    #[derive(Debug, Clone, Serialize, Deserialize, strum_macros::Display, Eq,PartialEq)]
     pub enum Status {
         Unknown,
         Initializing,
@@ -814,7 +814,7 @@ pub mod generic {
         use crate::version::v0_0_1::State;
         use std::convert::{TryFrom, TryInto};
 
-        #[derive(Debug, Clone, Serialize, Deserialize)]
+        #[derive(Debug, Clone, Serialize, Deserialize,Eq,PartialEq)]
         pub struct Archetype<KIND, ADDRESS> {
             pub kind: KIND,
             pub config_src: Option<ADDRESS>,
@@ -861,7 +861,7 @@ pub mod generic {
             }
         }
 
-        #[derive(Debug, Clone, Serialize, Deserialize)]
+        #[derive(Debug, Clone, Serialize, Deserialize,Eq,PartialEq)]
         pub struct ResourceStub<KEY, ADDRESS, KIND> {
             pub key: KEY,
             pub address: ADDRESS,
@@ -904,7 +904,7 @@ pub mod generic {
             }
         }
 
-        #[derive(Debug, Clone, Serialize, Deserialize)]
+        #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
         pub struct Resource<KEY, ADDRESS, IDENTIFIER, KIND>
         {
             pub stub: ResourceStub<KEY, ADDRESS, KIND>,
@@ -1313,7 +1313,7 @@ pub mod generic {
             Map,
         }
 
-        #[derive(Clone)]
+        #[derive(Clone,Eq,PartialEq)]
         pub struct PayloadListConstraints {
             pub primitive: PrimitiveType,
             pub range: Range,
@@ -1338,18 +1338,18 @@ pub mod generic {
             Any
         }
 
-        #[derive(Clone)]
-        pub enum PayloadStructure<KEY,ADDRESS,IDENTIFIER,KIND> {
+        #[derive(Clone,Eq,PartialEq)]
+        pub enum PayloadTypeConstraints<KEY,ADDRESS,IDENTIFIER,KIND> {
             Empty,
             Primitive(PrimitiveType),
             List(PayloadListConstraints),
             Map(Box<MapConstraints<KEY,ADDRESS,IDENTIFIER,KIND>>)
         }
 
-        impl <KEY,ADDRESS,IDENTIFIER,KIND> PayloadStructure<KEY,ADDRESS,IDENTIFIER,KIND> {
+        impl <KEY,ADDRESS,IDENTIFIER,KIND> PayloadTypeConstraints<KEY,ADDRESS,IDENTIFIER,KIND> {
             pub fn is_match( &self, payload: &Payload<KEY,ADDRESS,IDENTIFIER,KIND> ) -> Result<(),Error> {
                 match self {
-                    PayloadStructure::Empty => {
+                    PayloadTypeConstraints::Empty => {
                         if payload.payload_type() == PayloadType::Empty {
                             Ok(())
                         } else {
@@ -1357,7 +1357,7 @@ pub mod generic {
                             Err(format!("Payload expected: Empty found: {}",payload.payload_type().to_string()).into())
                         }
                     }
-                    PayloadStructure::Primitive(expected ) => {
+                    PayloadTypeConstraints::Primitive(expected ) => {
                         if let Payload::Primitive(found) = payload {
                             if *expected == found.primitive_type() {
                                 Ok(())
@@ -1368,14 +1368,14 @@ pub mod generic {
                             Err(format!("Payload expected: {} found: {}", expected.to_string(), payload.payload_type().to_string()).into())
                         }
                     }
-                    PayloadStructure::List(expected) => {
+                    PayloadTypeConstraints::List(expected) => {
                         if let Payload::List(found) = payload {
                             expected.is_match(found )
                         } else {
                             Err(format!("Payload expected: List found: {}", payload.payload_type().to_string()).into())
                         }
                     }
-                    PayloadStructure::Map(expected) => {
+                    PayloadTypeConstraints::Map(expected) => {
                         if let Payload::Map(found) = payload {
                             expected.is_match(found)
                         } else {
@@ -1386,9 +1386,9 @@ pub mod generic {
 
             }
         }
-        #[derive(Clone)]
-        pub struct PayloadStructureAndValidation<KEY,ADDRESS,IDENTIFIER,KIND> {
-            pub structure: PayloadStructure<KEY,ADDRESS,IDENTIFIER,KIND>,
+        #[derive(Clone,Eq,PartialEq)]
+        pub struct PayloadConstraints<KEY,ADDRESS,IDENTIFIER,KIND> {
+            pub structure: PayloadTypeConstraints<KEY,ADDRESS,IDENTIFIER,KIND>,
             pub format: Option<PayloadFormat>,
             pub validator: Option<CallWithConfig<ADDRESS>>,
         }
@@ -1403,8 +1403,8 @@ pub mod generic {
             ToAddress,
             ToIdentifier,
             ToKind,
-        > ConvertFrom<Option<PayloadStructureAndValidation<FromKey, FromAddress, FromIdentifier, FromKind>>>
-        for Option<PayloadStructureAndValidation<ToKey, ToAddress, ToIdentifier, ToKind>>
+        > ConvertFrom<Option<PayloadConstraints<FromKey, FromAddress, FromIdentifier, FromKind>>>
+        for Option<PayloadConstraints<ToKey, ToAddress, ToIdentifier, ToKind>>
             where
                 FromKey: TryInto<ToKey, Error = Error> + Clone,
                 FromAddress: TryInto<ToAddress, Error = Error> + Clone,
@@ -1414,12 +1414,12 @@ pub mod generic {
                 ToAddress: Clone,
                 ToIdentifier: Clone,
                 ToKind: Clone,
-                PayloadStructure<ToKey,ToAddress,ToIdentifier,ToKind>: ConvertFrom<PayloadStructure<FromKey,FromAddress,FromIdentifier,FromKind>>,
-                PayloadStructureAndValidation<ToKey,ToAddress,ToIdentifier,ToKind>: ConvertFrom<PayloadStructureAndValidation<FromKey,FromAddress,FromIdentifier,FromKind>>
+                PayloadTypeConstraints<ToKey,ToAddress,ToIdentifier,ToKind>: ConvertFrom<PayloadTypeConstraints<FromKey,FromAddress,FromIdentifier,FromKind>>,
+                PayloadConstraints<ToKey,ToAddress,ToIdentifier,ToKind>: ConvertFrom<PayloadConstraints<FromKey,FromAddress,FromIdentifier,FromKind>>
 
         {
             fn convert_from(
-                a: Option<PayloadStructureAndValidation<FromKey, FromAddress, FromIdentifier, FromKind>>,
+                a: Option<PayloadConstraints<FromKey, FromAddress, FromIdentifier, FromKind>>,
             ) -> Result<Self, Error>
                 where
                     Self: Sized,
@@ -1443,8 +1443,8 @@ pub mod generic {
             ToAddress,
             ToIdentifier,
             ToKind,
-        > ConvertFrom<PayloadStructureAndValidation<FromKey, FromAddress, FromIdentifier, FromKind>>
-        for PayloadStructureAndValidation<ToKey, ToAddress, ToIdentifier, ToKind>
+        > ConvertFrom<PayloadConstraints<FromKey, FromAddress, FromIdentifier, FromKind>>
+        for PayloadConstraints<ToKey, ToAddress, ToIdentifier, ToKind>
             where
                 FromKey: TryInto<ToKey, Error = Error> + Clone,
                 FromAddress: TryInto<ToAddress, Error = Error> + Clone,
@@ -1459,7 +1459,7 @@ pub mod generic {
 
         {
             fn convert_from(
-                a: PayloadStructureAndValidation<FromKey, FromAddress, FromIdentifier, FromKind>,
+                a: PayloadConstraints<FromKey, FromAddress, FromIdentifier, FromKind>,
             ) -> Result<Self, Error>
                 where
                     Self: Sized,
@@ -1481,8 +1481,8 @@ pub mod generic {
             ToAddress,
             ToIdentifier,
             ToKind,
-        > ConvertFrom<PayloadStructure<FromKey, FromAddress, FromIdentifier, FromKind>>
-        for PayloadStructure<ToKey, ToAddress, ToIdentifier, ToKind>
+        > ConvertFrom<PayloadTypeConstraints<FromKey, FromAddress, FromIdentifier, FromKind>>
+        for PayloadTypeConstraints<ToKey, ToAddress, ToIdentifier, ToKind>
             where
                 FromKey: TryInto<ToKey, Error = Error> + Clone,
                 FromAddress: TryInto<ToAddress, Error = Error> + Clone,
@@ -1497,23 +1497,23 @@ pub mod generic {
 
         {
             fn convert_from(
-                a: PayloadStructure<FromKey, FromAddress, FromIdentifier, FromKind>,
+                a: PayloadTypeConstraints<FromKey, FromAddress, FromIdentifier, FromKind>,
             ) -> Result<Self, Error>
                 where
                     Self: Sized,
             {
                 let rtn = match a {
-                    PayloadStructure::Empty => {
-                        PayloadStructure::Empty
+                    PayloadTypeConstraints::Empty => {
+                        PayloadTypeConstraints::Empty
                     }
-                    PayloadStructure::Primitive(primitive) => {
-                        PayloadStructure::Primitive(primitive)
+                    PayloadTypeConstraints::Primitive(primitive) => {
+                        PayloadTypeConstraints::Primitive(primitive)
                     }
-                    PayloadStructure::List(list) => {
-                        PayloadStructure::List(list)
+                    PayloadTypeConstraints::List(list) => {
+                        PayloadTypeConstraints::List(list)
                     }
-                    PayloadStructure::Map(map) => {
-                        PayloadStructure::Map(Box::new(ConvertFrom::convert_from(*map)?))
+                    PayloadTypeConstraints::Map(map) => {
+                        PayloadTypeConstraints::Map(Box::new(ConvertFrom::convert_from(*map)?))
                     }
                 };
 
@@ -1522,7 +1522,7 @@ pub mod generic {
         }
 
 
-        impl<KEY,ADDRESS,IDENTIFIER,KIND> ValuePattern<Payload<KEY,ADDRESS,IDENTIFIER,KIND>> for  PayloadStructureAndValidation<KEY,ADDRESS,IDENTIFIER,KIND> {
+        impl<KEY,ADDRESS,IDENTIFIER,KIND> ValuePattern<Payload<KEY,ADDRESS,IDENTIFIER,KIND>> for  PayloadConstraints<KEY,ADDRESS,IDENTIFIER,KIND> {
             fn is_match(&self, payload: &Payload<KEY, ADDRESS, IDENTIFIER, KIND>) -> Result<(), Error> {
                 self.structure.is_match(&payload)?;
 
@@ -1530,7 +1530,7 @@ pub mod generic {
                 Ok(())
             }
         }
-        #[derive(Clone)]
+        #[derive(Clone,Eq,PartialEq)]
         pub struct CallWithConfig<ADDRESS> {
             pub call: Call<ADDRESS>,
             pub config: Option<ADDRESS>
@@ -1604,25 +1604,13 @@ pub mod generic {
         }
 
 
-        #[derive(Clone,strum_macros::Display,strum_macros::EnumString)]
+        #[derive(Clone,Eq,PartialEq,strum_macros::Display,strum_macros::EnumString)]
         pub enum PayloadFormat {
             #[strum(serialize = "json")]
             Json,
             #[strum(serialize = "image")]
             Image
         }
-
-
-        /*
-        impl <KEY,ADDRESS,IDENTIFIER,KIND> ValuePattern<Payload<KEY,ADDRESS,IDENTIFIER,KIND>> for PayloadStructureAndValidation<KEY,ADDRESS,IDENTIFIER,KIND>
-            where KEY: Clone, ADDRESS: Clone, IDENTIFIER: Clone, KIND: Clone,
-                  Payload<KEY,ADDRESS,IDENTIFIER,KIND> : Clone,
-                  PayloadStructureAndValidation<KEY,ADDRESS,IDENTIFIER,KIND>: Clone
-        {
-
-        }
-
-         */
 
 
         impl PrimitiveType {
@@ -1711,14 +1699,14 @@ pub mod generic {
             }
         }
 
-        #[derive(Clone)]
+        #[derive(Clone,Eq,PartialEq)]
         pub struct MapConstraints<KEY,ADDRESS,IDENTIFIER,KIND> {
             key_phantom: PhantomData<KEY>,
             address_phantom: PhantomData<ADDRESS>,
             identifier_phantom: PhantomData<IDENTIFIER>,
             kind_phantom: PhantomData<KIND>,
-            pub required: HashMap<String, ValueConstraint<PayloadStructureAndValidation<KEY,ADDRESS,IDENTIFIER,KIND>>>,
-            pub allowed: ValueConstraint<PayloadStructureAndValidation<KEY,ADDRESS,IDENTIFIER,KIND>>
+            pub required: HashMap<String, ValueConstraint<PayloadConstraints<KEY,ADDRESS,IDENTIFIER,KIND>>>,
+            pub allowed: ValueConstraint<PayloadConstraints<KEY,ADDRESS,IDENTIFIER,KIND>>
         }
 
         impl <KEY,ADDRESS,IDENTIFIER,KIND> ToString for MapConstraints<KEY,ADDRESS,IDENTIFIER,KIND> {
@@ -1728,7 +1716,7 @@ pub mod generic {
         }
 
         impl <KEY,ADDRESS,IDENTIFIER,KIND> MapConstraints<KEY,ADDRESS,IDENTIFIER,KIND> {
-            pub fn new( required: HashMap<String, ValueConstraint<PayloadStructureAndValidation<KEY,ADDRESS,IDENTIFIER,KIND>>>, allowed: ValueConstraint<PayloadStructureAndValidation<KEY,ADDRESS,IDENTIFIER,KIND>>) -> Self {
+            pub fn new(required: HashMap<String, ValueConstraint<PayloadConstraints<KEY,ADDRESS,IDENTIFIER,KIND>>>, allowed: ValueConstraint<PayloadConstraints<KEY,ADDRESS,IDENTIFIER,KIND>>) -> Self {
                 MapConstraints{
                     key_phantom: Default::default(),
                     address_phantom: Default::default(),
@@ -1846,8 +1834,8 @@ pub mod generic {
             ToAddress,
             ToIdentifier,
             ToKind,
-        > ConvertFrom<ValueConstraint<PayloadStructureAndValidation<FromKey,FromAddress,FromIdentifier,FromKind>>>
-        for ValueConstraint<PayloadStructureAndValidation<ToKey,ToAddress,ToIdentifier,ToKind>>
+        > ConvertFrom<ValueConstraint<PayloadConstraints<FromKey,FromAddress,FromIdentifier,FromKind>>>
+        for ValueConstraint<PayloadConstraints<ToKey,ToAddress,ToIdentifier,ToKind>>
             where
                 FromKey: TryInto<ToKey, Error = Error> + Clone,
                 FromAddress: TryInto<ToAddress, Error = Error> + Clone,
@@ -1861,7 +1849,7 @@ pub mod generic {
                 Option<ToAddress> : TryFrom<Option<FromAddress>,Error=Error>,
         {
             fn convert_from(
-                a: ValueConstraint<PayloadStructureAndValidation<FromKey,FromAddress,FromIdentifier,FromKind>>
+                a: ValueConstraint<PayloadConstraints<FromKey,FromAddress,FromIdentifier,FromKind>>
             ) -> Result<Self, Error>
                 where Self: Sized,
             {
@@ -1892,8 +1880,8 @@ pub mod generic {
             ToAddress,
             ToIdentifier,
             ToKind,
-        > ConvertFrom<HashMap<String,ValueConstraint<PayloadStructureAndValidation<FromKey,FromAddress,FromIdentifier,FromKind>>>>
-        for HashMap<String,ValueConstraint<PayloadStructureAndValidation<ToKey,ToAddress,ToIdentifier,ToKind>>>
+        > ConvertFrom<HashMap<String,ValueConstraint<PayloadConstraints<FromKey,FromAddress,FromIdentifier,FromKind>>>>
+        for HashMap<String,ValueConstraint<PayloadConstraints<ToKey,ToAddress,ToIdentifier,ToKind>>>
             where
                 FromKey: TryInto<ToKey, Error = Error> + Clone,
                 FromAddress: TryInto<ToAddress, Error = Error> + Clone,
@@ -1907,7 +1895,7 @@ pub mod generic {
                 Option<ToAddress> : TryFrom<Option<FromAddress>,Error=Error>,
         {
             fn convert_from(
-                a: HashMap<String,ValueConstraint<PayloadStructureAndValidation<FromKey,FromAddress,FromIdentifier,FromKind>>>
+                a: HashMap<String,ValueConstraint<PayloadConstraints<FromKey,FromAddress,FromIdentifier,FromKind>>>
             ) -> Result<Self, Error>
                 where
                     Self: Sized,
@@ -2021,7 +2009,7 @@ pub mod generic {
         }
          */
 
-        #[derive(Debug, Clone, Serialize, Deserialize, strum_macros::Display )]
+        #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, strum_macros::Display )]
         pub enum Payload<KEY, ADDRESS, IDENTIFIER, KIND>
         {
             Empty,
@@ -2050,7 +2038,7 @@ pub mod generic {
             }
         }
 
-        #[derive(Debug, Clone, Serialize, Deserialize)]
+        #[derive(Debug, Clone, Serialize, Deserialize,Eq,PartialEq)]
         pub struct PayloadMap<KEY,ADDRESS,IDENTIFIER,KIND>
         {
             pub map: HashMap<String,Payload<KEY,ADDRESS,IDENTIFIER,KIND>>
@@ -2143,7 +2131,7 @@ pub mod generic {
             }
         }
 
-        #[derive(Debug, Clone, Serialize, Deserialize)]
+        #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
         pub enum Primitive<KEY, ADDRESS, IDENTIFIER, KIND>
         {
             Text(String),
@@ -2202,7 +2190,7 @@ pub mod generic {
 
         }
 
-        #[derive(Debug, Clone, Serialize, Deserialize)]
+        #[derive(Debug, Clone, Serialize, Deserialize,Eq,PartialEq)]
         pub struct PrimitiveList<KEY,ADDRESS,IDENTIFIER,KIND>
         {
            pub primitive_type: PrimitiveType,

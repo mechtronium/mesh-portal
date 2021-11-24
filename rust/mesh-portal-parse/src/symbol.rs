@@ -2,7 +2,7 @@ use std::str::FromStr;
 use anyhow::Error;
 use std::collections::HashMap;
 use std::string::ParseError;
-use crate::parse::{parse_address_segments, MyError, consume_address_segments, RcCommand, consume_call};
+use crate::parse::{parse_address_segments, MyError, consume_address_segments, consume_call};
 
 pub enum RootSelector {
     Bind
