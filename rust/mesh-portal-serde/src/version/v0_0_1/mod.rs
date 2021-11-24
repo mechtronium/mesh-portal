@@ -1408,10 +1408,8 @@ pub mod generic {
                 ToAddress: Clone,
                 ToIdentifier: Clone,
                 ToKind: Clone,
-                PayloadStructure<ToKey,ToAddress,ToIdentifier,ToKind>: ConvertFrom<PayloadStructure<FromKey,FromAddress,FromIdentifier,FromKind>>,
-                PayloadStructureAndValidation<ToKey,ToAddress,ToIdentifier,ToKind>: ConvertFrom<PayloadStructureAndValidation<FromKey,FromAddress,FromIdentifier,FromKind>>,
-                Call<ToAddress>: From<Call<FromAddress>>,
-                Option<ToAddress> :From<Option<FromAddress>>
+                Call<ToAddress>: TryFrom<Call<FromAddress>,Error=Error>,
+                Option<ToAddress>: TryFrom<Option<FromAddress>,Error=Error>
 
         {
             fn convert_from(
@@ -1448,7 +1446,9 @@ pub mod generic {
                 ToAddress: Clone,
                 ToIdentifier: Clone,
                 ToKind: Clone,
-                PayloadStructure<ToKey,ToAddress,ToIdentifier,ToKind>: ConvertFrom<PayloadStructure<FromKey,FromAddress,FromIdentifier,FromKind>>,
+                Call<ToAddress> : TryFrom<Call<FromAddress>,Error=Error>,
+                Option<ToAddress> : TryFrom<Option<FromAddress>,Error=Error>,
+
         {
             fn convert_from(
                 a: PayloadStructure<FromKey, FromAddress, FromIdentifier, FromKind>,
@@ -1492,7 +1492,7 @@ pub mod generic {
 
 
         impl <FromAddress,ToAddress> ConvertFrom<Option<CallWithConfig<FromAddress>>> for Option<CallWithConfig<ToAddress>>
-            where FromAddress: TryInto<ToAddress,Error=Error>, Call<ToAddress>: From<Call<FromAddress>>, Option<ToAddress>: From<Option<FromAddress>>
+            where FromAddress: TryInto<ToAddress,Error=Error>, Call<ToAddress>: TryFrom<Call<FromAddress>,Error=Error>, Option<ToAddress>: TryFrom<Option<FromAddress>>
         {
             fn convert_from(a: Option<CallWithConfig<FromAddress>>) -> Result<Self, crate::version::v0_0_1::error::Error> where Self: Sized {
                 let rtn = match a{
@@ -1507,7 +1507,7 @@ pub mod generic {
         }
 
         impl <FromAddress,ToAddress> ConvertFrom<CallWithConfig<FromAddress>> for CallWithConfig<ToAddress>
-          where FromAddress: TryInto<ToAddress,Error=Error>, Call<ToAddress>: From<Call<FromAddress>>
+          where FromAddress: TryInto<ToAddress,Error=Error>, Call<ToAddress>: TryFrom<Call<FromAddress>,Error=Error>
         {
             fn convert_from(a: CallWithConfig<FromAddress>) -> Result<Self, crate::version::v0_0_1::error::Error> where Self: Sized {
                 let config = match a.config {
@@ -1771,6 +1771,8 @@ pub mod generic {
                 ToAddress: Clone,
                 ToIdentifier: Clone,
                 ToKind: Clone,
+                Call<ToAddress> : TryFrom<Call<FromAddress>,Error=Error>,
+                Option<ToAddress> : TryFrom<Option<FromAddress>,Error=Error>,
         {
             fn convert_from(
                 a: MapConstraints<FromKey, FromAddress, FromIdentifier, FromKind>,
@@ -1778,7 +1780,13 @@ pub mod generic {
                 where
                     Self: Sized,
             {
-                Ok(Self::new( ConvertFrom::convert_from(a.required)?, ConvertFrom::convert_from(a.allowed)? ))
+
+                    let mut required = HashMap::new();
+                    for (k,v) in a.required {
+                        required.insert( k, ConvertFrom::convert_from(v)?);
+                    }
+
+                    Ok(MapConstraints::new( required, ConvertFrom::convert_from(a.allowed)?))
             }
         }
 
@@ -1803,26 +1811,28 @@ pub mod generic {
                 ToAddress: Clone,
                 ToIdentifier: Clone,
                 ToKind: Clone,
+                Call<ToAddress> : TryFrom<Call<FromAddress>,Error=Error>,
+                Option<ToAddress> : TryFrom<Option<FromAddress>,Error=Error>,
         {
             fn convert_from(
                 a: ValueConstraint<PayloadStructureAndValidation<FromKey,FromAddress,FromIdentifier,FromKind>>
             ) -> Result<Self, Error>
                 where Self: Sized,
             {
-                let rtn = match a {
-                    ValueConstraint::Any => {
-                        ValueConstraint::Any
-                    }
-                    ValueConstraint::None => {
-                        ValueConstraint::None
-                    }
-                    ValueConstraint::Pattern(pattern) => {
-//                        ValueConstraint::None
-                        unimplemented!()
 
-                    }
-                };
-                Ok(rtn)
+
+                    Ok(match a {
+                        ValueConstraint::Any => {
+                            ValueConstraint::Any
+                        }
+                        ValueConstraint::None => {
+                            ValueConstraint::None
+                        }
+                        ValueConstraint::Pattern(pattern) => {
+                            ValueConstraint::Pattern(ConvertFrom::convert_from(pattern)?)
+                        }
+                    })
+
             }
         }
 
@@ -1847,6 +1857,8 @@ pub mod generic {
                 ToAddress: Clone,
                 ToIdentifier: Clone,
                 ToKind: Clone,
+                Call<ToAddress> : TryFrom<Call<FromAddress>,Error=Error>,
+                Option<ToAddress> : TryFrom<Option<FromAddress>,Error=Error>,
         {
             fn convert_from(
                 a: HashMap<String,ValueConstraint<PayloadStructureAndValidation<FromKey,FromAddress,FromIdentifier,FromKind>>>

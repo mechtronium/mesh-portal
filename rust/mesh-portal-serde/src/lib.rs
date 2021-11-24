@@ -5,7 +5,9 @@ extern crate lazy_static;
 #[macro_use]
 extern crate strum_macros;
 
-#[recursion_limit="128"]
+#[macro_use]
+extern crate tailcall;
+
 
 use std::collections::HashMap;
 use std::sync::Arc;

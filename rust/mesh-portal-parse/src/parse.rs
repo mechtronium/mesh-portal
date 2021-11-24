@@ -14,12 +14,12 @@ use nom::sequence::{delimited, tuple, preceded, terminated};
 use nom_supreme::{parse_from_str, ParserExt};
 
 use crate::{parse, Bind, Request, Rc, Msg, Http};
-use crate::symbol::{RootSelector, Address, Call, CallWithConfig, CallKind};
+use crate::symbol::{RootSelector, Address };
 use mesh_portal_serde::version::latest::payload::PayloadType;
 use mesh_portal_serde::version::latest::payload::Payload;
-use crate::pattern::{KeyConstraint, PayloadStructureAndValidation, primitive, map_constraints};
+use crate::pattern::{KeyConstraint,  primitive, map_constraints};
 use mesh_portal_serde::version::latest::generic::payload::ValueConstraint;
-use mesh_portal_serde::version::v0_0_1::generic::payload::ValuePattern;
+use mesh_portal_serde::version::v0_0_1::generic::payload::{ValuePattern, CallWithConfig, RcCommand};
 
 pub type Res<I,O>=IResult<I,O, VerboseError<I>>;
 
@@ -285,7 +285,7 @@ pub fn rc_command(input: &str) -> Res<&str, RcCommand> {
     parse_from_str(alpha1).parse(input)
 }
 
-pub fn rc_call_kind(input: &str) -> Res<&str, CallKind> {
+pub fn rc_call_kind(input: &str) -> Res<&str, CallKnd> {
      delimited( tag("Rc<"), rc_command, tag(">"))(input).map( |(next,rc_command)| {
          (next,CallKind::Rc(rc_command))
      })
