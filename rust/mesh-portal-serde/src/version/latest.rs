@@ -70,7 +70,18 @@ pub mod payload {
     pub type PrimitiveType= payload::PrimitiveType;
     pub type PayloadRef = payload::PayloadRef;
     pub type PayloadDelivery = generic::payload::PayloadDelivery<Payload,PayloadRef>;
-    pub type ValueConstraint<V> = generic::payload::ValueConstraint<V>;
+    pub type Call = generic::payload::Call<Address>;
+    pub type CallKind = generic::payload::CallKind;
+    pub type CallWithConfig = generic::payload::CallWithConfig<Address>;
+    pub type MapConstraints = generic::payload::MapConstraints<Key,Address,Identifier,Kind>;
+    pub type PayloadStructure = generic::payload::PayloadStructure<Key,Address,Identifier,Kind>;
+    pub type PayloadStructureAndValidation = generic::payload::PayloadStructureAndValidation<Key,Address,Identifier,Kind>;
+    pub type PayloadListConstraints = generic::payload::PayloadListConstraints;
+    pub type PayloadMap = generic::payload::PayloadMap<Key,Address,Identifier,Kind>;
+    pub type PayloadFormat= generic::payload::PayloadFormat;
+    pub type Range = generic::payload::Range;
+    pub type RcCommand = payload::RcCommand;
+
 }
 
 pub mod command {
@@ -338,10 +349,19 @@ pub mod generic {
         use crate::version::v0_0_1::generic::payload;
 
         pub type Payload<KEY, ADDRESS, IDENTIFIER,KIND> = payload::Payload<KEY,ADDRESS,IDENTIFIER,KIND>;
+        pub type PayloadMap<KEY, ADDRESS, IDENTIFIER,KIND> = payload::PayloadMap<KEY,ADDRESS,IDENTIFIER,KIND>;
         pub type Primitive<KEY, ADDRESS, IDENTIFIER,KIND> = payload::Primitive<KEY,ADDRESS,IDENTIFIER,KIND>;
         pub type PayloadDelivery<PAYLOAD,PAYLOAD_REF> = payload::PayloadDelivery<PAYLOAD,PAYLOAD_REF>;
-        pub type MapConstraints<KEY, ADDRESS, IDENTIFIER,KIND> = payload::MapConstraints<KEY, ADDRESS, IDENTIFIER,KIND>;
-        pub type ValueConstraint<V> = payload::ValueConstraint<V>;
+        pub type Call<ADDRESS> = payload::Call<ADDRESS>;
+        pub type CallKind = payload::CallKind;
+        pub type CallWithConfig<ADDRESS> = payload::CallWithConfig<ADDRESS>;
+        pub type MapConstraints<KEY, ADDRESS, IDENTIFIER,KIND>= payload::MapConstraints<KEY,ADDRESS,IDENTIFIER,KIND>;
+        pub type PayloadListConstraints = payload::PayloadListConstraints;
+        pub type PayloadStructure<KEY, ADDRESS, IDENTIFIER,KIND>= payload::PayloadStructure<KEY, ADDRESS, IDENTIFIER,KIND>;
+        pub type PayloadStructureAndValidation<KEY, ADDRESS, IDENTIFIER,KIND> = payload::PayloadStructureAndValidation<KEY, ADDRESS, IDENTIFIER,KIND>;
+        pub type Range= payload::Range;
+        pub type RcCommand = payload::RcCommand;
+        pub type PayloadFormat = payload::PayloadFormat;
     }
 
 }
@@ -384,10 +404,18 @@ pub mod fail {
     pub type Fail=crate::version::v0_0_1::fail::Fail;
 }
 
+pub mod util {
+    use crate::version::v0_0_1::util;
+
+    pub type ValueConstraint<V> = util::ValueConstraint<V>;
+    pub type ValuePattern<V> = dyn util::ValuePattern<V>;
+}
+
 pub mod error {
     pub type Error=crate::version::v0_0_1::error::Error;
 
 }
+
 
 
 

@@ -27,56 +27,9 @@ impl FromStr for RootSelector {
 
 
 
-impl FromStr for Call {
-    type Err = MyError;
 
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        Ok(consume_call(s)?.1)
-    }
-}
 
-impl ToString for Call {
-    fn to_string(&self) -> String {
-       format!("{}^{}", self.address.to_string(), self.kind.to_string())
-    }
-}
 
-#[derive(Debug,Clone,Eq,PartialEq,Hash)]
-pub struct Address {
-    segments: Vec<String>
-}
 
-impl Address {
-    pub fn parent(&self) -> Option<Address> {
-        if self.segments.is_empty() {
-            return Option::None;
-        }
-        let mut segments = self.segments.clone();
-        segments.remove( segments.len() );
-        Option::Some( Self {
-            segments
-        })
-    }
-}
 
-impl FromStr for Address {
-    type Err = MyError;
 
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let (_,segments) = consume_address_segments(s)?;
-        Ok(Self{ segments })
-    }
-}
-
-impl ToString for Address {
-    fn to_string(&self) -> String {
-        let mut rtn = String::new();
-        for (i, segment) in self.segments.iter().enumerate() {
-            rtn.push_str( segment.as_str() );
-            if i != self.segments.len()-1 {
-                rtn.push_str(":");
-            }
-        }
-        rtn.to_string()
-    }
-}

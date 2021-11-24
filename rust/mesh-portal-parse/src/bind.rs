@@ -217,7 +217,6 @@ pub mod test {
     use anyhow::Error;
     use crate::bind::{consume_pipeline_step, consume_pipeline_stop, consume_pipeline, Pipeline, PipelineStep, PipelineSegment, StepKind, consume_port, bind};
     use crate::parse::PipelineStop;
-    use crate::symbol::{Address, Call};
     use std::str::FromStr;
     use crate::pattern::PatternBlock;
 

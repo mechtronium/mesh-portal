@@ -22,9 +22,10 @@ pub mod id {
     use serde::{Deserialize, Serialize};
 
     use crate::version::v0_0_1::generic;
+    use crate::version::latest::error::Error;
+    use crate::version::v0_0_1::parse::{address, consume_address};
 
     pub type Key = String;
-    pub type Address = String;
     pub type ResourceType = String;
     pub type Kind = String;
     pub type Specific = String;
@@ -37,6 +38,43 @@ pub mod id {
     pub type PayloadPattern = String;
     pub type PayloadClaim = String;
 
+
+    #[derive(Debug,Clone,Serialize,Deserialize,Eq,PartialEq,Hash)]
+    pub struct Address {
+        pub segments: Vec<String>
+    }
+
+    impl FromStr for Address {
+        type Err = Error;
+
+        fn from_str(s: &str) -> Result<Self, Self::Err> {
+            Ok(consume_address(s)?.1)
+        }
+    }
+    impl ToString for Address {
+        fn to_string(&self) -> String {
+            let mut rtn = String::new();
+            for (i, segment) in self.segments.iter().enumerate() {
+                rtn.push_str( segment.as_str() );
+                if i != self.segments.len()-1 {
+                    rtn.push_str(":");
+                }
+            }
+            rtn.to_string()
+        }
+    }
+    impl Address {
+        pub fn parent(&self) -> Option<Address> {
+            if self.segments.is_empty() {
+                return Option::None;
+            }
+            let mut segments = self.segments.clone();
+            segments.remove( segments.len() );
+            Option::Some( Self {
+                segments
+            })
+        }
+    }
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub enum IdentifierKind {
         Key,
@@ -159,6 +197,14 @@ pub mod payload {
     pub type PayloadType = generic::payload::PayloadType;
     pub type PayloadRef = generic::payload::PayloadRef<PayloadClaim, PayloadPattern>;
     pub type PayloadDelivery = generic::payload::PayloadDelivery<Payload, PayloadRef>;
+    pub type Call = generic::payload::Call<Address>;
+    pub type CallWithConfig = generic::payload::CallWithConfig<Address>;
+    pub type MapConstraints = generic::payload::MapConstraints<Key,Address,Identifier,Kind>;
+    pub type PayloadStructure = generic::payload::PayloadStructure<Key,Address,Identifier,Kind>;
+    pub type PayloadStructureAndValidation = generic::payload::PayloadStructureAndValidation<Key,Address,Identifier,Kind>;
+    pub type PayloadListConstraints = generic::payload::PayloadListConstraints;
+    pub type PayloadMap = generic::payload::PayloadMap<Key,Address,Identifier,Kind>;
+    pub type RcCommand = generic::payload::RcCommand;
 
     #[derive(
         Debug,
@@ -1251,7 +1297,7 @@ pub mod generic {
         use crate::version::v0_0_1::generic::resource::{Resource, ResourceStub};
         use crate::version::v0_0_1::payload::PrimitiveType;
         use crate::version::v0_0_1::resource::Status;
-        use crate::version::v0_0_1::util::{Convert, ConvertFrom};
+        use crate::version::v0_0_1::util::{Convert, ConvertFrom, ValuePattern, ValueConstraint};
         use crate::version::v0_0_1::{http, State};
         use std::convert::{TryFrom, TryInto};
         use std::ops::{Deref, DerefMut};
@@ -1340,13 +1386,13 @@ pub mod generic {
 
             }
         }
-
         #[derive(Clone)]
         pub struct PayloadStructureAndValidation<KEY,ADDRESS,IDENTIFIER,KIND> {
             pub structure: PayloadStructure<KEY,ADDRESS,IDENTIFIER,KIND>,
             pub format: Option<PayloadFormat>,
             pub validator: Option<CallWithConfig<ADDRESS>>,
         }
+
 
         impl<
             FromKey,
@@ -1875,30 +1921,6 @@ pub mod generic {
         }
 
 
-        #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
-        pub enum ValueConstraint<T> {
-            Any,
-            None,
-            Pattern(T)
-        }
-
-        impl <T> ValueConstraint<T> {
-            pub fn is_match<X>( &self, x: &X ) -> Result<(),Error>
-            where T: ValuePattern<X>
-            {
-                match self {
-                    ValueConstraint::Any => {
-                        Ok(())
-                    }
-                    ValueConstraint::Pattern(exact) => {
-                        exact.is_match(x)
-                    }
-                    ValueConstraint::None => {
-                        Err("None pattern".into())
-                    }
-                }
-            }
-        }
 
         /*
         impl <KEY,ADDRESS,IDENTIFIER,KIND> ValuePattern<Payload<KEY,ADDRESS,IDENTIFIER,KIND>> for PayloadType<KEY,ADDRESS,IDENTIFIER,KIND> {
@@ -1938,9 +1960,6 @@ pub mod generic {
 
          */
 
-        pub trait ValuePattern<X>  {
-           fn is_match(&self, x: &X) -> Result<(),Error>;
-        }
 
         #[derive(Debug, Clone, Serialize, Deserialize)]
         pub struct PayloadRef<PAYLOAD_CLAIM, PAYLOAD_PATTERN> {
@@ -2285,7 +2304,37 @@ pub mod generic {
 pub mod util {
 
     use crate::version::v0_0_1::error::Error;
+    use serde::{Serialize,Deserialize};
     use uuid::Uuid;
+
+    #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
+    pub enum ValueConstraint<T> {
+        Any,
+        None,
+        Pattern(T)
+    }
+
+    impl <T> ValueConstraint<T> {
+        pub fn is_match<X>( &self, x: &X ) -> Result<(),Error>
+            where T: ValuePattern<X>
+        {
+            match self {
+                ValueConstraint::Any => {
+                    Ok(())
+                }
+                ValueConstraint::Pattern(exact) => {
+                    exact.is_match(x)
+                }
+                ValueConstraint::None => {
+                    Err("None pattern".into())
+                }
+            }
+        }
+    }
+
+    pub trait ValuePattern<X>  {
+        fn is_match(&self, x: &X) -> Result<(),Error>;
+    }
 
     pub trait Convert<A> {
         fn convert(self) -> Result<A, Error>;
@@ -2460,6 +2509,8 @@ pub mod error {
     use std::convert::Infallible;
     use std::fmt::{Display, Formatter};
     use std::string::FromUtf8Error;
+    use nom::error::VerboseError;
+    use nom::Err;
 
     #[derive(Debug)]
     pub struct Error {
@@ -2511,4 +2562,57 @@ pub mod error {
             }
         }
     }
+
+    impl From<nom::Err<VerboseError<&str>>> for Error {
+        fn from(error: Err<VerboseError<&str>>) -> Self {
+            Self {
+                message: error.to_string()
+            }
+        }
+    }
+}
+
+pub mod parse {
+    use nom::combinator::{recognize, all_consuming};
+    use nom::multi::separated_list1;
+    use nom::{InputTakeAtPosition, AsChar, IResult};
+    use nom::error::{ErrorKind, VerboseError};
+    use crate::version::v0_0_1::id::Address;
+
+    pub type Res<I,O>=IResult<I,O, VerboseError<I>>;
+
+    fn any_resource_path_segment<T>(i: T) -> Res<T, T>
+        where
+            T: InputTakeAtPosition,
+            <T as InputTakeAtPosition>::Item: AsChar,
+    {
+        i.split_at_position1_complete(
+            |item| {
+                let char_item = item.as_char();
+                !(char_item == '-')
+                    && !(char_item == '.')
+                    && !(char_item == '/')
+                    && !(char_item == '_')
+                    && !(char_item.is_alpha() || char_item.is_dec_digit())
+            },
+            ErrorKind::AlphaNumeric,
+        )
+    }
+
+
+    pub fn address(input: &str) -> Res<&str, Address> {
+        separated_list1(
+            nom::character::complete::char(':'),
+            any_resource_path_segment
+        )(input).map( |(next,segments)| {
+            let segments = segments.iter().map( |s| s.to_string() ).collect();
+            let address = Address{ segments };
+            (next,address)
+        })
+    }
+
+    pub fn consume_address(input: &str) -> Res<&str,Address> {
+        all_consuming(address)(input)
+    }
+
 }

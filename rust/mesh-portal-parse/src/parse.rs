@@ -14,12 +14,19 @@ use nom::sequence::{delimited, tuple, preceded, terminated};
 use nom_supreme::{parse_from_str, ParserExt};
 
 use crate::{parse, Bind, Request, Rc, Msg, Http};
-use crate::symbol::{RootSelector, Address };
-use mesh_portal_serde::version::latest::payload::PayloadType;
+use crate::symbol::{RootSelector };
+use mesh_portal_serde::version::latest::payload::{PayloadType, PrimitiveType};
 use mesh_portal_serde::version::latest::payload::Payload;
-use crate::pattern::{KeyConstraint,  primitive, map_constraints};
-use mesh_portal_serde::version::latest::generic::payload::ValueConstraint;
-use mesh_portal_serde::version::v0_0_1::generic::payload::{ValuePattern, CallWithConfig, RcCommand};
+use crate::pattern::{primitive, map_constraints, value_constrained_map_constraints};
+use mesh_portal_serde::version::latest::util::ValueConstraint;
+use mesh_portal_serde::version::latest::util::ValuePattern;
+use mesh_portal_serde::version::latest::payload::{CallWithConfig, RcCommand};
+use mesh_portal_serde::version::latest::payload::{CallKind, Call};
+use mesh_portal_serde::version::latest::payload::{PayloadFormat, PayloadStructureAndValidation};
+use mesh_portal_serde::version::v0_0_1::parse::address;
+use mesh_portal_serde::version::latest::id::Address;
+use mesh_portal_serde::version::latest::payload::MapConstraints;
+use mesh_portal_serde::version::v0_0_1::generic::id::Identifier;
 
 pub type Res<I,O>=IResult<I,O, VerboseError<I>>;
 
@@ -261,9 +268,6 @@ pub fn mechtron_path(input: &str) -> Res<&str, &str> {
     ))(input)
 }
 
-pub fn address(input: &str) -> Res<&str, Address> {
-   parse_from_str( address_path ).parse(input)
-}
 
 pub fn mechtron_address(input: &str) -> Res<&str, Address> {
     parse_from_str( mechtron_path ).parse(input)
@@ -285,7 +289,7 @@ pub fn rc_command(input: &str) -> Res<&str, RcCommand> {
     parse_from_str(alpha1).parse(input)
 }
 
-pub fn rc_call_kind(input: &str) -> Res<&str, CallKnd> {
+pub fn rc_call_kind(input: &str) -> Res<&str, CallKind> {
      delimited( tag("Rc<"), rc_command, tag(">"))(input).map( |(next,rc_command)| {
          (next,CallKind::Rc(rc_command))
      })
@@ -322,42 +326,49 @@ pub fn consume_call(input: &str) -> Res<&str, Call> {
     all_consuming( call )(input)
 }
 
-fn payload_type_empty(input: &str ) -> Res<&str, PayloadType> {
+fn payload_type_empty(input: &str ) -> Res<&str, PayloadTypeDef> {
     alt((tag("Empty"), multispace0 )) (input).map( |(next,(_,_))| {
-        (next,PayloadType::Empty)
+        (next,PayloadTypeDef::Empty)
     } )
 }
 
-fn payload_type_primitive(input: &str ) -> Res<&str, PayloadType> {
+fn payload_type_primitive(input: &str ) -> Res<&str, PayloadTypeDef> {
     primitive(input).map( |(next,primitive)| {
-        (next,PayloadType::Primitive(primitive))
+        (next,PayloadTypeDef::Primitive(primitive))
     } )
 }
 
-fn payload_type_list(input: &str ) -> Res<&str, PayloadType> {
+fn payload_type_list(input: &str ) -> Res<&str, PayloadTypeDef> {
     tuple((primitive,tag("[]")))(input).map( |(next,(primitive,_))| {
-        (next,PayloadType::List(primitive))
+        (next,PayloadTypeDef::List(primitive))
     } )
 }
 
 fn payload_type_map(input: &str ) -> Res<&str, PayloadType> {
-    tuple((tag("Map"),opt(delimited(tag("{"),map_constraints, tag("}")))))(input).map( |(next,(_,c))| {
-        (next,PayloadType::Map(primitive))
+    tuple((tag("Map"),opt(delimited(tag("{"),value_constrained_map_constraints, tag("}")))))(input).map( |(next,(_,c))| {
+        let cons = match c {
+            None => ValueConstraint::Any,
+            Some(c) => c
+        };
+
+        (next,PayloadTypeDef::Map(cons))
     } )
 }
 
 
-/// use nom_supreme::{parse_from_str, parser_ext::ParserExt};
-pub fn payload_type(input: &str ) -> Res<&str, PayloadType> {
-    alt( (payload_type_list,payload_type_primitive,payload_type_empty))(input)
 
-/*    , strum_macros::Display
+/// use nom_supreme::{parse_from_str, parser_ext::ParserExt};
+pub fn payload_type(input: &str ) -> Res<&str, PayloadTypeDef> {
+    alt((payload_type_list, payload_type_primitive, payload_type_empty))(input)
+}
+
+
+
+pub enum PayloadTypeDef {
     Empty,
     Primitive(PrimitiveType),
     List(PrimitiveType),
-    Map(Box<MapConstraints<PAYLOAD,PayloadType<PAYLOAD>>>),
-
- */
+    Map(ValueConstraint<MapConstraints>),
 }
 
 /// use nom_supreme::{parse_from_str, parser_ext::ParserExt};
@@ -385,7 +396,7 @@ pub fn payload_validation(input: &str ) -> Res<&str, PayloadValidation> {
 
 
 
-/// use nom_supreme::{parse_from_str, parser_ext::ParserExt};
+
 pub fn payload_type_def(input: &str ) -> Res<&str, PayloadTypeDef> {
     tuple( (payload_type, opt( payload_validation )))(input).map( |(next, (kind, validation)) | {
 
@@ -425,6 +436,7 @@ pub fn unlabeled_payload_def(input: &str ) -> Res<&str, PayloadDef> {
          })
     } )
 }
+
 
 pub fn payload_def(input: &str ) -> Res<&str, PayloadDef> {
     alt( (labeled_payload_def,unlabeled_payload_def) )(input)
@@ -521,13 +533,6 @@ pub fn payload_assignment(input: &str ) -> Res<&str, PayloadAssignment> {
 
  */
 
-#[derive(strum_macros::Display,strum_macros::EnumString)]
-pub enum PayloadFormat {
-    #[strum(serialize = "json")]
-    Json,
-    #[strum(serialize = "image")]
-    Image
-}
 
 
 
@@ -625,6 +630,7 @@ impl ToString for PayloadValidationPattern {
 }
 
 
+/*
 pub struct PayloadTypeDef {
   pub kind: PayloadType,
   pub validation: Option<PayloadValidation>,
@@ -642,6 +648,8 @@ impl ToString for PayloadTypeDef {
         }
     }
 }
+
+ */
 
 /*
 /// use nom_supreme::{parse_from_str, parser_ext::ParserExt};
@@ -719,25 +727,5 @@ pub enum PipelineStop {
    Call(Call),
    Return
 }
-
-
-#[derive(Clone)]
-pub struct RequiredMapEntryConstraint {
-    pub key: String,
-    pub payload: ValueConstraint<PayloadStructureAndValidation>
-}
-
-impl ValuePattern<(&String,&Payload)> for RequiredMapEntryConstraint {
-
-    fn is_match(&self, x: &(&String, &Payload)) -> Result<(), mesh_portal_serde::version::latest::error::Error> {
-        let (key,payload ) = *x;
-        if self.key != *key {
-
-        }
-        self.payload.is_match(payload)?;
-        Ok(())
-    }
-}
-
 
 
