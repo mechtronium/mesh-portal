@@ -403,6 +403,13 @@ pub mod config {
 
 pub mod entity {
 
+    #[derive(Debug, Clone)]
+    pub enum EntityType {
+        Rc,
+        Msg,
+        Http
+    }
+
     pub mod request {
         use crate::version::v0_0_1::bin::Bin;
         use crate::version::v0_0_1::generic;
@@ -656,6 +663,7 @@ pub mod generic {
                 Msg(Msg<PAYLOAD>),
                 Http(Http<PAYLOAD>),
             }
+
 
             impl<FromPayload, ToPayload> ConvertFrom<ReqEntity<FromPayload>> for ReqEntity<ToPayload>
             where

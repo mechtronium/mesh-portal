@@ -119,6 +119,9 @@ pub mod config {
 
 pub mod entity {
 
+    use crate::version::v0_0_1::entity;
+    pub type EntityType= entity::EntityType;
+
     pub mod request {
         use crate::version::v0_0_1::generic;
         use crate::version::latest::id::{Address, Key, Kind, ResourceType};

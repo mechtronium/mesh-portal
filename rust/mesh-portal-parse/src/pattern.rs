@@ -548,6 +548,20 @@ pub fn msg_action (input: &str) -> Res<&str,ValuePattern<StringMatcher>>{
   value_pattern( input, camel_case_to_string)
 }
 
+pub fn msg_pattern_scoped( input: &str ) -> Res<&str,MsgPattern> {
+    tuple( ( msg_action, opt(path_regex) ))(input).map( |(next,(action,path_regex))| {
+        let path_regex = match path_regex {
+            None => {"*".to_string()}
+            Some(path_regex) => {path_regex.to_string() }
+        };
+        let rtn = MsgPattern{
+            action,
+            path_regex: path_regex.to_string()
+        };
+        (next,rtn)
+    })
+}
+
 pub fn msg_pattern( input: &str ) -> Res<&str,MsgPattern> {
     tuple((tag("Msg"), delimited(tag("<"), msg_action, tag(">") ), opt(path_regex)))(input).map( |(next,(_,action,path_regex))| {
         let path_regex = match path_regex {
@@ -570,6 +584,20 @@ pub fn http_method_pattern( input: &str ) -> Res<&str,ValuePattern<HttpMethod>> 
     value_pattern(input, http_method )
 }
 
+pub fn http_pattern_scoped( input: &str ) -> Res<&str,HttpPattern> {
+    tuple((http_method_pattern, opt(path_regex)))(input).map( |(next,(method,path_regex))| {
+        let path_regex = match path_regex {
+            None => {"*".to_string()}
+            Some(path_regex) => {path_regex.to_string() }
+        };
+        let rtn = HttpPattern{
+            method,
+            path_regex: path_regex.to_string()
+        };
+        (next,rtn)
+    } )
+}
+
 pub fn http_pattern( input: &str ) -> Res<&str,HttpPattern> {
     tuple((tag("Http"), delimited(tag("<"), http_method_pattern, tag(">") ), opt(path_regex)))(input).map( |(next,(_,method,path_regex))| {
         let path_regex = match path_regex {
@@ -588,13 +616,19 @@ pub fn rc_command( input: &str ) -> Res<&str,RcCommand> {
     parse_from_str(alpha1).parse(input)
 }
 
-pub fn rc_command_pattern( input: &str ) -> Res<&str,ValuePattern<RcCommand>> {
-    value_pattern(input, rc_command )
-}
-pub fn rc_pattern( input: &str ) -> Res<&str,RcPattern> {
-    tuple((tag("Rc"), delimited(tag("<"), rc_command_pattern, tag(">") )))(input).map( |(next,(_,command))| {
 
-        (next,RcPattern{ command })
+
+pub fn rc_pattern_scoped(input: &str ) -> Res<&str,RcPattern> {
+    value_pattern(input, rc_command).map( |(next,command)| {
+        (next, RcPattern{ command } )
+    })
+}
+
+
+pub fn rc_pattern( input: &str ) -> Res<&str,RcPattern> {
+    tuple((tag("Rc"), delimited(tag("<"), rc_pattern_scoped, tag(">") )))(input).map( |(next,(_,pattern))| {
+
+        (next,pattern)
     } )
 }
 
@@ -727,13 +761,13 @@ pub fn upload_pattern_block(input: &str ) -> Res<&str,Block> {
 }
 
 pub fn request_pattern_block(input: &str ) -> Res<&str,Block> {
- delimited( tag("-["), tuple((multispace0,alt((pattern_block_empty,pattern_block_any,pattern_block_def)),multispace0)), tag("]") )(input).map( |(next,(_,block,_))| {
+ delimited( tag("-["), tuple((multispace0,alt((pattern_block_any,pattern_block_def,pattern_block_empty)),multispace0)), tag("]") )(input).map( |(next,(_,block,_))| {
      (next,Block::RequestPattern(block))
  })
 }
 
 pub fn response_pattern_block(input: &str ) -> Res<&str,Block> {
-    delimited( tag("=["), tuple((multispace0,alt((pattern_block_empty,pattern_block_any,pattern_block_def)),multispace0)), tag("]") )(input).map( |(next,(_,block,_))| {
+    delimited( tag("=["), tuple((multispace0,alt((pattern_block_any,pattern_block_def,pattern_block_empty)),multispace0)), tag("]") )(input).map( |(next,(_,block,_))| {
         (next,Block::ResponsePattern(block))
     })
 }
