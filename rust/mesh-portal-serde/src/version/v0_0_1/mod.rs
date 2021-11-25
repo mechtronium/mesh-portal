@@ -2499,7 +2499,7 @@ pub mod util {
     }
 
 
-    pub trait ValueMatcher<X>  {
+    pub trait ValueMatcher<X> {
         fn is_match(&self, x: &X) -> Result<(),Error>;
     }
 
@@ -2534,6 +2534,7 @@ pub mod util {
 
 
 
+    #[derive(Debug,Eq,PartialEq)]
     pub struct StringMatcher {
         pub pattern: String
     }

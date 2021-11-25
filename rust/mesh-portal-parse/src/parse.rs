@@ -5,7 +5,7 @@ use anyhow::Error;
 use nom::{AsChar, InputTakeAtPosition, IResult, Needed, InputTake, Compare, InputLength};
 use nom::{Err, Parser};
 use nom::branch::alt;
-use nom::bytes::complete::{tag, take_until, take_till, escaped, is_not,take};
+use nom::bytes::complete::{tag, take_until, take_till, escaped, is_not, take, is_a};
 use nom::character::complete::{alpha0, alpha1, digit0, digit1, multispace0, multispace1, anychar, alphanumeric1, alphanumeric0};
 use nom::combinator::{all_consuming, opt, recognize, not};
 use nom::error::{context, ErrorKind, ParseError, VerboseError, VerboseErrorKind, FromExternalError};
@@ -45,7 +45,11 @@ pub fn upper<T, E: nom::error::ParseError<T>>(input: T) -> IResult<T, T, E>
         T: InputTakeAtPosition,
         <T as InputTakeAtPosition>::Item: AsChar,
 {
-    input.split_at_position_complete(|item| !item.as_char().is_uppercase() )
+    input.split_at_position_complete(|item| { let char_item = item.as_char();
+
+        !char_item.is_uppercase()
+
+         } )
 }
 
 fn any_resource_path_segment<T>(i: T) -> Res<T, T>
@@ -136,13 +140,14 @@ pub fn not_space(input: &str)->Res<&str,&str> {
 }
 
 pub fn path(input: &str ) -> Res<&str,&str> {
-    recognize(tuple((tag("/"), filepath_chars)) )(input)
+    recognize(tuple((tag("/"), opt(filepath_chars))) )(input)
 }
 pub fn path_regex(input: &str ) -> Res<&str,&str> {
-    recognize(tuple((tag("/"), not_space)) )(input)
+    recognize(tuple((tag("/"), opt(not_space))) )(input)
 }
 pub fn camel_case( input: &str ) -> Res<&str,&str> {
-    recognize(tuple((upper, alphanumeric0)) )(input)
+    recognize(tuple((is_a("ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"), alpha0)) )(input)
+    //recognize(alpha1)(input)
 }
 
 pub fn camel_case_to_string( input: &str ) -> Res<&str,StringMatcher> {
@@ -323,13 +328,17 @@ pub fn rc_call_kind(input: &str) -> Res<&str, CallKind> {
 }
 
 pub fn msg_call(input: &str) -> Res<&str, CallKind> {
-    tuple( (delimited( tag("Msg<"), alphanumeric1, tag(">") ),recognize(path)))(input).map( |(next,(action,path))| {
+    tuple( (delimited( tag("Msg<"), alphanumeric1, tag(">") ),opt(recognize(path))))(input).map( |(next,(action,path))| {
+        let path = match path{
+            None => "/",
+            Some(path) => path
+        };
         (next,CallKind::Msg(MsgCall::new(action.to_string(), path.to_string())))
     })
 }
 
 pub fn http_call(input: &str) -> Res<&str, CallKind> {
-    tuple( (delimited( tag("Http<"), parse_from_str(alphanumeric1), tag(">") ),recognize(preceded(tag("/"), filepath_chars))))(input).map( |(next,(method,path))| {
+    tuple( (delimited( tag("Http<"), parse_from_str(alphanumeric1), tag(">") ),path))(input).map( |(next,(method,path))| {
         (next,CallKind::Http(HttpCall::new(method, path.to_string())))
     })
 }
@@ -675,16 +684,6 @@ impl From<strum::ParseError> for MyError {
         }
     }
 }
-
-
-
-
-
-
-
-
-
-
 
 
 pub enum PipeSegEntry {

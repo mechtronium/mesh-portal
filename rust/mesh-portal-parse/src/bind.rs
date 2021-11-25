@@ -119,7 +119,7 @@ pub fn section(input: &str ) -> Res<&str, Section> {
 
 
 pub fn msg_section(input: &str ) -> Res<&str, Section> {
-   tuple((tag("Msg"),multispace0, delimited(tag("{"), delimited(multispace0, many0(delimited(multispace0, selector, multispace0)), multispace0), tag("}"))) )(input).map( |(next, (_,_,ports))| {
+   tuple((tag("Msg"),multispace0, delimited(tag("{"), delimited(multispace0, many0(delimited(multispace0, selector, multispace0)), multispace0), tag("}"))) )(input).map( |(next, (_,_,selectors))| {
        (next,
         Section::Msg(MessageSection{}))
    } )
@@ -234,10 +234,14 @@ pub fn consume_selector(input: &str ) -> Res<&str, Selector>{
 pub mod test {
     use anyhow::Error;
     use crate::bind::{consume_pipeline_step, consume_pipeline_stop, consume_pipeline, Pipeline, PipelineStep, PipelineSegment, StepKind, selector, bind};
-    use crate::parse::PipelineStop;
+    use crate::parse::{PipelineStop, camel_case, path_regex, upper, camel_case_to_string};
     use mesh_portal_serde::version::latest::payload::Call;
     use std::str::FromStr;
-    use crate::pattern::PatternBlock;
+    use crate::pattern::{PatternBlock, entity_pattern, msg_pattern, msg_action, msg_entity_pattern};
+    use nom::combinator::all_consuming;
+    use nom::sequence::delimited;
+    use nom::bytes::complete::tag;
+    use mesh_portal_serde::version::latest::util::{ValuePattern, StringMatcher};
 
     #[test]
     pub fn test_pipeline_step() -> Result<(),Error> {
@@ -269,12 +273,35 @@ pub mod test {
     }
 
     #[test]
-    pub fn test_port() -> Result<(),Error> {
-        selector( "tick -> {*};")?;
-        selector( "ping -> {*} => &;")?;
+    pub fn test_selector() -> Result<(),Error> {
+        selector( "Msg<Tick>/* -> {*};")?;
+        selector( "Http<Get>/* -> {*} => &;")?;
+
+        selector( "Msg<Signup> -[ Map{ username<Text>,password<Text>} ]-> strip:passsword:mechtron^Msg<Strip> -[ Map[username<Text>] ]-> {*} =[ Text ]=> &;")?;
 
         Ok(())
     }
+
+    #[test]
+    pub fn test_entity_pattern() -> Result<(),Error> {
+
+
+        assert_eq!((">","Over"),camel_case("Over>")?);
+
+        all_consuming(msg_pattern )("Msg<Over>/")?;
+        all_consuming(msg_pattern )("Msg<Over>")?;
+        all_consuming(msg_entity_pattern )("Msg<Over>/")?;
+        all_consuming(msg_entity_pattern )("Msg<Over>")?;
+        all_consuming(entity_pattern )("Msg<Over>/")?;
+        all_consuming(entity_pattern )("Http<Get>/")?;
+        all_consuming(entity_pattern )("Http<Get>")?;
+        assert!(all_consuming(entity_pattern )("Http<What>/").is_err());
+        all_consuming(entity_pattern )("Rc<Create>")?;
+
+
+        Ok(())
+    }
+
 
 
     #[test]
@@ -285,13 +312,13 @@ pub mod test {
 
            Msg{
 
-              tick -> {*};
+              Msg<Tick>/ -> {*};
 
-              ping -> { * } => &;
+              Msg<Ping> -> { * } => &;
 
-              signup -[ Map[username<Text>,password<Text>] ]-> strip:passsword:mechtron^Msg!strip -[ Map[username<Text>] ]-> {*} =[ Text ]=> &;
+              Msg<Signup> -[ Map[username<Text>,password<Text>] ]-> strip:passsword:mechtron^Msg<Strip> -[ Map[username<Text>] ]-> {*} =[ Text ]=> &;
 
-              do-whatever-you-want -[ * ]-> { * } =[ * ]=> &;
+              Msg<DoWhateverYouWant> -[ * ]-> { * } =[ * ]=> &;
 
            }
 
