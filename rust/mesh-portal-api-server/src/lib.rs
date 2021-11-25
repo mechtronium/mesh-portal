@@ -141,12 +141,11 @@ impl Portal {
                                         }
                                         Exchange::RequestResponse(exchange_id) => {
                                             if request.to.len() != 1 {
-                                                let response = outlet::Response{
-                                                    from: Identifier::Key(info.key.clone()),
-                                                    exchange: exchange_id.clone(),
-                                                    entity: response::RespEntity::Fail(fail::Fail::Resource(fail::resource::Fail::Messaging(fail::Messaging::RequestReplyExchangesRequireOneAndOnlyOneRecipient)))
-                                                   // ResponseEntity::Error("a RequestResponse message must have one and only one to recipient.".to_string())
-                                                };
+                                                let response = outlet::Response::new(
+                                                    Identifier::Key(info.key.clone()),
+                                                    exchange_id.clone(),
+                                                    response::RespEntity::Fail(fail::Fail::Resource(fail::resource::Fail::Messaging(fail::Messaging::RequestReplyExchangesRequireOneAndOnlyOneRecipient)))
+                                                );
                                                 let result = outlet_tx.send_timeout(outlet::Frame::Response(response), Duration::from_secs(info.config.frame_timeout.clone()) ).await;
                                                 if let Result::Err(_err) = result {
                                                     logger(Log::Fatal("FATAL: frame timeout error exit_tx".to_string()));
@@ -174,7 +173,6 @@ impl Portal {
                                         }
                                     }
                                 }
-                                inlet::Frame::BinParcel(_) => {}
                                 inlet::Frame::Status(status) => {
                                     status_tx.send(status).unwrap_or_default();
                                 }

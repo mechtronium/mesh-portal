@@ -469,13 +469,13 @@ pub mod test {
 
            Msg {
 
-               Tick -> {*};
+               Tick -> {{}};
 
-               Ping -> { * } => &;
+               Ping -> {{  }} => &;
 
-               Signup -[ Map{username<Text>,password<Text>} ]-> strip:passsword:mechtron^Msg<Strip> -[ Map{username<Text>} ]-> {*} =[ Text ]=> &;
+               Signup -[ Map{username<Text>,password<Text>} ]-> strip:passsword:mechtron^Msg<Strip> -[ Map{username<Text>} ]-> {{*}} =[ Text ]=> &;
 
-               DoWhateverYouWant -[ * ]-> { * } =[ * ]=> &;
+               DoWhateverYouWant -[ * ]-> {{ * }} =[ * ]=> &;
 
            }
 

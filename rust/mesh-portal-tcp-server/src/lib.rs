@@ -28,7 +28,7 @@ use mesh_portal_serde::version::latest::log::Log;
 use mesh_portal_serde::version::latest::portal::{inlet, outlet};
 use mesh_portal_serde::version::latest::resource::Status;
 use mesh_portal_tcp_common::{FrameReader, FrameWriter, PrimitiveFrameReader, PrimitiveFrameWriter};
-use resource_mesh_portal_api::message;
+use mesh_portal_api::message::Message;
 
 #[derive(Clone,strum_macros::Display)]
 pub enum Event {
@@ -48,7 +48,7 @@ pub enum EventResult<E>{
 
 pub enum Call {
     ListenEvents(oneshot::Sender<broadcast::Receiver<Event>>),
-    InjectMessage(message::Message),
+    InjectMessage(Message),
     Shutdown
 }
 

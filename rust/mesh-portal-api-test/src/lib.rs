@@ -46,7 +46,9 @@ mod tests {
         FrameReader, FrameWriter, PrimitiveFrameReader, PrimitiveFrameWriter,
     };
     use mesh_portal_tcp_server::{Call, Event, PortalServer, PortalTcpServer};
-    use resource_mesh_portal_api::message;
+    use mesh_portal_serde::version::v0_0_1::generic::payload::PayloadDelivery;
+    use mesh_portal_api::message;
+    use mesh_portal_serde::version::latest::generic::payload::RcCommand;
 
     lazy_static! {
     static ref GLOBAL_TX : tokio::sync::broadcast::Sender<GlobalEvent> = {
@@ -188,7 +190,7 @@ mod tests {
                 key,
                 address: address.clone(),
                 owner: user,
-                parent: Identifier::Address("parent".to_string()),
+                parent: Identifier::Address(Address::from_str("parent")?),
                 archetype: Archetype {
                     kind: "Portal".to_string(),
                     config_src: None,
@@ -353,17 +355,18 @@ mod tests {
             // wait just a bit to make sure everyone got chance to be in the muxer
             tokio::time::sleep(Duration::from_millis(50)).await;
 
-            let mut request = inlet::Request::new(ReqEntity::Rc(
-                Rc::Select("".to_string()),
-            ));
+            let mut request = inlet::Request::new(ReqEntity::Rc(Rc {
+                command: RcCommand::Select,
+                payload: PayloadDelivery::Payload(Payload::Primitive(Primitive::Text("".to_string())))
+            }));
             request.to.push(self.skel.info.parent.clone());
 
 println!("FriendlyPortalCtrl::exchange...");
             match self.skel.api().exchange(request).await {
                 Ok(response) => match response.entity {
-                    response::RespEntity::Ok(Payload::List(resources)) => {
+                    response::RespEntity::Ok(PayloadDelivery::Payload(Payload::List(resources))) => {
 println!("FriendlyPortalCtrl::Ok");
-                        for resource in resources {
+                        for resource in resources.iter() {
                             if let Primitive::Stub(resource) = resource {
                                 if resource.key != self.skel.info.key {
                                     (self.skel.logger)(format!(
@@ -372,17 +375,18 @@ println!("FriendlyPortalCtrl::Ok");
                                     ).as_str());
                                     let mut request = inlet::Request::new(ReqEntity::Msg(
                                         Msg {
-                                            port: "greet".to_string(),
-                                            payload: Payload::Primitive(Primitive::Text(format!(
+                                            action: "Greet".to_string(),
+                                            payload: PayloadDelivery::Payload(Payload::Primitive(Primitive::Text(format!(
                                                 "Hello, my name is '{}' and I live at '{}'",
                                                 self.skel.info.owner, self.skel.info.address.to_string()
-                                            ))),
+                                            )))),
+                                            path: "/".to_string()
                                         }));
                                     let result = self.skel.api().exchange(request).await;
                                     match result {
                                         Ok(response) => {
                                             match &response.entity {
-                                                response::RespEntity::Ok(Payload::Primitive(Primitive::Text(response))) => {
+                                                response::RespEntity::Ok(PayloadDelivery::Payload(Payload::Primitive(Primitive::Text(response)))) => {
                                                     println!("got response: {}", response);
                                                     GLOBAL_TX.send(GlobalEvent::Finished(self.skel.info.owner.clone()));
                                                 }
@@ -417,8 +421,8 @@ println!("FriendlyPortalCtrl::Ok");
             impl PortCtrl for GreetPort {
                 async fn request( &self, request: outlet::Request ) -> Result<Option<response::RespEntity>,Error>{
                     match &request.entity {
-                        ReqEntity::Msg(Msg { port:_, payload:Payload::Primitive(Primitive::Text(text)) } ) => Ok(Option::Some(response::RespEntity::Ok(
-                            Payload::Primitive(Primitive::Text("Hello, <username>".to_string())),
+                        ReqEntity::Msg(Msg { path: _, action:_, payload: delivery } ) => Ok(Option::Some(response::RespEntity::Ok(
+                            PayloadDelivery::Payload(Payload::Primitive(Primitive::Text("Hello, <username>".to_string()))),
                         ))),
                         _ => Err(anyhow!("unexpected request entity")),
                     }

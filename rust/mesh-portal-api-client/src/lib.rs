@@ -318,7 +318,6 @@ impl Outlet for Portal {
                         (self.skel.logger)("SEVERE: do not have a matching exchange_id for response");
                     }
                 }
-                outlet::Frame::BinParcel(_) => {}
                 outlet::Frame::Close(_) => {}
                 _ => {
                     (self.skel.logger)(format!("SEVERE: frame ignored because status: '{}' does not allow handling of frame '{}'",self.skel.status().to_string(),frame.to_string()).as_str());
@@ -428,6 +427,7 @@ pub mod example {
     use mesh_portal_serde::version::latest::payload::{Payload, Primitive};
     use mesh_portal_serde::version::latest::entity;
     use mesh_portal_serde::version::latest::entity::request::Msg;
+    use mesh_portal_serde::version::v0_0_1::generic::payload::PayloadDelivery;
 
     pub struct HelloCtrl {
         pub skel: Arc<PortalSkel>,
@@ -447,8 +447,9 @@ pub mod example {
         async fn init(&mut self) -> Result<(), Error> {
             let mut request =
                 inlet::Request::new(entity::request::ReqEntity::Msg( Msg {
-                    port: "hello-world".to_string(),
-                    payload: Payload::Empty,
+                    action: "HelloWorld".to_string(),
+                    payload: PayloadDelivery::Payload(Payload::Empty),
+                    path: "/".to_string()
                 }));
 
             // send this request to itself
@@ -456,7 +457,7 @@ pub mod example {
 
             let response = self.inlet_api.exchange(request).await?;
 
-            if let entity::response::RespEntity::Ok(Payload::Primitive(Primitive::Text(text))) = response.entity {
+            if let entity::response::RespEntity::Ok(PayloadDelivery::Payload(Payload::Primitive(Primitive::Text(text)))) = response.entity {
                 println!("{}",text);
             } else {
                 return Err(anyhow!("unexpected signal"));

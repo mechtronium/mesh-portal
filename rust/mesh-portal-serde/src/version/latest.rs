@@ -180,14 +180,15 @@ pub mod portal {
 
     pub mod outlet {
         use crate::version::latest::generic;
+        use crate::version::v0_0_1::portal;
         use crate::version::latest::id::{Address, Key, Kind, ResourceType, Identifier};
         use crate::version::latest::frame::PrimitiveFrame;
         use crate::version::latest::error::Error;
         use crate::version::latest::payload::PayloadDelivery;
 
-        pub type Request=generic::portal::outlet::Request<Identifier,PayloadDelivery>;
-        pub type Response=generic::portal::outlet::Response<Identifier,PayloadDelivery>;
-        pub type Frame=generic::portal::outlet::Frame<Key,Address,Identifier,Kind,ResourceType>;
+        pub type Request=portal::outlet::Request;
+        pub type Response=portal::outlet::Response;
+        pub type Frame=portal::outlet::Frame;
 
         pub mod exchange {
             use crate::version::latest::id::{Address, Key, Kind, ResourceType,Identifier};

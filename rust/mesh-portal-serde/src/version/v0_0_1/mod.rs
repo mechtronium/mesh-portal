@@ -460,12 +460,13 @@ pub mod portal {
         use crate::version::v0_0_1::id::{Address, Identifier, Key, Kind, ResourceType};
         use crate::version::v0_0_1::payload::Payload;
         use std::convert::TryFrom;
+        use crate::version::v0_0_1::payload::PayloadDelivery;
 
-        pub type Request = generic::portal::inlet::Request<Identifier, Payload>;
-        pub type Response = generic::portal::inlet::Response<Identifier, Payload>;
-        pub type Frame = generic::portal::inlet::Frame<Identifier, Payload>;
+        pub type Request = generic::portal::inlet::Request<Identifier, PayloadDelivery>;
+        pub type Response = generic::portal::inlet::Response<Identifier, PayloadDelivery>;
+        pub type Frame = generic::portal::inlet::Frame<Identifier, PayloadDelivery>;
 
-        impl TryFrom<PrimitiveFrame> for generic::portal::inlet::Frame<Identifier, Payload> {
+        impl TryFrom<PrimitiveFrame> for generic::portal::inlet::Frame<Identifier, PayloadDelivery> {
             type Error = Error;
 
             fn try_from(value: PrimitiveFrame) -> Result<Self, Self::Error> {
@@ -481,13 +482,14 @@ pub mod portal {
         use crate::version::v0_0_1::id::{Address, Identifier, Key, Kind, ResourceType};
         use crate::version::v0_0_1::payload::Payload;
         use std::convert::TryFrom;
+        use crate::version::v0_0_1::payload::PayloadDelivery;
 
-        pub type Request = generic::portal::outlet::Request<Identifier, Kind>;
-        pub type Response = generic::portal::outlet::Response<Identifier, Kind>;
-        pub type Frame = generic::portal::outlet::Frame<Key, Address, Identifier, Kind, Payload>;
+        pub type Request = generic::portal::outlet::Request<Identifier, PayloadDelivery>;
+        pub type Response = generic::portal::outlet::Response<Identifier, PayloadDelivery>;
+        pub type Frame = generic::portal::outlet::Frame<Key, Address, Identifier, Kind, PayloadDelivery>;
 
         impl TryFrom<PrimitiveFrame>
-            for generic::portal::outlet::Frame<Key, Address, Identifier, Kind, Payload>
+            for generic::portal::outlet::Frame<Key, Address, Identifier, Kind, PayloadDelivery>
         {
             type Error = Error;
 
@@ -1200,7 +1202,7 @@ pub mod generic {
             use crate::version::v0_0_1::generic::payload::Primitive;
             use crate::version::v0_0_1::id::{Address, Key, Kind, ResourceType};
             use crate::version::v0_0_1::messaging::{Exchange, ExchangeId};
-            use crate::version::v0_0_1::util::ConvertFrom;
+            use crate::version::v0_0_1::util::{ConvertFrom, unique_id};
             use crate::version::v0_0_1::{fail, generic};
 
             #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1239,6 +1241,17 @@ pub mod generic {
                 pub from: IDENTIFIER,
                 pub exchange: ExchangeId,
                 pub entity: response::RespEntity<PAYLOAD, fail::Fail>,
+            }
+
+            impl <IDENTIFIER,PAYLOAD> Response<IDENTIFIER,PAYLOAD> {
+                pub fn new( from: IDENTIFIER, exchange: ExchangeId, entity: response::RespEntity<PAYLOAD, fail::Fail> ) -> Self {
+                    Self {
+                        id: unique_id(),
+                        from,
+                        exchange,
+                        entity
+                    }
+                }
             }
 
             impl<FromIdentifier, FromPayload> Response<FromIdentifier, FromPayload> {
@@ -1308,6 +1321,26 @@ pub mod generic {
                     })
                 }
             }
+
+            /*
+            impl<
+                KEY: Serialize,
+                ADDRESS: Serialize,
+                IDENTIFIER: Serialize,
+                KIND: Serialize,
+                PAYLOAD: Serialize,
+            > TryFrom<PrimitiveFrame> for Frame<KEY, ADDRESS, IDENTIFIER, KIND, PAYLOAD>
+            {
+                type Error = Error;
+
+                fn try_from(frame: PrimitiveFrame) -> Result<PrimitiveFrame, Self::Error> {
+                    Ok(
+                        bincode::deserialize(frame.data.as_slice())?
+                     )
+                }
+            }
+
+             */
 
             pub mod exchange {
                 use std::fmt::Debug;
@@ -1385,7 +1418,7 @@ pub mod generic {
             Map,
         }
 
-        #[derive(Clone,Eq,PartialEq,Serialize,Deserialize)]
+        #[derive(Debug,Clone,Eq,PartialEq,Serialize,Deserialize)]
         pub struct ListPattern {
             pub primitive: PrimitiveType,
             pub range: Range,
@@ -1410,7 +1443,7 @@ pub mod generic {
             Any
         }
 
-        #[derive(Clone,Eq,PartialEq,Serialize,Deserialize)]
+        #[derive(Debug,Clone,Eq,PartialEq,Serialize,Deserialize)]
         pub enum PayloadTypePattern<KEY,ADDRESS,IDENTIFIER,KIND> {
             Empty,
             Primitive(PrimitiveType),
@@ -1458,7 +1491,7 @@ pub mod generic {
 
             }
         }
-        #[derive(Clone,Eq,PartialEq,Serialize,Deserialize)]
+        #[derive(Debug,Clone,Eq,PartialEq,Serialize,Deserialize)]
         pub struct PayloadPattern<KEY,ADDRESS,IDENTIFIER,KIND> {
             pub structure: PayloadTypePattern<KEY,ADDRESS,IDENTIFIER,KIND>,
             pub format: Option<PayloadFormat>,
@@ -1602,7 +1635,7 @@ pub mod generic {
                 Ok(())
             }
         }
-        #[derive(Clone,Eq,PartialEq,Serialize,Deserialize)]
+        #[derive(Debug,Clone,Eq,PartialEq,Serialize,Deserialize)]
         pub struct CallWithConfig<ADDRESS> {
             pub call: Call<ADDRESS>,
             pub config: Option<ADDRESS>
@@ -1765,7 +1798,7 @@ pub mod generic {
 
 
 
-        #[derive(Clone,Eq,PartialEq,strum_macros::Display,strum_macros::EnumString,Serialize,Deserialize)]
+        #[derive(Debug,Clone,Eq,PartialEq,strum_macros::Display,strum_macros::EnumString,Serialize,Deserialize)]
         pub enum PayloadFormat {
             #[strum(serialize = "json")]
             Json,
@@ -1860,7 +1893,7 @@ pub mod generic {
             }
         }
 
-        #[derive(Clone,Eq,PartialEq,Serialize,Deserialize,)]
+        #[derive(Debug,Clone,Eq,PartialEq,Serialize,Deserialize,)]
         pub struct MapPattern<KEY,ADDRESS,IDENTIFIER,KIND> {
             key_phantom: PhantomData<KEY>,
             address_phantom: PhantomData<ADDRESS>,
@@ -2147,7 +2180,7 @@ pub mod generic {
 
          */
 
-        #[derive(Clone,Serialize,Deserialize)]
+        #[derive(Debug,Clone,Serialize,Deserialize)]
         pub enum PayloadDelivery<PAYLOAD, PAYLOAD_REF> {
             Payload(PAYLOAD),
             Ref(PAYLOAD_REF),
