@@ -17,7 +17,7 @@ use mesh_portal_serde::version::latest::payload::Primitive;
 use mesh_portal_serde::version::latest::payload::Payload;
 
 use crate::parse::{call, call_with_config, Res, path_regex, camel_case, camel_case_to_string};
-use mesh_portal_serde::version::latest::error::Error;
+use mesh_portal_serde::error::Error;
 use std::iter::Map;
 use mesh_portal_serde::version::latest::util::{ValuePattern, RegexMatcher, StringMatcher};
 use mesh_portal_serde::version::latest::payload::MapPattern;

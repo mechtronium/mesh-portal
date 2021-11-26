@@ -41,28 +41,10 @@ pub trait PortalCtrl: Sync+Send {
         Ok(())
     }
 
-    fn ports(&self) -> HashMap<String,Box<dyn PortCtrl>> {
-        HashMap::new()
-    }
-
-    async fn http_request( &self, request: Request<HttpRequest> ) -> Result<HttpResponse,Error> {
-        let response = HttpResponse {
-            headers: Default::default(),
-            code: 404,
-            body: None
-        };
-        Ok(response)
-    }
-}
-
-
-#[async_trait]
-pub trait PortCtrl: Sync+Send {
-    async fn request( &self, request: portal::outlet::Request ) -> Result<Option<entity::response::RespEntity>,Error>{
+    async fn handle( request: outlet::exchange::Request ) -> Result<Option<inlet::Response>,Error> {
         Ok(Option::None)
     }
 }
-
 
 pub fn log(message: &str) {
     println!("{}",message);
@@ -180,7 +162,7 @@ impl Outlet for Portal {
                     let from = request.from.clone();
                     let kind = request.exchange.clone();
                     tokio::spawn( async move {
-/*                        match request.entity.clone() {
+                        match request.entity.clone() {
                             ExtOperation::Http(_) => {
                                 if let Exchange::RequestResponse(exchange_id) = &kind
                                 {
@@ -305,8 +287,7 @@ impl Outlet for Portal {
                                     }
                                 }
                             }
-                        }*/
-                        unimplemented!()
+                        }
                     });
                 }
                 outlet::Frame::Response(response) => {
@@ -448,7 +429,7 @@ pub mod example {
             let mut request =
                 inlet::Request::new(entity::request::ReqEntity::Msg( Msg {
                     action: "HelloWorld".to_string(),
-                    payload: PayloadDelivery::Payload(Payload::Empty),
+                    payload: Payload::Empty,
                     path: "/".to_string()
                 }));
 

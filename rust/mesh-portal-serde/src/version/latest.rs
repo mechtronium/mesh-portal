@@ -38,6 +38,7 @@ pub mod messaging {
 
     pub type ExchangeId = messaging::ExchangeId;
     pub type Exchange = messaging::Exchange;
+    pub type ExchangeType = messaging::ExchangeType;
 }
 
 
@@ -126,20 +127,20 @@ pub mod entity {
         use crate::version::v0_0_1::generic;
         use crate::version::latest::id::{Address, Key, Kind, ResourceType};
         use crate::version::latest::bin::Bin;
-        use crate::version::latest::payload::PayloadDelivery;
+        use crate::version::latest::payload::Payload;
 
-        pub type ReqEntity = generic::entity::request::ReqEntity<PayloadDelivery>;
-        pub type Rc = generic::entity::request::Rc<PayloadDelivery>;
-        pub type Msg = generic::entity::request::Msg<PayloadDelivery>;
-        pub type Http = generic::entity::request::Http<PayloadDelivery>;
+        pub type ReqEntity = generic::entity::request::ReqEntity<Payload>;
+        pub type Rc = generic::entity::request::Rc<Payload>;
+        pub type Msg = generic::entity::request::Msg<Payload>;
+        pub type Http = generic::entity::request::Http<Payload>;
     }
 
     pub mod response{
         use crate::version::v0_0_1::{fail, generic};
         use crate::version::latest::id::{Address, Key, Kind};
-        use crate::version::latest::payload::PayloadDelivery;
+        use crate::version::latest::payload::Payload;
 
-        pub type RespEntity = generic::entity::response::RespEntity<PayloadDelivery,fail::Fail>;
+        pub type RespEntity = generic::entity::response::RespEntity<Payload,fail::Fail>;
     }
 
 }
@@ -164,17 +165,17 @@ pub mod portal {
         use crate::version::latest::id::{Address, Key, Kind, ResourceType,Identifier};
         use crate::version::latest::frame::PrimitiveFrame;
         use crate::error::Error;
-        use crate::version::latest::payload::PayloadDelivery;
+        use crate::version::latest::payload::Payload;
 
-        pub type Request=generic::portal::inlet::Request<Identifier,PayloadDelivery>;
-        pub type Response=generic::portal::inlet::Response<Identifier,PayloadDelivery>;
-        pub type Frame=generic::portal::inlet::Frame<Identifier,PayloadDelivery>;
+        pub type Request=generic::portal::inlet::Request<Identifier,Payload>;
+        pub type Response=generic::portal::inlet::Response<Identifier,Payload>;
+        pub type Frame=generic::portal::inlet::Frame<Identifier,Payload>;
 
         pub mod exchange {
             use crate::version::latest::id::{Address, Key, Kind, ResourceType, Identifier};
             use crate::version::latest::generic;
-            use crate::version::latest::payload::PayloadDelivery;
-            pub type Request=generic::portal::inlet::exchange::Request<Identifier,PayloadDelivery>;
+            use crate::version::latest::payload::Payload;
+            pub type Request=generic::portal::inlet::exchange::Request<Identifier,Payload>;
         }
     }
 
@@ -184,7 +185,7 @@ pub mod portal {
         use crate::version::latest::id::{Address, Key, Kind, ResourceType, Identifier};
         use crate::version::latest::frame::PrimitiveFrame;
         use crate::error::Error;
-        use crate::version::latest::payload::PayloadDelivery;
+        use crate::version::latest::payload::Payload;
 
         pub type Request=portal::outlet::Request;
         pub type Response=portal::outlet::Response;
@@ -193,9 +194,9 @@ pub mod portal {
         pub mod exchange {
             use crate::version::latest::id::{Address, Key, Kind, ResourceType,Identifier};
             use crate::version::latest::generic;
-            use crate::version::latest::payload::PayloadDelivery;
+            use crate::version::latest::payload::Payload;
 
-            pub type Request=generic::portal::outlet::exchange::Request<Identifier,PayloadDelivery>;
+            pub type Request=generic::portal::outlet::exchange::Request<Identifier,Payload>;
         }
     }
 }
@@ -406,6 +407,7 @@ pub mod fail {
     pub type Wrong=crate::version::v0_0_1::fail::Wrong;
     pub type Messaging=crate::version::v0_0_1::fail::Messaging;
     pub type Fail=crate::version::v0_0_1::fail::Fail;
+
 }
 
 pub mod util {
@@ -415,6 +417,10 @@ pub mod util {
     pub type ValueMatcher<V> = dyn util::ValueMatcher<V>;
     pub type RegexMatcher = util::RegexMatcher;
     pub type StringMatcher= util::StringMatcher;
+
+    pub fn unique_id() -> Sring {
+        util::unique_id()
+    }
 }
 
 pub mod parse {

@@ -91,6 +91,13 @@ pub mod messaging {
     pub type ExchangeId = String;
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub enum ExchangeType {
+        Notification,
+        RequestResponse,
+    }
+
+
+    #[derive(Debug, Clone, Serialize, Deserialize)]
     pub enum Exchange {
         Notification,
         RequestResponse(ExchangeId),
@@ -101,6 +108,19 @@ pub mod messaging {
             match self {
                 Exchange::Notification => false,
                 Exchange::RequestResponse(_) => true,
+            }
+        }
+    }
+
+    impl Into<ExchangeType> for Exchange {
+        fn into(self) -> ExchangeType {
+            match self {
+                Exchange::Notification => {
+                    ExchangeType::Notification
+                }
+                Exchange::RequestResponse(_) => {
+                    ExchangeType::RequestResponse
+                }
             }
         }
     }
@@ -419,20 +439,20 @@ pub mod entity {
         use crate::version::v0_0_1::id::{
             Address, Key, Kind, PayloadClaim, ResourceType,
         };
-        use crate::version::v0_0_1::payload::PayloadDelivery;
+        use crate::version::v0_0_1::payload::Payload;
 
-        pub type ReqEntity = generic::entity::request::ReqEntity<PayloadDelivery>;
-        pub type Rc = generic::entity::request::Rc<PayloadDelivery>;
-        pub type Msg = generic::entity::request::Msg<PayloadDelivery>;
-        pub type Http = generic::entity::request::Http<PayloadDelivery>;
+        pub type ReqEntity = generic::entity::request::ReqEntity<Payload>;
+        pub type Rc = generic::entity::request::Rc<Payload>;
+        pub type Msg = generic::entity::request::Msg<Payload>;
+        pub type Http = generic::entity::request::Http<Payload>;
     }
 
     pub mod response {
         use crate::version::v0_0_1::{fail, generic};
         use crate::version::v0_0_1::id::{Address, Key, Kind};
-        use crate::version::v0_0_1::payload::PayloadDelivery;
+        use crate::version::v0_0_1::payload::Payload;
 
-        pub type RespEntity = generic::entity::response::RespEntity<PayloadDelivery, fail::Fail>;
+        pub type RespEntity = generic::entity::response::RespEntity<Payload, fail::Fail>;
     }
 }
 
@@ -464,13 +484,12 @@ pub mod portal {
         use crate::version::v0_0_1::generic;
         use crate::version::v0_0_1::id::{Address, Identifier, Key, Kind, ResourceType};
         use crate::version::v0_0_1::payload::Payload;
-        use crate::version::v0_0_1::payload::PayloadDelivery;
 
-        pub type Request = generic::portal::inlet::Request<Identifier, PayloadDelivery>;
-        pub type Response = generic::portal::inlet::Response<Identifier, PayloadDelivery>;
-        pub type Frame = generic::portal::inlet::Frame<Identifier, PayloadDelivery>;
+        pub type Request = generic::portal::inlet::Request<Identifier, Payload>;
+        pub type Response = generic::portal::inlet::Response<Identifier, Payload>;
+        pub type Frame = generic::portal::inlet::Frame<Identifier, Payload>;
 
-        impl TryFrom<PrimitiveFrame> for generic::portal::inlet::Frame<Identifier, PayloadDelivery> {
+        impl TryFrom<PrimitiveFrame> for generic::portal::inlet::Frame<Identifier, Payload> {
             type Error = Error;
 
             fn try_from(value: PrimitiveFrame) -> Result<Self, Self::Error> {
@@ -487,14 +506,13 @@ pub mod portal {
         use crate::version::v0_0_1::generic;
         use crate::version::v0_0_1::id::{Address, Identifier, Key, Kind, ResourceType};
         use crate::version::v0_0_1::payload::Payload;
-        use crate::version::v0_0_1::payload::PayloadDelivery;
 
-        pub type Request = generic::portal::outlet::Request<Identifier, PayloadDelivery>;
-        pub type Response = generic::portal::outlet::Response<Identifier, PayloadDelivery>;
-        pub type Frame = generic::portal::outlet::Frame<Key, Address, Identifier, Kind, PayloadDelivery>;
+        pub type Request = generic::portal::outlet::Request<Identifier, Payload>;
+        pub type Response = generic::portal::outlet::Response<Identifier, Payload>;
+        pub type Frame = generic::portal::outlet::Frame<Key, Address, Identifier, Kind, Payload>;
 
         impl TryFrom<PrimitiveFrame>
-            for generic::portal::outlet::Frame<Key, Address, Identifier, Kind, PayloadDelivery>
+            for generic::portal::outlet::Frame<Key, Address, Identifier, Kind, Payload>
         {
             type Error = Error;
 
@@ -672,12 +690,12 @@ pub mod generic {
                 Http(Http<PAYLOAD>),
             }
 
-            impl <PAYLOAD,FAIL> ReqEntity<PAYLOAD> {
-                pub fn ok(&self, payload: PAYLOAD) -> RespEntity<PAYLOAD,FAIL> {
+            impl <PAYLOAD> ReqEntity<PAYLOAD> {
+                pub fn ok<FAIL>(&self, payload: PAYLOAD) -> RespEntity<PAYLOAD,FAIL> {
                     RespEntity::Ok(payload)
                 }
 
-                pub fn fail(&self, fail: FAIL ) -> RespEntity<PAYLOAD,FAIL>{
+                pub fn fail<FAIL>(&self, fail: FAIL ) -> RespEntity<PAYLOAD,FAIL>{
                     RespEntity::Fail(fail)
                 }
             }
@@ -1291,8 +1309,8 @@ pub mod generic {
             pub enum Frame<KEY, ADDRESS, IDENTIFIER, KIND, PAYLOAD> {
                 Create(Info<KEY, ADDRESS, KIND>),
                 CommandEvent(CommandEvent),
-                Request(Request),
-                Response(Response),
+                Request(Request<IDENTIFIER,PAYLOAD>),
+                Response(Response<IDENTIFIER,PAYLOAD>),
                 Close(CloseReason),
             }
 

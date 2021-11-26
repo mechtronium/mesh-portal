@@ -11,7 +11,6 @@ use mesh_portal_serde::version::latest::util::ValuePattern;
 use mesh_portal_serde::version::latest::generic::payload::RcCommand;
 use mesh_portal_serde::version::latest::entity::EntityType;
 use std::convert::TryInto;
-use mesh_portal_serde::version::latest::error::Error;
 use mesh_portal_serde::error::Error;
 
 
@@ -168,7 +167,7 @@ pub enum ScopeType {
 
 
 pub fn bind(input: &str ) -> Res<&str,ProtoBind> {
-    delimited( multispace0, tuple((tag("bind"), multispace0, delimited(tag("{"),delimited( multispace0,sections,multispace0),tag("}")))), multispace0)(input).map(|(next,(_,_,sections))|{
+    delimited( multispace0, tuple((tag("Bind"), multispace0, delimited(tag("{"),delimited( multispace0,sections,multispace0),tag("}")))), multispace0)(input).map(|(next,(_,_,sections))|{
 
         let bind = ProtoBind{
             sections
@@ -466,7 +465,7 @@ pub mod test {
 
         bind( r#"
 
-        bind {
+        Bind {
 
            Msg {
 
@@ -477,6 +476,8 @@ pub mod test {
                Signup -[ Map{username<Text>,password<Text>} ]-> strip:passsword:mechtron^Msg<Strip> -[ Map{username<Text>} ]-> {{*}} =[ Text ]=> &;
 
                DoWhateverYouWant -[ * ]-> {{ * }} =[ * ]=> &;
+
+               FormSubmition -[ Text~json~mechtron-verifier^Msg<ValidateForm> ]-> {{ * }} =[ ]=> &;
 
            }
 
