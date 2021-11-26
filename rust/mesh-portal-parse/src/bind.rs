@@ -12,6 +12,7 @@ use mesh_portal_serde::version::latest::generic::payload::RcCommand;
 use mesh_portal_serde::version::latest::entity::EntityType;
 use std::convert::TryInto;
 use mesh_portal_serde::version::latest::error::Error;
+use mesh_portal_serde::error::Error;
 
 
 pub struct ProtoBind {
@@ -24,7 +25,7 @@ impl TryInto<Bind> for ProtoBind {
     fn try_into(self) -> Result<Bind, Self::Error> {
         let mut opt_msg = Option::None;
         let mut opt_http = Option::None;
-        let mut opt_rc= Option::None;
+        let mut opt_rc = Option::None;
 
         for section in self.sections {
             match section {

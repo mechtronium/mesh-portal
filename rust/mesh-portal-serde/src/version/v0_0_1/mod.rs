@@ -21,9 +21,9 @@ pub mod id {
 
     use serde::{Deserialize, Serialize};
 
+    use crate::error::Error;
     use crate::version::v0_0_1::generic;
-    use crate::version::latest::error::Error;
-    use crate::version::v0_0_1::parse::{address, consume_address};
+    use crate::version::v0_0_1::parse::{address, consume_address, Res};
 
     pub type Key = String;
     pub type ResourceType = String;
@@ -72,6 +72,10 @@ pub mod id {
             Option::Some( Self {
                 segments
             })
+        }
+
+        pub fn parse( input: &str ) -> Res<&str,Self> {
+            address(input)
         }
     }
     #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -134,10 +138,11 @@ pub mod log {
 }
 
 pub mod frame {
-    use crate::version::v0_0_1::error::Error;
     use std::convert::TryInto;
 
     use serde::{Deserialize, Serialize};
+
+    use crate::error::Error;
 
     pub struct PrimitiveFrame {
         pub data: Vec<u8>,
@@ -183,13 +188,14 @@ pub mod bin {
 }
 
 pub mod payload {
+    use serde::{Deserialize, Serialize};
+
+    use crate::error::Error;
     use crate::version::v0_0_1::bin::Bin;
     use crate::version::v0_0_1::generic;
     use crate::version::v0_0_1::id::{
         Address, Identifier, Key, Kind, PayloadClaim,
     };
-    use serde::{Deserialize, Serialize};
-    use crate::version::v0_0_1::error::Error;
 
     pub type Primitive = generic::payload::Primitive<Key, Address, Identifier, Kind>;
     pub type Payload = generic::payload::Payload<Key, Address, Identifier, Kind>;
@@ -296,9 +302,9 @@ pub mod config {
 
     use serde::{Deserialize, Serialize};
 
+    use crate::version::v0_0_1::ArtifactRef;
     use crate::version::v0_0_1::generic;
     use crate::version::v0_0_1::id::{Address, Key, Kind};
-    use crate::version::v0_0_1::ArtifactRef;
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub enum PortalKind {
@@ -320,7 +326,6 @@ pub mod config {
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct Config {
         pub max_payload_size: u32,
-        pub payload_parcel_size: u32,
         pub init_timeout: u64,
         pub frame_timeout: u64,
         pub response_timeout: u64,
@@ -331,7 +336,6 @@ pub mod config {
         pub fn with_bind_config(bind: BindConfig) -> Self {
             Self {
                 max_payload_size: 128 * 1024,
-                payload_parcel_size: 16 * 1024,
                 init_timeout: 30,
                 frame_timeout: 5,
                 response_timeout: 15,
@@ -344,7 +348,6 @@ pub mod config {
         fn default() -> Self {
             Self {
                 max_payload_size: 128 * 1024,
-                payload_parcel_size: 16 * 1024,
                 init_timeout: 30,
                 frame_timeout: 5,
                 response_timeout: 15,
@@ -425,9 +428,9 @@ pub mod entity {
     }
 
     pub mod response {
+        use crate::version::v0_0_1::{fail, generic};
         use crate::version::v0_0_1::id::{Address, Key, Kind};
         use crate::version::v0_0_1::payload::PayloadDelivery;
-        use crate::version::v0_0_1::{fail, generic};
 
         pub type RespEntity = generic::entity::response::RespEntity<PayloadDelivery, fail::Fail>;
     }
@@ -454,12 +457,13 @@ pub mod resource {
 
 pub mod portal {
     pub mod inlet {
-        use crate::version::v0_0_1::error::Error;
+        use std::convert::TryFrom;
+
+        use crate::error::Error;
         use crate::version::v0_0_1::frame::PrimitiveFrame;
         use crate::version::v0_0_1::generic;
         use crate::version::v0_0_1::id::{Address, Identifier, Key, Kind, ResourceType};
         use crate::version::v0_0_1::payload::Payload;
-        use std::convert::TryFrom;
         use crate::version::v0_0_1::payload::PayloadDelivery;
 
         pub type Request = generic::portal::inlet::Request<Identifier, PayloadDelivery>;
@@ -476,12 +480,13 @@ pub mod portal {
     }
 
     pub mod outlet {
-        use crate::version::v0_0_1::error::Error;
+        use std::convert::TryFrom;
+
+        use crate::error::Error;
         use crate::version::v0_0_1::frame::PrimitiveFrame;
         use crate::version::v0_0_1::generic;
         use crate::version::v0_0_1::id::{Address, Identifier, Key, Kind, ResourceType};
         use crate::version::v0_0_1::payload::Payload;
-        use std::convert::TryFrom;
         use crate::version::v0_0_1::payload::PayloadDelivery;
 
         pub type Request = generic::portal::outlet::Request<Identifier, PayloadDelivery>;
@@ -512,16 +517,16 @@ pub mod generic {
     use serde::{Deserialize, Serialize};
 
     pub mod id {
+        use std::convert::{TryFrom, TryInto};
         use std::fmt::Debug;
         use std::hash::Hash;
         use std::str::FromStr;
 
         use serde::{Deserialize, Serialize};
 
-        use crate::version::v0_0_1::error::Error;
+        use crate::error::Error;
         use crate::version::v0_0_1::generic;
         use crate::version::v0_0_1::util::Convert;
-        use std::convert::{TryFrom, TryInto};
 
         #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
         pub enum Identifier<KEY, ADDRESS> {
@@ -572,19 +577,19 @@ pub mod generic {
     }
 
     pub mod config {
+        use std::convert::{TryFrom, TryInto};
         use std::fmt::Debug;
         use std::hash::Hash;
         use std::str::FromStr;
 
         use serde::{Deserialize, Serialize};
 
+        use crate::error::Error;
+        use crate::version::v0_0_1::ArtifactRef;
         use crate::version::v0_0_1::config::{Config, PortalKind};
-        use crate::version::v0_0_1::error::Error;
         use crate::version::v0_0_1::generic;
         use crate::version::v0_0_1::generic::id::{Identifier, Identifiers};
         use crate::version::v0_0_1::generic::resource::Archetype;
-        use crate::version::v0_0_1::ArtifactRef;
-        use std::convert::{TryFrom, TryInto};
 
         #[derive(Debug, Clone, Serialize, Deserialize)]
         pub struct Info<KEY, ADDRESS, KIND> {
@@ -642,22 +647,22 @@ pub mod generic {
 
     pub mod entity {
         pub mod request {
+            use std::convert::{TryFrom, TryInto};
             use std::hash::Hash;
             use std::str::FromStr;
 
-            use serde::__private::fmt::Debug;
             use serde::{Deserialize, Serialize};
+            use serde::__private::fmt::Debug;
 
-            use crate::version::v0_0_1::bin::Bin;
-            use crate::version::v0_0_1::error::Error;
-            use crate::version::v0_0_1::generic;
-            use crate::version::v0_0_1::generic::payload::{Payload, HttpMethod};
-            use crate::version::v0_0_1::generic::payload::Primitive;
-            use crate::version::v0_0_1::util::{Convert, ConvertFrom};
+            use crate::error::Error;
             use crate::version::v0_0_1::{http, State};
-            use std::convert::{TryFrom, TryInto};
+            use crate::version::v0_0_1::bin::Bin;
+            use crate::version::v0_0_1::generic;
+            use crate::version::v0_0_1::generic::payload::{HttpMethod, Payload};
+            use crate::version::v0_0_1::generic::payload::Primitive;
             use crate::version::v0_0_1::generic::payload::RcCommand;
             use crate::version::v0_0_1::id::Meta;
+            use crate::version::v0_0_1::util::{Convert, ConvertFrom};
 
             #[derive(Debug, Clone, Serialize, Deserialize)]
             pub enum ReqEntity<PAYLOAD> {
@@ -817,19 +822,19 @@ pub mod generic {
         }
 
         pub mod response {
+            use std::convert::{TryFrom, TryInto};
             use std::fmt::Debug;
             use std::hash::Hash;
             use std::str::FromStr;
 
             use serde::{Deserialize, Serialize};
 
-            use crate::version::latest::error::Error;
+            use crate::error::Error;
             use crate::version::v0_0_1::bin::Bin;
             use crate::version::v0_0_1::fail::portal::Fail;
             use crate::version::v0_0_1::generic::payload::Payload;
             use crate::version::v0_0_1::generic::payload::Primitive;
             use crate::version::v0_0_1::util::ConvertFrom;
-            use std::convert::{TryFrom, TryInto};
 
             #[derive(Debug, Clone, Serialize, Deserialize)]
             pub enum RespEntity<PAYLOAD, FAIL> {
@@ -844,7 +849,7 @@ pub mod generic {
             {
                 fn convert_from(
                     a: RespEntity<FromPayload, FAIL>,
-                ) -> Result<Self, crate::version::v0_0_1::error::Error>
+                ) -> Result<Self, crate::error::Error>
                 where
                     Self: Sized,
                 {
@@ -871,20 +876,20 @@ pub mod generic {
 
     pub mod resource {
         use std::collections::{HashMap, HashSet};
+        use std::convert::{TryFrom, TryInto};
         use std::fmt::Debug;
         use std::hash::Hash;
         use std::str::FromStr;
 
         use serde::{Deserialize, Serialize};
 
-        use crate::version::v0_0_1::error::Error;
+        use crate::error::Error;
         use crate::version::v0_0_1::generic;
         use crate::version::v0_0_1::generic::id::{AddressAndKind, Identifier};
-        use crate::version::v0_0_1::generic::payload::{Payload, MapPattern, PayloadType};
+        use crate::version::v0_0_1::generic::payload::{MapPattern, Payload, PayloadType};
         use crate::version::v0_0_1::generic::payload::Primitive;
-        use crate::version::v0_0_1::util::ConvertFrom;
         use crate::version::v0_0_1::State;
-        use std::convert::{TryFrom, TryInto};
+        use crate::version::v0_0_1::util::ConvertFrom;
 
         #[derive(Debug, Clone, Serialize, Deserialize,Eq,PartialEq)]
         pub struct Archetype<KIND, ADDRESS> {
@@ -1029,8 +1034,8 @@ pub mod generic {
 
             use serde::{Deserialize, Serialize};
 
+            use crate::error::Error;
             use crate::version::v0_0_1::command::Command;
-            use crate::version::v0_0_1::error::Error;
             use crate::version::v0_0_1::fail;
             use crate::version::v0_0_1::frame::{CloseReason, PrimitiveFrame};
             use crate::version::v0_0_1::generic::entity::request;
@@ -1042,7 +1047,7 @@ pub mod generic {
             use crate::version::v0_0_1::messaging::Exchange;
             use crate::version::v0_0_1::messaging::ExchangeId;
             use crate::version::v0_0_1::resource::Status;
-            use crate::version::v0_0_1::util::{unique_id, ConvertFrom};
+            use crate::version::v0_0_1::util::{ConvertFrom, unique_id};
 
             #[derive(Debug, Clone, Serialize, Deserialize)]
             pub struct Request<IDENTIFIER, PAYLOAD> {
@@ -1138,19 +1143,19 @@ pub mod generic {
             }
 
             pub mod exchange {
+                use std::convert::{TryFrom, TryInto};
                 use std::fmt::Debug;
                 use std::hash::Hash;
                 use std::str::FromStr;
 
                 use serde::{Deserialize, Serialize};
 
-                use crate::version::latest::error::Error;
+                use crate::error::Error;
                 use crate::version::v0_0_1::generic::entity::request::ReqEntity;
                 use crate::version::v0_0_1::generic::id::Identifier;
                 use crate::version::v0_0_1::generic::portal::inlet;
                 use crate::version::v0_0_1::messaging::Exchange;
                 use crate::version::v0_0_1::util::ConvertFrom;
-                use std::convert::{TryFrom, TryInto};
 
                 #[derive(Debug, Clone, Serialize, Deserialize)]
                 pub struct Request<IDENTIFIER, PAYLOAD> {
@@ -1192,8 +1197,9 @@ pub mod generic {
 
             use serde::{Deserialize, Serialize};
 
+            use crate::error::Error;
+            use crate::version::v0_0_1::{fail, generic};
             use crate::version::v0_0_1::command::CommandEvent;
-            use crate::version::v0_0_1::error::Error;
             use crate::version::v0_0_1::frame::{CloseReason, PrimitiveFrame};
             use crate::version::v0_0_1::generic::config::Info;
             use crate::version::v0_0_1::generic::entity::request;
@@ -1203,7 +1209,6 @@ pub mod generic {
             use crate::version::v0_0_1::id::{Address, Key, Kind, ResourceType};
             use crate::version::v0_0_1::messaging::{Exchange, ExchangeId};
             use crate::version::v0_0_1::util::{ConvertFrom, unique_id};
-            use crate::version::v0_0_1::{fail, generic};
 
             #[derive(Debug, Clone, Serialize, Deserialize)]
             pub struct Request<IDENTIFIER, PAYLOAD> {
@@ -1343,18 +1348,18 @@ pub mod generic {
              */
 
             pub mod exchange {
+                use std::convert::{TryFrom, TryInto};
                 use std::fmt::Debug;
                 use std::hash::Hash;
                 use std::str::FromStr;
 
                 use serde::{Deserialize, Serialize};
 
-                use crate::version::latest::error::Error;
+                use crate::error::Error;
                 use crate::version::v0_0_1::generic::entity::request::ReqEntity;
                 use crate::version::v0_0_1::generic::id::Identifier;
                 use crate::version::v0_0_1::generic::portal::outlet;
                 use crate::version::v0_0_1::messaging::Exchange;
-                use std::convert::{TryFrom, TryInto};
 
                 #[derive(Debug, Clone, Serialize, Deserialize)]
                 pub struct Request<IDENTIFIER, PAYLOAD> {
@@ -1388,24 +1393,24 @@ pub mod generic {
 
     pub mod payload {
         use std::collections::HashMap;
+        use std::convert::{TryFrom, TryInto};
         use std::fmt::Debug;
         use std::hash::Hash;
-        use std::str::FromStr;
         use std::marker::PhantomData;
+        use std::ops::{Deref, DerefMut};
+        use std::path::Path;
+        use std::str::FromStr;
 
         use serde::{Deserialize, Serialize};
 
-        use crate::version::latest::error::Error;
+        use crate::error::Error;
+        use crate::version::v0_0_1::{http, State};
         use crate::version::v0_0_1::bin::Bin;
         use crate::version::v0_0_1::generic;
         use crate::version::v0_0_1::generic::resource::{Resource, ResourceStub};
         use crate::version::v0_0_1::payload::PrimitiveType;
         use crate::version::v0_0_1::resource::Status;
         use crate::version::v0_0_1::util::{Convert, ConvertFrom, ValueMatcher, ValuePattern};
-        use crate::version::v0_0_1::{http, State};
-        use std::convert::{TryFrom, TryInto};
-        use std::ops::{Deref, DerefMut};
-        use std::path::Path;
 
         #[derive(
             Debug, Clone, Serialize, Deserialize, Eq, PartialEq,strum_macros::Display,strum_macros::EnumString
@@ -1645,7 +1650,7 @@ pub mod generic {
         impl <FromAddress,ToAddress> ConvertFrom<Option<CallWithConfig<FromAddress>>> for Option<CallWithConfig<ToAddress>>
             where FromAddress: TryInto<ToAddress,Error=Error>, Call<ToAddress>: TryFrom<Call<FromAddress>,Error=Error>, Option<ToAddress>: TryFrom<Option<FromAddress>>
         {
-            fn convert_from(a: Option<CallWithConfig<FromAddress>>) -> Result<Self, crate::version::v0_0_1::error::Error> where Self: Sized {
+            fn convert_from(a: Option<CallWithConfig<FromAddress>>) -> Result<Self, crate::error::Error> where Self: Sized {
                 let rtn = match a{
                     None => None,
                     Some(some) => {
@@ -1660,7 +1665,7 @@ pub mod generic {
         impl <FromAddress,ToAddress> ConvertFrom<CallWithConfig<FromAddress>> for CallWithConfig<ToAddress>
           where FromAddress: TryInto<ToAddress,Error=Error>, Call<ToAddress>: TryFrom<Call<FromAddress>,Error=Error>
         {
-            fn convert_from(a: CallWithConfig<FromAddress>) -> Result<Self, crate::version::v0_0_1::error::Error> where Self: Sized {
+            fn convert_from(a: CallWithConfig<FromAddress>) -> Result<Self, crate::error::Error> where Self: Sized {
                 let config = match a.config {
                     None => None,
                     Some(from) => {
@@ -1752,7 +1757,7 @@ pub mod generic {
         }
 
         impl ValueMatcher<HttpMethod> for HttpMethod {
-            fn is_match(&self, found: &HttpMethod) -> Result<(), crate::version::v0_0_1::error::Error> {
+            fn is_match(&self, found: &HttpMethod) -> Result<(), crate::error::Error> {
                 if *self == *found {
                     Ok(())
                 } else {
@@ -1787,7 +1792,7 @@ pub mod generic {
         }
 
         impl ValueMatcher<RcCommand> for RcCommand {
-            fn is_match(&self, x: &RcCommand) -> Result<(), crate::version::v0_0_1::error::Error> {
+            fn is_match(&self, x: &RcCommand) -> Result<(), crate::error::Error> {
                 if *self == *x {
                     Ok(())
                 } else {
@@ -2187,7 +2192,7 @@ pub mod generic {
         }
 
         impl<PAYLOAD, PAYLOAD_REF> Convert<PAYLOAD> for PayloadDelivery<PAYLOAD, PAYLOAD_REF> {
-            fn convert(self) -> Result<PAYLOAD, crate::version::v0_0_1::error::Error> {
+            fn convert(self) -> Result<PAYLOAD, crate::error::Error> {
                 match self {
                     PayloadDelivery::Payload(payload) => Ok(payload),
                     PayloadDelivery::Ref(_) => {
@@ -2497,10 +2502,10 @@ pub mod generic {
 }
 
 pub mod util {
-
-    use crate::version::v0_0_1::error::Error;
-    use serde::{Serialize,Deserialize};
+    use serde::{Deserialize, Serialize};
     use uuid::Uuid;
+
+    use crate::error::Error;
 
     #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
     pub enum ValuePattern<T> {
@@ -2775,79 +2780,27 @@ pub mod fail {
     }
 }
 
-pub mod error {
-    use std::convert::Infallible;
-    use std::fmt::{Display, Formatter};
-    use std::string::FromUtf8Error;
-    use nom::error::VerboseError;
-    use nom::Err;
-
-    #[derive(Debug)]
-    pub struct Error {
-        pub message: String,
-    }
-
-    impl Display for Error {
-        fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-            f.write_str(self.message.as_str())
-        }
-    }
-
-    impl std::error::Error for Error {}
-
-    impl From<String> for Error {
-        fn from(message: String) -> Self {
-            Self { message }
-        }
-    }
-
-    impl From<FromUtf8Error> for Error {
-        fn from(message: FromUtf8Error) -> Self {
-            Self {
-                message: message.to_string(),
-            }
-        }
-    }
-
-    impl From<&str> for Error {
-        fn from(message: &str) -> Self {
-            Self {
-                message: message.to_string(),
-            }
-        }
-    }
-
-    impl From<Box<bincode::ErrorKind>> for Error {
-        fn from(message: Box<bincode::ErrorKind>) -> Self {
-            Self {
-                message: message.to_string(),
-            }
-        }
-    }
-
-    impl From<Infallible> for Error {
-        fn from(i: Infallible) -> Self {
-            Self {
-                message: i.to_string(),
-            }
-        }
-    }
-
-    impl From<nom::Err<VerboseError<&str>>> for Error {
-        fn from(error: Err<VerboseError<&str>>) -> Self {
-            Self {
-                message: error.to_string()
-            }
-        }
-    }
-}
 
 pub mod parse {
-    use nom::combinator::{recognize, all_consuming};
-    use nom::multi::separated_list1;
-    use nom::{InputTakeAtPosition, AsChar, IResult};
+    use nom::{AsChar, InputTakeAtPosition, IResult};
+    use nom::combinator::{all_consuming, recognize};
     use nom::error::{ErrorKind, VerboseError};
+    use nom::multi::separated_list1;
+
     use crate::version::v0_0_1::id::Address;
+
+    pub struct Parser {
+    }
+
+    impl Parser {
+        pub fn address( input: &str ) -> Res<&str,Address> {
+            address(input)
+        }
+
+        pub fn consume_address( input: &str ) -> Res<&str,Address> {
+            consume_address(input)
+        }
+    }
 
     pub type Res<I,O>=IResult<I,O, VerboseError<I>>;
 

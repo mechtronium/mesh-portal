@@ -163,7 +163,7 @@ pub mod portal {
         use crate::version::latest::generic;
         use crate::version::latest::id::{Address, Key, Kind, ResourceType,Identifier};
         use crate::version::latest::frame::PrimitiveFrame;
-        use crate::version::latest::error::Error;
+        use crate::error::Error;
         use crate::version::latest::payload::PayloadDelivery;
 
         pub type Request=generic::portal::inlet::Request<Identifier,PayloadDelivery>;
@@ -183,7 +183,7 @@ pub mod portal {
         use crate::version::v0_0_1::portal;
         use crate::version::latest::id::{Address, Key, Kind, ResourceType, Identifier};
         use crate::version::latest::frame::PrimitiveFrame;
-        use crate::version::latest::error::Error;
+        use crate::error::Error;
         use crate::version::latest::payload::PayloadDelivery;
 
         pub type Request=portal::outlet::Request;
@@ -275,7 +275,7 @@ pub mod generic {
 
         use serde::{Deserialize, Serialize};
 
-        use crate::version::v0_0_1::error::Error;
+        use crate::error::Error;
         use crate::version::v0_0_1::generic;
         use crate::version::v0_0_1::generic::id::{AddressAndKind, Identifier};
         use crate::version::v0_0_1::State;
@@ -417,11 +417,9 @@ pub mod util {
     pub type StringMatcher= util::StringMatcher;
 }
 
-pub mod error {
-    pub type Error=crate::version::v0_0_1::error::Error;
-
+pub mod parse {
+    pub type Parser = crate::version::v0_0_1::parse::Parser;
 }
-
 
 
 

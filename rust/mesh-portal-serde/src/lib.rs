@@ -17,6 +17,7 @@ use crate::version::latest::log::Log;
 
 pub mod version;
 pub mod mesh;
+pub mod error;
 
 pub fn std_logger(log: Log ) {
     match log {

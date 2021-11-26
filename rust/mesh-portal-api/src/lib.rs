@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc;
 use tokio::sync::mpsc::error::SendError;
 
-use mesh_portal_serde::version::latest::error::Error;
+use mesh_portal_serde::error::Error;
 use mesh_portal_serde::version::v0_0_1::util::ConvertFrom;
 use mesh_portal_serde::version::latest::portal::inlet;
 
@@ -56,12 +56,12 @@ pub mod message {
         use mesh_portal_serde::mesh::generic::{Request, Response};
 
         #[derive(Clone,Serialize,Deserialize)]
-        pub enum Message<OPERATION,ID> {
-            Request(Request<OPERATION,ID>),
+        pub enum Message<ReqEntity,ID> {
+            Request(Request<ReqEntity,ID>),
             Response(Response<ID>)
         }
 
-        impl<OPERATION,ID> Message<OPERATION,ID> where ID: Clone {
+        impl<ReqEntity,ID> Message<ReqEntity,ID> where ID: Clone {
             pub fn to(&self) -> ID {
                 match self {
                     Message::Request(request) => {
@@ -74,13 +74,13 @@ pub mod message {
             }
         }
 
-        impl<OPERATION,ID> From<Request<OPERATION,ID>> for Message<OPERATION,ID> {
-            fn from(request: Request<OPERATION, ID>) -> Self {
+        impl<ReqEntity,ID> From<Request<ReqEntity,ID>> for Message<ReqEntity,ID> {
+            fn from(request: Request<ReqEntity, ID>) -> Self {
                 Self::Request(request)
             }
         }
 
-        impl<OPERATION,ID> From<Response<ID>> for Message<OPERATION,ID> {
+        impl<ReqEntity,ID> From<Response<ID>> for Message<ReqEntity,ID> {
             fn from(response: Response<ID>) -> Self {
                 Self::Response(response)
             }

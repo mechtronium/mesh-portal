@@ -1,20 +1,27 @@
 use crate::version::latest::entity::request::ReqEntity;
 use crate::version::latest::id::Identifier;
+use crate::version::latest;
 
 pub type Request = generic::Request<ReqEntity,Identifier>;
 pub type Response = generic::Response<Identifier>;
 
+
+
 pub mod generic {
-    use std::convert::TryInto;
+    use std::convert::{TryInto, TryFrom};
     use serde::{Serialize,Deserialize};
 
+    use crate::version::latest;
     use crate::version::latest::portal::{inlet, outlet};
     use crate::version::latest::id::Identifier;
     use crate::version::latest::messaging::{ExchangeId, Exchange};
     use crate::version::latest::entity::request::ReqEntity;
     use crate::version::latest::entity::response;
     use crate::version::latest::{portal, entity};
+    use crate::version::latest::payload::PayloadDelivery;
+    use crate::version::latest::generic;
     use crate::version::v0_0_1::util::{unique_id, ConvertFrom};
+    use crate::error::Error;
 
     #[derive(Clone,Serialize,Deserialize)]
     pub struct Request<ENTITY,ID>{
@@ -35,7 +42,24 @@ pub mod generic {
                 exchange
             }
         }
+
+
     }
+
+    impl <ID> Request<ReqEntity,ID>
+    {
+        pub fn into_exchange(self) -> Result<latest::generic::portal::inlet::exchange::Request<latest::id::Identifier, PayloadDelivery>,Error>
+            where ID: TryInto<latest::id::Identifier,Error=Error>,
+        {
+            Ok(inlet::exchange::Request {
+                id: self.id,
+                to: vec![self.to.try_into()?],
+                entity: self.entity,
+                exchange: self.exchange
+            })
+        }
+    }
+
 
     impl <ID> Request<ReqEntity,ID>{
         pub fn from(request: inlet::Request, from: ID, to: ID, exchange: Exchange) -> Self {

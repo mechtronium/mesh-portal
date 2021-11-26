@@ -21,7 +21,6 @@ use mesh_portal_serde::version::latest::util::{ValuePattern, StringMatcher};
 use mesh_portal_serde::version::latest::payload::{CallWithConfig, RcCommand};
 use mesh_portal_serde::version::latest::payload::{CallKind, Call};
 use mesh_portal_serde::version::latest::payload::{PayloadFormat, PayloadPattern};
-use mesh_portal_serde::version::v0_0_1::parse::address;
 use mesh_portal_serde::version::latest::id::Address;
 use mesh_portal_serde::version::latest::payload::MapPattern;
 use mesh_portal_serde::version::v0_0_1::generic::id::Identifier;
@@ -307,7 +306,7 @@ pub fn mechtron_address(input: &str) -> Res<&str, Address> {
 
 
 pub fn call_with_config(input: &str) -> Res<&str, CallWithConfig> {
-    tuple( (call, opt(preceded(tag("+"), address ))) )(input).map( |(next, (call,config)) |{
+    tuple( (call, opt(preceded(tag("+"), Address::parse ))) )(input).map( |(next, (call,config)) |{
 
         (next,
          CallWithConfig {
@@ -427,7 +426,7 @@ pub fn payload_format(input: &str ) -> Res<&str, PayloadFormat> {
 }
 
 pub fn payload_validator(input: &str ) -> Res<&str, PayloadValidator> {
-    tuple(( call, opt(preceded(tag("+"), address ))))(input).map( |(next,(port_call,schema))| {
+    tuple(( call, opt(preceded(tag("+"), Address::parse ))))(input).map( |(next,(port_call,schema))| {
         (next,PayloadValidator{
             port_call,
             schema
@@ -496,14 +495,14 @@ pub fn text_value(input: &str ) -> Res<&str, PayloadValueSrc> {
 }
 
 pub fn address_value(input: &str ) -> Res<&str, PayloadValueSrc> {
-    delimited(tag("'"), address, tag("'"))(input).map(|(next, address)| {
+    delimited(tag("'"), Address::parse, tag("'"))(input).map(|(next, address)| {
         (next,
          PayloadValueSrc::Address(address))
     })
 }
 
 pub fn state_value(input: &str ) -> Res<&str, PayloadValueSrc> {
-    address(input).map(|(next, address)| {
+    Address::parse(input).map(|(next, address)| {
         (next,
          PayloadValueSrc::State(address))
     })
