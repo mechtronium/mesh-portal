@@ -46,20 +46,6 @@ pub mod generic {
 
     }
 
-    impl <ID> Request<ReqEntity,ID>
-    {
-        pub fn into_exchange(self) -> Result<latest::generic::portal::inlet::exchange::Request<latest::id::Identifier, PayloadDelivery>,Error>
-            where ID: TryInto<latest::id::Identifier,Error=Error>,
-        {
-            Ok(inlet::exchange::Request {
-                id: self.id,
-                to: vec![self.to.try_into()?],
-                entity: self.entity,
-                exchange: self.exchange
-            })
-        }
-    }
-
 
     impl <ID> Request<ReqEntity,ID>{
         pub fn from(request: inlet::Request, from: ID, to: ID, exchange: Exchange) -> Self {
@@ -73,26 +59,6 @@ pub mod generic {
         }
     }
 
-    impl Into<inlet::exchange::Request> for Request<ReqEntity,Identifier> {
-        fn into(self) -> inlet::exchange::Request {
-            inlet::exchange::Request {
-                id: self.id,
-                to: vec![self.to.into()],
-                entity: self.entity,
-                exchange: self.exchange
-            }
-        }
-    }
-
-    impl Into<portal::outlet::exchange::Request> for Request<ReqEntity,Identifier> {
-        fn into(self) ->  portal::outlet::exchange::Request{
-            portal::outlet::exchange::Request{
-                from: self.from,
-                entity: self.entity,
-                exchange: self.exchange
-            }
-        }
-    }
 
     #[derive(Clone,Serialize,Deserialize)]
     pub struct Response<ID>{

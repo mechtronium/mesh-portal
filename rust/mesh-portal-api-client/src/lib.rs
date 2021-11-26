@@ -28,6 +28,8 @@ use mesh_portal_serde::version::latest::messaging::{ExchangeId, Exchange};
 use mesh_portal_serde::version::latest::config::Info;
 use mesh_portal_serde::version::latest::log::Log;
 use mesh_portal_serde::version::latest::{portal, entity};
+use mesh_portal_serde::version::v0_0_1::util::ConvertFrom;
+use std::convert::TryInto;
 
 
 struct EmptySkel {
@@ -105,7 +107,6 @@ impl PortalSkel {
 pub struct Portal {
     pub skel: PortalSkel,
     pub ctrl: Arc<dyn PortalCtrl>,
-    pub ports: Arc<HashMap<String,Box<dyn PortCtrl>>>,
 }
 
 impl Portal {
@@ -135,7 +136,6 @@ impl Portal {
         let portal = Self {
             skel: skel.clone(),
             ctrl,
-            ports
         };
 
         Ok(Arc::new(portal))
@@ -156,136 +156,31 @@ impl Outlet for Portal {
                 outlet::Frame::Request(request) => {
                     let ctrl = self.ctrl.clone();
                     let inlet_api = self.skel.api();
-                    let skel = self.skel.clone();
-                    let context = RequestContext::new(skel.info.clone(), skel.logger );
-                    let ports = self.ports.clone();
-                    let from = request.from.clone();
-                    let kind = request.exchange.clone();
+                    let ctx = RequestContext::new(self.skel.info.clone(), self.skel.logger );
+
                     tokio::spawn( async move {
-                        match request.entity.clone() {
-                            ExtOperation::Http(_) => {
-                                if let Exchange::RequestResponse(exchange_id) = &kind
-                                {
-                                    let result = Request::try_from_http(request, context);
-                                    match result {
-                                        Ok(request) => {
-                                            let path = request.path.clone();
-                                            let result = ctrl.http_request(request).await;
-                                            match result {
-                                                Ok(response) => {
-                                                    let response = inlet::Response {
-                                                        to: from,
-                                                        exchange:exchange_id.clone(),
-                                                        entity: ResponseEntity::Ok(Entity::HttpResponse(response))
-                                                    };
-                                                    inlet_api.respond( response );
-                                                }
-                                                Err(err) => {
-                                                    (skel.logger)(format!("ERROR: HttpRequest.path: '{}' error: '{}' ",  path, err.to_string()).as_str());
-                                                    let response = inlet::Response {
-                                                        to: from,
-                                                        exchange:exchange_id.clone(),
-                                                        entity: ResponseEntity::Ok(Entity::HttpResponse(HttpResponse::server_side_error()))
-                                                    };
-                                                    inlet_api.respond( response );
-                                                }
-                                            }
-                                        }
-                                        Err(err) => {
-                                            (skel.logger)(format!("FATAL: could not modify HttpRequest into Request<HttpRequest>: {}", err.to_string()).as_str());
-                                        }
-                                    }
+
+                        fn handle( ctrl: Arc<dyn PortalCtrl>, inlet_api: InletApi, request: outlet::Request ) -> Result<(),Error> {
+                            let exchange = request.exchange.clone();
+                            let response = ctrl.handle(request).await?;
+
+                            if exchange.requires_response() {
+                                if let Some(mut response) = response {
+                                    let exchange_id = exchange.try_into()?;
+                                    response.exchange = exchange_id;
+                                    inlet_api.respond(response);
                                 } else {
-                                    (skel.logger)("FATAL: http request MUST be of ExchangeKind::RequestResponse");
+                                    return Err("response expected".into());
                                 }
                             }
-                            ExtOperation::Port(port_request) => {
-                                match ports.get(&port_request.port ) {
-                                    Some(port) => {
-                                        let result = Request::try_from_port(request, context );
-                                        match result {
-                                            Ok(request) => {
-                                                let request_from = request.from.clone();
-                                                let result = port.request(request).await;
-                                                match result {
-                                                    Ok(response) => {
-                                                        match response {
-                                                            Some(signal) => {
-                                                                if let Exchange::RequestResponse(exchange_id) = &kind
-                                                                {
-                                                                   let response = inlet::Response {
-                                                                       to: request_from,
-                                                                       exchange: exchange_id.clone(),
-                                                                       entity: signal
-                                                                   };
 
-                                                                   inlet_api.respond(response);
-                                                                } else {
-                                                                    let message = format!("WARN: PortOperation.port '{}' generated a response to a ExchangeKind::Notification", port_request.port);
-                                                                    (skel.logger)(message.as_str());
-                                                                }
-                                                            }
-                                                            None => {
-                                                                let message = format!("ERROR: PortOperation.port '{}' generated no response", port_request.port);
-                                                                (skel.logger)(message.as_str());
-                                                                if let Exchange::RequestResponse(exchange_id) = &kind
-                                                                {
-                                                                    let response = inlet::Response {
-                                                                        to: request_from,
-                                                                        exchange: exchange_id.clone(),
-                                                                        entity: ResponseEntity::Error(message)
-                                                                    };
-                                                                    inlet_api.respond(response);
-                                                                }
-                                                            }
-                                                        }
-                                                    }
-                                                    Err(err) => {
-                                                        let message = format!("ERROR: PortOperation.port '{}' message: '{}'", port_request.port, err.to_string());
-                                                        (skel.logger)(message.as_str());
-                                                        if let Exchange::RequestResponse(exchange_id) = &kind
-                                                        {
-                                                            let response = inlet::Response {
-                                                                to: request_from,
-                                                                exchange: exchange_id.clone(),
-                                                                entity: ResponseEntity::Error(message)
-                                                            };
-                                                            inlet_api.respond(response);
-                                                        }
-                                                    }
-                                                }
+                            Ok(())
+                        }
 
-                                            }
-                                            Err(err) => {
-                                                let message = format!("FATAL: could not modify PortOperation into Request<PortOperation>: {}", err.to_string());
-                                                (skel.logger)(message.as_str());
-                                                if let Exchange::RequestResponse(exchange_id) = &kind
-                                                {
-                                                    let response = inlet::Response {
-                                                        to: from,
-                                                        exchange: exchange_id.clone(),
-                                                        entity: ResponseEntity::Error(message)
-                                                    };
-                                                    inlet_api.respond(response);
-                                                }
-                                            }
-                                        }
-
-                                    }
-                                    None => {
-                                        let message =format!("ERROR: message port: '{}' not defined ", port_request.port );
-                                        (skel.logger)(message.as_str());
-                                        if let Exchange::RequestResponse(exchange_id) = &kind
-                                        {
-                                            let response = inlet::Response {
-                                                to: from,
-                                                exchange: exchange_id.clone(),
-                                                entity: ResponseEntity::Error(message)
-                                            };
-                                            inlet_api.respond(response);
-                                        }
-                                    }
-                                }
+                        match handle( ctrl, inlet_api, request ) {
+                            Ok(_) => {}
+                            Err(err) => {
+                                ctx.logger(err.to_string());
                             }
                         }
                     });
@@ -452,3 +347,133 @@ pub mod example {
 
 
 }
+
+
+
+
+/*                        match request.entity.clone() {
+                            ExtOperation::Http(_) => {
+                                if let Exchange::RequestResponse(exchange_id) = &kind
+                                {
+                                    let result = Request::try_from_http(request, context);
+                                    match result {
+                                        Ok(request) => {
+                                            let path = request.path.clone();
+                                            let result = ctrl.http_request(request).await;
+                                            match result {
+                                                Ok(response) => {
+                                                    let response = inlet::Response {
+                                                        to: from,
+                                                        exchange:exchange_id.clone(),
+                                                        entity: ResponseEntity::Ok(Entity::HttpResponse(response))
+                                                    };
+                                                    inlet_api.respond( response );
+                                                }
+                                                Err(err) => {
+                                                    (skel.logger)(format!("ERROR: HttpRequest.path: '{}' error: '{}' ",  path, err.to_string()).as_str());
+                                                    let response = inlet::Response {
+                                                        to: from,
+                                                        exchange:exchange_id.clone(),
+                                                        entity: ResponseEntity::Ok(Entity::HttpResponse(HttpResponse::server_side_error()))
+                                                    };
+                                                    inlet_api.respond( response );
+                                                }
+                                            }
+                                        }
+                                        Err(err) => {
+                                            (skel.logger)(format!("FATAL: could not modify HttpRequest into Request<HttpRequest>: {}", err.to_string()).as_str());
+                                        }
+                                    }
+                                } else {
+                                    (skel.logger)("FATAL: http request MUST be of ExchangeKind::RequestResponse");
+                                }
+                            }
+                            ExtOperation::Port(port_request) => {
+                                match ports.get(&port_request.port ) {
+                                    Some(port) => {
+                                        let result = Request::try_from_port(request, context );
+                                        match result {
+                                            Ok(request) => {
+                                                let request_from = request.from.clone();
+                                                let result = port.request(request).await;
+                                                match result {
+                                                    Ok(response) => {
+                                                        match response {
+                                                            Some(signal) => {
+                                                                if let Exchange::RequestResponse(exchange_id) = &kind
+                                                                {
+                                                                   let response = inlet::Response {
+                                                                       to: request_from,
+                                                                       exchange: exchange_id.clone(),
+                                                                       entity: signal
+                                                                   };
+
+                                                                   inlet_api.respond(response);
+                                                                } else {
+                                                                    let message = format!("WARN: PortOperation.port '{}' generated a response to a ExchangeKind::Notification", port_request.port);
+                                                                    (skel.logger)(message.as_str());
+                                                                }
+                                                            }
+                                                            None => {
+                                                                let message = format!("ERROR: PortOperation.port '{}' generated no response", port_request.port);
+                                                                (skel.logger)(message.as_str());
+                                                                if let Exchange::RequestResponse(exchange_id) = &kind
+                                                                {
+                                                                    let response = inlet::Response {
+                                                                        to: request_from,
+                                                                        exchange: exchange_id.clone(),
+                                                                        entity: ResponseEntity::Error(message)
+                                                                    };
+                                                                    inlet_api.respond(response);
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                    Err(err) => {
+                                                        let message = format!("ERROR: PortOperation.port '{}' message: '{}'", port_request.port, err.to_string());
+                                                        (skel.logger)(message.as_str());
+                                                        if let Exchange::RequestResponse(exchange_id) = &kind
+                                                        {
+                                                            let response = inlet::Response {
+                                                                to: request_from,
+                                                                exchange: exchange_id.clone(),
+                                                                entity: ResponseEntity::Error(message)
+                                                            };
+                                                            inlet_api.respond(response);
+                                                        }
+                                                    }
+                                                }
+
+                                            }
+                                            Err(err) => {
+                                                let message = format!("FATAL: could not modify PortOperation into Request<PortOperation>: {}", err.to_string());
+                                                (skel.logger)(message.as_str());
+                                                if let Exchange::RequestResponse(exchange_id) = &kind
+                                                {
+                                                    let response = inlet::Response {
+                                                        to: from,
+                                                        exchange: exchange_id.clone(),
+                                                        entity: ResponseEntity::Error(message)
+                                                    };
+                                                    inlet_api.respond(response);
+                                                }
+                                            }
+                                        }
+
+                                    }
+                                    None => {
+                                        let message =format!("ERROR: message port: '{}' not defined ", port_request.port );
+                                        (skel.logger)(message.as_str());
+                                        if let Exchange::RequestResponse(exchange_id) = &kind
+                                        {
+                                            let response = inlet::Response {
+                                                to: from,
+                                                exchange: exchange_id.clone(),
+                                                entity: ResponseEntity::Error(message)
+                                            };
+                                            inlet_api.respond(response);
+                                        }
+                                    }
+                                }
+                            }
+                        }*/

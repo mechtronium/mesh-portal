@@ -175,7 +175,6 @@ pub mod portal {
             use crate::version::latest::id::{Address, Key, Kind, ResourceType, Identifier};
             use crate::version::latest::generic;
             use crate::version::latest::payload::Payload;
-            pub type Request=generic::portal::inlet::exchange::Request<Identifier,Payload>;
         }
     }
 
@@ -190,14 +189,6 @@ pub mod portal {
         pub type Request=portal::outlet::Request;
         pub type Response=portal::outlet::Response;
         pub type Frame=portal::outlet::Frame;
-
-        pub mod exchange {
-            use crate::version::latest::id::{Address, Key, Kind, ResourceType,Identifier};
-            use crate::version::latest::generic;
-            use crate::version::latest::payload::Payload;
-
-            pub type Request=generic::portal::outlet::exchange::Request<Identifier,Payload>;
-        }
     }
 }
 
@@ -301,17 +292,6 @@ pub mod generic {
             pub type Request<IDENTIFIER, PAYLOAD> = inlet::Request<IDENTIFIER,PAYLOAD>;
             pub type Response<IDENTIFIER, PAYLOAD> = inlet::Response<IDENTIFIER,PAYLOAD>;
             pub type Frame<IDENTIFIER, PAYLOAD> = inlet::Frame<IDENTIFIER,PAYLOAD>;
-
-            pub mod exchange {
-                use std::fmt::Debug;
-                use std::hash::Hash;
-                use std::str::FromStr;
-
-                use serde::{Deserialize, Serialize};
-                use crate::version::v0_0_1::generic::portal::inlet::exchange;
-
-                pub type Request<IDENTIFIER, PAYLOAD> = exchange::Request<IDENTIFIER,PAYLOAD>;
-            }
         }
 
         pub mod outlet {
@@ -328,18 +308,6 @@ pub mod generic {
             pub type Request<IDENTIFIER, PAYLOAD> =  outlet::Request<IDENTIFIER,PAYLOAD>;
             pub type Response<IDENTIFIER, PAYLOAD> =  outlet::Response<IDENTIFIER,PAYLOAD>;
             pub type Frame<KEY, ADDRESS, IDENTIFIER, KIND,PAYLOAD> =  outlet::Frame<KEY,ADDRESS,IDENTIFIER,KIND,PAYLOAD>;
-
-            pub mod exchange {
-                use std::fmt::Debug;
-                use std::hash::Hash;
-                use std::str::FromStr;
-
-                use serde::{Deserialize, Serialize};
-
-                use crate::version::v0_0_1::generic::portal::outlet::exchange;
-
-                pub type Request<IDENTIFIER, PAYLOAD> = exchange::Request<IDENTIFIER,PAYLOAD>;
-            }
         }
     }
 
@@ -418,7 +386,7 @@ pub mod util {
     pub type RegexMatcher = util::RegexMatcher;
     pub type StringMatcher= util::StringMatcher;
 
-    pub fn unique_id() -> Sring {
+    pub fn unique_id() -> String {
         util::unique_id()
     }
 }

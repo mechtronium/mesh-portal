@@ -87,6 +87,8 @@ pub mod id {
 
 pub mod messaging {
     use serde::{Deserialize, Serialize};
+    use std::convert::TryInto;
+    use crate::error::Error;
 
     pub type ExchangeId = String;
 
@@ -104,10 +106,25 @@ pub mod messaging {
     }
 
     impl Exchange {
-        pub fn is_singular_recipient(&self) -> bool {
+        pub fn requires_response(&self) -> bool {
             match self {
                 Exchange::Notification => false,
                 Exchange::RequestResponse(_) => true,
+            }
+        }
+    }
+
+    impl TryInto<ExchangeId> for Exchange {
+        type Error = Error;
+
+        fn try_into(self) -> Result<ExchangeId, Self::Error> {
+            match self {
+                Exchange::Notification => {
+                    Err("Exchange Notification cannot be converted into a RequestResponse Exchange".into())
+                }
+                Exchange::RequestResponse(id) => {
+                    Ok(id)
+                }
             }
         }
     }
@@ -1083,18 +1100,7 @@ pub mod generic {
                 pub id: String,
                 pub to: Vec<IDENTIFIER>,
                 pub entity: request::ReqEntity<PAYLOAD>,
-            }
-
-            impl<IDENTIFIER, PAYLOAD> From<exchange::Request<IDENTIFIER, PAYLOAD>>
-                for Request<IDENTIFIER, PAYLOAD>
-            {
-                fn from(request: exchange::Request<IDENTIFIER, PAYLOAD>) -> Self {
-                    Request {
-                        id: request.id,
-                        to: request.to,
-                        entity: request.entity,
-                    }
-                }
+                pub exchange: Exchange
             }
 
             impl<IDENTIFIER, PAYLOAD> Request<IDENTIFIER, PAYLOAD> {
@@ -1103,6 +1109,7 @@ pub mod generic {
                         id: unique_id(),
                         to: vec![],
                         entity,
+                        exchange: Exchange::Notification
                     }
                 }
             }
@@ -1111,8 +1118,8 @@ pub mod generic {
                 pub fn exchange(
                     self,
                     exchange: Exchange,
-                ) -> exchange::Request<IDENTIFIER, PAYLOAD> {
-                    exchange::Request {
+                ) -> Request<IDENTIFIER, PAYLOAD> {
+                    Request {
                         id: self.id,
                         to: self.to,
                         entity: self.entity,
@@ -1153,7 +1160,7 @@ pub mod generic {
             pub enum Frame<IDENTIFIER, PAYLOAD> {
                 Log(Log),
                 Command(Command),
-                Request(exchange::Request<IDENTIFIER, PAYLOAD>),
+                Request(Request<IDENTIFIER, PAYLOAD>),
                 Response(Response<IDENTIFIER, PAYLOAD>),
                 Status(Status),
                 Close(CloseReason),
@@ -1171,50 +1178,6 @@ pub mod generic {
                 }
             }
 
-            pub mod exchange {
-                use std::convert::{TryFrom, TryInto};
-                use std::fmt::Debug;
-                use std::hash::Hash;
-                use std::str::FromStr;
-
-                use serde::{Deserialize, Serialize};
-
-                use crate::error::Error;
-                use crate::version::v0_0_1::generic::entity::request::ReqEntity;
-                use crate::version::v0_0_1::generic::id::Identifier;
-                use crate::version::v0_0_1::generic::portal::inlet;
-                use crate::version::v0_0_1::messaging::Exchange;
-                use crate::version::v0_0_1::util::ConvertFrom;
-
-                #[derive(Debug, Clone, Serialize, Deserialize)]
-                pub struct Request<IDENTIFIER, PAYLOAD> {
-                    pub id: String,
-                    pub to: Vec<IDENTIFIER>,
-                    pub entity: ReqEntity<PAYLOAD>,
-                    pub exchange: Exchange,
-                }
-
-                impl<FromIdentifier, FromPayload> Request<FromIdentifier, FromPayload> {
-                    pub fn convert<ToIdentifier, ToAddress, ToKind, ToPayload>(
-                        self,
-                    ) -> Result<Request<ToIdentifier, ToPayload>, Error>
-                    where
-                        ToIdentifier: TryFrom<FromIdentifier, Error = Error>,
-                        ToPayload: TryFrom<FromPayload, Error = Error>,
-                    {
-                        let mut to_list = vec![];
-                        for to in self.to {
-                            to_list.push(to.try_into()?)
-                        }
-                        Ok(Request {
-                            id: self.id,
-                            to: to_list,
-                            entity: ConvertFrom::convert_from(self.entity)?,
-                            exchange: self.exchange,
-                        })
-                    }
-                }
-            }
         }
 
         pub mod outlet {
@@ -1227,7 +1190,7 @@ pub mod generic {
             use serde::{Deserialize, Serialize};
 
             use crate::error::Error;
-            use crate::version::v0_0_1::{fail, generic};
+            use crate::version::v0_0_1::generic;
             use crate::version::v0_0_1::command::CommandEvent;
             use crate::version::v0_0_1::frame::{CloseReason, PrimitiveFrame};
             use crate::version::v0_0_1::generic::config::Info;
@@ -1235,55 +1198,79 @@ pub mod generic {
             use crate::version::v0_0_1::generic::entity::response;
             use crate::version::v0_0_1::generic::id::Identifier;
             use crate::version::v0_0_1::generic::payload::Primitive;
+            use crate::version::v0_0_1::generic::portal::inlet;
             use crate::version::v0_0_1::id::{Address, Key, Kind, ResourceType};
             use crate::version::v0_0_1::messaging::{Exchange, ExchangeId};
             use crate::version::v0_0_1::util::{ConvertFrom, unique_id};
+            use crate::version::v0_0_1::fail;
+            use crate::version::v0_0_1::generic::entity::response::RespEntity;
 
             #[derive(Debug, Clone, Serialize, Deserialize)]
             pub struct Request<IDENTIFIER, PAYLOAD> {
                 pub from: IDENTIFIER,
                 pub entity: request::ReqEntity<PAYLOAD>,
-            }
-
-            impl<IDENTIFIER, PAYLOAD> From<exchange::Request<IDENTIFIER, PAYLOAD>>
-                for Request<IDENTIFIER, PAYLOAD>
-            {
-                fn from(request: exchange::Request<IDENTIFIER, PAYLOAD>) -> Self {
-                    Request {
-                        from: request.from,
-                        entity: request.entity,
-                    }
-                }
+                pub exchange: Exchange
             }
 
             impl<IDENTIFIER, PAYLOAD> Request<IDENTIFIER, PAYLOAD> {
                 pub fn exchange(
                     self,
                     exchange: Exchange,
-                ) -> exchange::Request<IDENTIFIER, PAYLOAD> {
-                    exchange::Request {
+                ) -> Request<IDENTIFIER, PAYLOAD> {
+                    Self {
                         from: self.from,
                         entity: self.entity,
                         exchange,
                     }
                 }
+
+                pub fn ensure_notification(&self) -> Result<(),Error> {
+                    match self.exchange {
+                        Exchange::Notification => {
+                            Ok(())
+                        }
+                        Exchange::RequestResponse(_) => {
+                            Err("expected Notification Exchange but found RequestResponse Exchange".into())
+                        }
+                    }
+                }
+
+                pub fn ok( self, payload: PAYLOAD ) -> Result<inlet::Response<IDENTIFIER,PAYLOAD>,Error> {
+                    Ok(inlet::Response {
+                        id: unique_id(),
+                        to: self.from,
+                        exchange: self.exchange.try_into()?,
+                        entity: RespEntity::Ok(payload)
+                    })
+                }
+
+                pub fn fail( self, fail: fail::portal::Fail ) -> Result<inlet::Response<IDENTIFIER,PAYLOAD>,Error> {
+                    Ok(inlet::Response {
+                        id: unique_id(),
+                        to: self.from,
+                        exchange: self.exchange.try_into()?,
+                        entity: RespEntity::Fail(fail)
+                    })
+                }
             }
+
+
 
             #[derive(Debug, Clone, Serialize, Deserialize)]
             pub struct Response<IDENTIFIER, PAYLOAD> {
                 pub id: String,
                 pub from: IDENTIFIER,
-                pub exchange: ExchangeId,
                 pub entity: response::RespEntity<PAYLOAD, fail::Fail>,
+                pub exchange: ExchangeId
             }
 
             impl <IDENTIFIER,PAYLOAD> Response<IDENTIFIER,PAYLOAD> {
-                pub fn new( from: IDENTIFIER, exchange: ExchangeId, entity: response::RespEntity<PAYLOAD, fail::Fail> ) -> Self {
+                pub fn new( from: IDENTIFIER, entity: response::RespEntity<PAYLOAD, fail::Fail>, exchange: ExchangeId ) -> Self {
                     Self {
                         id: unique_id(),
                         from,
-                        exchange,
-                        entity
+                        entity,
+                        exchange
                     }
                 }
             }
@@ -1300,7 +1287,7 @@ pub mod generic {
                         id: self.id,
                         from: self.from.try_into()?,
                         entity: ConvertFrom::convert_from(self.entity)?,
-                        exchange: self.exchange,
+                        exchange: self.exchange
                     })
                 }
             }
@@ -1376,47 +1363,6 @@ pub mod generic {
 
              */
 
-            pub mod exchange {
-                use std::convert::{TryFrom, TryInto};
-                use std::fmt::Debug;
-                use std::hash::Hash;
-                use std::str::FromStr;
-
-                use serde::{Deserialize, Serialize};
-
-                use crate::error::Error;
-                use crate::version::v0_0_1::generic::entity::request::ReqEntity;
-                use crate::version::v0_0_1::generic::id::Identifier;
-                use crate::version::v0_0_1::generic::portal::outlet;
-                use crate::version::v0_0_1::messaging::Exchange;
-
-                #[derive(Debug, Clone, Serialize, Deserialize)]
-                pub struct Request<IDENTIFIER, PAYLOAD> {
-                    pub from: IDENTIFIER,
-                    pub entity: ReqEntity<PAYLOAD>,
-                    pub exchange: Exchange,
-                }
-
-                /*
-                impl<FromKey, FromAddress, FromKind> Request<FromKey, FromAddress, FromKind> {
-                    pub fn convert<ToKey, ToAddress, ToKind>(
-                        self,
-                    ) -> Result<Request<ToKey, ToAddress, ToKind>, Error>
-                    where
-                        ToKey: TryFrom<FromKey, Error = Error>,
-                        ToAddress: TryFrom<FromAddress, Error = Error>,
-                        ToKind: TryFrom<FromKind, Error = Error>,
-                    {
-                        Ok(Request {
-                            from: self.from.convert()?,
-                            entity: self.entity.convert()?,
-                            exchange: self.exchange,
-                        })
-                    }
-                }
-
-                 */
-            }
         }
     }
 
