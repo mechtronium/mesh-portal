@@ -87,6 +87,7 @@ impl PortalTcpClient {
 
 
         if let outlet::Frame::Create(info) = reader.read( ).await?  {
+
             let portal = Portal::new(info, inlet, client.portal_ctrl_factory(), client.logger()).await?;
 
 
@@ -122,7 +123,7 @@ impl PortalTcpClient {
 pub trait PortalClient: Send+Sync {
     fn flavor(&self) -> String;
     async fn auth( &self, reader: & mut PrimitiveFrameReader, writer: & mut PrimitiveFrameWriter ) -> Result<(),Error>;
-    fn portal_ctrl_factory(&self)->fn( skel: PortalSkel) -> Box<dyn PortalCtrl>;
+    fn portal_ctrl_factory(&self)->Box<dyn Fn(PortalSkel)->Result<Box<dyn PortalCtrl>,Error>>;
     fn logger(&self) -> fn(message: &str);
 }
 

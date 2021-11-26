@@ -143,8 +143,8 @@ impl Portal {
                                             if request.to.len() != 1 {
                                                 let response = outlet::Response::new(
                                                     Identifier::Key(info.key.clone()),
+                                                    response::RespEntity::Fail(fail::Fail::Resource(fail::resource::Fail::Messaging(fail::Messaging::RequestReplyExchangesRequireOneAndOnlyOneRecipient))),
                                                     exchange_id.clone(),
-                                                    response::RespEntity::Fail(fail::Fail::Resource(fail::resource::Fail::Messaging(fail::Messaging::RequestReplyExchangesRequireOneAndOnlyOneRecipient)))
                                                 );
                                                 let result = outlet_tx.send_timeout(outlet::Frame::Response(response), Duration::from_secs(info.config.frame_timeout.clone()) ).await;
                                                 if let Result::Err(_err) = result {

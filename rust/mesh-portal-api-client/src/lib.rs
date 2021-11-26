@@ -43,7 +43,7 @@ pub trait PortalCtrl: Sync+Send {
         Ok(())
     }
 
-    async fn handle( request: outlet::exchange::Request ) -> Result<Option<inlet::Response>,Error> {
+    async fn handle( &self, request: outlet::Request ) -> Result<Option<inlet::Response>,Error> {
         Ok(Option::None)
     }
 }
@@ -113,7 +113,7 @@ impl Portal {
     pub async fn new(
         info: Info,
         inlet: Box<dyn Inlet>,
-        ctrl_factory: fn(skel: PortalSkel) -> Box<dyn PortalCtrl>,
+        ctrl_factory: Box<dyn Fn(PortalSkel) ->Result<Box<dyn PortalCtrl>,Error>>,
         logger: fn(message: &str)
     ) -> Result<Arc<Portal>, Error> {
 
@@ -129,8 +129,7 @@ impl Portal {
             status
         };
 
-        let mut ctrl = ctrl_factory(skel.clone());
-        let ports = Arc::new(ctrl.ports());
+        let mut ctrl = ctrl_factory(skel.clone())?;
         ctrl.init().await?;
         let ctrl = ctrl.into();
         let portal = Self {
@@ -160,7 +159,7 @@ impl Outlet for Portal {
 
                     tokio::spawn( async move {
 
-                        fn handle( ctrl: Arc<dyn PortalCtrl>, inlet_api: InletApi, request: outlet::Request ) -> Result<(),Error> {
+                        async fn handle( ctrl: Arc<dyn PortalCtrl>, inlet_api: InletApi, request: outlet::Request ) -> Result<(),Error> {
                             let exchange = request.exchange.clone();
                             let response = ctrl.handle(request).await?;
 
@@ -170,17 +169,17 @@ impl Outlet for Portal {
                                     response.exchange = exchange_id;
                                     inlet_api.respond(response);
                                 } else {
-                                    return Err("response expected".into());
+                                    return Err(anyhow!("response expected"));
                                 }
                             }
 
                             Ok(())
                         }
 
-                        match handle( ctrl, inlet_api, request ) {
+                        match handle( ctrl, inlet_api, request ).await {
                             Ok(_) => {}
                             Err(err) => {
-                                ctx.logger(err.to_string());
+                                (ctx.logger)(err.to_string().as_str());
                             }
                         }
                     });
@@ -333,7 +332,7 @@ pub mod example {
 
             let response = self.inlet_api.exchange(request).await?;
 
-            if let entity::response::RespEntity::Ok(PayloadDelivery::Payload(Payload::Primitive(Primitive::Text(text)))) = response.entity {
+            if let entity::response::RespEntity::Ok(Payload::Primitive(Primitive::Text(text))) = response.entity {
                 println!("{}",text);
             } else {
                 return Err(anyhow!("unexpected signal"));
