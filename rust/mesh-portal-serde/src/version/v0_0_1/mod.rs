@@ -663,12 +663,23 @@ pub mod generic {
             use crate::version::v0_0_1::generic::payload::RcCommand;
             use crate::version::v0_0_1::id::Meta;
             use crate::version::v0_0_1::util::{Convert, ConvertFrom};
+            use crate::version::v0_0_1::generic::entity::response::RespEntity;
 
             #[derive(Debug, Clone, Serialize, Deserialize)]
             pub enum ReqEntity<PAYLOAD> {
                 Rc(Rc<PAYLOAD>),
                 Msg(Msg<PAYLOAD>),
                 Http(Http<PAYLOAD>),
+            }
+
+            impl <PAYLOAD,FAIL> ReqEntity<PAYLOAD> {
+                pub fn ok(&self, payload: PAYLOAD) -> RespEntity<PAYLOAD,FAIL> {
+                    RespEntity::Ok(payload)
+                }
+
+                pub fn fail(&self, fail: FAIL ) -> RespEntity<PAYLOAD,FAIL>{
+                    RespEntity::Fail(fail)
+                }
             }
 
 
@@ -1278,10 +1289,10 @@ pub mod generic {
 
             #[derive(Debug, Clone, Serialize, Deserialize, strum_macros::Display)]
             pub enum Frame<KEY, ADDRESS, IDENTIFIER, KIND, PAYLOAD> {
-                Init(Info<KEY, ADDRESS, KIND>),
+                Create(Info<KEY, ADDRESS, KIND>),
                 CommandEvent(CommandEvent),
-                Request(exchange::Request<IDENTIFIER, PAYLOAD>),
-                Response(Response<IDENTIFIER, PAYLOAD>),
+                Request(Request),
+                Response(Response),
                 Close(CloseReason),
             }
 
