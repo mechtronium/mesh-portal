@@ -327,8 +327,7 @@ pub mod example {
                     path: "/".to_string()
                 }));
 
-            // send this request to itself
-            request.to.push( Identifier::Key(self.inlet_api.info.key.clone()) );
+            request.to.push(Identifier::Key(self.inlet_api.info.key.clone()));
 
             let response = self.inlet_api.exchange(request).await?;
 

@@ -25,6 +25,8 @@ use mesh_portal_serde::version::latest::messaging::{Exchange, ExchangeId};
 use mesh_portal_serde::version::latest::portal::{inlet, outlet};
 use mesh_portal_serde::version::latest::resource::Status;
 use mesh_portal_api::message;
+use mesh_portal_serde::version::v0_0_1::util::ConvertFrom;
+use mesh_portal_serde::version::latest;
 
 #[derive(Clone,Eq,PartialEq,Hash)]
 pub enum PortalStatus{
@@ -215,9 +217,9 @@ impl Portal {
     }
 
     pub async fn exchange(&self, request: outlet::Request ) -> Result<inlet::Response, Error> {
-        let mut request = request;
+//        let mut request = request;
         let exchange_id: ExchangeId = Uuid::new_v4().to_string();
-        let request = request.exchange(Exchange::RequestResponse(exchange_id.clone()));
+//        let request = request.exchange(Exchange::RequestResponse(exchange_id.clone()));
         let (tx,rx) = tokio::sync::oneshot::channel();
         let exchange = ExchangePair {
             id: exchange_id,
@@ -341,7 +343,6 @@ pub struct PortalMuxer {
 
 impl PortalMuxer {
     pub fn new( mux_tx: mpsc::Sender<MuxCall>, mux_rx: mpsc::Receiver<MuxCall>, router: Box<dyn Router> ) {
-
         let mut muxer = Self {
             portals: HashMap::new(),
             address_to_key: HashMap::new(),
@@ -351,41 +352,29 @@ impl PortalMuxer {
             mux_rx
         };
 
-        tokio::spawn( async move {
+        tokio::spawn(async move {
+            loop {
+                let mut ids = vec![];
+                let mut futures = vec![];
 
-            let mut ids = vec![];
-            let mut futures = vec![];
-
-            for (key,portal) in &mut muxer.portals {
-                futures.push( portal.mux_rx.recv().boxed() );
-                ids.push(key.clone());
-            }
-
-            futures.push( muxer.mux_rx.recv().boxed() );
-
-            let (call, future_index, _) = select_all(futures).await;
-
-            match call {
-                None => {
-                    if future_index >= ids.len() {
-                        // shutdown
-                        return;
-                    } else {
-                        let key = ids.get(future_index).expect("expected key");
-                        if let Option::Some(mut portal) = muxer.portals.remove(key) {
-                            portal.shutdown();
-                        }
-                    }
+                for (key, portal) in &mut muxer.portals {
+                    futures.push(portal.mux_rx.recv().boxed());
+                    ids.push(key.clone());
                 }
-                Some(call) => {
+
+                futures.push(muxer.mux_rx.recv().boxed());
+
+                let (call, future_index, _) = select_all(futures).await;
+
+                fn handle(call: MuxCall, muxer: &mut PortalMuxer) -> Result<(), Error> {
                     match call {
                         MuxCall::Add(portal) => {
                             let kind = portal.info.kind.clone();
                             let address = portal.info.address.clone();
-                            muxer.key_to_address.insert(portal.info.key.clone(), portal.info.address.clone() );
-                            muxer.address_to_key.insert(portal.info.address.clone(), portal.info.key.clone() );
-                            muxer.portals.insert(Identifier::Key(portal.info.key.clone()), portal );
-                            muxer.router.logger(format!("INFO: {} add to portal muxer at address {}", kind.to_string(), address.to_string() ).as_str() );
+                            muxer.key_to_address.insert(portal.info.key.clone(), portal.info.address.clone());
+                            muxer.address_to_key.insert(portal.info.address.clone(), portal.info.key.clone());
+                            muxer.portals.insert(Identifier::Key(portal.info.key.clone()), portal);
+                            muxer.router.logger(format!("INFO: {} add to portal muxer at address {}", kind.to_string(), address.to_string()).as_str());
                         }
                         MuxCall::Remove(id) => {
                             let key = match &id {
@@ -397,18 +386,18 @@ impl PortalMuxer {
                                 }
                             };
 
-                            if let Option::Some( key ) = key {
-                                if let Option::Some(mut portal) = muxer.portals.remove(&Identifier::Key(key.clone()) ) {
+                            if let Option::Some(key) = key {
+                                if let Option::Some(mut portal) = muxer.portals.remove(&Identifier::Key(key.clone())) {
                                     muxer.key_to_address.remove(&portal.info.key);
                                     muxer.address_to_key.remove(&portal.info.address);
 
-                                    muxer.router.logger(format!("INFO: {} removed from portal muxer at address {}", portal.info.kind.to_string(), portal.info.address.to_string() ).as_str() );
+                                    muxer.router.logger(format!("INFO: {} removed from portal muxer at address {}", portal.info.kind.to_string(), portal.info.address.to_string()).as_str());
                                     portal.shutdown();
                                 }
                             }
                         }
                         MuxCall::MessageIn(message) => {
-                            muxer.router.route( message );
+                            muxer.router.route(message);
                         }
                         MuxCall::MessageOut(message) => {
                             match muxer.get_portal(&message.to())
@@ -416,10 +405,10 @@ impl PortalMuxer {
                                 Some(portal) => {
                                     match message {
                                         message::Message::Request(request) => {
-                                            portal.call_tx.try_send( PortalCall::FrameOut( outlet::Frame::Request(request.into())));
+                                            portal.call_tx.try_send(PortalCall::FrameOut(outlet::Frame::Request(request.try_into()?)));
                                         }
                                         message::Message::Response(response) => {
-                                            portal.call_tx.try_send( PortalCall::FrameOut( outlet::Frame::Response(response.into())));
+                                            portal.call_tx.try_send(PortalCall::FrameOut(outlet::Frame::Response(response.into())));
                                         }
                                     }
                                 }
@@ -436,10 +425,27 @@ impl PortalMuxer {
                             tx.send(rtn).unwrap_or_default();
                         }
                     }
+                    Ok(())
+                }
+
+                match call {
+                    None => {
+                        if future_index >= ids.len() {
+                            // shutdown
+                            return;
+                        } else {
+                            let key = ids.get(future_index).expect("expected key");
+                            if let Option::Some(mut portal) = muxer.portals.remove(key) {
+                                portal.shutdown();
+                            }
+                        }
+                    }
+                    Some(call) => {
+                        handle(call,  &mut muxer);
+                    }
                 }
             }
-
-        } );
+        });
     }
 
     fn get_portal( &self, id: &Identifier ) -> Option<&Portal> {
