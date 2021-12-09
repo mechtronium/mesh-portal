@@ -576,6 +576,15 @@ pub mod generic {
             Address(ADDRESS),
         }
 
+        impl <KEY,ADDRESS> ToString for Identifier<KEY,ADDRESS> where KEY: ToString, ADDRESS: ToString{
+            fn to_string(&self) -> String {
+                match self {
+                    Identifier::Key(key) => {key.to_string()}
+                    Identifier::Address(address) => {address.to_string()}
+                }
+            }
+        }
+
         impl<FromKey, FromAddress> Identifier<FromKey, FromAddress>
         where
             FromKey: ,
@@ -2659,6 +2668,7 @@ pub mod fail {
             Conditional(Conditional),
             Messaging(Messaging),
         }
+
         #[derive(Debug, Clone, Serialize, Deserialize)]
         pub enum Create {
             AddressAlreadyInUse(String),
