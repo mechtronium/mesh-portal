@@ -144,7 +144,8 @@ impl Portal {
                                         Exchange::RequestResponse(exchange_id) => {
                                             if request.to.len() != 1 {
                                                 let response = outlet::Response::new(
-                                                    Identifier::Key(info.key.clone()),
+                                                    Identifier::Address(info.address.clone()),
+                                                    Identifier::Address(info.address.clone()),
                                                     response::RespEntity::Fail(fail::Fail::Resource(fail::resource::Fail::Messaging(fail::Messaging::RequestReplyExchangesRequireOneAndOnlyOneRecipient))),
                                                     exchange_id.clone(),
                                                 );

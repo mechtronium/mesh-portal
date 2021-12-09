@@ -532,7 +532,7 @@ pub mod portal {
         use crate::version::v0_0_1::payload::Payload;
 
         pub type Request = generic::portal::outlet::Request<Identifier, Payload>;
-        pub type Response = generic::portal::outlet::Response<Identifier, Payload>;
+        pub type Response = generic::portal::outlet::Response<Identifier,Payload>;
         pub type Frame = generic::portal::outlet::Frame<Key, Address, Identifier, Kind, Payload>;
 
         impl TryFrom<PrimitiveFrame>
@@ -723,7 +723,6 @@ pub mod generic {
                     RespEntity::Fail(fail)
                 }
             }
-
 
             impl<FromPayload, ToPayload> ConvertFrom<ReqEntity<FromPayload>> for ReqEntity<ToPayload>
             where
@@ -1264,16 +1263,16 @@ pub mod generic {
 
 
             #[derive(Debug, Clone, Serialize, Deserialize)]
-            pub struct Response<ADDRESS,IDENTIFIER, PAYLOAD> {
+            pub struct Response<IDENTIFIER,PAYLOAD> {
                 pub id: String,
-                pub to: ADDRESS,
+                pub to: IDENTIFIER,
                 pub from: IDENTIFIER,
                 pub entity: response::RespEntity<PAYLOAD, fail::Fail>,
                 pub exchange: ExchangeId
             }
 
-            impl <ADDRESS,IDENTIFIER,PAYLOAD> Response<ADDRESS,IDENTIFIER,PAYLOAD> {
-                pub fn new( to: ADDRESS, from: IDENTIFIER, entity: response::RespEntity<PAYLOAD, fail::Fail>, exchange: ExchangeId ) -> Self {
+            impl <IDENTIFIER,PAYLOAD> Response<IDENTIFIER,PAYLOAD> {
+                pub fn new( to: IDENTIFIER, from: IDENTIFIER, entity: response::RespEntity<PAYLOAD, fail::Fail>, exchange: ExchangeId ) -> Self {
                     Self {
                         id: unique_id(),
                         to,
@@ -1284,18 +1283,17 @@ pub mod generic {
                 }
             }
 
-            impl<FromAddress,FromIdentifier, FromPayload> Response<FromAddress,FromIdentifier, FromPayload> {
-                pub fn convert<ToAddress,ToIdentifier, ToPayload>(
+            impl<FromIdentifier, FromPayload> Response<FromIdentifier, FromPayload> {
+                pub fn convert<ToIdentifier, ToPayload>(
                     self,
-                ) -> Result<Response<ToAddress,ToIdentifier, ToPayload>, Error>
+                ) -> Result<Response<ToIdentifier, ToPayload>, Error>
                 where
                     ToIdentifier: TryFrom<FromIdentifier, Error = Error>,
-                    ToAddress: TryFrom<FromAddress, Error = Error>,
                     ToPayload: TryFrom<FromPayload, Error = Error>,
                 {
                     Ok(Response {
                         id: self.id,
-                        to: self.to.try_into()?
+                        to: self.to.try_into()?,
                         from: self.from.try_into()?,
                         entity: ConvertFrom::convert_from(self.entity)?,
                         exchange: self.exchange

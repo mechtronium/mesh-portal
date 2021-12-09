@@ -29,7 +29,7 @@ mod tests {
     use tokio::sync::oneshot::error::RecvError;
     use tokio::time::Duration;
 
-    use mesh_portal_api_client::{client, InletApi, PortalCtrl, PortalSkel, PortCtrl};
+    use mesh_portal_api_client::{client, InletApi, PortalCtrl, PortalSkel };
     use mesh_portal_api_server::{MuxCall, Portal, PortalMuxer, Router};
     use mesh_portal_serde::mesh;
     use mesh_portal_serde::version::latest::config::{Info, PortalKind};
@@ -328,8 +328,9 @@ mod tests {
             Ok(())
         }
 
-        fn portal_ctrl_factory(&self) -> fn(PortalSkel) -> Box<dyn PortalCtrl> {
-            return friendly_portal_ctrl_factory;
+
+        fn portal_ctrl_factory(&self)->Box<dyn Fn(PortalSkel)->Result<Box<dyn PortalCtrl>,Error>> {
+            Box::new(friendly_portal_ctrl_factory)
         }
 
         fn logger(&self) -> fn(m: &str) {
@@ -340,8 +341,8 @@ mod tests {
         }
     }
 
-    fn friendly_portal_ctrl_factory(skel: PortalSkel) -> Box<dyn PortalCtrl> {
-        Box::new(FriendlyPortalCtrl { skel })
+    fn friendly_portal_ctrl_factory(skel: PortalSkel) -> Result<Box<dyn PortalCtrl>,Error> {
+        Ok(Box::new(FriendlyPortalCtrl { skel }))
     }
 
     pub struct FriendlyPortalCtrl {
@@ -355,13 +356,17 @@ mod tests {
             // wait just a bit to make sure everyone got chance to be in the muxer
             tokio::time::sleep(Duration::from_millis(50)).await;
 
+            /*
             let mut request = inlet::Request::new(ReqEntity::Rc(Rc {
                 command: RcCommand::Select,
                 payload: PayloadDelivery::Payload(Payload::Primitive(Primitive::Text("".to_string())))
             }));
             request.to.push(self.skel.info.parent.clone());
 
+             */
+
 println!("FriendlyPortalCtrl::exchange...");
+            /*
             match self.skel.api().exchange(request).await {
                 Ok(response) => match response.entity {
                     response::RespEntity::Ok(PayloadDelivery::Payload(Payload::List(resources))) => {
@@ -408,9 +413,12 @@ println!("FriendlyPortalCtrl::Ok");
                 Err(_) => {}
             }
 
+             */
+
             Ok(())
         }
 
+        /*
         fn ports(&self) -> HashMap<String,Box<dyn PortCtrl>> {
 
             struct GreetPort {
@@ -442,6 +450,8 @@ println!("FriendlyPortalCtrl::Ok");
             ports.insert( "greet".to_string(), port );
             ports
         }
+
+         */
 
         /*
         fn ports( &self, ) -> HashMap< String, fn( request: client::Request<PortOperation>, ) -> Result<Option<ResponseEntity>, Error>> {

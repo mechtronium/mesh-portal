@@ -41,7 +41,8 @@ use crate::version::v0_0_1;
         fn try_into(self) -> Result<portal::outlet::Request, Self::Error> {
             Ok(generic::portal::outlet::Request {
                 from: self.from.try_into()?,
-                entity: ConvertFrom::convert_from(self.entity)?,
+                //entity: ConvertFrom::convert_from(self.entity)?,
+                entity: self.entity,
                 exchange: self.exchange,
             })
         }
@@ -124,6 +125,7 @@ use crate::version::v0_0_1;
         fn into(self) -> outlet::Response {
             outlet::Response {
                 id: self.id,
+                to: self.to,
                 from: self.from,
                 exchange: self.exchange,
                 entity: self.entity,
