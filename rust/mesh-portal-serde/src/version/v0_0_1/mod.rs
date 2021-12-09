@@ -25,18 +25,14 @@ pub mod id {
     use crate::version::v0_0_1::generic;
     use crate::version::v0_0_1::parse::{address, consume_address, Res};
 
-    pub type Key = String;
     pub type ResourceType = String;
     pub type Kind = String;
     pub type Specific = String;
     pub type Version = String;
-    pub type Identifier = generic::id::Identifier<Key, Address>;
-    pub type Identifiers = generic::id::Identifiers<Key, Address>;
     pub type AddressAndKind = generic::id::AddressAndKind<Address, Kind>;
     pub type AddressAndType = generic::id::AddressAndType<Address, ResourceType>;
     pub type Meta = HashMap<String, String>;
     pub type PayloadClaim = String;
-
 
     #[derive(Debug,Clone,Serialize,Deserialize,Eq,PartialEq,Hash)]
     pub struct Address {
@@ -69,6 +65,7 @@ pub mod id {
             rtn.to_string()
         }
     }
+
     impl Address {
         pub fn parent(&self) -> Option<Address> {
             if self.segments.is_empty() {
@@ -238,21 +235,21 @@ pub mod payload {
     use crate::version::v0_0_1::bin::Bin;
     use crate::version::v0_0_1::generic;
     use crate::version::v0_0_1::id::{
-        Address, Identifier, Key, Kind, PayloadClaim,
+        Address, Kind, PayloadClaim,
     };
 
-    pub type Primitive = generic::payload::Primitive<Key, Address, Identifier, Kind>;
-    pub type Payload = generic::payload::Payload<Key, Address, Identifier, Kind>;
+    pub type Primitive = generic::payload::Primitive<Address,Kind>;
+    pub type Payload = generic::payload::Payload<Address,Kind>;
     pub type PayloadType = generic::payload::PayloadType;
     pub type PayloadRef = generic::payload::PayloadRef<PayloadClaim, PayloadPattern>;
     pub type PayloadDelivery = generic::payload::PayloadDelivery<Payload, PayloadRef>;
     pub type Call = generic::payload::Call<Address>;
     pub type CallWithConfig = generic::payload::CallWithConfig<Address>;
-    pub type MapPattern = generic::payload::MapPattern<Key,Address,Identifier,Kind>;
-    pub type PayloadTypePattern = generic::payload::PayloadTypePattern<Key,Address,Identifier,Kind>;
-    pub type PayloadPattern = generic::payload::PayloadPattern<Key,Address,Identifier,Kind>;
+    pub type MapPattern = generic::payload::MapPattern<Address,Kind>;
+    pub type PayloadTypePattern = generic::payload::PayloadTypePattern<Address,Kind>;
+    pub type PayloadPattern = generic::payload::PayloadPattern<Address,Kind>;
     pub type ListPattern = generic::payload::ListPattern;
-    pub type PayloadMap = generic::payload::PayloadMap<Key,Address,Identifier,Kind>;
+    pub type PayloadMap = generic::payload::PayloadMap<Address,Kind>;
     pub type RcCommand = generic::payload::RcCommand;
 
     #[derive(
@@ -268,9 +265,7 @@ pub mod payload {
     )]
 
     pub enum PrimitiveType {
-        Key,
         Address,
-        Identifier,
         Text,
         Boolean,
         Code,
@@ -348,7 +343,7 @@ pub mod config {
 
     use crate::version::v0_0_1::ArtifactRef;
     use crate::version::v0_0_1::generic;
-    use crate::version::v0_0_1::id::{Address, Key, Kind};
+    use crate::version::v0_0_1::id::{Address,  Kind};
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub enum PortalKind {
@@ -365,7 +360,7 @@ pub mod config {
         }
     }
 
-    pub type Info = generic::config::Info<Key, Address, Kind>;
+    pub type Info = generic::config::Info<Address, Kind>;
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct Config {
@@ -461,7 +456,7 @@ pub mod entity {
         use crate::version::v0_0_1::bin::Bin;
         use crate::version::v0_0_1::generic;
         use crate::version::v0_0_1::id::{
-            Address, Key, Kind, PayloadClaim, ResourceType,
+            Address,  Kind, PayloadClaim, ResourceType,
         };
         use crate::version::v0_0_1::payload::Payload;
 
@@ -473,7 +468,7 @@ pub mod entity {
 
     pub mod response {
         use crate::version::v0_0_1::{fail, generic};
-        use crate::version::v0_0_1::id::{Address, Key, Kind};
+        use crate::version::v0_0_1::id::{Address,  Kind};
         use crate::version::v0_0_1::payload::Payload;
 
         pub type RespEntity = generic::entity::response::RespEntity<Payload, fail::Fail>;
@@ -484,7 +479,7 @@ pub mod resource {
     use serde::{Deserialize, Serialize};
 
     use crate::version::v0_0_1::generic;
-    use crate::version::v0_0_1::id::{Address, Identifier, Key, Kind, ResourceType};
+    use crate::version::v0_0_1::id::{Address,  Kind, ResourceType};
 
     #[derive(Debug, Clone, Serialize, Deserialize, strum_macros::Display, Eq,PartialEq)]
     pub enum Status {
@@ -496,7 +491,7 @@ pub mod resource {
     }
 
     pub type Archetype = generic::resource::Archetype<Kind, Address>;
-    pub type ResourceStub = generic::resource::ResourceStub<Key, Address, Kind>;
+    pub type ResourceStub = generic::resource::ResourceStub<Address, Kind>;
 }
 
 pub mod portal {
@@ -506,14 +501,14 @@ pub mod portal {
         use crate::error::Error;
         use crate::version::v0_0_1::frame::PrimitiveFrame;
         use crate::version::v0_0_1::generic;
-        use crate::version::v0_0_1::id::{Address, Identifier, Key, Kind, ResourceType};
+        use crate::version::v0_0_1::id::{Address,  Kind, ResourceType};
         use crate::version::v0_0_1::payload::Payload;
 
-        pub type Request = generic::portal::inlet::Request<Identifier, Payload>;
-        pub type Response = generic::portal::inlet::Response<Identifier, Payload>;
-        pub type Frame = generic::portal::inlet::Frame<Identifier, Payload>;
+        pub type Request = generic::portal::inlet::Request<Address, Payload>;
+        pub type Response = generic::portal::inlet::Response<Address, Payload>;
+        pub type Frame = generic::portal::inlet::Frame<Address, Payload>;
 
-        impl TryFrom<PrimitiveFrame> for generic::portal::inlet::Frame<Identifier, Payload> {
+        impl TryFrom<PrimitiveFrame> for generic::portal::inlet::Frame<Address, Payload> {
             type Error = Error;
 
             fn try_from(value: PrimitiveFrame) -> Result<Self, Self::Error> {
@@ -528,15 +523,15 @@ pub mod portal {
         use crate::error::Error;
         use crate::version::v0_0_1::frame::PrimitiveFrame;
         use crate::version::v0_0_1::generic;
-        use crate::version::v0_0_1::id::{Address, Identifier, Key, Kind, ResourceType};
+        use crate::version::v0_0_1::id::{Address,  Kind, ResourceType};
         use crate::version::v0_0_1::payload::Payload;
 
-        pub type Request = generic::portal::outlet::Request<Identifier, Payload>;
-        pub type Response = generic::portal::outlet::Response<Identifier,Payload>;
-        pub type Frame = generic::portal::outlet::Frame<Key, Address, Identifier, Kind, Payload>;
+        pub type Request = generic::portal::outlet::Request<Address, Payload>;
+        pub type Response = generic::portal::outlet::Response<Address,Payload>;
+        pub type Frame = generic::portal::outlet::Frame<Address, Kind, Payload>;
 
         impl TryFrom<PrimitiveFrame>
-            for generic::portal::outlet::Frame<Key, Address, Identifier, Kind, Payload>
+            for generic::portal::outlet::Frame<Address, Kind, Payload>
         {
             type Error = Error;
 
@@ -571,44 +566,6 @@ pub mod generic {
         use crate::version::v0_0_1::util::Convert;
 
         #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
-        pub enum Identifier<KEY, ADDRESS> {
-            Key(KEY),
-            Address(ADDRESS),
-        }
-
-        impl <KEY,ADDRESS> ToString for Identifier<KEY,ADDRESS> where KEY: ToString, ADDRESS: ToString{
-            fn to_string(&self) -> String {
-                match self {
-                    Identifier::Key(key) => {key.to_string()}
-                    Identifier::Address(address) => {address.to_string()}
-                }
-            }
-        }
-
-        impl<FromKey, FromAddress> Identifier<FromKey, FromAddress>
-        where
-            FromKey: ,
-            FromAddress: ,
-        {
-            pub fn convert<ToKey, ToAddress>(self) -> Result<Identifier<ToKey, ToAddress>, Error>
-            where
-                ToKey: TryFrom<FromKey, Error = Error>,
-                ToAddress: TryFrom<FromAddress, Error = Error>,
-            {
-                match self {
-                    Identifier::Key(key) => Ok(Identifier::Key(key.try_into()?)),
-                    Identifier::Address(address) => Ok(Identifier::Address(address.try_into()?)),
-                }
-            }
-        }
-
-        #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
-        pub struct Identifiers<KEY, ADDRESS> {
-            pub key: KEY,
-            pub address: ADDRESS,
-        }
-
-        #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
         pub struct AddressAndKind<ADDRESS, KIND> {
             pub address: ADDRESS,
             pub kind: KIND,
@@ -639,54 +596,36 @@ pub mod generic {
         use crate::version::v0_0_1::ArtifactRef;
         use crate::version::v0_0_1::config::{Config, PortalKind};
         use crate::version::v0_0_1::generic;
-        use crate::version::v0_0_1::generic::id::{Identifier, Identifiers};
         use crate::version::v0_0_1::generic::resource::Archetype;
 
         #[derive(Debug, Clone, Serialize, Deserialize)]
-        pub struct Info<KEY, ADDRESS, KIND> {
-            pub key: KEY,
+        pub struct Info<ADDRESS, KIND> {
             pub address: ADDRESS,
             pub owner: String,
-            pub parent: Identifier<KEY, ADDRESS>,
+            pub parent: ADDRESS,
             pub archetype: Archetype<KIND, ADDRESS>,
             pub config: Config,
             pub ext_config: Option<ArtifactRef>,
             pub kind: PortalKind,
         }
 
-        impl<KEY, ADDRESS, KIND> Info<KEY, ADDRESS, KIND>
-        where
-            KEY: Clone,
-            ADDRESS: Clone,
-            KIND: Clone,
-        {
-            pub fn identity(&self) -> Identifiers<KEY, ADDRESS> {
-                Identifiers {
-                    key: self.key.clone(),
-                    address: self.address.clone(),
-                }
-            }
-        }
 
-        impl<FromKey, FromAddress, FromKind> Info<FromKey, FromAddress, FromKind>
+        impl<FromAddress, FromKind> Info<FromAddress, FromKind>
         where
-            FromKey: ,
             FromAddress: ,
             FromKind: ,
         {
-            pub fn convert<ToKey, ToAddress, ToKind>(
+            pub fn convert<ToAddress, ToKind>(
                 self,
-            ) -> Result<Info<ToKey, ToAddress, ToKind>, Error>
+            ) -> Result<Info<ToAddress, ToKind>, Error>
             where
-                ToKey: TryFrom<FromKey, Error = Error>,
                 ToAddress: TryFrom<FromAddress, Error = Error>,
                 ToKind: TryFrom<FromKind, Error = Error>,
             {
                 Ok(Info {
-                    key: self.key.try_into()?,
                     address: self.address.try_into()?,
                     owner: self.owner,
-                    parent: self.parent.convert()?,
+                    parent: self.parent.try_into()?,
                     archetype: self.archetype.convert()?,
                     config: self.config,
                     ext_config: self.ext_config,
@@ -946,7 +885,7 @@ pub mod generic {
 
         use crate::error::Error;
         use crate::version::v0_0_1::generic;
-        use crate::version::v0_0_1::generic::id::{AddressAndKind, Identifier};
+        use crate::version::v0_0_1::generic::id::{AddressAndKind};
         use crate::version::v0_0_1::generic::payload::{MapPattern, Payload, PayloadType};
         use crate::version::v0_0_1::generic::payload::Primitive;
         use crate::version::v0_0_1::State;
@@ -1000,43 +939,38 @@ pub mod generic {
         }
 
         #[derive(Debug, Clone, Serialize, Deserialize,Eq,PartialEq)]
-        pub struct ResourceStub<KEY, ADDRESS, KIND> {
-            pub key: KEY,
+        pub struct ResourceStub<ADDRESS, KIND> {
             pub address: ADDRESS,
             pub archetype: Archetype<KIND, ADDRESS>,
         }
 
-        impl<FromKey, FromAddress, FromKind> ResourceStub<FromKey, FromAddress, FromKind> {
-            pub fn convert<ToKey, ToAddress, ToKind>(
+        impl<FromAddress, FromKind> ResourceStub<FromAddress, FromKind> {
+            pub fn convert<ToAddress, ToKind>(
                 self,
-            ) -> Result<ResourceStub<ToKey, ToAddress, ToKind>, Error>
+            ) -> Result<ResourceStub<ToAddress, ToKind>, Error>
             where
-                ToKey: TryFrom<FromKey, Error = Error>,
                 ToAddress: TryFrom<FromAddress, Error = Error>,
                 ToKind: TryFrom<FromKind, Error = Error>,
             {
                 Ok(ResourceStub {
-                    key: self.key.try_into()?,
                     address: self.address.try_into()?,
                     archetype: self.archetype.convert()?,
                 })
             }
         }
 
-        impl<FromKey, FromAddress, FromKind, ToKey, ToAddress, ToKind>
-            ConvertFrom<ResourceStub<FromKey, FromAddress, FromKind>>
-            for ResourceStub<ToKey, ToAddress, ToKind>
+        impl<FromAddress, FromKind, ToAddress, ToKind>
+            ConvertFrom<ResourceStub<FromAddress, FromKind>>
+            for ResourceStub<ToAddress, ToKind>
         where
-            FromKey: TryInto<ToKey, Error = Error>,
             FromAddress: TryInto<ToAddress, Error = Error>,
             FromKind: TryInto<ToKind, Error = Error>,
         {
-            fn convert_from(a: ResourceStub<FromKey, FromAddress, FromKind>) -> Result<Self, Error>
+            fn convert_from(a: ResourceStub<FromAddress, FromKind>) -> Result<Self, Error>
             where
                 Self: Sized,
             {
                 Ok(ResourceStub {
-                    key: a.key.try_into()?,
                     address: a.address.try_into()?,
                     archetype: ConvertFrom::convert_from(a.archetype)?,
                 })
@@ -1044,35 +978,27 @@ pub mod generic {
         }
 
         #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
-        pub struct Resource<KEY, ADDRESS, IDENTIFIER, KIND>
+        pub struct Resource<ADDRESS, KIND>
         {
-            pub stub: ResourceStub<KEY, ADDRESS, KIND>,
-            pub state: Box<Payload<KEY, ADDRESS, IDENTIFIER, KIND>>,
+            pub stub: ResourceStub<ADDRESS, KIND>,
+            pub state: Box<Payload<ADDRESS, KIND>>,
         }
 
         impl<
-                FromKey,
                 FromAddress,
-                FromIdentifier,
                 FromKind,
-                ToKey,
                 ToAddress,
-                ToIdentifier,
                 ToKind,
-            > ConvertFrom<Resource<FromKey, FromAddress, FromIdentifier, FromKind>>
-            for Resource<ToKey, ToAddress, ToIdentifier, ToKind>
+            > ConvertFrom<Resource<FromAddress, FromKind>>
+            for Resource<ToAddress, ToKind>
         where
-            FromKey: TryInto<ToKey, Error = Error> + Clone,
             FromAddress: TryInto<ToAddress, Error = Error> + Clone,
-            FromIdentifier: TryInto<ToIdentifier, Error = Error> + Clone,
             FromKind: TryInto<ToKind, Error = Error> + Clone,
-            ToKey: Clone,
             ToAddress: Clone,
-            ToIdentifier: Clone,
             ToKind: Clone,
         {
             fn convert_from(
-                a: Resource<FromKey, FromAddress, FromIdentifier, FromKind>,
+                a: Resource<FromAddress, FromKind>,
             ) -> Result<Self, Error>
             where
                 Self: Sized,
@@ -1102,8 +1028,7 @@ pub mod generic {
             use crate::version::v0_0_1::generic::entity::request;
             use crate::version::v0_0_1::generic::entity::request::ReqEntity;
             use crate::version::v0_0_1::generic::entity::response;
-            use crate::version::v0_0_1::generic::id::Identifier;
-            use crate::version::v0_0_1::id::{Address, Key, Kind, ResourceType};
+            use crate::version::v0_0_1::id::{Address, Kind, ResourceType};
             use crate::version::v0_0_1::log::Log;
             use crate::version::v0_0_1::messaging::Exchange;
             use crate::version::v0_0_1::messaging::ExchangeId;
@@ -1111,14 +1036,14 @@ pub mod generic {
             use crate::version::v0_0_1::util::{ConvertFrom, unique_id};
 
             #[derive(Debug, Clone, Serialize, Deserialize)]
-            pub struct Request<IDENTIFIER, PAYLOAD> {
+            pub struct Request<ADDRESS,PAYLOAD> {
                 pub id: String,
-                pub to: Vec<IDENTIFIER>,
+                pub to: Vec<ADDRESS>,
                 pub entity: request::ReqEntity<PAYLOAD>,
                 pub exchange: Exchange
             }
 
-            impl<IDENTIFIER, PAYLOAD> Request<IDENTIFIER, PAYLOAD> {
+            impl<ADDRESS, PAYLOAD> Request<ADDRESS, PAYLOAD> {
                 pub fn new(entity: request::ReqEntity<PAYLOAD>) -> Self {
                     Self {
                         id: unique_id(),
@@ -1129,11 +1054,11 @@ pub mod generic {
                 }
             }
 
-            impl<IDENTIFIER, PAYLOAD> Request<IDENTIFIER, PAYLOAD> {
+            impl<ADDRESS, PAYLOAD> Request<ADDRESS, PAYLOAD> {
                 pub fn exchange(
                     self,
                     exchange: Exchange,
-                ) -> Request<IDENTIFIER, PAYLOAD> {
+                ) -> Request<ADDRESS, PAYLOAD> {
                     Request {
                         id: self.id,
                         to: self.to,
@@ -1144,21 +1069,21 @@ pub mod generic {
             }
 
             #[derive(Debug, Clone, Serialize, Deserialize)]
-            pub struct Response<IDENTIFIER, PAYLOAD> {
+            pub struct Response<ADDRESS, PAYLOAD> {
                 pub id: String,
-                pub to: IDENTIFIER,
+                pub to: ADDRESS,
                 pub exchange: ExchangeId,
                 pub entity: response::RespEntity<PAYLOAD, fail::portal::Fail>,
             }
 
-            impl<FromIdentifier, FromPayload, ToIdentifier, ToPayload>
-                ConvertFrom<Response<FromIdentifier, FromPayload>>
-                for Response<ToIdentifier, ToPayload>
+            impl<FromAddress, FromPayload, ToAddress, ToPayload>
+                ConvertFrom<Response<FromAddress, FromPayload>>
+                for Response<ToAddress, ToPayload>
             where
-                FromIdentifier: TryInto<ToIdentifier, Error = Error>,
+                FromAddress: TryInto<ToAddress, Error = Error>,
                 FromPayload: TryInto<ToPayload, Error = Error>,
             {
-                fn convert_from(a: Response<FromIdentifier, FromPayload>) -> Result<Self, Error>
+                fn convert_from(a: Response<FromAddress, FromPayload>) -> Result<Self, Error>
                 where
                     Self: Sized,
                 {
@@ -1172,17 +1097,17 @@ pub mod generic {
             }
 
             #[derive(Debug, Clone, Serialize, Deserialize, strum_macros::Display)]
-            pub enum Frame<IDENTIFIER, PAYLOAD> {
+            pub enum Frame<ADDRESS, PAYLOAD> {
                 Log(Log),
                 Command(Command),
-                Request(Request<IDENTIFIER, PAYLOAD>),
-                Response(Response<IDENTIFIER, PAYLOAD>),
+                Request(Request<ADDRESS, PAYLOAD>),
+                Response(Response<ADDRESS, PAYLOAD>),
                 Status(Status),
                 Close(CloseReason),
             }
 
-            impl<IDENTIFIER: Serialize, PAYLOAD: Serialize> TryInto<PrimitiveFrame>
-                for Frame<IDENTIFIER, PAYLOAD>
+            impl<ADDRESS: Serialize, PAYLOAD: Serialize> TryInto<PrimitiveFrame>
+                for Frame<ADDRESS, PAYLOAD>
             {
                 type Error = Error;
 
@@ -1211,27 +1136,26 @@ pub mod generic {
             use crate::version::v0_0_1::generic::config::Info;
             use crate::version::v0_0_1::generic::entity::request;
             use crate::version::v0_0_1::generic::entity::response;
-            use crate::version::v0_0_1::generic::id::Identifier;
             use crate::version::v0_0_1::generic::payload::Primitive;
             use crate::version::v0_0_1::generic::portal::inlet;
-            use crate::version::v0_0_1::id::{Address, Key, Kind, ResourceType};
+            use crate::version::v0_0_1::id::{Address, Kind, ResourceType};
             use crate::version::v0_0_1::messaging::{Exchange, ExchangeId};
             use crate::version::v0_0_1::util::{ConvertFrom, unique_id};
             use crate::version::v0_0_1::fail;
             use crate::version::v0_0_1::generic::entity::response::RespEntity;
 
             #[derive(Debug, Clone, Serialize, Deserialize)]
-            pub struct Request<IDENTIFIER, PAYLOAD> {
-                pub from: IDENTIFIER,
+            pub struct Request<ADDRESS, PAYLOAD> {
+                pub from: ADDRESS,
                 pub entity: request::ReqEntity<PAYLOAD>,
                 pub exchange: Exchange
             }
 
-            impl<IDENTIFIER, PAYLOAD> Request<IDENTIFIER, PAYLOAD> {
+            impl<ADDRESS, PAYLOAD> Request<ADDRESS, PAYLOAD> {
                 pub fn exchange(
                     self,
                     exchange: Exchange,
-                ) -> Request<IDENTIFIER, PAYLOAD> {
+                ) -> Request<ADDRESS, PAYLOAD> {
                     Self {
                         from: self.from,
                         entity: self.entity,
@@ -1250,7 +1174,7 @@ pub mod generic {
                     }
                 }
 
-                pub fn ok( self, payload: PAYLOAD ) -> Result<inlet::Response<IDENTIFIER,PAYLOAD>,Error> {
+                pub fn ok( self, payload: PAYLOAD ) -> Result<inlet::Response<ADDRESS,PAYLOAD>,Error> {
                     Ok(inlet::Response {
                         id: unique_id(),
                         to: self.from,
@@ -1259,7 +1183,7 @@ pub mod generic {
                     })
                 }
 
-                pub fn fail( self, fail: fail::portal::Fail ) -> Result<inlet::Response<IDENTIFIER,PAYLOAD>,Error> {
+                pub fn fail( self, fail: fail::portal::Fail ) -> Result<inlet::Response<ADDRESS,PAYLOAD>,Error> {
                     Ok(inlet::Response {
                         id: unique_id(),
                         to: self.from,
@@ -1272,16 +1196,16 @@ pub mod generic {
 
 
             #[derive(Debug, Clone, Serialize, Deserialize)]
-            pub struct Response<IDENTIFIER,PAYLOAD> {
+            pub struct Response<ADDRESS,PAYLOAD> {
                 pub id: String,
-                pub to: IDENTIFIER,
-                pub from: IDENTIFIER,
+                pub to: ADDRESS,
+                pub from: ADDRESS,
                 pub entity: response::RespEntity<PAYLOAD, fail::Fail>,
                 pub exchange: ExchangeId
             }
 
-            impl <IDENTIFIER,PAYLOAD> Response<IDENTIFIER,PAYLOAD> {
-                pub fn new( to: IDENTIFIER, from: IDENTIFIER, entity: response::RespEntity<PAYLOAD, fail::Fail>, exchange: ExchangeId ) -> Self {
+            impl <ADDRESS,PAYLOAD> Response<ADDRESS,PAYLOAD> {
+                pub fn new(to: ADDRESS, from: ADDRESS, entity: response::RespEntity<PAYLOAD, fail::Fail>, exchange: ExchangeId ) -> Self {
                     Self {
                         id: unique_id(),
                         to,
@@ -1292,12 +1216,12 @@ pub mod generic {
                 }
             }
 
-            impl<FromIdentifier, FromPayload> Response<FromIdentifier, FromPayload> {
-                pub fn convert<ToIdentifier, ToPayload>(
+            impl<FromAddress, FromPayload> Response<FromAddress, FromPayload> {
+                pub fn convert<ToAddress, ToPayload>(
                     self,
-                ) -> Result<Response<ToIdentifier, ToPayload>, Error>
+                ) -> Result<Response<ToAddress, ToPayload>, Error>
                 where
-                    ToIdentifier: TryFrom<FromIdentifier, Error = Error>,
+                    ToAddress: TryFrom<FromAddress, Error = Error>,
                     ToPayload: TryFrom<FromPayload, Error = Error>,
                 {
                     Ok(Response {
@@ -1311,11 +1235,11 @@ pub mod generic {
             }
 
             #[derive(Debug, Clone, Serialize, Deserialize, strum_macros::Display)]
-            pub enum Frame<KEY, ADDRESS, IDENTIFIER, KIND, PAYLOAD> {
-                Create(Info<KEY, ADDRESS, KIND>),
+            pub enum Frame<ADDRESS, KIND, PAYLOAD> {
+                Create(Info<ADDRESS, KIND>),
                 CommandEvent(CommandEvent),
-                Request(Request<IDENTIFIER,PAYLOAD>),
-                Response(Response<IDENTIFIER,PAYLOAD>),
+                Request(Request<ADDRESS,PAYLOAD>),
+                Response(Response<ADDRESS,PAYLOAD>),
                 Close(CloseReason),
             }
 
@@ -1345,12 +1269,10 @@ pub mod generic {
              */
 
             impl<
-                    KEY: Serialize,
                     ADDRESS: Serialize,
-                    IDENTIFIER: Serialize,
                     KIND: Serialize,
                     PAYLOAD: Serialize,
-                > TryInto<PrimitiveFrame> for Frame<KEY, ADDRESS, IDENTIFIER, KIND, PAYLOAD>
+                > TryInto<PrimitiveFrame> for Frame<ADDRESS, KIND, PAYLOAD>
             {
                 type Error = Error;
 
@@ -1423,7 +1345,7 @@ pub mod generic {
         }
 
         impl ListPattern {
-            pub fn is_match<KEY,ADDRESS,IDENTIFIER,KIND>( &self, list: &PrimitiveList<KEY,ADDRESS,IDENTIFIER,KIND> ) -> Result<(),Error> {
+            pub fn is_match<ADDRESS,KIND>( &self, list: &PrimitiveList<ADDRESS,KIND> ) -> Result<(),Error> {
                 for i in &list.list {
                     if self.primitive != i.primitive_type()  {
                         return Err(format!("Primitive List expected: {} found: {}",self.primitive.to_string(),i.primitive_type().to_string()).into());
@@ -1442,15 +1364,15 @@ pub mod generic {
         }
 
         #[derive(Debug,Clone,Eq,PartialEq,Serialize,Deserialize)]
-        pub enum PayloadTypePattern<KEY,ADDRESS,IDENTIFIER,KIND> {
+        pub enum PayloadTypePattern<ADDRESS,KIND> {
             Empty,
             Primitive(PrimitiveType),
             List(ListPattern),
-            Map(Box<MapPattern<KEY,ADDRESS,IDENTIFIER,KIND>>)
+            Map(Box<MapPattern<ADDRESS,KIND>>)
         }
 
-        impl <KEY,ADDRESS,IDENTIFIER,KIND> PayloadTypePattern<KEY,ADDRESS,IDENTIFIER,KIND> {
-            pub fn is_match( &self, payload: &Payload<KEY,ADDRESS,IDENTIFIER,KIND> ) -> Result<(),Error> {
+        impl <ADDRESS,KIND> PayloadTypePattern<ADDRESS,KIND> {
+            pub fn is_match( &self, payload: &Payload<ADDRESS,KIND> ) -> Result<(),Error> {
                 match self {
                     PayloadTypePattern::Empty => {
                         if payload.payload_type() == PayloadType::Empty {
@@ -1490,39 +1412,31 @@ pub mod generic {
             }
         }
         #[derive(Debug,Clone,Eq,PartialEq,Serialize,Deserialize)]
-        pub struct PayloadPattern<KEY,ADDRESS,IDENTIFIER,KIND> {
-            pub structure: PayloadTypePattern<KEY,ADDRESS,IDENTIFIER,KIND>,
+        pub struct PayloadPattern<ADDRESS,KIND> {
+            pub structure: PayloadTypePattern<ADDRESS,KIND>,
             pub format: Option<PayloadFormat>,
             pub validator: Option<CallWithConfig<ADDRESS>>,
         }
 
 
         impl<
-            FromKey,
             FromAddress,
-            FromIdentifier,
             FromKind,
-            ToKey,
             ToAddress,
-            ToIdentifier,
             ToKind,
-        > ConvertFrom<Option<PayloadPattern<FromKey, FromAddress, FromIdentifier, FromKind>>>
-        for Option<PayloadPattern<ToKey, ToAddress, ToIdentifier, ToKind>>
+        > ConvertFrom<Option<PayloadPattern<FromAddress, FromKind>>>
+        for Option<PayloadPattern<ToAddress, ToKind>>
             where
-                FromKey: TryInto<ToKey, Error = Error> + Clone,
                 FromAddress: TryInto<ToAddress, Error = Error> + Clone,
-                FromIdentifier: TryInto<ToIdentifier, Error = Error> + Clone,
                 FromKind: TryInto<ToKind, Error = Error> + Clone,
-                ToKey: Clone,
                 ToAddress: Clone,
-                ToIdentifier: Clone,
                 ToKind: Clone,
-                PayloadTypePattern<ToKey,ToAddress,ToIdentifier,ToKind>: ConvertFrom<PayloadTypePattern<FromKey,FromAddress,FromIdentifier,FromKind>>,
-                PayloadPattern<ToKey,ToAddress,ToIdentifier,ToKind>: ConvertFrom<PayloadPattern<FromKey,FromAddress,FromIdentifier,FromKind>>
+                PayloadTypePattern<ToAddress,ToKind>: ConvertFrom<PayloadTypePattern<FromAddress,FromKind>>,
+                PayloadPattern<ToAddress,ToKind>: ConvertFrom<PayloadPattern<FromAddress,FromKind>>
 
         {
             fn convert_from(
-                a: Option<PayloadPattern<FromKey, FromAddress, FromIdentifier, FromKind>>,
+                a: Option<PayloadPattern<FromAddress, FromKind>>,
             ) -> Result<Self, Error>
                 where
                     Self: Sized,
@@ -1538,31 +1452,23 @@ pub mod generic {
         }
 
         impl<
-            FromKey,
             FromAddress,
-            FromIdentifier,
             FromKind,
-            ToKey,
             ToAddress,
-            ToIdentifier,
             ToKind,
-        > ConvertFrom<PayloadPattern<FromKey, FromAddress, FromIdentifier, FromKind>>
-        for PayloadPattern<ToKey, ToAddress, ToIdentifier, ToKind>
+        > ConvertFrom<PayloadPattern<FromAddress, FromKind>>
+        for PayloadPattern<ToAddress, ToKind>
             where
-                FromKey: TryInto<ToKey, Error = Error> + Clone,
                 FromAddress: TryInto<ToAddress, Error = Error> + Clone,
-                FromIdentifier: TryInto<ToIdentifier, Error = Error> + Clone,
                 FromKind: TryInto<ToKind, Error = Error> + Clone,
-                ToKey: Clone,
                 ToAddress: Clone,
-                ToIdentifier: Clone,
                 ToKind: Clone,
                 Call<ToAddress>: TryFrom<Call<FromAddress>,Error=Error>,
                 Option<ToAddress>: TryFrom<Option<FromAddress>,Error=Error>
 
         {
             fn convert_from(
-                a: PayloadPattern<FromKey, FromAddress, FromIdentifier, FromKind>,
+                a: PayloadPattern<FromAddress, FromKind>,
             ) -> Result<Self, Error>
                 where
                     Self: Sized,
@@ -1576,31 +1482,23 @@ pub mod generic {
         }
 
         impl<
-            FromKey,
             FromAddress,
-            FromIdentifier,
             FromKind,
-            ToKey,
             ToAddress,
-            ToIdentifier,
             ToKind,
-        > ConvertFrom<PayloadTypePattern<FromKey, FromAddress, FromIdentifier, FromKind>>
-        for PayloadTypePattern<ToKey, ToAddress, ToIdentifier, ToKind>
+        > ConvertFrom<PayloadTypePattern<FromAddress, FromKind>>
+        for PayloadTypePattern<ToAddress, ToKind>
             where
-                FromKey: TryInto<ToKey, Error = Error> + Clone,
                 FromAddress: TryInto<ToAddress, Error = Error> + Clone,
-                FromIdentifier: TryInto<ToIdentifier, Error = Error> + Clone,
                 FromKind: TryInto<ToKind, Error = Error> + Clone,
-                ToKey: Clone,
                 ToAddress: Clone,
-                ToIdentifier: Clone,
                 ToKind: Clone,
                 Call<ToAddress> : TryFrom<Call<FromAddress>,Error=Error>,
                 Option<ToAddress> : TryFrom<Option<FromAddress>,Error=Error>,
 
         {
             fn convert_from(
-                a: PayloadTypePattern<FromKey, FromAddress, FromIdentifier, FromKind>,
+                a: PayloadTypePattern<FromAddress,FromKind>,
             ) -> Result<Self, Error>
                 where
                     Self: Sized,
@@ -1625,8 +1523,8 @@ pub mod generic {
         }
 
 
-        impl<KEY,ADDRESS,IDENTIFIER,KIND> ValueMatcher<Payload<KEY,ADDRESS,IDENTIFIER,KIND>> for  PayloadPattern<KEY,ADDRESS,IDENTIFIER,KIND> {
-            fn is_match(&self, payload: &Payload<KEY, ADDRESS, IDENTIFIER, KIND>) -> Result<(), Error> {
+        impl<ADDRESS,KIND> ValueMatcher<Payload<ADDRESS,KIND>> for  PayloadPattern<ADDRESS,KIND> {
+            fn is_match(&self, payload: &Payload<ADDRESS,KIND>) -> Result<(), Error> {
                 self.structure.is_match(&payload)?;
 
                 // more validation to come...
@@ -1806,8 +1704,8 @@ pub mod generic {
 
 
         impl PrimitiveType {
-            pub fn is_match<KEY, ADDRESS, IDENTIFIER, KIND>( &self, primitive: &generic::payload::Primitive<KEY, ADDRESS, IDENTIFIER, KIND>) -> Result<(),Error>
-                where KEY: Clone, ADDRESS: Clone, IDENTIFIER: Clone, KIND: Clone
+            pub fn is_match<ADDRESS, KIND>( &self, primitive: &generic::payload::Primitive<ADDRESS, KIND>) -> Result<(),Error>
+                where ADDRESS: Clone, KIND: Clone
             {
                 match primitive {
                     Primitive::Text(_) => {
@@ -1817,25 +1715,11 @@ pub mod generic {
                             Err("expected Text primitive".into())
                         }
                     }
-                    Primitive::Key(_) => {
-                        if *self == Self::Key{
-                            Ok(())
-                        } else {
-                            Err("expected Key primitive".into())
-                        }
-                    }
                     Primitive::Address(_) => {
                         if *self == Self::Address{
                             Ok(())
                         } else {
                             Err("expected Address primitive".into())
-                        }
-                    }
-                    Primitive::Identifier(_) => {
-                        if *self == Self::Identifier{
-                            Ok(())
-                        } else {
-                            Err("expected Identifier primitive".into())
                         }
                     }
                     Primitive::Stub(_) => {
@@ -1892,21 +1776,17 @@ pub mod generic {
         }
 
         #[derive(Debug,Clone,Eq,PartialEq,Serialize,Deserialize,)]
-        pub struct MapPattern<KEY,ADDRESS,IDENTIFIER,KIND> {
-            key_phantom: PhantomData<KEY>,
+        pub struct MapPattern<ADDRESS,KIND> {
             address_phantom: PhantomData<ADDRESS>,
-            identifier_phantom: PhantomData<IDENTIFIER>,
             kind_phantom: PhantomData<KIND>,
-            pub required: HashMap<String, ValuePattern<PayloadPattern<KEY,ADDRESS,IDENTIFIER,KIND>>>,
-            pub allowed: ValuePattern<PayloadPattern<KEY,ADDRESS,IDENTIFIER,KIND>>
+            pub required: HashMap<String, ValuePattern<PayloadPattern<ADDRESS,KIND>>>,
+            pub allowed: ValuePattern<PayloadPattern<ADDRESS,KIND>>
         }
 
-        impl <KEY,ADDRESS,IDENTIFIER,KIND> Default for MapPattern<KEY,ADDRESS,IDENTIFIER,KIND> {
+        impl <ADDRESS,KIND> Default for MapPattern<ADDRESS,KIND> {
             fn default() -> Self {
                 MapPattern {
-                    key_phantom: Default::default(),
                     address_phantom: Default::default(),
-                    identifier_phantom: Default::default(),
                     kind_phantom: Default::default(),
                     required: Default::default(),
                     allowed: ValuePattern::Any
@@ -1914,18 +1794,16 @@ pub mod generic {
             }
         }
 
-        impl <KEY,ADDRESS,IDENTIFIER,KIND> ToString for MapPattern<KEY,ADDRESS,IDENTIFIER,KIND> {
+        impl <ADDRESS,KIND> ToString for MapPattern<ADDRESS,KIND> {
             fn to_string(&self) -> String {
                 "Map?".to_string()
             }
         }
 
-        impl <KEY,ADDRESS,IDENTIFIER,KIND> MapPattern<KEY,ADDRESS,IDENTIFIER,KIND> {
-            pub fn new(required: HashMap<String, ValuePattern<PayloadPattern<KEY,ADDRESS,IDENTIFIER,KIND>>>, allowed: ValuePattern<PayloadPattern<KEY,ADDRESS,IDENTIFIER,KIND>>) -> Self {
+        impl <ADDRESS,KIND> MapPattern<ADDRESS,KIND> {
+            pub fn new(required: HashMap<String, ValuePattern<PayloadPattern<ADDRESS,KIND>>>, allowed: ValuePattern<PayloadPattern<ADDRESS,KIND>>) -> Self {
                 MapPattern {
-                    key_phantom: Default::default(),
                     address_phantom: Default::default(),
-                    identifier_phantom: Default::default(),
                     kind_phantom: Default::default(),
                     required,
                     allowed
@@ -1935,12 +1813,10 @@ pub mod generic {
 
 
 
-        impl <KEY,ADDRESS,IDENTIFIER,KIND> MapPattern<KEY,ADDRESS,IDENTIFIER,KIND> {
+        impl <ADDRESS,KIND> MapPattern<ADDRESS,KIND> {
             pub fn empty() -> Self {
                 Self {
-                    key_phantom: Default::default(),
                     address_phantom: Default::default(),
-                    identifier_phantom: Default::default(),
                     kind_phantom: Default::default(),
                     required: HashMap::new(),
                     allowed: ValuePattern::None
@@ -1949,9 +1825,7 @@ pub mod generic {
 
             pub fn any() -> Self {
                 Self {
-                    key_phantom: Default::default(),
                     address_phantom: Default::default(),
-                    identifier_phantom: Default::default(),
                     kind_phantom: Default::default(),
                     required: HashMap::new(),
                     allowed: ValuePattern::Any
@@ -1959,7 +1833,7 @@ pub mod generic {
             }
 
 
-            pub fn is_match( &self, map:&PayloadMap<KEY,ADDRESS,IDENTIFIER,KIND> ) -> Result<(),Error>
+            pub fn is_match( &self, map:&PayloadMap<ADDRESS,KIND> ) -> Result<(),Error>
             {
 
                 // if Any keys are allowed then skip
@@ -1991,30 +1865,22 @@ pub mod generic {
             }
         }
         impl<
-            FromKey,
             FromAddress,
-            FromIdentifier,
             FromKind,
-            ToKey,
             ToAddress,
-            ToIdentifier,
             ToKind,
-        > ConvertFrom<MapPattern<FromKey, FromAddress, FromIdentifier, FromKind>>
-        for MapPattern<ToKey, ToAddress, ToIdentifier, ToKind>
+        > ConvertFrom<MapPattern< FromAddress, FromKind>>
+        for MapPattern<ToAddress, ToKind>
             where
-                FromKey: TryInto<ToKey, Error = Error> + Clone,
                 FromAddress: TryInto<ToAddress, Error = Error> + Clone,
-                FromIdentifier: TryInto<ToIdentifier, Error = Error> + Clone,
                 FromKind: TryInto<ToKind, Error = Error> + Clone,
-                ToKey: Clone,
                 ToAddress: Clone,
-                ToIdentifier: Clone,
                 ToKind: Clone,
                 Call<ToAddress> : TryFrom<Call<FromAddress>,Error=Error>,
                 Option<ToAddress> : TryFrom<Option<FromAddress>,Error=Error>,
         {
             fn convert_from(
-                a: MapPattern<FromKey, FromAddress, FromIdentifier, FromKind>,
+                a: MapPattern<FromAddress, FromKind>,
             ) -> Result<Self, Error>
                 where
                     Self: Sized,
@@ -2031,30 +1897,22 @@ pub mod generic {
 
 
         impl<
-            FromKey,
             FromAddress,
-            FromIdentifier,
             FromKind,
-            ToKey,
             ToAddress,
-            ToIdentifier,
             ToKind,
-        > ConvertFrom<ValuePattern<PayloadPattern<FromKey,FromAddress,FromIdentifier,FromKind>>>
-        for ValuePattern<PayloadPattern<ToKey,ToAddress,ToIdentifier,ToKind>>
+        > ConvertFrom<ValuePattern<PayloadPattern<FromAddress,FromKind>>>
+        for ValuePattern<PayloadPattern<ToAddress,ToKind>>
             where
-                FromKey: TryInto<ToKey, Error = Error> + Clone,
                 FromAddress: TryInto<ToAddress, Error = Error> + Clone,
-                FromIdentifier: TryInto<ToIdentifier, Error = Error> + Clone,
                 FromKind: TryInto<ToKind, Error = Error> + Clone,
-                ToKey: Clone,
                 ToAddress: Clone,
-                ToIdentifier: Clone,
                 ToKind: Clone,
                 Call<ToAddress> : TryFrom<Call<FromAddress>,Error=Error>,
                 Option<ToAddress> : TryFrom<Option<FromAddress>,Error=Error>,
         {
             fn convert_from(
-                a: ValuePattern<PayloadPattern<FromKey,FromAddress,FromIdentifier,FromKind>>
+                a: ValuePattern<PayloadPattern<FromAddress,FromKind>>
             ) -> Result<Self, Error>
                 where Self: Sized,
             {
@@ -2077,30 +1935,22 @@ pub mod generic {
 
 
         impl<
-            FromKey,
             FromAddress,
-            FromIdentifier,
             FromKind,
-            ToKey,
             ToAddress,
-            ToIdentifier,
             ToKind,
-        > ConvertFrom<HashMap<String, ValuePattern<PayloadPattern<FromKey,FromAddress,FromIdentifier,FromKind>>>>
-        for HashMap<String, ValuePattern<PayloadPattern<ToKey,ToAddress,ToIdentifier,ToKind>>>
+        > ConvertFrom<HashMap<String, ValuePattern<PayloadPattern<FromAddress,FromKind>>>>
+        for HashMap<String, ValuePattern<PayloadPattern<ToAddress,ToKind>>>
             where
-                FromKey: TryInto<ToKey, Error = Error> + Clone,
                 FromAddress: TryInto<ToAddress, Error = Error> + Clone,
-                FromIdentifier: TryInto<ToIdentifier, Error = Error> + Clone,
                 FromKind: TryInto<ToKind, Error = Error> + Clone,
-                ToKey: Clone,
                 ToAddress: Clone,
-                ToIdentifier: Clone,
                 ToKind: Clone,
                 Call<ToAddress> : TryFrom<Call<FromAddress>,Error=Error>,
                 Option<ToAddress> : TryFrom<Option<FromAddress>,Error=Error>,
         {
             fn convert_from(
-                a: HashMap<String, ValuePattern<PayloadPattern<FromKey,FromAddress,FromIdentifier,FromKind>>>
+                a: HashMap<String, ValuePattern<PayloadPattern<FromAddress,FromKind>>>
             ) -> Result<Self, Error>
                 where
                     Self: Sized,
@@ -2215,15 +2065,15 @@ pub mod generic {
          */
 
         #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, strum_macros::Display )]
-        pub enum Payload<KEY, ADDRESS, IDENTIFIER, KIND>
+        pub enum Payload<ADDRESS, KIND>
         {
             Empty,
-            Primitive(Primitive<KEY, ADDRESS, IDENTIFIER, KIND>),
-            List(PrimitiveList<KEY, ADDRESS, IDENTIFIER, KIND>),
-            Map(PayloadMap<KEY, ADDRESS, IDENTIFIER, KIND>),
+            Primitive(Primitive<ADDRESS, KIND>),
+            List(PrimitiveList<ADDRESS, KIND>),
+            Map(PayloadMap<ADDRESS, KIND>),
         }
 
-        impl<KEY, ADDRESS, IDENTIFIER, KIND> Payload<KEY, ADDRESS, IDENTIFIER, KIND>
+        impl<ADDRESS, KIND> Payload<ADDRESS, KIND>
         {
             pub fn payload_type(&self) -> PayloadType {
                 match self {
@@ -2244,12 +2094,12 @@ pub mod generic {
         }
 
         #[derive(Debug, Clone, Serialize, Deserialize,Eq,PartialEq)]
-        pub struct PayloadMap<KEY,ADDRESS,IDENTIFIER,KIND>
+        pub struct PayloadMap<ADDRESS,KIND>
         {
-            pub map: HashMap<String,Payload<KEY,ADDRESS,IDENTIFIER,KIND>>
+            pub map: HashMap<String,Payload<ADDRESS,KIND>>
         }
 
-        impl <KEY,ADDRESS,IDENTIFIER,KIND> PayloadMap<KEY,ADDRESS,IDENTIFIER,KIND>
+        impl <ADDRESS,KIND> PayloadMap<ADDRESS,KIND>
         {
             /*
             pub fn new(constraints: MapConstraints<KEY,ADDRESS,IDENTIFIER,KIND> ) -> Self {
@@ -2268,16 +2118,16 @@ pub mod generic {
             }
         }
 
-        impl <KEY,ADDRESS,IDENTIFIER,KIND> Deref for PayloadMap<KEY,ADDRESS,IDENTIFIER,KIND>
+        impl <ADDRESS,KIND> Deref for PayloadMap<ADDRESS,KIND>
         {
-            type Target = HashMap<String,Payload<KEY,ADDRESS,IDENTIFIER,KIND>>;
+            type Target = HashMap<String,Payload<ADDRESS,KIND>>;
 
             fn deref(&self) -> &Self::Target {
                 &self.map
             }
         }
 
-        impl <KEY,ADDRESS,IDENTIFIER,KIND> DerefMut for PayloadMap<KEY,ADDRESS,IDENTIFIER,KIND>
+        impl <ADDRESS,KIND> DerefMut for PayloadMap<ADDRESS,KIND>
         {
             fn deref_mut(&mut self) -> &mut Self::Target {
                 &mut self.map
@@ -2286,28 +2136,20 @@ pub mod generic {
 
 
         impl<
-                FromKey,
                 FromAddress,
-                FromIdentifier,
                 FromKind,
-                ToKey,
                 ToAddress,
-                ToIdentifier,
                 ToKind,
-            > ConvertFrom<Payload<FromKey, FromAddress, FromIdentifier, FromKind>>
-            for Payload<ToKey, ToAddress, ToIdentifier, ToKind>
+            > ConvertFrom<Payload<FromAddress, FromKind>>
+            for Payload<ToAddress, ToKind>
         where
-            FromKey: TryInto<ToKey, Error = Error> + Clone,
             FromAddress: TryInto<ToAddress, Error = Error> + Clone,
-            FromIdentifier: TryInto<ToIdentifier, Error = Error> + Clone,
             FromKind: TryInto<ToKind, Error = Error> + Clone,
-            ToKey: Clone,
             ToAddress: Clone,
-            ToIdentifier: Clone,
             ToKind: Clone,
         {
             fn convert_from(
-                a: Payload<FromKey, FromAddress, FromIdentifier, FromKind>,
+                a: Payload<FromAddress, FromKind>,
             ) -> Result<Self, Error>
             where
                 Self: Sized,
@@ -2316,7 +2158,7 @@ pub mod generic {
                     Payload::Empty => Ok(Payload::Empty),
                     Payload::Primitive(primitive) => Ok(Payload::Primitive(ConvertFrom::convert_from(primitive)?)),
                     Payload::List(list) => {
-                        let mut rtn: PrimitiveList<ToKey, ToAddress, ToIdentifier, ToKind> = PrimitiveList::new(list.primitive_type);
+                        let mut rtn: PrimitiveList<ToAddress, ToKind> = PrimitiveList::new(list.primitive_type);
                         for p in list.list {
                             rtn.push(ConvertFrom::convert_from(p)?);
                         }
@@ -2324,7 +2166,7 @@ pub mod generic {
                     }
                     Payload::Map(map) => {
                         //let mut rtn: PayloadMap<ToKey,ToAddress,ToIdentifier,ToKind> = PayloadMap::new(ConvertFrom::convert_from(map.constraints )? );
-                        let mut rtn: PayloadMap<ToKey,ToAddress,ToIdentifier,ToKind> = PayloadMap::new();
+                        let mut rtn: PayloadMap<ToAddress,ToKind> = PayloadMap::new();
 
                         for (key, payload) in map.map {
                             rtn.insert(key, ConvertFrom::convert_from(payload)?);
@@ -2337,22 +2179,20 @@ pub mod generic {
         }
 
         #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
-        pub enum Primitive<KEY, ADDRESS, IDENTIFIER, KIND>
+        pub enum Primitive<ADDRESS, KIND>
         {
             Text(String),
-            Key(KEY),
             Address(ADDRESS),
-            Identifier(IDENTIFIER),
-            Stub(ResourceStub<KEY, ADDRESS, KIND>),
+            Stub(ResourceStub<ADDRESS, KIND>),
             Meta(HashMap<String, String>),
             Bin(Bin),
             Boolean(bool),
             Int(i64),
             Status(Status),
-            Resource(Resource<KEY, ADDRESS, IDENTIFIER, KIND>),
+            Resource(Resource<ADDRESS, KIND>),
         }
 
-        impl <KEY,ADDRESS,IDENTIFIER,KIND> Primitive<KEY,ADDRESS,IDENTIFIER,KIND>
+        impl <ADDRESS,KIND> Primitive<ADDRESS,KIND>
         {
 
            pub fn primitive_type(&self) -> PrimitiveType  {
@@ -2360,14 +2200,8 @@ pub mod generic {
                    Primitive::Text(_) => {
                        PrimitiveType::Text
                    }
-                   Primitive::Key(_) => {
-                       PrimitiveType::Key
-                   }
                    Primitive::Address(_) => {
                        PrimitiveType::Address
-                   }
-                   Primitive::Identifier(_) => {
-                       PrimitiveType::Identifier
                    }
                    Primitive::Stub(_) => {
                        PrimitiveType::Stub
@@ -2396,22 +2230,22 @@ pub mod generic {
         }
 
         #[derive(Debug, Clone, Serialize, Deserialize,Eq,PartialEq)]
-        pub struct PrimitiveList<KEY,ADDRESS,IDENTIFIER,KIND>
+        pub struct PrimitiveList<ADDRESS,KIND>
         {
            pub primitive_type: PrimitiveType,
-           pub list: Vec<Primitive<KEY,ADDRESS,IDENTIFIER,KIND>>
+           pub list: Vec<Primitive<ADDRESS,KIND>>
         }
 
-        impl <KEY,ADDRESS,IDENTIFIER,KIND>ToString for PrimitiveList<KEY,ADDRESS,IDENTIFIER,KIND>
-            where KEY: Clone, ADDRESS: Clone, IDENTIFIER: Clone, KIND: Clone
+        impl <ADDRESS,KIND>ToString for PrimitiveList<ADDRESS,KIND>
+            where ADDRESS: Clone, KIND: Clone
         {
             fn to_string(&self) -> String {
                 format!("{}[]",self.primitive_type.to_string())
             }
         }
 
-        impl <KEY,ADDRESS,IDENTIFIER,KIND> PrimitiveList<KEY,ADDRESS,IDENTIFIER,KIND>
-            where KEY: Clone, ADDRESS: Clone, IDENTIFIER: Clone, KIND: Clone
+        impl <ADDRESS,KIND> PrimitiveList<ADDRESS,KIND>
+            where ADDRESS: Clone, KIND: Clone
         {
             pub fn new(primitive_type: PrimitiveType) -> Self {
                 Self {
@@ -2429,18 +2263,18 @@ pub mod generic {
             }
         }
 
-        impl <KEY,ADDRESS,IDENTIFIER,KIND> Deref for PrimitiveList<KEY,ADDRESS,IDENTIFIER,KIND>
-            where KEY: Clone, ADDRESS: Clone, IDENTIFIER: Clone, KIND: Clone
+        impl <ADDRESS,KIND> Deref for PrimitiveList<ADDRESS,KIND>
+            where ADDRESS: Clone, KIND: Clone
         {
-            type Target = Vec<Primitive<KEY,ADDRESS,IDENTIFIER,KIND>>;
+            type Target = Vec<Primitive<ADDRESS,KIND>>;
 
             fn deref(&self) -> &Self::Target {
                 &self.list
             }
         }
 
-        impl <KEY,ADDRESS,IDENTIFIER,KIND> DerefMut for PrimitiveList<KEY,ADDRESS,IDENTIFIER,KIND>
-            where KEY: Clone, ADDRESS: Clone, IDENTIFIER: Clone, KIND: Clone
+        impl <ADDRESS,KIND> DerefMut for PrimitiveList<ADDRESS,KIND>
+            where ADDRESS: Clone, KIND: Clone
         {
             fn deref_mut(&mut self) -> &mut Self::Target {
                 &mut self.list
@@ -2448,35 +2282,26 @@ pub mod generic {
         }
 
 
-        impl<FromKey,
-                FromAddress,
-                FromIdentifier,
-                FromKind,
-                ToKey,
-                ToAddress,
-                ToIdentifier,
+        impl< FromAddress,
+              FromKind,
+              ToAddress,
                 ToKind,
-            > ConvertFrom<Primitive<FromKey, FromAddress, FromIdentifier, FromKind>>
-            for Primitive<ToKey, ToAddress, ToIdentifier, ToKind>
+            > ConvertFrom<Primitive<FromAddress, FromKind>>
+            for Primitive<ToAddress, ToKind>
         where
-            FromKey: TryInto<ToKey, Error = Error> + Clone,
             FromAddress: TryInto<ToAddress, Error = Error> + Clone,
-            FromIdentifier: TryInto<ToIdentifier, Error = Error> + Clone,
             FromKind: TryInto<ToKind, Error = Error> + Clone,
-            ToKey: Clone,
             ToAddress: Clone,
-            ToIdentifier: Clone,
             ToKind: Clone,
         {
             fn convert_from(
-                a: Primitive<FromKey, FromAddress, FromIdentifier, FromKind>,
+                a: Primitive<FromAddress, FromKind>,
             ) -> Result<Self, Error>
             where
                 Self: Sized,
             {
                 match a {
                     Primitive::Text(text) => Ok(Primitive::Text(text)),
-                    Primitive::Key(key) => Ok(Primitive::Key(key.try_into()?)),
                     Primitive::Address(address) => Ok(Primitive::Address(address.try_into()?)),
                     Primitive::Stub(stub) => Ok(Primitive::Stub(ConvertFrom::convert_from(stub)?)),
                     Primitive::Meta(meta) => Ok(Primitive::Meta(meta)),
@@ -2487,7 +2312,6 @@ pub mod generic {
                     Primitive::Resource(resource) => {
                         Ok(Primitive::Resource(ConvertFrom::convert_from(resource)?))
                     }
-                    Primitive::Identifier(id) => Ok(Primitive::Identifier(id.try_into()?)),
                 }
             }
         }

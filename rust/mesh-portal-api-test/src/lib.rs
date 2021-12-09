@@ -35,7 +35,7 @@ mod tests {
     use mesh_portal_serde::version::latest::config::{Info, PortalKind};
     use mesh_portal_serde::version::latest::entity::request::{Msg, Rc, ReqEntity};
     use mesh_portal_serde::version::latest::entity::response;
-    use mesh_portal_serde::version::latest::id::{Address, Identifier};
+    use mesh_portal_serde::version::latest::id::{Address};
     use mesh_portal_serde::version::latest::messaging::Exchange;
     use mesh_portal_serde::version::latest::payload::{Payload, Primitive};
     use mesh_portal_serde::version::latest::portal::{inlet, outlet};
@@ -187,10 +187,9 @@ mod tests {
             let address = Address::from_str(format!("parent:portal-{}", index).as_str() )?;
 
             let info = Info {
-                key,
                 address: address.clone(),
                 owner: user,
-                parent: Identifier::Address(Address::from_str("parent")?),
+                parent: Address::from_str("parent")?,
                 archetype: Archetype {
                     kind: "Portal".to_string(),
                     config_src: None,

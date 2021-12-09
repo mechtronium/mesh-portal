@@ -1,9 +1,9 @@
 use crate::version::latest;
 use crate::version::latest::entity::request::ReqEntity;
-use crate::version::latest::id::Identifier;
+use crate::version::latest::id::Address;
 
-pub type Request = generic::Request<ReqEntity, Identifier>;
-pub type Response = generic::Response<Identifier>;
+pub type Request = generic::Request<ReqEntity, Address>;
+pub type Response = generic::Response<Address>;
 
 pub mod generic {
     use serde::{Deserialize, Serialize};
@@ -13,7 +13,6 @@ pub mod generic {
     use crate::version::latest::entity::request::{ReqEntity, Rc, Msg, Http};
     use crate::version::latest::entity::response;
     use crate::version::latest::generic;
-    use crate::version::latest::id::Identifier;
     use crate::version::latest::messaging::{Exchange, ExchangeId};
     use crate::version::latest::payload::PayloadDelivery;
     use crate::version::latest::portal::{inlet, outlet};
@@ -31,9 +30,10 @@ pub mod generic {
 
 
 use crate::version::v0_0_1;
+    use crate::version::latest::id::Address;
 
     impl TryInto<latest::portal::outlet::Request>
-        for Request<latest::entity::request::ReqEntity, latest::id::Identifier>
+        for Request<latest::entity::request::ReqEntity, latest::id::Address>
 
     {
         type Error = crate::error::Error;
@@ -121,7 +121,7 @@ use crate::version::v0_0_1;
 
      */
 
-    impl Into<outlet::Response> for Response<Identifier> {
+    impl Into<outlet::Response> for Response<Address> {
         fn into(self) -> outlet::Response {
             outlet::Response {
                 id: self.id,

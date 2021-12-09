@@ -255,7 +255,7 @@ pub mod client {
     use std::ops::Deref;
     use anyhow::Error;
     use mesh_portal_serde::version::latest::portal::outlet;
-    use mesh_portal_serde::version::latest::id::Identifier;
+    use mesh_portal_serde::version::latest::id::{Address};
     use mesh_portal_serde::version::latest::config::Info;
     use mesh_portal_serde::version::latest::http::HttpRequest;
 
@@ -276,7 +276,7 @@ pub mod client {
 
     pub struct Request<REQUEST> {
         pub context: RequestContext,
-        pub from: Identifier,
+        pub from: Address,
         pub request: REQUEST
     }
 
@@ -298,7 +298,6 @@ pub mod example {
 
     use crate::{InletApi, PortalCtrl, PortalSkel, Request, inlet};
     use std::collections::HashMap;
-    use mesh_portal_serde::version::latest::id::Identifier;
     use mesh_portal_serde::version::latest::payload::{Payload, Primitive};
     use mesh_portal_serde::version::latest::entity;
     use mesh_portal_serde::version::latest::entity::request::Msg;
@@ -327,7 +326,7 @@ pub mod example {
                     path: "/".to_string()
                 }));
 
-            request.to.push(Identifier::Key(self.inlet_api.info.key.clone()));
+            request.to.push(self.inlet_api.info.address.clone());
 
             let response = self.inlet_api.exchange(request).await?;
 

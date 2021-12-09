@@ -47,9 +47,9 @@ pub fn converter<From,To>(handle_error:fn (error:Error) ) -> (mpsc::Sender<From>
 
 pub mod message {
     use mesh_portal_serde::version::latest::entity::request::ReqEntity;
-    use mesh_portal_serde::version::latest::id::Identifier;
+    use mesh_portal_serde::version::latest::id::Address;
 
-    pub type Message = generic::Message<ReqEntity,Identifier>;
+    pub type Message = generic::Message<ReqEntity,Address>;
 
     pub mod generic {
         use serde::{Serialize,Deserialize};
