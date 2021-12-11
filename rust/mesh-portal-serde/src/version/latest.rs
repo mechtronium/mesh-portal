@@ -199,8 +199,8 @@ pub mod generic {
         use crate::version::v0_0_1::generic;
 
 
-        pub type AddressAndKind<KEY, ADDRESS> = generic::id::AddressAndKind<KEY,ADDRESS>;
-        pub type AddressAndType<KEY, RESOURCE_TYPE> = generic::id::AddressAndType<KEY,RESOURCE_TYPE>;
+        pub type AddressAndKind<ADDRESS,KIND> = generic::id::AddressAndKind<ADDRESS,KIND>;
+        pub type AddressAndType<ADDRESS,RESOURCE_TYPE> = generic::id::AddressAndType<ADDRESS,RESOURCE_TYPE>;
     }
 
     pub mod config {

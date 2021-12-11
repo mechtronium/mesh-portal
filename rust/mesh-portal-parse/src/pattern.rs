@@ -32,7 +32,6 @@ use mesh_portal_serde::version::latest::payload::PayloadFormat;
 use std::ops::RangeTo;
 use mesh_portal_serde::version::latest::generic::entity::request::{ReqEntity, Rc,Msg,Http};
 use mesh_portal_serde::version::latest::payload::{PayloadDelivery, PayloadRef};
-use mesh_portal_serde::version::v0_0_1::generic::id::Identifier;
 use mesh_portal_serde::version::v0_0_1::id::Address;
 use mesh_portal_serde::version::v0_0_1::util::ValueMatcher;
 use mesh_portal_serde::version::latest::generic::payload::RcCommand;

@@ -11,7 +11,6 @@ use mesh_portal_serde::error::Error;
 use mesh_portal_serde::version::v0_0_1::util::ConvertFrom;
 use mesh_portal_serde::version::latest::portal::inlet;
 
-
 pub fn converter<From,To>(handle_error:fn (error:Error) ) -> (mpsc::Sender<From>, mpsc::Receiver<To>) where
     From: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync+ TryInto<To,Error=Error> + 'static,
     To: Debug + Clone + Serialize + Eq + PartialEq + Hash + ToString + FromStr + Send + Sync + 'static,

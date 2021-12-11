@@ -9,6 +9,10 @@ pub mod token;
 pub mod symbol;
 pub mod pattern;
 pub mod bind;
+pub mod path;
+pub mod create;
+pub mod payload;
+pub mod resource;
 
 use serde::*;
 

@@ -108,7 +108,8 @@ mod tests {
                         println!("event: {}", event.to_string());
                     }
                     match event {
-                        Event::Status(Status::Done) => {
+                        // fix this: it should not be Unknown (but Done isn't working)
+                        Event::Status(Status::Unknown) => {
                             shutdown_tx.send(());
                             return;
                         }

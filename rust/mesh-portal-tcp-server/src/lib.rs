@@ -99,7 +99,7 @@ impl PortalTcpServer {
             let rt = Runtime::new().unwrap();
             rt.block_on(async {
 
-                server.broadcaster_tx.send( Event::Status(Status::Initializing) ).unwrap_or_default();
+                server.broadcaster_tx.send( Event::Status(Status::Unknown) ).unwrap_or_default();
                 {
                     let port = server.port.clone();
                     let broadcaster_tx = server.broadcaster_tx.clone();
@@ -152,7 +152,7 @@ impl PortalTcpServer {
                         self.broadcaster_tx.send( Event::ClientConnected ).unwrap_or_default();
                         (&self).handle(stream).await;
                     }
-                    self.broadcaster_tx.send( Event::Status(Status::Done) ).unwrap_or_default();
+                    self.broadcaster_tx.send( Event::Status(Status::Done("done".to_string())) ).unwrap_or_default();
                 }
                 Err(error) => {
                     let message = format!("FATAL: could not setup TcpListener {}", error);

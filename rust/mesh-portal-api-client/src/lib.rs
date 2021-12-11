@@ -118,8 +118,8 @@ impl Portal {
     ) -> Result<Arc<Portal>, Error> {
 
         let inlet :Arc<dyn Inlet>= inlet.into();
-        let status = Arc::new(RwLock::new(StatusChamber::new( Status::Initializing )));
-        inlet.send_frame(inlet::Frame::Status(Status::Initializing));
+        let status = Arc::new(RwLock::new(StatusChamber::new( Status::Unknown )));
+        inlet.send_frame(inlet::Frame::Status(Status::Unknown ));
         let exchanges = Arc::new(DashMap::new());
         let skel =  PortalSkel {
             info: info.clone(),
