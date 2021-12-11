@@ -5,8 +5,6 @@ extern crate lazy_static;
 #[macro_use]
 extern crate strum_macros;
 
-#[macro_use]
-extern crate tailcall;
 
 
 use std::collections::HashMap;

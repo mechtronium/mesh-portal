@@ -12,6 +12,7 @@ use mesh_portal_serde::version::latest::generic::payload::RcCommand;
 use mesh_portal_serde::version::latest::entity::EntityType;
 use std::convert::TryInto;
 use mesh_portal_serde::error::Error;
+use mesh_portal_serde::version::v0_0_1::parse::Res;
 
 
 pub struct ProtoBind {
@@ -360,6 +361,7 @@ pub mod test {
     use nom::sequence::delimited;
     use nom::bytes::complete::tag;
     use mesh_portal_serde::version::latest::util::{ValuePattern, StringMatcher};
+    use mesh_portal_serde::version::v0_0_1::parse::camel_case;
 
     #[test]
     pub fn test_pipeline_step() -> Result<(),Error> {
