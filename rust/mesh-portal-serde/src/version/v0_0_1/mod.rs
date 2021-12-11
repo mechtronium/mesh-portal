@@ -221,11 +221,7 @@ pub mod id {
             self.segments.is_empty()
         }
     }
-    #[derive(Debug, Clone, Serialize, Deserialize)]
-    pub enum IdentifierKind {
-        Key,
-        Address,
-    }
+
 }
 
 pub mod pattern {
