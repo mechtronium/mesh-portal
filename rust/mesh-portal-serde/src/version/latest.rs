@@ -23,7 +23,6 @@ pub mod id {
     pub type ResourceType = id::ResourceType;
     pub type Kind = id::Kind;
     pub type Specific = id::Specific;
-    pub type Version = id::Version;
     pub type AddressAndKind = generic::id::AddressAndKind<Kind>;
     pub type AddressAndType = generic::id::AddressAndType<ResourceType>;
     pub type Meta=id::Meta;
@@ -63,8 +62,9 @@ pub mod bin {
 pub mod payload {
     use crate::version::latest::generic;
     use crate::version::latest::bin::Bin;
-    use crate::version::latest::id::{Address, Kind};
+    use crate::version::latest::id::{Address, Kind,ResourceType,};
     use crate::version::v0_0_1::payload;
+    use crate::version::latest::pattern::TksPattern;
 
     pub type Primitive = generic::payload::Primitive<Kind>;
     pub type Payload = generic::payload::Payload<Kind>;
@@ -72,12 +72,12 @@ pub mod payload {
     pub type PrimitiveType= payload::PrimitiveType;
     pub type PayloadRef = payload::PayloadRef;
     pub type PayloadDelivery = generic::payload::PayloadDelivery<Payload,PayloadRef>;
-    pub type Call = generic::payload::Call<Address>;
-    pub type CallKind = generic::payload::CallKind;
-    pub type CallWithConfig = generic::payload::CallWithConfig<Address>;
-    pub type MapPattern = generic::payload::MapPattern<Kind>;
-    pub type PayloadTypePattern = generic::payload::PayloadListPattern<Kind>;
-    pub type PayloadPattern = generic::payload::PayloadPattern<Kind>;
+    pub type Call = payload::Call;
+    pub type CallKind = generic::payload::CallKind<ResourceType,Kind,Payload,TksPattern>;
+    pub type CallWithConfig = payload::CallWithConfig;
+    pub type MapPattern = generic::payload::MapPattern<ResourceType,Kind,Payload,TksPattern>;
+    pub type PayloadTypePattern = generic::payload::PayloadListPattern<ResourceType,Kind,Payload,TksPattern>;
+    pub type PayloadPattern = generic::payload::PayloadPattern<ResourceType,Kind,Payload,TksPattern>;
     pub type ListPattern = generic::payload::ListPattern;
     pub type PayloadMap = generic::payload::PayloadMap<Kind>;
     pub type PayloadFormat= generic::payload::PayloadFormat;
@@ -322,18 +322,19 @@ pub mod generic {
         use serde::{Deserialize, Serialize};
 
         use crate::version::v0_0_1::generic::payload;
+        use crate::version::v0_0_1::generic;
 
         pub type Payload<KIND> = payload::Payload<KIND>;
         pub type PayloadMap<KIND> = payload::PayloadMap<KIND>;
         pub type Primitive<KIND> = payload::Primitive<KIND>;
         pub type PayloadDelivery<PAYLOAD,PAYLOAD_REF> = payload::PayloadDelivery<PAYLOAD,PAYLOAD_REF>;
-        pub type CallKind = payload::CallKind;
-        pub type MapPattern<KIND>= payload::MapPattern<KIND>;
+        pub type CallKind<ResourceType,Kind,Payload,TksPattern> = payload::CallKind<ResourceType,Kind,Payload,TksPattern>;
+        pub type MapPattern<ResourceType,Kind,Payload,TksPattern>= payload::MapPattern<ResourceType,Kind,Payload,TksPattern>;
         pub type ListPattern = payload::ListPattern;
-        pub type PayloadListPattern<KIND>= payload::PayloadTypePattern<KIND>;
-        pub type PayloadPattern<KIND> = payload::PayloadPattern<KIND>;
+        pub type PayloadListPattern<ResourceType,Kind,Payload,TksPattern>= payload::PayloadTypePattern<ResourceType,Kind,Payload,TksPattern>;
+        pub type PayloadPattern<ResourceType,Kind,Payload,TksPattern> = payload::PayloadPattern<ResourceType,Kind,Payload,TksPattern>;
         pub type Range= payload::Range;
-        pub type RcCommand = payload::RcCommand;
+        pub type RcCommand<ResourceType,Kind,Payload,TksPattern> = generic::resource::command::RcCommand<ResourceType,Kind,Payload,TksPattern>;
         pub type PayloadFormat = payload::PayloadFormat;
     }
 

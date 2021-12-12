@@ -26,7 +26,7 @@ use mesh_portal_serde::version::latest::payload::MapPattern;
 use std::iter::Map;
 use std::collections::HashMap;
 use mesh_portal_serde::version::v0_0_1::generic::payload::{MsgCall, HttpCall};
-use mesh_portal_serde::version::v0_0_1::parse::{Res, filepath_chars, parse_version, rec_version, path};
+use mesh_portal_serde::version::v0_0_1::parse::{Res, filepath_chars, parse_version, rec_version, path, address_segment_chars};
 
 
 pub enum BindSection {
@@ -127,14 +127,14 @@ pub fn consume_address_segments(input: &str) -> Res<&str, Vec<String>> {
 pub fn address_path(input: &str) -> Res<&str, &str> {
     recognize(separated_list1(
         nom::character::complete::char(':'),
-        any_resource_path_segment
+       address_segment_chars
     ))(input)
 }
 
 pub fn mechtron_path(input: &str) -> Res<&str, &str> {
     recognize(separated_list1(
         nom::character::complete::char(':'),
-        any_resource_path_segment
+       address_segment_chars
     ))(input)
 }
 
