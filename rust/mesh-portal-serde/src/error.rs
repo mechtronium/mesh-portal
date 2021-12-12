@@ -3,6 +3,7 @@ use std::fmt::{Display, Formatter};
 use std::string::FromUtf8Error;
 
 use nom::error::VerboseError;
+use semver::ReqParseError;
 
 #[derive(Debug)]
 pub struct Error {
@@ -57,6 +58,14 @@ impl From<Infallible> for Error {
 
 impl From<nom::Err<VerboseError<&str>>> for Error {
     fn from(error: nom::Err<VerboseError<&str>>) -> Self {
+        Self {
+            message: error.to_string()
+        }
+    }
+}
+
+impl From<ReqParseError> for Error {
+    fn from(error: ReqParseError) -> Self {
         Self {
             message: error.to_string()
         }
