@@ -19,16 +19,16 @@ pub mod id {
     use std::collections::HashMap;
     use std::str::FromStr;
 
-    use serde::{Deserialize, Serialize, Serializer, Deserializer, de};
+    use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 
     use crate::error::Error;
     use crate::version::v0_0_1::generic;
     use crate::version::v0_0_1::parse::{address, consume_address, Res};
-    use std::convert::TryInto;
-    use std::ops::Deref;
-    use serde::de::Visitor;
-    use std::fmt::Formatter;
     use semver::SemVerError;
+    use serde::de::Visitor;
+    use std::convert::TryInto;
+    use std::fmt::Formatter;
+    use std::ops::Deref;
 
     pub type ResourceType = String;
     pub type Kind = generic::id::GenericKind<ResourceType>;
@@ -37,10 +37,9 @@ pub mod id {
     pub type Meta = HashMap<String, String>;
     pub type PayloadClaim = String;
 
-
-    #[derive(Debug,Clone)]
+    #[derive(Debug, Clone, Eq, PartialEq, Hash)]
     pub struct Version {
-        pub version: semver::Version
+        pub version: semver::Version,
     }
 
     impl Deref for Version {
@@ -52,38 +51,45 @@ pub mod id {
     }
 
     impl Serialize for Version {
-        fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error> where S: Serializer {
-            serializer.serialize_str(self.version.to_string().as_str() )
+        fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+        where
+            S: Serializer,
+        {
+            serializer.serialize_str(self.version.to_string().as_str())
         }
     }
 
     struct VersionVisitor;
 
-    impl <'de> Visitor<'de> for VersionVisitor {
+    impl<'de> Visitor<'de> for VersionVisitor {
         type Value = Version;
 
         fn expecting(&self, formatter: &mut Formatter) -> std::fmt::Result {
             formatter.write_str("SemVer version")
         }
 
-        fn visit_str<E>(self, v: &str) -> Result<Self::Value, E> where E: de::Error {
+        fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
+        where
+            E: de::Error,
+        {
             match Version::from_str(v) {
-                Ok(version) => {Ok(version)}
+                Ok(version) => Ok(version),
                 Err(error) => {
                     //Err(de::Error::custom(error.to_string() ))
                     Err(de::Error::invalid_type(de::Unexpected::Str(v), &self))
                 }
             }
         }
-
     }
 
-    impl <'de> Deserialize<'de> for Version {
-        fn deserialize<D>(deserializer: D) -> Result<Self, D::Error> where D: Deserializer<'de> {
+    impl<'de> Deserialize<'de> for Version {
+        fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+        where
+            D: Deserializer<'de>,
+        {
             deserializer.deserialize_str(VersionVisitor)
         }
     }
-
 
     impl ToString for Version {
         fn to_string(&self) -> String {
@@ -99,36 +105,35 @@ pub mod id {
         }
     }
 
-
     impl FromStr for Version {
         type Err = Error;
 
         fn from_str(s: &str) -> Result<Self, Self::Err> {
             let version = semver::Version::from_str(s)?;
-            Ok( Self{version} )
+            Ok(Self { version })
         }
     }
 
-
-
-
     /// Stands for "Type, Kind, Specific"
-    pub trait Tks<ResourceType> where ResourceType: Eq+PartialEq{
+    pub trait Tks<ResourceType>
+    where
+        ResourceType: Eq + PartialEq,
+    {
         fn resource_type(&self) -> ResourceType;
         fn kind_to_string(&self) -> Option<String>;
         fn specific(&self) -> Option<Specific>;
-        fn matches(&self,tks: &dyn Tks<ResourceType>) -> bool;
+        fn matches(&self, tks: &dyn Tks<ResourceType>) -> bool;
     }
 
-    #[derive(Debug,Clone,Eq,PartialEq,Serialize,Deserialize,Hash)]
-    pub struct Specific{
+    #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize, Hash)]
+    pub struct Specific {
         pub vendor: String,
         pub product: String,
         pub variant: String,
         pub version: Version,
     }
 
-    impl ToString for Specific{
+    impl ToString for Specific {
         fn to_string(&self) -> String {
             format!(
                 "{}:{}:{}:{}",
@@ -148,69 +153,49 @@ pub mod id {
         }
     }
 
-    #[derive(Debug,Clone,Serialize,Deserialize,Eq,PartialEq,Hash)]
-    pub enum HubSegment{
+    #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
+    pub enum HubSegment {
         Local,
         Domain(String),
-        Tag(String)
+        Tag(String),
     }
 
     impl ToString for HubSegment {
         fn to_string(&self) -> String {
-           match self {
-               HubSegment::Local => {
-                   "".to_string()
-               }
-               HubSegment::Domain(domain) => {
-                   domain.clone()
-               }
-               HubSegment::Tag(tag) => {
-                   format!("[{}]",tag)
-               }
-           }
+            match self {
+                HubSegment::Local => "".to_string(),
+                HubSegment::Domain(domain) => domain.clone(),
+                HubSegment::Tag(tag) => {
+                    format!("[{}]", tag)
+                }
+            }
         }
     }
 
-    #[derive(Debug,Clone,Serialize,Deserialize,Eq,PartialEq,Hash)]
+    #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
     pub enum AddressSegment {
         Space(String),
         Base(String),
         Dir,
-        File(String)
+        File(String),
     }
 
     impl AddressSegment {
         pub fn terminating_delim(&self) -> &str {
-           match self {
-               AddressSegment::Space(_) => {
-                   ":"
-               }
-               AddressSegment::Base(_) => {
-                   ":"
-               }
-               AddressSegment::Dir => {
-                   ""
-               }
-               AddressSegment::File(_) => {
-                   ""
-               }
-           }
+            match self {
+                AddressSegment::Space(_) => ":",
+                AddressSegment::Base(_) => ":",
+                AddressSegment::Dir => "",
+                AddressSegment::File(_) => "",
+            }
         }
 
         pub fn as_str(&self) -> &str {
             match self {
-                AddressSegment::Space(space) => {
-                    space.as_str()
-                }
-                AddressSegment::Base(base) => {
-                    base.as_str()
-                }
-                AddressSegment::Dir => {
-                    "/"
-                }
-                AddressSegment::File(file) => {
-                    file.as_str()
-                }
+                AddressSegment::Space(space) => space.as_str(),
+                AddressSegment::Base(base) => base.as_str(),
+                AddressSegment::Dir => "/",
+                AddressSegment::File(file) => file.as_str(),
             }
         }
     }
@@ -218,26 +203,18 @@ pub mod id {
     impl ToString for AddressSegment {
         fn to_string(&self) -> String {
             match self {
-                AddressSegment::Space(space) => {
-                    space.clone()
-                }
-                AddressSegment::Base(base) => {
-                    base.clone()
-                }
-                AddressSegment::Dir => {
-                    "/".to_string()
-                }
-                AddressSegment::File(file) => {
-                    file.clone()
-                }
+                AddressSegment::Space(space) => space.clone(),
+                AddressSegment::Base(base) => base.clone(),
+                AddressSegment::Dir => "/".to_string(),
+                AddressSegment::File(file) => file.clone(),
             }
         }
     }
 
-    #[derive(Debug,Clone,Serialize,Deserialize,Eq,PartialEq,Hash)]
+    #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
     pub struct Address {
         pub hub: HubSegment,
-        pub segments: Vec<AddressSegment>
+        pub segments: Vec<AddressSegment>,
     }
 
     impl FromStr for Address {
@@ -261,17 +238,17 @@ pub mod id {
             match &self.hub {
                 HubSegment::Local => {}
                 HubSegment::Domain(domain) => {
-                    rtn.push_str(format!("{}::",domain).as_str());
+                    rtn.push_str(format!("{}::", domain).as_str());
                 }
                 HubSegment::Tag(tag) => {
-                    rtn.push_str(format!("[{}]::",tag).as_str());
+                    rtn.push_str(format!("[{}]::", tag).as_str());
                 }
             }
 
             for (i, segment) in self.segments.iter().enumerate() {
-                rtn.push_str( segment.as_str() );
-                if i != self.segments.len()-1 {
-                    rtn.push_str(segment.terminating_delim() );
+                rtn.push_str(segment.as_str());
+                if i != self.segments.len() - 1 {
+                    rtn.push_str(segment.terminating_delim());
                 }
             }
             rtn.to_string()
@@ -284,52 +261,53 @@ pub mod id {
                 return Option::None;
             }
             let mut segments = self.segments.clone();
-            segments.remove( segments.len() );
-            Option::Some( Self {
+            segments.remove(segments.len());
+            Option::Some(Self {
                 hub: self.hub.clone(),
-                segments
+                segments,
             })
         }
 
-        pub fn parse( input: &str ) -> Res<&str,Self> {
+        pub fn parse(input: &str) -> Res<&str, Self> {
             address(input)
         }
 
         pub fn root() -> Self {
-            Self{
+            Self {
                 hub: HubSegment::Local,
-                segments: vec![]
+                segments: vec![],
             }
         }
 
-        pub fn is_root(&self)->bool {
+        pub fn is_root(&self) -> bool {
             self.segments.is_empty()
         }
     }
-
 }
 
 pub mod pattern {
-    use std::ops::Deref;
-    use std::str::FromStr;
-    use crate::version::v0_0_1::pattern::specific::{VendorPattern, ProductPattern, VariantPattern};
-    use crate::version::v0_0_1::id::{ResourceType,Kind,Specific};
-    use crate::version::v0_0_1::generic;
-    use crate::version::v0_0_1::util::ValueMatcher;
     use crate::error::Error;
-    use crate::{Serialize,Deserialize};
-    use std::convert::TryInto;
-    use serde::{Serializer, Deserializer, de};
+    use crate::version::v0_0_1::generic;
+    use crate::version::v0_0_1::id::{Kind, ResourceType, Specific};
+    use crate::version::v0_0_1::pattern::specific::{
+        ProductPattern, VariantPattern, VendorPattern,
+    };
+    use crate::version::v0_0_1::util::ValueMatcher;
+    use crate::{Deserialize, Serialize};
     use semver::ReqParseError;
     use serde::de::Visitor;
+    use serde::{de, Deserializer, Serializer};
+    use std::convert::TryInto;
     use std::fmt::Formatter;
+    use std::ops::Deref;
+    use std::str::FromStr;
 
-    pub type TksPattern = generic::pattern::TksPattern<ResourceType,Kind>;
+    pub type TksPattern = generic::pattern::TksPattern<ResourceType, Kind>;
     pub type KindPattern = generic::pattern::KindPattern<Kind>;
 
-    #[derive(Debug,Clone)]
+    #[derive(Debug, Clone)]
     pub struct VersionReq {
-        pub version: semver::VersionReq
+        pub version: semver::VersionReq,
     }
 
     impl Deref for VersionReq {
@@ -341,39 +319,45 @@ pub mod pattern {
     }
 
     impl Serialize for VersionReq {
-        fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error> where S: Serializer {
-            serializer.serialize_str(self.version.to_string().as_str() )
+        fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+        where
+            S: Serializer,
+        {
+            serializer.serialize_str(self.version.to_string().as_str())
         }
     }
 
-    impl <'de> Deserialize<'de> for VersionReq {
-        fn deserialize<D>(deserializer: D) -> Result<Self, D::Error> where D: Deserializer<'de> {
+    impl<'de> Deserialize<'de> for VersionReq {
+        fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+        where
+            D: Deserializer<'de>,
+        {
             deserializer.deserialize_str(VersionReqVisitor)
         }
     }
 
     struct VersionReqVisitor;
 
-    impl <'de> Visitor<'de> for VersionReqVisitor {
+    impl<'de> Visitor<'de> for VersionReqVisitor {
         type Value = VersionReq;
 
         fn expecting(&self, formatter: &mut Formatter) -> std::fmt::Result {
             formatter.write_str("SemVer version requirement")
         }
 
-        fn visit_str<E>(self, v: &str) -> Result<Self::Value, E> where E: de::Error {
+        fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
+        where
+            E: de::Error,
+        {
             match VersionReq::from_str(v) {
-                Ok(version) => {Ok(version)}
+                Ok(version) => Ok(version),
                 Err(error) => {
                     //Err(de::Error::custom(error.to_string() ))
                     Err(de::Error::invalid_type(de::Unexpected::Str(v), &self))
                 }
             }
         }
-
     }
-
-
 
     impl ToString for VersionReq {
         fn to_string(&self) -> String {
@@ -389,17 +373,16 @@ pub mod pattern {
         }
     }
 
-
     impl FromStr for VersionReq {
         type Err = Error;
 
         fn from_str(s: &str) -> Result<Self, Self::Err> {
             let version = semver::VersionReq::from_str(s)?;
-            Ok( Self{version} )
+            Ok(Self { version })
         }
     }
 
-    #[derive(Debug,Clone, Serialize,Deserialize)]
+    #[derive(Debug, Clone, Serialize, Deserialize)]
     pub enum SegmentPattern {
         Any,       // *
         Recursive, // **
@@ -429,7 +412,7 @@ pub mod pattern {
     pub type KeySegment = String;
     pub type AddressSegment = String;
 
-    #[derive(Clone, Eq, PartialEq, Serialize,Deserialize)]
+    #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
     pub enum ExactSegment {
         Address(AddressSegment),
     }
@@ -442,7 +425,7 @@ pub mod pattern {
         }
     }
 
-    #[derive(Debug,Clone,Serialize,Deserialize)]
+    #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct SpecificPattern {
         pub vendor: VendorPattern,
         pub product: ProductPattern,
@@ -452,13 +435,14 @@ pub mod pattern {
 
     impl ValueMatcher<Specific> for SpecificPattern {
         fn is_match(&self, specific: &Specific) -> Result<(), Error> {
-            if self.vendor.matches(&specific.vendor ) &&
-            self.product.matches(&specific.product) &&
-            self.variant.matches(&specific.variant) &&
-            self.version.matches(&specific.version) {
+            if self.vendor.matches(&specific.vendor)
+                && self.product.matches(&specific.product)
+                && self.variant.matches(&specific.variant)
+                && self.version.matches(&specific.version)
+            {
                 Ok(())
             } else {
-                Err("Specific does not match pattern".into() )
+                Err("Specific does not match pattern".into())
             }
         }
     }
@@ -475,10 +459,10 @@ pub mod pattern {
         }
     }
     pub mod specific {
+        use crate::error::Error;
+        use crate::version::v0_0_1::generic::pattern::Pattern;
         use std::ops::Deref;
         use std::str::FromStr;
-        use crate::version::v0_0_1::generic::pattern::Pattern;
-        use crate::error::Error;
 
         pub struct VersionReq {
             pub req: semver::VersionReq,
@@ -508,25 +492,32 @@ pub mod pattern {
         pub type VersionPattern = Pattern<VersionReq>;
     }
 
-
     pub mod parse {
 
+        use crate::version::v0_0_1::generic::pattern::{
+            Hop, KindPattern, Pattern, ResourceTypePattern, TksPattern,
+        };
+        use crate::version::v0_0_1::parse::{
+            address_segment_chars, camel_case, domain_chars, skewer_chars, version_req_chars, Res,
+        };
+        use crate::version::v0_0_1::pattern::specific::{
+            ProductPattern, VariantPattern, VendorPattern,
+        };
+        use crate::version::v0_0_1::pattern::{
+            ExactSegment, SegmentPattern, SpecificPattern, VersionReq,
+        };
+        use crate::version::v0_0_1::util::ValuePattern;
         use nom::branch::alt;
         use nom::bytes::complete::tag;
         use nom::character::complete::{alpha1, digit1};
         use nom::combinator::{opt, recognize};
-        use nom::error::{VerboseError, ParseError};
-        use nom::sequence::{delimited, tuple, terminated};
-        use nom::{IResult, Err};
-        use nom::Parser;
-        use nom_supreme::{parse_from_str, ParserExt};
-        use crate::version::v0_0_1::parse::{Res, skewer_chars, version_req_chars, address_segment_chars, camel_case, domain_chars};
+        use nom::error::{ParseError, VerboseError};
         use nom::multi::many1;
+        use nom::sequence::{delimited, terminated, tuple};
+        use nom::Parser;
+        use nom::{Err, IResult};
+        use nom_supreme::{parse_from_str, ParserExt};
         use std::str::FromStr;
-        use crate::version::v0_0_1::generic::pattern::{Pattern, TksPattern, KindPattern, Hop, ResourceTypePattern};
-        use crate::version::v0_0_1::pattern::{SegmentPattern, ExactSegment, SpecificPattern, VersionReq};
-        use crate::version::v0_0_1::util::ValuePattern;
-        use crate::version::v0_0_1::pattern::specific::{VendorPattern, VariantPattern, ProductPattern};
 
         fn any_segment(input: &str) -> Res<&str, SegmentPattern> {
             tag("*")(input).map(|(next, _)| (next, SegmentPattern::Any))
@@ -549,18 +540,16 @@ pub mod pattern {
             alt((recursive_segment, any_segment, exact_segment))(input)
         }
 
-        pub fn pattern<'r,O, E: ParseError<&'r str>,V >(
+        pub fn pattern<'r, O, E: ParseError<&'r str>, V>(
             mut value: V,
         ) -> impl FnMut(&'r str) -> IResult<&str, Pattern<O>, E>
-            where
-                V: Parser<&'r str, O, E>,
+        where
+            V: Parser<&'r str, O, E>,
         {
             move |input: &str| {
-                let x:Res<&str,&str> = tag("*")(input);
+                let x: Res<&str, &str> = tag("*")(input);
                 match x {
-                    Ok((next,_)) => {
-                        Ok((next,Pattern::Any))
-                    }
+                    Ok((next, _)) => Ok((next, Pattern::Any)),
                     Err(_) => {
                         let (next, p) = value.parse(input)?;
                         let pattern = Pattern::Exact(p);
@@ -583,22 +572,21 @@ pub mod pattern {
             }
         }
 
-
         fn version_req(input: &str) -> Res<&str, VersionReq> {
             parse_from_str(version_req_chars).parse(input)
         }
 
-        fn rec_domain(input: &str) -> Res<&str,&str> {
-            recognize( tuple((many1(terminated(skewer_chars, tag("."))), skewer_chars)))(input)
+        fn rec_domain(input: &str) -> Res<&str, &str> {
+            recognize(tuple((
+                many1(terminated(skewer_chars, tag("."))),
+                skewer_chars,
+            )))(input)
         }
-
-
 
         // can be a hostname or domain name
-        fn space( input: &str) -> Res<&str,&str> {
-            recognize( alt((skewer_chars, rec_domain)))(input)
+        fn space(input: &str) -> Res<&str, &str> {
+            recognize(alt((skewer_chars, rec_domain)))(input)
         }
-
 
         fn specific(input: &str) -> Res<&str, SpecificPattern> {
             tuple((
@@ -610,82 +598,88 @@ pub mod pattern {
                 tag(":"),
                 delimited(tag("("), version_req, tag(")")),
             ))(input)
-                .map(|(next, (vendor, _, product, _, variant, _, version))| {
+            .map(|(next, (vendor, _, product, _, variant, _, version))| {
+                let vendor: Pattern<&str> = vendor;
+                let product: Pattern<&str> = product;
+                let variant: Pattern<&str> = variant;
 
-                    let vendor :Pattern<&str> = vendor;
-                    let product :Pattern<&str> = product;
-                    let variant :Pattern<&str> = variant;
+                let vendor: VendorPattern = vendor.into();
+                let product: ProductPattern = product.into();
+                let variant: VariantPattern = variant.into();
 
-                    let vendor :VendorPattern = vendor.into();
-                    let product :ProductPattern = product.into();
-                    let variant :VariantPattern = variant.into();
-
-                    let specific = SpecificPattern {
-                        vendor,
-                        product,
-                        variant,
-                        version,
-                    };
-                    (next, specific)
-                })
-        }
-
-        fn kind<Kind:FromStr>(input: &str) -> Res<&str, Kind> {
-            parse_from_str(camel_case).parse(input).map(|(next, kind)| (next, kind))
-        }
-
-
-        fn kind_pattern<Kind:FromStr>(input: &str) -> Res<&str, KindPattern<Kind>> {
-            pattern(kind)(input).map(|(next, kind)| {
-                (next, kind)
+                let specific = SpecificPattern {
+                    vendor,
+                    product,
+                    variant,
+                    version,
+                };
+                (next, specific)
             })
         }
 
-        fn resource_type<ResourceType:FromStr>(input: &str) -> Res<&str, ResourceType> {
+        fn kind<Kind: FromStr>(input: &str) -> Res<&str, Kind> {
+            parse_from_str(camel_case)
+                .parse(input)
+                .map(|(next, kind)| (next, kind))
+        }
+
+        fn kind_pattern<Kind: FromStr>(input: &str) -> Res<&str, KindPattern<Kind>> {
+            pattern(kind)(input).map(|(next, kind)| (next, kind))
+        }
+
+        fn resource_type<ResourceType: FromStr>(input: &str) -> Res<&str, ResourceType> {
             parse_from_str(camel_case).parse(input)
         }
 
-        fn resource_type_pattern<ResourceType:FromStr>(input: &str) -> Res<&str, ResourceTypePattern<ResourceType>> {
+        fn resource_type_pattern<ResourceType: FromStr>(
+            input: &str,
+        ) -> Res<&str, ResourceTypePattern<ResourceType>> {
             pattern(resource_type)(input)
         }
 
-
-        fn tks<ResourceType:FromStr,Kind:FromStr>(input: &str) -> Res<&str, TksPattern<ResourceType,Kind>> {
+        fn tks<ResourceType: FromStr, Kind: FromStr>(
+            input: &str,
+        ) -> Res<&str, TksPattern<ResourceType, Kind>> {
             delimited(
                 tag("<"),
                 tuple((
                     resource_type_pattern,
                     opt(delimited(
                         tag("<"),
-                        tuple((kind_pattern, opt(delimited(tag("<"), value_pattern(specific), tag(">"))))),
+                        tuple((
+                            kind_pattern,
+                            opt(delimited(tag("<"), value_pattern(specific), tag(">"))),
+                        )),
                         tag(">"),
                     )),
                 )),
                 tag(">"),
             )(input)
-                .map(|(next, (resource_type, kind_and_specific))| {
-                    let (kind, specific) = match kind_and_specific {
-                        None => (Pattern::Any, ValuePattern::Any),
-                        Some((kind, specific)) => (
-                            kind,
-                            match specific {
-                                None => ValuePattern::Any,
-                                Some(specific) => specific,
-                            },
-                        ),
-                    };
-
-                    let tks = TksPattern {
-                        resource_type,
+            .map(|(next, (resource_type, kind_and_specific))| {
+                let (kind, specific) = match kind_and_specific {
+                    None => (Pattern::Any, ValuePattern::Any),
+                    Some((kind, specific)) => (
                         kind,
-                        specific,
-                    };
+                        match specific {
+                            None => ValuePattern::Any,
+                            Some(specific) => specific,
+                        },
+                    ),
+                };
 
-                    (next, tks)
-                })
+                let tks = TksPattern {
+                    resource_type,
+                    kind,
+                    specific,
+                };
+
+                (next, tks)
+            })
         }
 
-        fn hop<ResourceType:FromStr,Kind:FromStr>(input: &str) -> Res<&str, Hop<ResourceType,Kind>> {
+        fn hop<ResourceType: FromStr, Kind: FromStr>(
+            input: &str,
+        ) -> Res<&str, Hop<ResourceType, Kind>> {
             tuple((segment, opt(tks)))(input).map(|(next, (segment, tks))| {
                 let tks = match tks {
                     None => TksPattern::any(),
@@ -698,12 +692,14 @@ pub mod pattern {
         #[cfg(test)]
         pub mod test {
 
+            use crate::error::Error;
+            use crate::version::v0_0_1::generic::pattern::{Pattern, TksPattern};
+            use crate::version::v0_0_1::pattern::parse::{hop, segment, specific, tks};
+            use crate::version::v0_0_1::pattern::{
+                ExactSegment, Pattern, SegmentPattern, SpecificPattern, TksPattern, VersionReq,
+            };
             use nom::combinator::all_consuming;
             use std::str::FromStr;
-            use crate::version::v0_0_1::pattern::parse::{segment, hop, specific, tks};
-            use crate::error::Error;
-            use crate::version::v0_0_1::pattern::{SegmentPattern, ExactSegment, TksPattern, Pattern, SpecificPattern, VersionReq};
-            use crate::version::v0_0_1::generic::pattern::{TksPattern, Pattern};
 
             #[test]
             pub fn test_segs() -> Result<(), Error> {
@@ -712,9 +708,9 @@ pub mod pattern {
                 assert!(
                     segment("hello")?
                         == (
-                        "",
-                        SegmentPattern::Exact(ExactSegment::Address("hello".to_string()))
-                    )
+                            "",
+                            SegmentPattern::Exact(ExactSegment::Address("hello".to_string()))
+                        )
                 );
                 Ok(())
             }
@@ -785,13 +781,12 @@ pub mod pattern {
             }
         }
     }
-
 }
 
 pub mod messaging {
+    use crate::error::Error;
     use serde::{Deserialize, Serialize};
     use std::convert::TryInto;
-    use crate::error::Error;
 
     pub type ExchangeId = String;
 
@@ -800,7 +795,6 @@ pub mod messaging {
         Notification,
         RequestResponse,
     }
-
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub enum Exchange {
@@ -822,12 +816,11 @@ pub mod messaging {
 
         fn try_into(self) -> Result<ExchangeId, Self::Error> {
             match self {
-                Exchange::Notification => {
-                    Err("Exchange Notification cannot be converted into a RequestResponse Exchange".into())
-                }
-                Exchange::RequestResponse(id) => {
-                    Ok(id)
-                }
+                Exchange::Notification => Err(
+                    "Exchange Notification cannot be converted into a RequestResponse Exchange"
+                        .into(),
+                ),
+                Exchange::RequestResponse(id) => Ok(id),
             }
         }
     }
@@ -835,12 +828,8 @@ pub mod messaging {
     impl Into<ExchangeType> for Exchange {
         fn into(self) -> ExchangeType {
             match self {
-                Exchange::Notification => {
-                    ExchangeType::Notification
-                }
-                Exchange::RequestResponse(_) => {
-                    ExchangeType::RequestResponse
-                }
+                Exchange::Notification => ExchangeType::Notification,
+                Exchange::RequestResponse(_) => ExchangeType::RequestResponse,
             }
         }
     }
@@ -933,9 +922,7 @@ pub mod payload {
     use crate::error::Error;
     use crate::version::v0_0_1::bin::Bin;
     use crate::version::v0_0_1::generic;
-    use crate::version::v0_0_1::id::{
-        Address, Kind, PayloadClaim, ResourceType,
-    };
+    use crate::version::v0_0_1::id::{Address, Kind, PayloadClaim, ResourceType};
 
     use crate::version::v0_0_1::pattern::TksPattern;
 
@@ -944,14 +931,15 @@ pub mod payload {
     pub type PayloadType = generic::payload::PayloadType;
     pub type PayloadRef = generic::payload::PayloadRef<PayloadClaim, PayloadPattern>;
     pub type PayloadDelivery = generic::payload::PayloadDelivery<Payload, PayloadRef>;
-    pub type Call = generic::payload::Call<ResourceType,Kind,TksPattern>;
-    pub type CallWithConfig = generic::payload::CallWithConfig<ResourceType,Kind,TksPattern>;
-    pub type MapPattern = generic::payload::MapPattern<ResourceType,Kind,TksPattern>;
-    pub type PayloadTypePattern = generic::payload::PayloadTypePattern<ResourceType,Kind,TksPattern>;
-    pub type PayloadPattern = generic::payload::PayloadPattern<ResourceType,Kind,TksPattern>;
+    pub type Call = generic::payload::Call<ResourceType, Kind, TksPattern>;
+    pub type CallWithConfig = generic::payload::CallWithConfig<ResourceType, Kind, TksPattern>;
+    pub type MapPattern = generic::payload::MapPattern<ResourceType, Kind, TksPattern>;
+    pub type PayloadTypePattern =
+        generic::payload::PayloadTypePattern<ResourceType, Kind, TksPattern>;
+    pub type PayloadPattern = generic::payload::PayloadPattern<ResourceType, Kind, TksPattern>;
     pub type ListPattern = generic::payload::ListPattern;
     pub type PayloadMap = generic::payload::PayloadMap<Kind>;
-    pub type RcCommand = generic::resource::command::RcCommand<ResourceType,Kind,TksPattern>;
+    pub type RcCommand = generic::resource::command::RcCommand<ResourceType, Kind, TksPattern>;
 
     #[derive(
         Debug,
@@ -976,8 +964,6 @@ pub mod payload {
         Status,
         Resource,
     }
-
-
 }
 
 pub mod command {
@@ -1041,9 +1027,9 @@ pub mod config {
 
     use serde::{Deserialize, Serialize};
 
-    use crate::version::v0_0_1::ArtifactRef;
     use crate::version::v0_0_1::generic;
-    use crate::version::v0_0_1::id::{Address,  Kind};
+    use crate::version::v0_0_1::id::{Address, Kind};
+    use crate::version::v0_0_1::ArtifactRef;
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub enum PortalKind {
@@ -1149,28 +1135,26 @@ pub mod entity {
     pub enum EntityType {
         Rc,
         Msg,
-        Http
+        Http,
     }
 
     pub mod request {
         use crate::version::v0_0_1::bin::Bin;
         use crate::version::v0_0_1::generic;
-        use crate::version::v0_0_1::id::{
-            Address,  Kind, PayloadClaim, ResourceType,
-        };
-        use crate::version::v0_0_1::payload::Payload;
+        use crate::version::v0_0_1::id::{Address, Kind, PayloadClaim, ResourceType};
         use crate::version::v0_0_1::pattern::TksPattern;
+        use crate::version::v0_0_1::payload::Payload;
 
-        pub type ReqEntity = generic::entity::request::ReqEntity<ResourceType,Payload,TksPattern>;
-        pub type Rc = generic::entity::request::Rc<ResourceType,Kind,TksPattern>;
+        pub type ReqEntity = generic::entity::request::ReqEntity<ResourceType, Payload, TksPattern>;
+        pub type Rc = generic::entity::request::Rc<ResourceType, Kind, TksPattern>;
         pub type Msg = generic::entity::request::Msg<Payload>;
         pub type Http = generic::entity::request::Http<Payload>;
     }
 
     pub mod response {
-        use crate::version::v0_0_1::{fail, generic};
-        use crate::version::v0_0_1::id::{Address,  Kind};
+        use crate::version::v0_0_1::id::{Address, Kind};
         use crate::version::v0_0_1::payload::Payload;
+        use crate::version::v0_0_1::{fail, generic};
 
         pub type RespEntity = generic::entity::response::RespEntity<Payload, fail::Fail>;
     }
@@ -1180,19 +1164,19 @@ pub mod resource {
     use serde::{Deserialize, Serialize};
 
     use crate::version::v0_0_1::generic;
-    use crate::version::v0_0_1::id::{Address,  Kind, ResourceType};
+    use crate::version::v0_0_1::id::{Address, Kind, ResourceType};
 
-    #[derive(Debug, Clone, Serialize, Deserialize, strum_macros::Display, Eq,PartialEq)]
+    #[derive(Debug, Clone, Serialize, Deserialize, strum_macros::Display, Eq, PartialEq)]
     pub enum Status {
-        Unknown,               // initial status or when we status cannot be determined
-        Pending,               // resource is now registered but not assigned to a host
-        Assigning,             // resource is being assigned to at least one host
-        Initializing(String),  // assigned to a host and undergoing custom initialization...This resource can send requests but not receive requests.  The String gives a progress indication like 2/10 (step 2 of 10) or 7/? when the number of steps are not known.
-        Ready,                 // ready to take requests
-        Paused(String),        // can not receive requests (probably because it is waiting for some other resource to make updates)... String should be some form of meaningful identifier of which resource Paused this resource
-        Resuming(String),      // like Initializing but triggered after a pause is lifted, the resource may be doing something before it is ready to accept requests again.  String is a progress indication just like Initializing.
-        Panic(String),         // something is wrong... all requests are blocked and responses are cancelled. String is a hopefully  meaningful message describing why the Resource has Panic
-        Done(String),          // this resource had a life span and has now completed succesfully it can no longer receive requests. String is a hopefully meaningful or useful Status message that is returned
+        Unknown,              // initial status or when we status cannot be determined
+        Pending,              // resource is now registered but not assigned to a host
+        Assigning,            // resource is being assigned to at least one host
+        Initializing(String), // assigned to a host and undergoing custom initialization...This resource can send requests but not receive requests.  The String gives a progress indication like 2/10 (step 2 of 10) or 7/? when the number of steps are not known.
+        Ready,                // ready to take requests
+        Paused(String), // can not receive requests (probably because it is waiting for some other resource to make updates)... String should be some form of meaningful identifier of which resource Paused this resource
+        Resuming(String), // like Initializing but triggered after a pause is lifted, the resource may be doing something before it is ready to accept requests again.  String is a progress indication just like Initializing.
+        Panic(String), // something is wrong... all requests are blocked and responses are cancelled. String is a hopefully  meaningful message describing why the Resource has Panic
+        Done(String), // this resource had a life span and has now completed succesfully it can no longer receive requests. String is a hopefully meaningful or useful Status message that is returned
     }
 
     pub type Archetype = generic::resource::Archetype<Address>;
@@ -1206,16 +1190,16 @@ pub mod portal {
         use crate::error::Error;
         use crate::version::v0_0_1::frame::PrimitiveFrame;
         use crate::version::v0_0_1::generic;
-        use crate::version::v0_0_1::id::{Address,  Kind, ResourceType};
-        use crate::version::v0_0_1::payload::Payload;
+        use crate::version::v0_0_1::id::{Address, Kind, ResourceType};
         use crate::version::v0_0_1::pattern::TksPattern;
+        use crate::version::v0_0_1::payload::Payload;
 
-        pub type ReqEntity = generic::entity::request::ReqEntity<ResourceType,Payload,TksPattern>;
+        pub type ReqEntity = generic::entity::request::ReqEntity<ResourceType, Payload, TksPattern>;
         pub type Request = generic::portal::inlet::Request<ReqEntity>;
         pub type Response = generic::portal::inlet::Response<Payload>;
-        pub type Frame = generic::portal::inlet::Frame<ReqEntity,Payload>;
+        pub type Frame = generic::portal::inlet::Frame<ReqEntity, Payload>;
 
-        impl TryFrom<PrimitiveFrame> for generic::portal::inlet::Frame<ReqEntity,Payload> {
+        impl TryFrom<PrimitiveFrame> for generic::portal::inlet::Frame<ReqEntity, Payload> {
             type Error = Error;
 
             fn try_from(value: PrimitiveFrame) -> Result<Self, Self::Error> {
@@ -1230,16 +1214,14 @@ pub mod portal {
         use crate::error::Error;
         use crate::version::v0_0_1::frame::PrimitiveFrame;
         use crate::version::v0_0_1::generic;
-        use crate::version::v0_0_1::id::{Address,  Kind, ResourceType};
+        use crate::version::v0_0_1::id::{Address, Kind, ResourceType};
         use crate::version::v0_0_1::payload::Payload;
 
         pub type Request = generic::portal::outlet::Request<Payload>;
         pub type Response = generic::portal::outlet::Response<Payload>;
         pub type Frame = generic::portal::outlet::Frame<Kind, Payload>;
 
-        impl TryFrom<PrimitiveFrame>
-            for generic::portal::outlet::Frame<Kind, Payload>
-        {
+        impl TryFrom<PrimitiveFrame> for generic::portal::outlet::Frame<Kind, Payload> {
             type Error = Error;
 
             fn try_from(value: PrimitiveFrame) -> Result<Self, Self::Error> {
@@ -1270,17 +1252,20 @@ pub mod generic {
 
         use crate::error::Error;
         use crate::version::v0_0_1::generic;
-        use crate::version::v0_0_1::util::Convert;
         use crate::version::v0_0_1::id::{Address, Specific, Tks};
+        use crate::version::v0_0_1::util::Convert;
 
-        #[derive(Debug,Clone,Serialize,Deserialize,Eq,PartialEq,Hash)]
+        #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
         pub struct GenericKind<ResourceType> {
             pub resource_type: ResourceType,
             pub kind: Option<String>,
-            pub specific: Option<Specific>
+            pub specific: Option<Specific>,
         }
 
-        impl <ResourceType> Tks<ResourceType> for GenericKind<ResourceType> where ResourceType: Eq+PartialEq+Clone{
+        impl<ResourceType> Tks<ResourceType> for GenericKind<ResourceType>
+        where
+            ResourceType: Eq + PartialEq + Clone,
+        {
             fn resource_type(&self) -> ResourceType {
                 self.resource_type.clone()
             }
@@ -1294,9 +1279,9 @@ pub mod generic {
             }
 
             fn matches(&self, tks: &dyn Tks<ResourceType>) -> bool {
-                self.resource_type == tks.resource_type() &&
-                self.kind == tks.kind_to_string() &&
-                self.specific == tks.specific()
+                self.resource_type == tks.resource_type()
+                    && self.kind == tks.kind_to_string()
+                    && self.specific == tks.specific()
             }
         }
 
@@ -1319,14 +1304,14 @@ pub mod generic {
         }
 
         pub mod parse {
-            use crate::version::v0_0_1::parse::{Res, skewer_chars, version_chars, domain_chars};
             use crate::version::v0_0_1::id::{Specific, Version};
-            use nom::sequence::{tuple, delimited};
-            use nom::bytes::complete::{tag, is_a};
-            use nom_supreme::{parse_from_str, ParserExt};
+            use crate::version::v0_0_1::parse::{domain_chars, skewer_chars, version_chars, Res};
+            use nom::bytes::complete::{is_a, tag};
+            use nom::sequence::{delimited, tuple};
             use nom::Parser;
+            use nom_supreme::{parse_from_str, ParserExt};
 
-            pub fn version(input: &str ) -> Res<&str, Version> {
+            pub fn version(input: &str) -> Res<&str, Version> {
                 parse_from_str(version_chars).parse(input)
             }
 
@@ -1340,15 +1325,15 @@ pub mod generic {
                     tag(":"),
                     delimited(tag("("), version, tag(")")),
                 ))(input)
-                    .map(|(next, (vendor, _, product, _, variant, _, version))| {
-                        let specific = Specific{
-                            vendor: vendor.to_string(),
-                            product: product.to_string(),
-                            variant: variant.to_string(),
-                            version,
-                        };
-                        (next, specific)
-                    })
+                .map(|(next, (vendor, _, product, _, variant, _, version))| {
+                    let specific = Specific {
+                        vendor: vendor.to_string(),
+                        product: product.to_string(),
+                        variant: variant.to_string(),
+                        version,
+                    };
+                    (next, specific)
+                })
             }
         }
     }
@@ -1362,11 +1347,11 @@ pub mod generic {
         use serde::{Deserialize, Serialize};
 
         use crate::error::Error;
-        use crate::version::v0_0_1::ArtifactRef;
         use crate::version::v0_0_1::config::{Config, PortalKind};
         use crate::version::v0_0_1::generic;
         use crate::version::v0_0_1::generic::resource::Archetype;
         use crate::version::v0_0_1::id::Address;
+        use crate::version::v0_0_1::ArtifactRef;
 
         #[derive(Debug, Clone, Serialize, Deserialize)]
         pub struct Info<KIND> {
@@ -1379,12 +1364,8 @@ pub mod generic {
             pub kind: PortalKind,
         }
 
-
-        impl<FromKind> Info<FromKind>
-        {
-            pub fn convert<ToKind>(
-                self,
-            ) -> Result<Info<ToKind>, Error>
+        impl<FromKind> Info<FromKind> {
+            pub fn convert<ToKind>(self) -> Result<Info<ToKind>, Error>
             where
                 ToKind: TryFrom<FromKind, Error = Error>,
             {
@@ -1407,83 +1388,105 @@ pub mod generic {
             use std::hash::Hash;
             use std::str::FromStr;
 
-            use serde::{Deserialize, Serialize};
             use serde::__private::fmt::Debug;
+            use serde::{Deserialize, Serialize};
 
             use crate::error::Error;
-            use crate::version::v0_0_1::{http, State};
             use crate::version::v0_0_1::bin::Bin;
             use crate::version::v0_0_1::generic;
-            use crate::version::v0_0_1::generic::payload::{HttpMethod, Payload};
+            use crate::version::v0_0_1::generic::entity::response::RespEntity;
             use crate::version::v0_0_1::generic::payload::Primitive;
+            use crate::version::v0_0_1::generic::payload::{HttpMethod, Payload};
+            use crate::version::v0_0_1::generic::resource::command::RcCommand;
             use crate::version::v0_0_1::id::Meta;
             use crate::version::v0_0_1::util::{Convert, ConvertFrom};
-            use crate::version::v0_0_1::generic::entity::response::RespEntity;
-            use crate::version::v0_0_1::generic::resource::command::RcCommand;
+            use crate::version::v0_0_1::{http, State};
 
             #[derive(Debug, Clone, Serialize, Deserialize)]
-            pub enum ReqEntity<ResourceType,Payload,TksPattern> {
-                Rc(Rc<ResourceType,Payload,TksPattern>),
+            pub enum ReqEntity<ResourceType, Payload, TksPattern> {
+                Rc(Rc<ResourceType, Payload, TksPattern>),
                 Msg(Msg<Payload>),
                 Http(Http<Payload>),
             }
 
-            impl <ResourceType,Payload,TksPattern> ReqEntity<ResourceType,Payload,TksPattern> {
-                pub fn ok<FAIL>(&self, payload: Payload) -> RespEntity<Payload,FAIL> {
+            impl<ResourceType, Payload, TksPattern> ReqEntity<ResourceType, Payload, TksPattern> {
+                pub fn ok<FAIL>(&self, payload: Payload) -> RespEntity<Payload, FAIL> {
                     RespEntity::Ok(payload)
                 }
 
-                pub fn fail<FAIL>(&self, fail: FAIL ) -> RespEntity<Payload,FAIL>{
+                pub fn fail<FAIL>(&self, fail: FAIL) -> RespEntity<Payload, FAIL> {
                     RespEntity::Fail(fail)
                 }
             }
 
-            impl<FromResourceType,FromPayload,FromTksPattern, ToResourceType,ToPayload,ToTksPattern> ConvertFrom<ReqEntity<FromResourceType,FromPayload,FromTksPattern>> for ReqEntity<ToResourceType,ToPayload,ToTksPattern>
+            impl<
+                    FromResourceType,
+                    FromPayload,
+                    FromTksPattern,
+                    ToResourceType,
+                    ToPayload,
+                    ToTksPattern,
+                > ConvertFrom<ReqEntity<FromResourceType, FromPayload, FromTksPattern>>
+                for ReqEntity<ToResourceType, ToPayload, ToTksPattern>
             where
-                FromPayload: TryInto<ToPayload, Error = Error>,
-                FromResourceType: TryInto<ToResourceType, Error = Error>,
-                FromTksPattern: TryInto<ToTksPattern, Error = Error>,
+                FromPayload: TryInto<ToPayload, Error = Error>+Clone+Eq+PartialEq,
+                FromResourceType: TryInto<ToResourceType, Error = Error>+Clone+Eq+PartialEq,
+                FromTksPattern: TryInto<ToTksPattern, Error = Error>+Clone,
             {
-                fn convert_from(a: ReqEntity<FromResourceType,FromPayload,FromTksPattern>) -> Result<Self, Error>
+                fn convert_from(
+                    a: ReqEntity<FromResourceType, FromPayload, FromTksPattern>,
+                ) -> Result<Self, Error>
                 where
                     Self: Sized,
                 {
                     match a {
                         ReqEntity::Rc(rc) => Ok(ReqEntity::Rc(ConvertFrom::convert_from(rc)?)),
                         ReqEntity::Msg(msg) => Ok(ReqEntity::Msg(ConvertFrom::convert_from(msg)?)),
-                        ReqEntity::Http(http) => Ok(ReqEntity::Http(ConvertFrom::convert_from(http)?)),
+                        ReqEntity::Http(http) => {
+                            Ok(ReqEntity::Http(ConvertFrom::convert_from(http)?))
+                        }
                     }
                 }
             }
 
             #[derive(Debug, Clone, Serialize, Deserialize)]
-            pub struct Rc<ResourceType,Kind,TksPattern> {
-                pub command: RcCommand<ResourceType,Kind,TksPattern>,
+            pub struct Rc<ResourceType, Kind, TksPattern> {
+                pub command: RcCommand<ResourceType, Kind, TksPattern>,
                 pub payload: Payload<Kind>,
             }
 
-            impl <ResourceType,Kind,TksPattern> Rc<ResourceType,Kind,TksPattern> {
-                pub fn new( command: RcCommand<ResourceType,Kind,TksPattern>, payload: Payload<Kind> ) -> Self {
-                    Self{
-                        command,
-                        payload
-                    }
+            impl<ResourceType, Kind, TksPattern> Rc<ResourceType, Kind, TksPattern> {
+                pub fn new(
+                    command: RcCommand<ResourceType, Kind, TksPattern>,
+                    payload: Payload<Kind>,
+                ) -> Self {
+                    Self { command, payload }
                 }
             }
 
-            impl <ResourceType,Kind,TksPattern> ToString for Rc<ResourceType,Kind,TksPattern> {
+            impl<ResourceType, Kind, TksPattern> ToString for Rc<ResourceType, Kind, TksPattern> {
                 fn to_string(&self) -> String {
-                    format!("Rc<{}>",self.command.to_string())
+                    format!("Rc<{}>", self.command.to_string())
                 }
             }
 
-            impl<FromResourceType,FromKind,FromTksPattern, ToResourceType,ToKind,ToTksPattern> ConvertFrom<Rc<FromResourceType,FromKind,FromTksPattern>> for Rc<ToResourceType,ToKind,ToTksPattern>
+            impl<
+                    FromResourceType,
+                    FromKind,
+                    FromTksPattern,
+                    ToResourceType,
+                    ToKind,
+                    ToTksPattern,
+                > ConvertFrom<Rc<FromResourceType, FromKind, FromTksPattern>>
+                for Rc<ToResourceType, ToKind, ToTksPattern>
             where
-                FromResourceType: TryInto<ToResourceType, Error = Error>,
-                FromKind: TryInto<ToKind, Error = Error>,
-                FromTksPattern: TryInto<ToTksPattern, Error = Error>,
+                FromResourceType: TryInto<ToResourceType, Error = Error>+Clone+Eq+PartialEq,
+                FromKind: TryInto<ToKind, Error = Error>+Clone+Eq+PartialEq,
+                FromTksPattern: TryInto<ToTksPattern, Error = Error>+Clone,
             {
-                fn convert_from(a: Rc<FromResourceType,FromKind,FromTksPattern>) -> Result<Self, Error>
+                fn convert_from(
+                    a: Rc<FromResourceType, FromKind, FromTksPattern>,
+                ) -> Result<Self, Error>
                 where
                     Self: Sized,
                 {
@@ -1494,12 +1497,14 @@ pub mod generic {
                 }
             }
 
-            impl<FromResourceType,FromKind,FromTksPattern>  Rc<FromResourceType,FromKind,FromTksPattern> {
-                pub fn convert<ToResourceType,ToKind,ToTksPattern>(self) -> Result<Rc<ToResourceType,ToKind,ToTksPattern>, Error>
+            impl<FromResourceType, FromKind, FromTksPattern> Rc<FromResourceType, FromKind, FromTksPattern> {
+                pub fn convert<ToResourceType, ToKind, ToTksPattern>(
+                    self,
+                ) -> Result<Rc<ToResourceType, ToKind, ToTksPattern>, Error>
                 where
-                    FromResourceType: TryInto<ToResourceType, Error = Error>,
-                    FromKind: TryInto<ToKind, Error = Error>,
-                    FromTksPattern: TryInto<ToTksPattern, Error = Error>,
+                    FromResourceType: TryInto<ToResourceType, Error = Error>+Clone+Eq+PartialEq,
+                    FromKind: TryInto<ToKind, Error = Error>+Clone+Eq+PartialEq,
+                    FromTksPattern: TryInto<ToTksPattern, Error = Error>+Clone,
                 {
                     Ok(Rc {
                         command: self.command.convert()?,
@@ -1508,12 +1513,16 @@ pub mod generic {
                 }
             }
 
-            impl<FromResourceType,FromKind,FromTksPattern>  RcCommand<FromResourceType,FromKind,FromTksPattern> {
-                pub fn convert<ToResourceType,ToKind,ToTksPattern>(self) -> Result<RcCommand<ToResourceType,ToKind,ToTksPattern>, Error>
-                    where
-                        FromResourceType: TryInto<ToResourceType, Error = Error>,
-                        FromKind: TryInto<ToKind, Error = Error>,
-                        FromTksPattern: TryInto<ToTksPattern, Error = Error>,
+            impl<FromResourceType, FromKind, FromTksPattern>
+                RcCommand<FromResourceType, FromKind, FromTksPattern>
+            {
+                pub fn convert<ToResourceType, ToKind, ToTksPattern>(
+                    self,
+                ) -> Result<RcCommand<ToResourceType, ToKind, ToTksPattern>, Error>
+                where
+                    FromResourceType: TryInto<ToResourceType, Error = Error>+Clone+Eq+PartialEq,
+                    FromKind: TryInto<ToKind, Error = Error>+Clone+Eq+PartialEq,
+                    FromTksPattern: TryInto<ToTksPattern, Error = Error>+Clone,
                 {
                     match self {
                         RcCommand::Create(create) => {
@@ -1529,7 +1538,6 @@ pub mod generic {
                 }
             }
 
-
             #[derive(Debug, Clone, Serialize, Deserialize)]
             pub struct Msg<PAYLOAD> {
                 pub action: String,
@@ -1537,12 +1545,11 @@ pub mod generic {
                 pub payload: PAYLOAD,
             }
 
-            impl <PAYLOAD> ToString for Msg<PAYLOAD> {
+            impl<PAYLOAD> ToString for Msg<PAYLOAD> {
                 fn to_string(&self) -> String {
-                    format!("Msg<{}>{}",self.action,self.path)
+                    format!("Msg<{}>{}", self.action, self.path)
                 }
             }
-
 
             impl<FromPayload, ToPayload> ConvertFrom<Msg<FromPayload>> for Msg<ToPayload>
             where
@@ -1573,8 +1580,6 @@ pub mod generic {
                 }
             }
 
-
-
             #[derive(Debug, Clone, Serialize, Deserialize)]
             pub struct Http<PAYLOAD> {
                 pub headers: Meta,
@@ -1583,21 +1588,21 @@ pub mod generic {
                 pub body: PAYLOAD,
             }
 
-            impl <PAYLOAD> ToString for Http<PAYLOAD> {
+            impl<PAYLOAD> ToString for Http<PAYLOAD> {
                 fn to_string(&self) -> String {
-                    format!("Http<{}>{}",self.method.to_string(),self.path)
+                    format!("Http<{}>{}", self.method.to_string(), self.path)
                 }
             }
 
             impl<FromPayload, ToPayload> ConvertFrom<Http<FromPayload>> for Http<ToPayload>
-                where
-                    FromPayload: TryInto<ToPayload, Error = Error>,
+            where
+                FromPayload: TryInto<ToPayload, Error = Error>,
             {
                 fn convert_from(a: Http<FromPayload>) -> Result<Self, Error>
-                    where
-                        Self: Sized,
+                where
+                    Self: Sized,
                 {
-                    Ok(Http{
+                    Ok(Http {
                         headers: a.headers,
                         method: a.method,
                         path: a.path,
@@ -1608,10 +1613,10 @@ pub mod generic {
 
             impl<FromPayload> Http<FromPayload> {
                 pub fn convert<ToPayload>(self) -> Result<Http<ToPayload>, Error>
-                    where
-                        ToPayload: ConvertFrom<FromPayload>,
+                where
+                    ToPayload: ConvertFrom<FromPayload>,
                 {
-                    Ok(Http{
+                    Ok(Http {
                         headers: self.headers,
                         method: self.method,
                         path: self.path,
@@ -1619,9 +1624,6 @@ pub mod generic {
                     })
                 }
             }
-
-
-
         }
 
         pub mod response {
@@ -1688,21 +1690,22 @@ pub mod generic {
 
         use crate::error::Error;
         use crate::version::v0_0_1::generic;
-        use crate::version::v0_0_1::generic::id::{AddressAndKind};
-        use crate::version::v0_0_1::generic::payload::{MapPattern, Payload, PayloadType, MsgCall, HttpCall};
+        use crate::version::v0_0_1::generic::id::AddressAndKind;
         use crate::version::v0_0_1::generic::payload::Primitive;
-        use crate::version::v0_0_1::State;
-        use crate::version::v0_0_1::util::ConvertFrom;
+        use crate::version::v0_0_1::generic::payload::{
+            HttpCall, MapPattern, MsgCall, Payload, PayloadType,
+        };
         use crate::version::v0_0_1::id::Address;
+        use crate::version::v0_0_1::util::ConvertFrom;
+        use crate::version::v0_0_1::State;
 
-        #[derive(Debug, Clone, Serialize, Deserialize,Eq,PartialEq)]
+        #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
         pub struct Archetype<KIND> {
             pub kind: KIND,
             pub config_src: Option<Address>,
         }
 
-        impl<FromKind, ToKind> ConvertFrom<Archetype<FromKind>>
-            for Archetype<ToKind>
+        impl<FromKind, ToKind> ConvertFrom<Archetype<FromKind>> for Archetype<ToKind>
         where
             FromKind: TryInto<ToKind, Error = Error>,
         {
@@ -1720,11 +1723,10 @@ pub mod generic {
             }
         }
 
-        impl<FromKind> Archetype<FromKind>
-        {
+        impl<FromKind> Archetype<FromKind> {
             pub fn convert<ToKind>(self) -> Result<Archetype<ToKind>, Error>
             where
-                ToKind: TryFrom<FromKind, Error = Error>,
+                FromKind: TryInto<ToKind, Error = Error>,
             {
                 let config_src = match self.config_src {
                     None => None,
@@ -1737,18 +1739,16 @@ pub mod generic {
             }
         }
 
-        #[derive(Debug, Clone, Serialize, Deserialize,Eq,PartialEq)]
+        #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
         pub struct ResourceStub<KIND> {
             pub address: Address,
             pub archetype: Archetype<KIND>,
         }
 
         impl<FromKind> ResourceStub<FromKind> {
-            pub fn convert<ToKind>(
-                self,
-            ) -> Result<ResourceStub<ToKind>, Error>
+            pub fn convert<ToKind>(self) -> Result<ResourceStub<ToKind>, Error>
             where
-                ToKind: TryFrom<FromKind, Error = Error>,
+                FromKind: TryInto<ToKind, Error = Error>,
             {
                 Ok(ResourceStub {
                     address: self.address.try_into()?,
@@ -1757,9 +1757,7 @@ pub mod generic {
             }
         }
 
-        impl<FromKind, ToKind>
-            ConvertFrom<ResourceStub<FromKind>>
-            for ResourceStub<ToKind>
+        impl<FromKind, ToKind> ConvertFrom<ResourceStub<FromKind>> for ResourceStub<ToKind>
         where
             FromKind: TryInto<ToKind, Error = Error>,
         {
@@ -1775,34 +1773,29 @@ pub mod generic {
         }
 
         #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
-        pub struct Resource<KIND>
-        {
+        pub struct Resource<KIND> {
             pub stub: ResourceStub<KIND>,
             pub state: Box<Payload<KIND>>,
         }
 
-        impl <FromKind> Resource<FromKind> {
-            pub fn convert<ToKind>(self) -> Result<Resource<ToKind>, Error> where ToKind: TryFrom<FromKind,Error=Error>{
-                Ok(Resource{
+        impl<FromKind> Resource<FromKind> {
+            pub fn convert<ToKind>(self) -> Result<Resource<ToKind>, Error>
+            where
+                FromKind: TryInto<ToKind, Error = Error>,
+            {
+                Ok(Resource {
                     stub: self.stub.convert()?,
-                    state: Box::new(self.state.convert()?)
+                    state: Box::new(self.state.convert()?),
                 })
             }
         }
 
-
-        impl<
-                FromKind,
-                ToKind,
-            > ConvertFrom<Resource<FromKind>>
-            for Resource<ToKind>
+        impl<FromKind, ToKind> ConvertFrom<Resource<FromKind>> for Resource<ToKind>
         where
             FromKind: TryInto<ToKind, Error = Error> + Clone,
             ToKind: Clone,
         {
-            fn convert_from(
-                a: Resource<FromKind>,
-            ) -> Result<Self, Error>
+            fn convert_from(a: Resource<FromKind>) -> Result<Self, Error>
             where
                 Self: Sized,
             {
@@ -1813,75 +1806,78 @@ pub mod generic {
             }
         }
 
-
         pub mod command {
-            use serde::{Serialize,Deserialize};
-            use crate::version::v0_0_1::util::ValueMatcher;
             use crate::version::v0_0_1::generic::resource::command::create::Create;
             use crate::version::v0_0_1::generic::resource::command::select::Select;
             use crate::version::v0_0_1::generic::resource::command::update::Update;
+            use crate::version::v0_0_1::util::ValueMatcher;
+            use serde::{Deserialize, Serialize};
 
-            #[derive(Debug,Clone,strum_macros::Display,Serialize,Deserialize)]
-            pub enum RcCommand<ResourceType,Kind,TksPattern>{
-                Create(Box<Create<Kind,TksPattern>>),
-                Select(Box<Select<ResourceType,Kind,TksPattern>>),
-                Update(Box<Update<Kind>>)
+            #[derive(Debug, Clone, strum_macros::Display, Serialize, Deserialize)]
+            pub enum RcCommand<ResourceType, Kind, TksPattern> {
+                Create(Box<Create<Kind, TksPattern>>),
+                Select(Box<Select<ResourceType, Kind, TksPattern>>),
+                Update(Box<Update<Kind>>),
             }
 
-            impl <ResourceType,Kind,TksPattern> RcCommand<ResourceType,Kind,TksPattern>{
+            impl<ResourceType, Kind, TksPattern> RcCommand<ResourceType, Kind, TksPattern> {
                 pub fn get_type(&self) -> RcCommandType {
                     match self {
-                        RcCommand::Create(_) => {
-                            RcCommandType::Create
-                        }
-                        RcCommand::Select(_) => {
-                            RcCommandType::Select
-                        }
-                        RcCommand::Update(_) => {
-                            RcCommandType::Update
-                        }
+                        RcCommand::Create(_) => RcCommandType::Create,
+                        RcCommand::Select(_) => RcCommandType::Select,
+                        RcCommand::Update(_) => RcCommandType::Update,
                     }
                 }
             }
 
-            #[derive(Eq,PartialEq,strum_macros::Display,strum_macros::EnumString)]
+            #[derive(Eq, PartialEq, strum_macros::Display, strum_macros::EnumString)]
             pub enum RcCommandType {
                 Create,
                 Select,
-                Update
+                Update,
             }
 
-
-            impl <ResourceType,KIND,TksPattern> ValueMatcher<RcCommand<ResourceType,KIND,TksPattern>> for RcCommand<ResourceType,KIND,TksPattern> {
-                fn is_match(&self, x: &RcCommand<ResourceType,KIND,TksPattern>) -> Result<(), crate::error::Error> {
+            impl<ResourceType, KIND, TksPattern>
+                ValueMatcher<RcCommand<ResourceType, KIND, TksPattern>>
+                for RcCommand<ResourceType, KIND, TksPattern>
+            {
+                fn is_match(
+                    &self,
+                    x: &RcCommand<ResourceType, KIND, TksPattern>,
+                ) -> Result<(), crate::error::Error> {
                     if self.get_type() == x.get_type() {
                         Ok(())
                     } else {
-                        Err(format!("Rc command expected: '{}' found: '{}'", self.to_string(),x.to_string()).into())
+                        Err(format!(
+                            "Rc command expected: '{}' found: '{}'",
+                            self.to_string(),
+                            x.to_string()
+                        )
+                        .into())
                     }
                 }
             }
 
-
-
             pub mod common {
-                use serde::{Serialize,Deserialize};
-                use crate::version::v0_0_1::generic::payload::PayloadMap;
-                use crate::version::latest::generic::payload::Payload;
-                use std::convert::{TryFrom, TryInto};
                 use crate::error::Error;
+                use crate::version::latest::generic::payload::Payload;
+                use crate::version::v0_0_1::generic::payload::PayloadMap;
+                use serde::{Deserialize, Serialize};
+                use std::convert::{TryFrom, TryInto};
 
-                #[derive(Debug,Clone,Serialize,Deserialize,strum_macros::Display)]
+                #[derive(Debug, Clone, Serialize, Deserialize, strum_macros::Display)]
                 pub enum StateSrc<Kind> {
                     Stateless,
-                    StatefulDirect(Payload<Kind>)
+                    StatefulDirect(Payload<Kind>),
                 }
 
-                impl <FromKind> StateSrc<FromKind> {
-
-                    pub fn convert<ToKind>(self) -> Result<StateSrc<ToKind>,Error> where FromKind: TryInto<ToKind,Error=Error>{
+                impl<FromKind> StateSrc<FromKind> {
+                    pub fn convert<ToKind>(self) -> Result<StateSrc<ToKind>, Error>
+                    where
+                        FromKind: TryInto<ToKind, Error = Error>,
+                    {
                         Ok(match self {
-                            StateSrc::Stateless => {StateSrc::Stateless}
+                            StateSrc::Stateless => StateSrc::Stateless,
                             StateSrc::StatefulDirect(payload) => {
                                 StateSrc::StatefulDirect(payload.convert()?)
                             }
@@ -1889,118 +1885,121 @@ pub mod generic {
                     }
                 }
 
-
                 pub type SetProperties<KIND> = PayloadMap<KIND>;
             }
 
             pub mod create {
-                use serde::{Serialize,Deserialize};
-                use crate::version::v0_0_1::generic::payload::PayloadMap;
-                use crate::version::v0_0_1::generic::resource::command::common::{StateSrc, SetProperties};
-                use crate::version::v0_0_1::id::Address;
-                use std::convert::TryInto;
-                use crate::version::v0_0_1::util::ConvertFrom;
                 use crate::error::Error;
                 use crate::version::latest::generic::payload::Payload;
+                use crate::version::v0_0_1::generic::payload::PayloadMap;
+                use crate::version::v0_0_1::generic::resource::command::common::{
+                    SetProperties, StateSrc,
+                };
+                use crate::version::v0_0_1::id::Address;
+                use crate::version::v0_0_1::util::ConvertFrom;
+                use serde::{Deserialize, Serialize};
+                use std::convert::TryInto;
 
-                #[derive(Debug,Clone,Serialize,Deserialize)]
-                pub struct Create<KIND,TksPattern>{
+                #[derive(Debug, Clone, Serialize, Deserialize)]
+                pub struct Create<KIND, TksPattern> {
                     pub address_template: AddressTemplate,
                     pub state: StateSrc<Payload<KIND>>,
                     pub properties: SetProperties<KIND>,
                     pub tks_template: TksPattern,
                 }
 
-                impl<FromKind,FromTksPattern>  Create<FromKind,FromTksPattern> {
-                    pub fn convert<ToKind,ToTksPattern>(self) -> Result<Create<ToKind,ToTksPattern>, Error>
-                        where
-                            FromKind: TryInto<ToKind, Error = Error>,
-                            FromTksPattern: TryInto<ToTksPattern, Error = Error>,
+                impl<FromKind, FromTksPattern> Create<FromKind, FromTksPattern> {
+                    pub fn convert<ToKind, ToTksPattern>(
+                        self,
+                    ) -> Result<Create<ToKind, ToTksPattern>, Error>
+                    where
+                        FromKind: TryInto<ToKind, Error = Error>+Clone,
+                        FromTksPattern: TryInto<ToTksPattern, Error = Error>+Clone,
                     {
                         Ok(Create {
                             address_template: self.address_template,
                             state: self.state.convert()?,
                             properties: self.properties.convert()?,
-                            tks_template: self.tks_template.try_into()?
+                            tks_template: self.tks_template.try_into()?,
                         })
                     }
                 }
 
-                #[derive(Debug,Clone,Serialize,Deserialize)]
+                #[derive(Debug, Clone, Serialize, Deserialize)]
                 pub struct AddressTemplate {
                     pub parent: Address,
-                    pub child_segment_template: AddressSegmentTemplate
+                    pub child_segment_template: AddressSegmentTemplate,
                 }
 
-                #[derive(Debug,Clone,strum_macros::Display,Serialize,Deserialize)]
+                #[derive(Debug, Clone, strum_macros::Display, Serialize, Deserialize)]
                 pub enum AddressSegmentTemplate {
                     // right now only exact is supported
-                    Exact(String)
+                    Exact(String),
                 }
-
             }
 
             pub mod select {
-                use serde::{Serialize,Deserialize};
-                use std::collections::{HashSet, HashMap};
-                use crate::version::v0_0_1::generic::payload::MapPattern;
-                use crate::version::v0_0_1::generic::pattern::AddressKindPattern;
-                use std::convert::{TryInto, TryFrom};
-                use crate::version::v0_0_1::util::ConvertFrom;
                 use crate::error::Error;
+                use crate::version::v0_0_1::generic::pattern::AddressKindPattern;
+                use crate::version::v0_0_1::generic::payload::MapPattern;
+                use crate::version::v0_0_1::util::ConvertFrom;
+                use serde::{Deserialize, Serialize};
+                use std::collections::{HashMap, HashSet};
+                use std::convert::{TryFrom, TryInto};
 
-                #[derive(Debug,Clone,Serialize,Deserialize)]
-                pub struct Select<ResourceType,Kind,TksPattern> {
-                    pub address_pattern: AddressKindPattern<ResourceType,Kind>,
-                    pub properties: PropertiesPattern<ResourceType,Kind,TksPattern>
+                #[derive(Debug, Clone, Serialize, Deserialize)]
+                pub struct Select<ResourceType, Kind, TksPattern> {
+                    pub address_pattern: AddressKindPattern<ResourceType, Kind>,
+                    pub properties: PropertiesPattern<ResourceType, Kind, TksPattern>,
                 }
 
-                impl<FromResourceType,FromKind,FromTksPattern>  Select<FromResourceType,FromKind,FromTksPattern> {
-                    pub fn convert<ToResourceType,ToKind,ToTksPattern>(self) -> Result<Select<ToResourceType,ToKind,ToTksPattern>, Error>
-                        where
-                            FromResourceType: TryInto<ToResourceType, Error = Error>,
-                            FromKind: TryInto<ToKind, Error = Error>,
-                            FromTksPattern: TryInto<ToTksPattern, Error = Error>,
+                impl<FromResourceType, FromKind, FromTksPattern>
+                    Select<FromResourceType, FromKind, FromTksPattern>
+                {
+                    pub fn convert<ToResourceType, ToKind, ToTksPattern>(
+                        self,
+                    ) -> Result<Select<ToResourceType, ToKind, ToTksPattern>, Error>
+                    where
+                        FromResourceType: TryInto<ToResourceType, Error = Error>+Clone+Eq+PartialEq,
+                        FromKind: TryInto<ToKind, Error = Error>+Clone+Eq+PartialEq,
+                        FromTksPattern: TryInto<ToTksPattern, Error = Error>+Clone,
                     {
-                        Ok(Select{
+                        Ok(Select {
                             address_pattern: self.address_pattern.convert()?,
-                            properties: ConvertFrom::convert_from(self.properties )?
+                            properties: ConvertFrom::convert_from(self.properties)?,
                         })
                     }
                 }
 
-
-
-
-                pub type PropertiesPattern<ResourceType,Kind,TksPattern> = MapPattern<ResourceType,Kind,TksPattern>;
-
+                pub type PropertiesPattern<ResourceType, Kind, TksPattern> =
+                    MapPattern<ResourceType, Kind, TksPattern>;
             }
 
             pub mod update {
-                use serde::{Serialize,Deserialize};
+                use crate::error::Error;
                 use crate::version::v0_0_1::generic::payload::PayloadMap;
                 use crate::version::v0_0_1::generic::resource::command::common::SetProperties;
                 use crate::version::v0_0_1::id::Address;
+                use serde::{Deserialize, Serialize};
                 use std::convert::TryInto;
-                use crate::error::Error;
 
-                #[derive(Debug,Clone,Serialize,Deserialize)]
+                #[derive(Debug, Clone, Serialize, Deserialize)]
                 pub struct Update<KIND> {
                     pub address: Address,
-                    pub properties: SetProperties<KIND>
+                    pub properties: SetProperties<KIND>,
                 }
 
-                impl <FromKind> Update<FromKind> {
+                impl<FromKind> Update<FromKind> {
                     pub fn convert<ToKind>(self) -> Result<Update<ToKind>, Error>
-                    where FromKind: TryInto<ToKind,Error=Error>
+                    where
+                        FromKind: TryInto<ToKind, Error = Error>,
                     {
-                        Ok( Update {
+                        Ok(Update {
                             address: self.address,
-                            properties: self.properties.convert()?
+                            properties: self.properties.convert()?,
                         })
                     }
                 }
-
             }
         }
     }
@@ -2027,14 +2026,14 @@ pub mod generic {
             use crate::version::v0_0_1::messaging::Exchange;
             use crate::version::v0_0_1::messaging::ExchangeId;
             use crate::version::v0_0_1::resource::Status;
-            use crate::version::v0_0_1::util::{ConvertFrom, unique_id};
+            use crate::version::v0_0_1::util::{unique_id, ConvertFrom};
 
             #[derive(Debug, Clone, Serialize, Deserialize)]
             pub struct Request<ReqEntity> {
                 pub id: String,
                 pub to: Vec<Address>,
                 pub entity: ReqEntity,
-                pub exchange: Exchange
+                pub exchange: Exchange,
             }
 
             impl<ReqEntity> Request<ReqEntity> {
@@ -2043,16 +2042,13 @@ pub mod generic {
                         id: unique_id(),
                         to: vec![],
                         entity,
-                        exchange: Exchange::Notification
+                        exchange: Exchange::Notification,
                     }
                 }
             }
 
             impl<ReqEntity> Request<ReqEntity> {
-                pub fn exchange(
-                    self,
-                    exchange: Exchange,
-                ) -> Request<ReqEntity> {
+                pub fn exchange(self, exchange: Exchange) -> Request<ReqEntity> {
                     Request {
                         id: self.id,
                         to: self.to,
@@ -2070,9 +2066,7 @@ pub mod generic {
                 pub entity: response::RespEntity<PAYLOAD, fail::portal::Fail>,
             }
 
-            impl<FromPayload, ToPayload>
-                ConvertFrom<Response<FromPayload>>
-                for Response<ToPayload>
+            impl<FromPayload, ToPayload> ConvertFrom<Response<FromPayload>> for Response<ToPayload>
             where
                 FromPayload: TryInto<ToPayload, Error = Error>,
             {
@@ -2090,7 +2084,7 @@ pub mod generic {
             }
 
             #[derive(Debug, Clone, Serialize, Deserialize, strum_macros::Display)]
-            pub enum Frame<ReqEntity,PAYLOAD> {
+            pub enum Frame<ReqEntity, PAYLOAD> {
                 Log(Log),
                 Command(Command),
                 Request(Request<ReqEntity>),
@@ -2099,8 +2093,8 @@ pub mod generic {
                 Close(CloseReason),
             }
 
-            impl<ReqEntity:Serialize,PAYLOAD: Serialize> TryInto<PrimitiveFrame>
-                for Frame<ReqEntity,PAYLOAD>
+            impl<ReqEntity: Serialize, PAYLOAD: Serialize> TryInto<PrimitiveFrame>
+                for Frame<ReqEntity, PAYLOAD>
             {
                 type Error = Error;
 
@@ -2110,7 +2104,6 @@ pub mod generic {
                     })
                 }
             }
-
         }
 
         pub mod outlet {
@@ -2123,32 +2116,29 @@ pub mod generic {
             use serde::{Deserialize, Serialize};
 
             use crate::error::Error;
-            use crate::version::v0_0_1::generic;
             use crate::version::v0_0_1::command::CommandEvent;
+            use crate::version::v0_0_1::fail;
             use crate::version::v0_0_1::frame::{CloseReason, PrimitiveFrame};
+            use crate::version::v0_0_1::generic;
             use crate::version::v0_0_1::generic::config::Info;
             use crate::version::v0_0_1::generic::entity::request;
             use crate::version::v0_0_1::generic::entity::response;
+            use crate::version::v0_0_1::generic::entity::response::RespEntity;
             use crate::version::v0_0_1::generic::payload::Primitive;
             use crate::version::v0_0_1::generic::portal::inlet;
             use crate::version::v0_0_1::id::{Address, Kind, ResourceType};
             use crate::version::v0_0_1::messaging::{Exchange, ExchangeId};
-            use crate::version::v0_0_1::util::{ConvertFrom, unique_id};
-            use crate::version::v0_0_1::fail;
-            use crate::version::v0_0_1::generic::entity::response::RespEntity;
+            use crate::version::v0_0_1::util::{unique_id, ConvertFrom};
 
             #[derive(Debug, Clone, Serialize, Deserialize)]
             pub struct Request<ReqEntity> {
                 pub from: Address,
                 pub entity: ReqEntity,
-                pub exchange: Exchange
+                pub exchange: Exchange,
             }
 
             impl<ReqEntity> Request<ReqEntity> {
-                pub fn exchange(
-                    self,
-                    exchange: Exchange,
-                ) -> Request<ReqEntity> {
+                pub fn exchange(self, exchange: Exchange) -> Request<ReqEntity> {
                     Self {
                         from: self.from,
                         entity: self.entity,
@@ -2156,37 +2146,40 @@ pub mod generic {
                     }
                 }
 
-                pub fn ensure_notification(&self) -> Result<(),Error> {
+                pub fn ensure_notification(&self) -> Result<(), Error> {
                     match self.exchange {
-                        Exchange::Notification => {
-                            Ok(())
-                        }
-                        Exchange::RequestResponse(_) => {
-                            Err("expected Notification Exchange but found RequestResponse Exchange".into())
-                        }
+                        Exchange::Notification => Ok(()),
+                        Exchange::RequestResponse(_) => Err(
+                            "expected Notification Exchange but found RequestResponse Exchange"
+                                .into(),
+                        ),
                     }
                 }
 
-                pub fn ok<PAYLOAD>( self, payload: PAYLOAD ) -> Result<inlet::Response<PAYLOAD>,Error> {
+                pub fn ok<PAYLOAD>(
+                    self,
+                    payload: PAYLOAD,
+                ) -> Result<inlet::Response<PAYLOAD>, Error> {
                     Ok(inlet::Response {
                         id: unique_id(),
                         to: self.from,
                         exchange: self.exchange.try_into()?,
-                        entity: RespEntity::Ok(payload)
+                        entity: RespEntity::Ok(payload),
                     })
                 }
 
-                pub fn fail<PAYLOAD>( self, fail: fail::portal::Fail ) -> Result<inlet::Response<PAYLOAD>,Error> {
+                pub fn fail<PAYLOAD>(
+                    self,
+                    fail: fail::portal::Fail,
+                ) -> Result<inlet::Response<PAYLOAD>, Error> {
                     Ok(inlet::Response {
                         id: unique_id(),
                         to: self.from,
                         exchange: self.exchange.try_into()?,
-                        entity: RespEntity::Fail(fail)
+                        entity: RespEntity::Fail(fail),
                     })
                 }
             }
-
-
 
             #[derive(Debug, Clone, Serialize, Deserialize)]
             pub struct Response<PAYLOAD> {
@@ -2194,25 +2187,28 @@ pub mod generic {
                 pub to: Address,
                 pub from: Address,
                 pub entity: response::RespEntity<PAYLOAD, fail::Fail>,
-                pub exchange: ExchangeId
+                pub exchange: ExchangeId,
             }
 
-            impl <PAYLOAD> Response<PAYLOAD> {
-                pub fn new(to: Address, from: Address, entity: response::RespEntity<PAYLOAD, fail::Fail>, exchange: ExchangeId ) -> Self {
+            impl<PAYLOAD> Response<PAYLOAD> {
+                pub fn new(
+                    to: Address,
+                    from: Address,
+                    entity: response::RespEntity<PAYLOAD, fail::Fail>,
+                    exchange: ExchangeId,
+                ) -> Self {
                     Self {
                         id: unique_id(),
                         to,
                         from,
                         entity,
-                        exchange
+                        exchange,
                     }
                 }
             }
 
             impl<FromPayload> Response<FromPayload> {
-                pub fn convert<ToAddress, ToPayload>(
-                    self,
-                ) -> Result<Response<ToPayload>, Error>
+                pub fn convert<ToAddress, ToPayload>(self) -> Result<Response<ToPayload>, Error>
                 where
                     ToPayload: TryFrom<FromPayload, Error = Error>,
                 {
@@ -2221,7 +2217,7 @@ pub mod generic {
                         to: self.to.try_into()?,
                         from: self.from.try_into()?,
                         entity: ConvertFrom::convert_from(self.entity)?,
-                        exchange: self.exchange
+                        exchange: self.exchange,
                     })
                 }
             }
@@ -2260,11 +2256,7 @@ pub mod generic {
             }
              */
 
-            impl<
-                    KIND: Serialize,
-                    PAYLOAD: Serialize,
-                > TryInto<PrimitiveFrame> for Frame<KIND, PAYLOAD>
-            {
+            impl<KIND: Serialize, PAYLOAD: Serialize> TryInto<PrimitiveFrame> for Frame<KIND, PAYLOAD> {
                 type Error = Error;
 
                 fn try_into(self) -> Result<PrimitiveFrame, Self::Error> {
@@ -2293,7 +2285,6 @@ pub mod generic {
             }
 
              */
-
         }
     }
 
@@ -2310,37 +2301,48 @@ pub mod generic {
         use serde::{Deserialize, Serialize};
 
         use crate::error::Error;
-        use crate::version::v0_0_1::{http, State};
         use crate::version::v0_0_1::bin::Bin;
         use crate::version::v0_0_1::generic;
-        use crate::version::v0_0_1::generic::resource::{Resource, ResourceStub, command};
+        use crate::version::v0_0_1::generic::resource::{command, Resource, ResourceStub};
+        use crate::version::v0_0_1::id::{Address, Meta};
         use crate::version::v0_0_1::payload::PrimitiveType;
         use crate::version::v0_0_1::resource::Status;
         use crate::version::v0_0_1::util::{Convert, ConvertFrom, ValueMatcher, ValuePattern};
-        use crate::version::v0_0_1::id::{Meta, Address};
+        use crate::version::v0_0_1::{http, State};
 
         #[derive(
-            Debug, Clone, Serialize, Deserialize, Eq, PartialEq,strum_macros::Display,strum_macros::EnumString
+            Debug,
+            Clone,
+            Serialize,
+            Deserialize,
+            Eq,
+            PartialEq,
+            strum_macros::Display,
+            strum_macros::EnumString,
         )]
-        pub enum PayloadType
-        {
+        pub enum PayloadType {
             Empty,
             Primitive,
             List,
             Map,
         }
 
-        #[derive(Debug,Clone,Serialize,Deserialize)]
+        #[derive(Debug, Clone, Serialize, Deserialize)]
         pub struct ListPattern {
             pub primitive: PrimitiveType,
             pub range: Range,
         }
 
         impl ListPattern {
-            pub fn is_match<KIND>( &self, list: &PrimitiveList<KIND> ) -> Result<(),Error> {
+            pub fn is_match<KIND>(&self, list: &PrimitiveList<KIND>) -> Result<(), Error> {
                 for i in &list.list {
-                    if self.primitive != i.primitive_type()  {
-                        return Err(format!("Primitive List expected: {} found: {}",self.primitive.to_string(),i.primitive_type().to_string()).into());
+                    if self.primitive != i.primitive_type() {
+                        return Err(format!(
+                            "Primitive List expected: {} found: {}",
+                            self.primitive.to_string(),
+                            i.primitive_type().to_string()
+                        )
+                        .into());
                     }
                 }
 
@@ -2348,166 +2350,180 @@ pub mod generic {
             }
         }
 
-        #[derive(Debug,Clone,Serialize,Deserialize)]
+        #[derive(Debug, Clone, Serialize, Deserialize)]
         pub enum Range {
             MinMax { min: usize, max: usize },
             Exact(usize),
-            Any
+            Any,
         }
 
-        #[derive(Debug,Clone,Serialize,Deserialize)]
-        pub enum PayloadTypePattern<ResourceType,Kind,TksPattern> {
+        #[derive(Debug, Clone, Serialize, Deserialize)]
+        pub enum PayloadTypePattern<ResourceType, Kind, TksPattern> {
             Empty,
             Primitive(PrimitiveType),
             List(ListPattern),
-            Map(Box<MapPattern<ResourceType,Kind,TksPattern>>)
+            Map(Box<MapPattern<ResourceType, Kind, TksPattern>>),
         }
 
-        impl <ResourceType,Kind,TksPattern> PayloadTypePattern<ResourceType,Kind,TksPattern> {
-            pub fn is_match( &self, payload: &Payload<Kind> ) -> Result<(),Error> {
+        impl<ResourceType, Kind, TksPattern> PayloadTypePattern<ResourceType, Kind, TksPattern> {
+            pub fn is_match(&self, payload: &Payload<Kind>) -> Result<(), Error> {
                 match self {
                     PayloadTypePattern::Empty => {
                         if payload.payload_type() == PayloadType::Empty {
                             Ok(())
                         } else {
-
-                            Err(format!("Payload expected: Empty found: {}",payload.payload_type().to_string()).into())
+                            Err(format!(
+                                "Payload expected: Empty found: {}",
+                                payload.payload_type().to_string()
+                            )
+                            .into())
                         }
                     }
-                    PayloadTypePattern::Primitive(expected ) => {
+                    PayloadTypePattern::Primitive(expected) => {
                         if let Payload::Primitive(found) = payload {
                             if *expected == found.primitive_type() {
                                 Ok(())
                             } else {
-                                Err(format!("Payload Primitive expected: {} found: {}", expected.to_string(), found.primitive_type().to_string()).into())
+                                Err(format!(
+                                    "Payload Primitive expected: {} found: {}",
+                                    expected.to_string(),
+                                    found.primitive_type().to_string()
+                                )
+                                .into())
                             }
                         } else {
-                            Err(format!("Payload expected: {} found: {}", expected.to_string(), payload.payload_type().to_string()).into())
+                            Err(format!(
+                                "Payload expected: {} found: {}",
+                                expected.to_string(),
+                                payload.payload_type().to_string()
+                            )
+                            .into())
                         }
                     }
                     PayloadTypePattern::List(expected) => {
                         if let Payload::List(found) = payload {
-                            expected.is_match(found )
+                            expected.is_match(found)
                         } else {
-                            Err(format!("Payload expected: List found: {}", payload.payload_type().to_string()).into())
+                            Err(format!(
+                                "Payload expected: List found: {}",
+                                payload.payload_type().to_string()
+                            )
+                            .into())
                         }
                     }
                     PayloadTypePattern::Map(expected) => {
                         if let Payload::Map(found) = payload {
                             expected.is_match(found)
                         } else {
-                            Err(format!("Payload expected: {} found: {}",expected.to_string(), payload.payload_type().to_string()).into())
+                            Err(format!(
+                                "Payload expected: {} found: {}",
+                                expected.to_string(),
+                                payload.payload_type().to_string()
+                            )
+                            .into())
                         }
                     }
                 }
             }
         }
 
-        #[derive(Debug,Clone,Serialize,Deserialize)]
-        pub struct PayloadPattern<ResourceType,Kind,TksPattern> {
-            pub structure: PayloadTypePattern<ResourceType,Kind,TksPattern>,
+        #[derive(Debug, Clone, Serialize, Deserialize)]
+        pub struct PayloadPattern<ResourceType, Kind, TksPattern> {
+            pub structure: PayloadTypePattern<ResourceType, Kind, TksPattern>,
             pub format: Option<PayloadFormat>,
-            pub validator: Option<CallWithConfig<ResourceType,Kind,TksPattern>>,
+            pub validator: Option<CallWithConfig<ResourceType, Kind, TksPattern>>,
         }
 
-        impl<FromResourceType,FromKind,FromTksPattern,ToResourceType,ToKind,ToTksPattern> ConvertFrom<Option<CallWithConfig<FromResourceType,FromKind,FromTksPattern>>>
-        for Option<CallWithConfig<ToResourceType,ToKind,ToTksPattern>>
-            where
-                FromKind: TryInto<ToKind, Error = Error> ,
-                FromTksPattern: TryInto<ToTksPattern, Error = Error>,
-                FromResourceType: TryInto<ToResourceType, Error = Error> ,
-
+        impl<FromResourceType, FromKind, FromTksPattern, ToResourceType, ToKind, ToTksPattern>
+            ConvertFrom<Option<CallWithConfig<FromResourceType, FromKind, FromTksPattern>>>
+            for Option<CallWithConfig<ToResourceType, ToKind, ToTksPattern>>
+        where
+            FromKind: TryInto<ToKind, Error = Error>+Clone+Eq+PartialEq,
+            FromTksPattern: TryInto<ToTksPattern, Error = Error>+Clone,
+            FromResourceType: TryInto<ToResourceType, Error = Error>+Clone+Eq+PartialEq,
         {
             fn convert_from(
-                a: Option<CallWithConfig<FromResourceType,FromKind,FromTksPattern>>,
+                a: Option<CallWithConfig<FromResourceType, FromKind, FromTksPattern>>,
             ) -> Result<Self, Error>
-                where
-                    Self: Sized,
+            where
+                Self: Sized,
             {
                 Ok(match a {
-                    None => {Option::None}
-                    Some(call_with_config) => {
-                        Option::Some(call_with_config.convert()?)
-                    }
+                    None => Option::None,
+                    Some(call_with_config) => Option::Some(call_with_config.convert()?),
                 })
             }
         }
 
-        impl<FromResourceType,FromKind,FromTksPattern,ToResourceType,ToKind,ToTksPattern> ConvertFrom<Option<PayloadPattern<FromResourceType,FromKind,FromTksPattern>>>
-        for Option<PayloadPattern<ToResourceType,ToKind,ToTksPattern>>
-            where
-                FromKind: TryInto<ToKind, Error = Error> + Clone,
-                FromTksPattern: TryInto<ToTksPattern, Error = Error> + Clone,
-                FromResourceType: TryInto<ToResourceType, Error = Error> + Clone,
-                ToKind: Clone,
-                PayloadTypePattern<ToResourceType,ToKind,ToTksPattern>: ConvertFrom<PayloadTypePattern<FromResourceType,FromKind,FromTksPattern>>,
-                PayloadPattern<ToResourceType,ToKind,ToTksPattern>: ConvertFrom<PayloadPattern<FromResourceType,FromKind,FromTksPattern>>
-
+        impl<FromResourceType, FromKind, FromTksPattern, ToResourceType, ToKind, ToTksPattern>
+            ConvertFrom<Option<PayloadPattern<FromResourceType, FromKind, FromTksPattern>>>
+            for Option<PayloadPattern<ToResourceType, ToKind, ToTksPattern>>
+        where
+            FromKind: TryInto<ToKind, Error = Error> + Clone,
+            FromTksPattern: TryInto<ToTksPattern, Error = Error> + Clone,
+            FromResourceType: TryInto<ToResourceType, Error = Error> + Clone,
+            ToKind: Clone,
+            PayloadTypePattern<ToResourceType, ToKind, ToTksPattern>:
+                ConvertFrom<PayloadTypePattern<FromResourceType, FromKind, FromTksPattern>>,
+            PayloadPattern<ToResourceType, ToKind, ToTksPattern>:
+                ConvertFrom<PayloadPattern<FromResourceType, FromKind, FromTksPattern>>,
         {
             fn convert_from(
-                a: Option<PayloadPattern<FromResourceType,FromKind,FromTksPattern>>,
+                a: Option<PayloadPattern<FromResourceType, FromKind, FromTksPattern>>,
             ) -> Result<Self, Error>
-                where
-                    Self: Sized,
+            where
+                Self: Sized,
             {
-                let rtn = match a{
+                let rtn = match a {
                     None => None,
-                    Some(rtn) => {
-                        Option::Some(ConvertFrom::convert_from(rtn)?)
-                    }
+                    Some(rtn) => Option::Some(ConvertFrom::convert_from(rtn)?),
                 };
                 Ok(rtn)
             }
         }
 
-        impl<FromResourceType,FromKind,FromTksPattern,ToResourceType,ToKind,ToTksPattern>
-         ConvertFrom<PayloadPattern<FromResourceType,FromKind,FromTksPattern>>
-        for PayloadPattern<ToResourceType,ToKind,ToTksPattern>
-            where
-                FromTksPattern: TryInto<ToTksPattern, Error = Error> + Clone,
-                FromResourceType: TryInto<ToResourceType, Error = Error> + Clone,
-                FromKind: TryInto<ToKind, Error = Error> + Clone,
-                ToKind: Clone,
+        impl<FromResourceType, FromKind, FromTksPattern, ToResourceType, ToKind, ToTksPattern>
+            ConvertFrom<PayloadPattern<FromResourceType, FromKind, FromTksPattern>>
+            for PayloadPattern<ToResourceType, ToKind, ToTksPattern>
+        where
+            FromTksPattern: TryInto<ToTksPattern, Error = Error> + Clone,
+            FromResourceType: TryInto<ToResourceType, Error = Error> + Clone+Eq+PartialEq,
+            FromKind: TryInto<ToKind, Error = Error> + Clone+Eq+PartialEq,
         {
             fn convert_from(
-                a: PayloadPattern<FromResourceType,FromKind,FromTksPattern>,
+                a: PayloadPattern<FromResourceType, FromKind, FromTksPattern>,
             ) -> Result<Self, Error>
-                where
-                    Self: Sized,
+            where
+                Self: Sized,
             {
                 Ok(Self {
                     structure: ConvertFrom::convert_from(a.structure)?,
                     format: a.format,
-                    validator: ConvertFrom::convert_from(a.validator)?
+                    validator: ConvertFrom::convert_from(a.validator)?,
                 })
             }
         }
 
-        impl<FromResourceType,FromKind,FromTksPattern,ToResourceType,ToKind,ToTksPattern>
-        ConvertFrom<PayloadTypePattern<FromResourceType,FromKind,FromTksPattern>>
-        for PayloadTypePattern<ToResourceType,ToKind,ToTksPattern>
-            where
-                FromTksPattern: TryInto<ToTksPattern, Error = Error> + Clone,
-                FromResourceType: TryInto<ToResourceType, Error = Error> + Clone,
-                FromKind: TryInto<ToKind, Error = Error> + Clone,
-                ToKind: Clone,
+        impl<FromResourceType, FromKind, FromTksPattern, ToResourceType, ToKind, ToTksPattern>
+            ConvertFrom<PayloadTypePattern<FromResourceType, FromKind, FromTksPattern>>
+            for PayloadTypePattern<ToResourceType, ToKind, ToTksPattern>
+        where
+            FromTksPattern: TryInto<ToTksPattern, Error = Error> + Clone,
+            FromResourceType: TryInto<ToResourceType, Error = Error> + Clone+Eq+PartialEq,
+            FromKind: TryInto<ToKind, Error = Error> + Clone+Eq+PartialEq,
         {
             fn convert_from(
-                a: PayloadTypePattern<FromResourceType,FromKind,FromTksPattern>,
+                a: PayloadTypePattern<FromResourceType, FromKind, FromTksPattern>,
             ) -> Result<Self, Error>
-                where
-                    Self: Sized,
+            where
+                Self: Sized,
             {
                 let rtn = match a {
-                    PayloadTypePattern::Empty => {
-                        PayloadTypePattern::Empty
-                    }
+                    PayloadTypePattern::Empty => PayloadTypePattern::Empty,
                     PayloadTypePattern::Primitive(primitive) => {
                         PayloadTypePattern::Primitive(primitive)
                     }
-                    PayloadTypePattern::List(list) => {
-                        PayloadTypePattern::List(list)
-                    }
+                    PayloadTypePattern::List(list) => PayloadTypePattern::List(list),
                     PayloadTypePattern::Map(map) => {
                         PayloadTypePattern::Map(Box::new(ConvertFrom::convert_from(*map)?))
                     }
@@ -2515,10 +2531,11 @@ pub mod generic {
 
                 Ok(rtn)
             }
-
         }
 
-        impl<ResourceType,Kind,TksPattern> ValueMatcher<Payload<Kind>> for  PayloadPattern<ResourceType,Kind,TksPattern> {
+        impl<ResourceType, Kind, TksPattern> ValueMatcher<Payload<Kind>>
+            for PayloadPattern<ResourceType, Kind, TksPattern>
+        {
             fn is_match(&self, payload: &Payload<Kind>) -> Result<(), Error> {
                 self.structure.is_match(&payload)?;
 
@@ -2527,139 +2544,130 @@ pub mod generic {
             }
         }
 
-        #[derive(Debug,Clone,Serialize,Deserialize)]
-        pub struct CallWithConfig<ResourceType,Kind,TksPattern> {
-            pub call: Call<ResourceType,Kind,TksPattern>,
-            pub config: Option<Address>
+        #[derive(Debug, Clone, Serialize, Deserialize)]
+        pub struct CallWithConfig<ResourceType, Kind, TksPattern> {
+            pub call: Call<ResourceType, Kind, TksPattern>,
+            pub config: Option<Address>,
         }
 
-        impl<FromResourceType,FromKind,FromTksPattern> CallWithConfig<FromResourceType,FromKind,FromTksPattern>
-
+        impl<FromResourceType, FromKind, FromTksPattern>
+            CallWithConfig<FromResourceType, FromKind, FromTksPattern>
         {
-            fn convert<ToResourceType,ToKind,ToTksPattern>(self)-> Result<CallWithConfig<ToResourceType,ToKind,ToTksPattern>, Error>
-                where
-                FromKind: TryInto<ToKind, Error = Error> ,
-                FromTksPattern: TryInto<ToTksPattern, Error = Error>,
-                FromResourceType: TryInto<ToResourceType, Error = Error> ,
-
+            fn convert<ToResourceType, ToKind, ToTksPattern>(
+                self,
+            ) -> Result<CallWithConfig<ToResourceType, ToKind, ToTksPattern>, Error>
+            where
+                FromKind: TryInto<ToKind, Error = Error>+Clone+Eq+PartialEq,
+                FromTksPattern: TryInto<ToTksPattern, Error = Error>+Clone,
+                FromResourceType: TryInto<ToResourceType, Error = Error>+Clone+Eq+PartialEq,
             {
-                Ok( CallWithConfig {
+                Ok(CallWithConfig {
                     call: self.call.convert()?,
-                    config: self.config
+                    config: self.config,
                 })
             }
         }
 
-
-        #[derive(Debug,Clone,Serialize,Deserialize)]
-        pub struct Call<ResourceType,Kind,TksPattern> {
+        #[derive(Debug, Clone, Serialize, Deserialize)]
+        pub struct Call<ResourceType, Kind, TksPattern> {
             pub address: Address,
-            pub kind: CallKind<ResourceType,Kind,TksPattern>
+            pub kind: CallKind<ResourceType, Kind, TksPattern>,
         }
 
-        impl<FromResourceType,FromKind,FromTksPattern> Call<FromResourceType,FromKind,FromTksPattern>
-
-        {
-            fn convert<ToResourceType,ToKind,ToTksPattern>(self)-> Result<Call<ToResourceType,ToKind,ToTksPattern>, Error>
-                where
-                    FromKind: TryInto<ToKind, Error = Error> ,
-                    FromTksPattern: TryInto<ToTksPattern, Error = Error>,
-                    FromResourceType: TryInto<ToResourceType, Error = Error> ,
-
+        impl<FromResourceType, FromKind, FromTksPattern> Call<FromResourceType, FromKind, FromTksPattern> {
+            fn convert<ToResourceType, ToKind, ToTksPattern>(
+                self,
+            ) -> Result<Call<ToResourceType, ToKind, ToTksPattern>, Error>
+            where
+                FromKind: TryInto<ToKind, Error = Error>+Clone+Eq+PartialEq,
+                FromTksPattern: TryInto<ToTksPattern, Error = Error>+Clone,
+                FromResourceType: TryInto<ToResourceType, Error = Error>+Clone+Eq+PartialEq,
             {
-                Ok( Call{
+                Ok(Call {
                     address: self.address,
-                    kind: self.kind.convert()?
+                    kind: self.kind.convert()?,
                 })
             }
         }
 
-
-        #[derive(Debug,Clone,Serialize,Deserialize)]
-        pub enum CallKind<ResourceType,Kind,TksPattern>{
-            Rc(command::RcCommand<ResourceType,Kind,TksPattern>),
+        #[derive(Debug, Clone, Serialize, Deserialize)]
+        pub enum CallKind<ResourceType, Kind, TksPattern> {
+            Rc(command::RcCommand<ResourceType, Kind, TksPattern>),
             Msg(MsgCall),
-            Http(HttpCall)
+            Http(HttpCall),
         }
 
-        impl<FromResourceType,FromKind,FromTksPattern> CallKind<FromResourceType,FromKind,FromTksPattern>
-
+        impl<FromResourceType, FromKind, FromTksPattern>
+            CallKind<FromResourceType, FromKind, FromTksPattern>
         {
-            fn convert<ToResourceType,ToKind,ToTksPattern>(self)-> Result<CallKind<ToResourceType,ToKind,ToTksPattern>, Error>
-                where
-                    FromKind: TryInto<ToKind, Error = Error> ,
-                    FromTksPattern: TryInto<ToTksPattern, Error = Error>,
-                    FromResourceType: TryInto<ToResourceType, Error = Error> ,
-
+            fn convert<ToResourceType, ToKind, ToTksPattern>(
+                self,
+            ) -> Result<CallKind<ToResourceType, ToKind, ToTksPattern>, Error>
+            where
+                FromKind: TryInto<ToKind, Error = Error>+Clone+Eq+PartialEq,
+                FromTksPattern: TryInto<ToTksPattern, Error = Error>+Clone,
+                FromResourceType: TryInto<ToResourceType, Error = Error>+Clone+Eq+PartialEq,
             {
-                Ok( match self {
-                    CallKind::Rc(rc) => {
-                        CallKind::Rc(rc.convert()?)
-                    }
-                    CallKind::Msg(msg) => {
-                        CallKind::Msg(msg)
-                    }
-                    CallKind::Http(http) => {
-                        CallKind::Http(http)
-                    }
+                Ok(match self {
+                    CallKind::Rc(rc) => CallKind::Rc(rc.convert()?),
+                    CallKind::Msg(msg) => CallKind::Msg(msg),
+                    CallKind::Http(http) => CallKind::Http(http),
                 })
             }
         }
 
-
-        impl <ResourceType,Payload,TksPattern> ToString for Call<ResourceType,Payload,TksPattern> {
+        impl<ResourceType, Payload, TksPattern> ToString for Call<ResourceType, Payload, TksPattern> {
             fn to_string(&self) -> String {
-                format!("{}^{}",self.address.to_string(), self.kind.to_string())
+                format!("{}^{}", self.address.to_string(), self.kind.to_string())
             }
         }
 
-
-
-        #[derive(Debug,Clone,Eq,PartialEq,Serialize,Deserialize)]
+        #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
         pub struct MsgCall {
             pub path: String,
-            pub action: String
+            pub action: String,
         }
 
         impl MsgCall {
-            pub fn new( action: String, path: String ) -> Self {
-                Self{
-                    action,
-                    path
-                }
+            pub fn new(action: String, path: String) -> Self {
+                Self { action, path }
             }
         }
 
         impl ToString for MsgCall {
             fn to_string(&self) -> String {
-                format!("Msg<{}>{}",self.action,self.path)
+                format!("Msg<{}>{}", self.action, self.path)
             }
         }
 
-        #[derive(Debug,Clone,Eq,PartialEq,Serialize,Deserialize)]
+        #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
         pub struct HttpCall {
             pub path: String,
-            pub method: HttpMethod
+            pub method: HttpMethod,
         }
 
         impl HttpCall {
-            pub fn new( method: HttpMethod, path: String) -> Self {
-                Self{
-                    method,
-                    path
-                }
+            pub fn new(method: HttpMethod, path: String) -> Self {
+                Self { method, path }
             }
         }
-
 
         impl ToString for HttpCall {
             fn to_string(&self) -> String {
-                format!("Http<{}>{}",self.method.to_string(),self.path)
+                format!("Http<{}>{}", self.method.to_string(), self.path)
             }
         }
 
-
-        #[derive(Debug,Clone,Eq,PartialEq,Serialize,Deserialize,strum_macros::Display,strum_macros::EnumString)]
+        #[derive(
+            Debug,
+            Clone,
+            Eq,
+            PartialEq,
+            Serialize,
+            Deserialize,
+            strum_macros::Display,
+            strum_macros::EnumString,
+        )]
         pub enum HttpMethod {
             Get,
             Post,
@@ -2669,7 +2677,7 @@ pub mod generic {
             Head,
             Connect,
             Options,
-            Trace
+            Trace,
         }
 
         impl ValueMatcher<HttpMethod> for HttpMethod {
@@ -2677,32 +2685,38 @@ pub mod generic {
                 if *self == *found {
                     Ok(())
                 } else {
-                    Err(format!("Http Method mismatch. expected: '{}', found: '{}'", self.to_string(), found.to_string()).into())
+                    Err(format!(
+                        "Http Method mismatch. expected: '{}', found: '{}'",
+                        self.to_string(),
+                        found.to_string()
+                    )
+                    .into())
                 }
             }
         }
 
-
-        impl <ResourceType,Kind,TksPattern> ToString for CallKind<ResourceType,Kind,TksPattern> {
+        impl<ResourceType, Kind, TksPattern> ToString for CallKind<ResourceType, Kind, TksPattern> {
             fn to_string(&self) -> String {
                 match self {
                     CallKind::Rc(command) => {
-                        format!("Rc<{}>",command.to_string())
+                        format!("Rc<{}>", command.to_string())
                     }
-                    CallKind::Msg(msg) => {
-                        msg.to_string()
-                    }
-                    CallKind::Http(http) => {
-                        http.to_string()
-                    }
-
+                    CallKind::Msg(msg) => msg.to_string(),
+                    CallKind::Http(http) => http.to_string(),
                 }
             }
         }
 
-
-
-        #[derive(Debug,Clone,Eq,PartialEq,strum_macros::Display,strum_macros::EnumString,Serialize,Deserialize)]
+        #[derive(
+            Debug,
+            Clone,
+            Eq,
+            PartialEq,
+            strum_macros::Display,
+            strum_macros::EnumString,
+            Serialize,
+            Deserialize,
+        )]
         pub enum PayloadFormat {
             #[strum(serialize = "json")]
             Json,
@@ -2710,10 +2724,13 @@ pub mod generic {
             Image,
         }
 
-
         impl PrimitiveType {
-            pub fn is_match<KIND>( &self, primitive: &generic::payload::Primitive<KIND>) -> Result<(),Error>
-                where KIND: Clone
+            pub fn is_match<KIND>(
+                &self,
+                primitive: &generic::payload::Primitive<KIND>,
+            ) -> Result<(), Error>
+            where
+                KIND: Clone,
             {
                 match primitive {
                     Primitive::Text(_) => {
@@ -2724,21 +2741,21 @@ pub mod generic {
                         }
                     }
                     Primitive::Address(_) => {
-                        if *self == Self::Address{
+                        if *self == Self::Address {
                             Ok(())
                         } else {
                             Err("expected Address primitive".into())
                         }
                     }
                     Primitive::Stub(_) => {
-                        if *self == Self::Stub{
+                        if *self == Self::Stub {
                             Ok(())
                         } else {
                             Err("expected Stub primitive".into())
                         }
                     }
                     Primitive::Meta(_) => {
-                        if *self == Self::Meta{
+                        if *self == Self::Meta {
                             Ok(())
                         } else {
                             Err("expected Meta primitive".into())
@@ -2752,28 +2769,28 @@ pub mod generic {
                         }
                     }
                     Primitive::Boolean(_) => {
-                        if *self == Self::Boolean{
+                        if *self == Self::Boolean {
                             Ok(())
                         } else {
                             Err("expected Boolean primitive".into())
                         }
                     }
                     Primitive::Int(_) => {
-                        if *self == Self::Int{
+                        if *self == Self::Int {
                             Ok(())
                         } else {
                             Err("expected Int primitive".into())
                         }
                     }
                     Primitive::Status(_) => {
-                        if *self == Self::Status{
+                        if *self == Self::Status {
                             Ok(())
                         } else {
                             Err("expected Status primitive".into())
                         }
                     }
                     Primitive::Resource(_) => {
-                        if *self == Self::Resource{
+                        if *self == Self::Resource {
                             Ok(())
                         } else {
                             Err("expected Resource primitive".into())
@@ -2783,35 +2800,42 @@ pub mod generic {
             }
         }
 
-        #[derive(Debug,Clone,Serialize,Deserialize,)]
-        pub struct MapPattern<ResourceType,Kind,TksPattern> {
+        #[derive(Debug, Clone, Serialize, Deserialize)]
+        pub struct MapPattern<ResourceType, Kind, TksPattern> {
             kind_phantom: PhantomData<Kind>,
-            pub required: HashMap<String, ValuePattern<PayloadPattern<ResourceType,Kind,TksPattern>>>,
-            pub allowed: ValuePattern<PayloadPattern<ResourceType,Kind,TksPattern>>
+            pub required:
+                HashMap<String, ValuePattern<PayloadPattern<ResourceType, Kind, TksPattern>>>,
+            pub allowed: ValuePattern<PayloadPattern<ResourceType, Kind, TksPattern>>,
         }
 
-        impl <ResourceType,Kind,TksPattern> Default for MapPattern<ResourceType,Kind,TksPattern> {
+        impl<ResourceType, Kind, TksPattern> Default for MapPattern<ResourceType, Kind, TksPattern> {
             fn default() -> Self {
                 MapPattern {
                     kind_phantom: Default::default(),
                     required: Default::default(),
-                    allowed: ValuePattern::Any
+                    allowed: ValuePattern::Any,
                 }
             }
         }
 
-        impl <ResourceType,Kind,TksPattern> ToString for MapPattern<ResourceType,Kind,TksPattern> {
+        impl<ResourceType, Kind, TksPattern> ToString for MapPattern<ResourceType, Kind, TksPattern> {
             fn to_string(&self) -> String {
                 "Map?".to_string()
             }
         }
 
-        impl <ResourceType,Kind,TksPattern> MapPattern<ResourceType,Kind,TksPattern> {
-            pub fn new(required: HashMap<String, ValuePattern<PayloadPattern<ResourceType,Kind,TksPattern>>>, allowed: ValuePattern<PayloadPattern<ResourceType,Kind,TksPattern>>) -> Self {
+        impl<ResourceType, Kind, TksPattern> MapPattern<ResourceType, Kind, TksPattern> {
+            pub fn new(
+                required: HashMap<
+                    String,
+                    ValuePattern<PayloadPattern<ResourceType, Kind, TksPattern>>,
+                >,
+                allowed: ValuePattern<PayloadPattern<ResourceType, Kind, TksPattern>>,
+            ) -> Self {
                 MapPattern {
                     kind_phantom: Default::default(),
                     required,
-                    allowed
+                    allowed,
                 }
             }
 
@@ -2819,7 +2843,7 @@ pub mod generic {
                 Self {
                     kind_phantom: Default::default(),
                     required: HashMap::new(),
-                    allowed: ValuePattern::None
+                    allowed: ValuePattern::None,
                 }
             }
 
@@ -2827,90 +2851,97 @@ pub mod generic {
                 Self {
                     kind_phantom: Default::default(),
                     required: HashMap::new(),
-                    allowed: ValuePattern::Any
+                    allowed: ValuePattern::Any,
                 }
             }
 
-
-            pub fn is_match( &self, map:&PayloadMap<Kind> ) -> Result<(),Error>
-            {
-
+            pub fn is_match(&self, map: &PayloadMap<Kind>) -> Result<(), Error> {
                 // if Any keys are allowed then skip
-                    for (key, payload) in &map.map {
-                        if !self.required.contains_key(key)
-                        {
-                            match &self.allowed {
-                                ValuePattern::Any => { }
-                                ValuePattern::None => {
-                                    return Err(format!("key: '{}' not required or allowed by Map constraints", key).into());
-                                }
-                                ValuePattern::Pattern(pattern) => {
-                                    pattern.is_match(payload)?;
-                                }
+                for (key, payload) in &map.map {
+                    if !self.required.contains_key(key) {
+                        match &self.allowed {
+                            ValuePattern::Any => {}
+                            ValuePattern::None => {
+                                return Err(format!(
+                                    "key: '{}' not required or allowed by Map constraints",
+                                    key
+                                )
+                                .into());
+                            }
+                            ValuePattern::Pattern(pattern) => {
+                                pattern.is_match(payload)?;
                             }
                         }
                     }
+                }
 
                 // now make sure all required are present and meet constraints
-                for (key,constraint) in &self.required
-                {
+                for (key, constraint) in &self.required {
                     if !map.contains_key(key) {
-                        return Err(format!("missing required key : '{}' defined in Map constraints", key).into())
+                        return Err(format!(
+                            "missing required key : '{}' defined in Map constraints",
+                            key
+                        )
+                        .into());
                     }
-                    constraint.is_match(&map.get(key).expect("expected map element after testing for it"))?;
+                    constraint.is_match(
+                        &map.get(key)
+                            .expect("expected map element after testing for it"),
+                    )?;
                 }
 
                 Ok(())
             }
         }
 
-        impl<FromResourceType,FromKind,FromTksPattern, ToResourceType,ToKind,ToTksPattern> ConvertFrom<MapPattern<FromResourceType,FromKind,FromTksPattern>>
-        for MapPattern<ToResourceType,ToKind,ToTksPattern>
-            where
-                FromKind: TryInto<ToKind, Error = Error>,
-                FromTksPattern: TryInto<ToTksPattern, Error = Error>,
-                FromResourceType: TryInto<ToResourceType, Error = Error>
+        impl<FromResourceType, FromKind, FromTksPattern, ToResourceType, ToKind, ToTksPattern>
+            ConvertFrom<MapPattern<FromResourceType, FromKind, FromTksPattern>>
+            for MapPattern<ToResourceType, ToKind, ToTksPattern>
+        where
+            FromKind: TryInto<ToKind, Error = Error>+Clone+Eq+PartialEq,
+            FromTksPattern: TryInto<ToTksPattern, Error = Error>+Clone,
+            FromResourceType: TryInto<ToResourceType, Error = Error>+Clone+Eq+PartialEq,
         {
             fn convert_from(
-                a: MapPattern<FromResourceType,FromKind,FromTksPattern>,
+                a: MapPattern<FromResourceType, FromKind, FromTksPattern>,
             ) -> Result<Self, Error>
-                where
-                    Self: Sized,
+            where
+                Self: Sized,
             {
+                let mut required = HashMap::new();
+                for (k, v) in a.required {
+                    required.insert(k, ConvertFrom::convert_from(v)?);
+                }
 
-                    let mut required = HashMap::new();
-                    for (k,v) in a.required {
-                        required.insert( k, ConvertFrom::convert_from(v)?);
-                    }
-
-                    Ok(MapPattern::new(required, ConvertFrom::convert_from(a.allowed)?))
+                Ok(MapPattern::new(
+                    required,
+                    ConvertFrom::convert_from(a.allowed)?,
+                ))
             }
         }
 
-
-
-        impl<FromPayloadPattern,ToPayloadPattern> ConvertFrom<ValuePattern<FromPayloadPattern>>
-        for ValuePattern<ToPayloadPattern>
+        impl<FromResourceType, FromKind, FromTksPattern, ToResourceType, ToKind, ToTksPattern>
+            ConvertFrom<ValuePattern<PayloadPattern<FromResourceType, FromKind, FromTksPattern>>>
+            for ValuePattern<PayloadPattern<ToResourceType, ToKind, ToTksPattern>>
+            where
+                FromTksPattern: TryInto<ToTksPattern, Error = Error> + Clone,
+                FromResourceType: TryInto<ToResourceType, Error = Error> + Clone+Eq+PartialEq,
+                FromKind: TryInto<ToKind, Error = Error> + Clone+Eq+PartialEq,
 
         {
             fn convert_from(
-                a: ValuePattern<FromPayloadPattern>
+                a: ValuePattern<PayloadPattern<FromResourceType, FromKind, FromTksPattern>>,
             ) -> Result<Self, Error>
+
                 where Self: Sized,
             {
-
-                    Ok(match a {
-                        ValuePattern::Any => {
-                            ValuePattern::Any
-                        }
-                        ValuePattern::None => {
-                            ValuePattern::None
-                        }
-                        ValuePattern::Pattern(pattern) => {
-                            ValuePattern::Pattern(ConvertFrom::convert_from(pattern)?)
-                        }
-                    })
-
+                Ok(match a {
+                    ValuePattern::Any => ValuePattern::Any,
+                    ValuePattern::None => ValuePattern::None,
+                    ValuePattern::Pattern(pattern) => {
+                        ValuePattern::Pattern(ConvertFrom::convert_from(pattern)?)
+                    }
+                })
             }
         }
 
@@ -2941,8 +2972,6 @@ pub mod generic {
         }
 
          */
-
-
 
         /*
         impl <KEY,ADDRESS,IDENTIFIER,KIND> ValuePattern<Payload<KEY,ADDRESS,IDENTIFIER,KIND>> for PayloadType<KEY,ADDRESS,IDENTIFIER,KIND> {
@@ -2982,7 +3011,6 @@ pub mod generic {
 
          */
 
-
         #[derive(Debug, Clone, Serialize, Deserialize)]
         pub struct PayloadRef<PAYLOAD_CLAIM, PAYLOAD_PATTERN> {
             pub claim: PAYLOAD_CLAIM,
@@ -3007,7 +3035,7 @@ pub mod generic {
 
          */
 
-        #[derive(Debug,Clone,Serialize,Deserialize)]
+        #[derive(Debug, Clone, Serialize, Deserialize)]
         pub enum PayloadDelivery<PAYLOAD, PAYLOAD_REF> {
             Payload(PAYLOAD),
             Ref(PAYLOAD_REF),
@@ -3043,64 +3071,55 @@ pub mod generic {
         }
          */
 
-        #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, strum_macros::Display )]
-        pub enum Payload<KIND>
-        {
+        #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, strum_macros::Display)]
+        pub enum Payload<KIND> {
             Empty,
             Primitive(Primitive<KIND>),
             List(PrimitiveList<KIND>),
             Map(PayloadMap<KIND>),
         }
 
-        impl<KIND> Payload<KIND>
-        {
+        impl<KIND> Payload<KIND> {
             pub fn payload_type(&self) -> PayloadType {
                 match self {
-                    Payload::Empty => {
-                        PayloadType::Empty
-                    }
-                    Payload::Primitive(primitive) => {
-                       PayloadType::Primitive
-                    }
-                    Payload::List(list) => {
-                        PayloadType::List
-                    }
-                    Payload::Map(map) => {
-                       PayloadType::Map
-                    }
+                    Payload::Empty => PayloadType::Empty,
+                    Payload::Primitive(primitive) => PayloadType::Primitive,
+                    Payload::List(list) => PayloadType::List,
+                    Payload::Map(map) => PayloadType::Map,
                 }
             }
         }
 
-        impl <FromKind> Payload<FromKind> {
+        impl<FromKind> Payload<FromKind> {
             pub fn convert<ToKind>(self) -> Result<Payload<ToKind>, Error>
-              where FromKind: TryInto<ToKind,Error=Error>
+            where
+                FromKind: TryInto<ToKind, Error = Error>,
             {
                 Ok(match self {
-                    Payload::Empty => { Payload::Empty}
-                    Payload::Primitive(primitive) => { Payload::Primitive(primitive.convert()?) }
-                    Payload::List(list) => { Payload::List(list.convert()?) }
-                    Payload::Map(map) => { Payload::Map(map.convert()?) }
+                    Payload::Empty => Payload::Empty,
+                    Payload::Primitive(primitive) => Payload::Primitive(primitive.convert()?),
+                    Payload::List(list) => Payload::List(list.convert()?),
+                    Payload::Map(map) => Payload::Map(map.convert()?),
                 })
             }
         }
 
-        #[derive(Debug, Clone, Serialize, Deserialize,Eq,PartialEq)]
-        pub struct PayloadMap<KIND>
-        {
-            pub map: HashMap<String,Payload<KIND>>
+        #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
+        pub struct PayloadMap<KIND> {
+            pub map: HashMap<String, Payload<KIND>>,
         }
-        impl <FromKind> PayloadMap<FromKind> {
-
-            pub fn convert<ToKind>(self) -> Result<PayloadMap<ToKind>, Error> where FromKind: TryInto<ToKind,Error=Error>{
+        impl<FromKind> PayloadMap<FromKind> {
+            pub fn convert<ToKind>(self) -> Result<PayloadMap<ToKind>, Error>
+            where
+                FromKind: TryInto<ToKind, Error = Error>,
+            {
                 let mut map = HashMap::new();
-                for (k,v) in self.map {
-                    map.insert( k, v.try_into()? );
+                for (k, v) in self.map {
+                    map.insert(k, v.convert()?);
                 }
-                Ok(PayloadMap{map})
+                Ok(PayloadMap { map })
             }
         }
-
 
         /*
         impl <ToKind,FromKind> TryInto<ToKind> for PayloadMap<FromKind> {
@@ -3117,8 +3136,7 @@ pub mod generic {
 
          */
 
-        impl <KIND> PayloadMap<KIND>
-        {
+        impl<KIND> PayloadMap<KIND> {
             /*
             pub fn new(constraints: MapConstraints<KEY,ADDRESS,IDENTIFIER,KIND> ) -> Self {
                 Self{
@@ -3130,49 +3148,43 @@ pub mod generic {
              */
 
             pub fn new() -> Self {
-                Self{
-                    map: HashMap::new()
+                Self {
+                    map: HashMap::new(),
                 }
             }
         }
 
-        impl <KIND> Deref for PayloadMap<KIND>
-        {
-            type Target = HashMap<String,Payload<KIND>>;
+        impl<KIND> Deref for PayloadMap<KIND> {
+            type Target = HashMap<String, Payload<KIND>>;
 
             fn deref(&self) -> &Self::Target {
                 &self.map
             }
         }
 
-        impl <KIND> DerefMut for PayloadMap<KIND>
-        {
+        impl<KIND> DerefMut for PayloadMap<KIND> {
             fn deref_mut(&mut self) -> &mut Self::Target {
                 &mut self.map
             }
         }
 
-
-        impl<
-                FromKind,
-                ToKind,
-            > ConvertFrom<Payload<FromKind>>
-            for Payload< ToKind>
+        impl<FromKind, ToKind> ConvertFrom<Payload<FromKind>> for Payload<ToKind>
         where
             FromKind: TryInto<ToKind, Error = Error> + Clone,
             ToKind: Clone,
         {
-            fn convert_from(
-                a: Payload< FromKind>,
-            ) -> Result<Self, Error>
+            fn convert_from(a: Payload<FromKind>) -> Result<Self, Error>
             where
                 Self: Sized,
             {
                 match a {
                     Payload::Empty => Ok(Payload::Empty),
-                    Payload::Primitive(primitive) => Ok(Payload::Primitive(ConvertFrom::convert_from(primitive)?)),
+                    Payload::Primitive(primitive) => {
+                        Ok(Payload::Primitive(ConvertFrom::convert_from(primitive)?))
+                    }
                     Payload::List(list) => {
-                        let mut rtn: PrimitiveList<ToKind> = PrimitiveList::new(list.primitive_type);
+                        let mut rtn: PrimitiveList<ToKind> =
+                            PrimitiveList::new(list.primitive_type);
                         for p in list.list {
                             rtn.push(ConvertFrom::convert_from(p)?);
                         }
@@ -3193,8 +3205,7 @@ pub mod generic {
         }
 
         #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
-        pub enum Primitive<KIND>
-        {
+        pub enum Primitive<KIND> {
             Text(String),
             Address(Address),
             Stub(ResourceStub<KIND>),
@@ -3206,110 +3217,99 @@ pub mod generic {
             Resource(Resource<KIND>),
         }
 
-        impl <FromKind> Primitive<FromKind> {
+        impl<FromKind> Primitive<FromKind> {
             fn convert<ToKind>(self) -> Result<Primitive<ToKind>, Error>
-             where FromKind: TryInto<ToKind,Error=Error>{
+            where
+                FromKind: TryInto<ToKind, Error = Error>,
+            {
                 Ok(match self {
-                    Primitive::Text(value) => {Primitive::Text(value)}
-                    Primitive::Address(value) => {Primitive::Address(value)}
-                    Primitive::Stub(value) => {Primitive::Stub(value.convert()?)}
-                    Primitive::Meta(value) => {Primitive::Meta(value)}
-                    Primitive::Bin(value) => {Primitive::Bin(value)}
-                    Primitive::Boolean(value) => {Primitive::Boolean(value)}
-                    Primitive::Int(value) => {Primitive::Int(value)}
-                    Primitive::Status(value) => {Primitive::Status(value)}
-                    Primitive::Resource(value) => {Primitive::Resource(value.convert()?)}
+                    Primitive::Text(value) => Primitive::Text(value),
+                    Primitive::Address(value) => Primitive::Address(value),
+                    Primitive::Stub(value) => Primitive::Stub(value.convert()?),
+                    Primitive::Meta(value) => Primitive::Meta(value),
+                    Primitive::Bin(value) => Primitive::Bin(value),
+                    Primitive::Boolean(value) => Primitive::Boolean(value),
+                    Primitive::Int(value) => Primitive::Int(value),
+                    Primitive::Status(value) => Primitive::Status(value),
+                    Primitive::Resource(value) => Primitive::Resource(value.convert()?),
                 })
             }
         }
 
-
-        impl <KIND> Primitive<KIND>
-        {
-
-           pub fn primitive_type(&self) -> PrimitiveType  {
-               match self {
-                   Primitive::Text(_) => {
-                       PrimitiveType::Text
-                   }
-                   Primitive::Address(_) => {
-                       PrimitiveType::Address
-                   }
-                   Primitive::Stub(_) => {
-                       PrimitiveType::Stub
-                   }
-                   Primitive::Meta(_) => {
-                       PrimitiveType::Meta
-                   }
-                   Primitive::Bin(_) => {
-                       PrimitiveType::Bin
-                   }
-                   Primitive::Boolean(_) => {
-                       PrimitiveType::Boolean
-                   }
-                   Primitive::Int(_) => {
-                       PrimitiveType::Int
-                   }
-                   Primitive::Status(_) => {
-                       PrimitiveType::Status
-                   }
-                   Primitive::Resource(_) => {
-                       PrimitiveType::Resource
-                   }
-               }
-           }
-
+        impl<KIND> Primitive<KIND> {
+            pub fn primitive_type(&self) -> PrimitiveType {
+                match self {
+                    Primitive::Text(_) => PrimitiveType::Text,
+                    Primitive::Address(_) => PrimitiveType::Address,
+                    Primitive::Stub(_) => PrimitiveType::Stub,
+                    Primitive::Meta(_) => PrimitiveType::Meta,
+                    Primitive::Bin(_) => PrimitiveType::Bin,
+                    Primitive::Boolean(_) => PrimitiveType::Boolean,
+                    Primitive::Int(_) => PrimitiveType::Int,
+                    Primitive::Status(_) => PrimitiveType::Status,
+                    Primitive::Resource(_) => PrimitiveType::Resource,
+                }
+            }
         }
 
-        #[derive(Debug, Clone, Serialize, Deserialize,Eq,PartialEq)]
-        pub struct PrimitiveList<KIND>
-        {
-           pub primitive_type: PrimitiveType,
-           pub list: Vec<Primitive<KIND>>
+        #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
+        pub struct PrimitiveList<KIND> {
+            pub primitive_type: PrimitiveType,
+            pub list: Vec<Primitive<KIND>>,
         }
-        impl <FromKind> PrimitiveList<FromKind> {
+        impl<FromKind> PrimitiveList<FromKind> {
             fn convert<ToKind>(self) -> Result<PrimitiveList<ToKind>, Error>
-            where FromKind: TryInto<ToKind,Error=Error>{
+            where
+                FromKind: TryInto<ToKind, Error = Error>,
+            {
                 let mut list = vec![];
                 for p in self.list {
-                    list.push(p.convert()? );
+                    list.push(p.convert()?);
                 }
-                Ok(PrimitiveList{
+                Ok(PrimitiveList {
                     primitive_type: self.primitive_type,
-                    list
+                    list,
                 })
             }
         }
 
-        impl <KIND>ToString for PrimitiveList<KIND>
-            where  KIND: Clone
+        impl<KIND> ToString for PrimitiveList<KIND>
+        where
+            KIND: Clone,
         {
             fn to_string(&self) -> String {
-                format!("{}[]",self.primitive_type.to_string())
+                format!("{}[]", self.primitive_type.to_string())
             }
         }
 
-        impl <KIND> PrimitiveList<KIND>
-            where KIND: Clone
+        impl<KIND> PrimitiveList<KIND>
+        where
+            KIND: Clone,
         {
             pub fn new(primitive_type: PrimitiveType) -> Self {
                 Self {
                     primitive_type,
-                    list: vec![]
+                    list: vec![],
                 }
             }
-            pub fn validate( &self ) -> Result<(),Error> {
+            pub fn validate(&self) -> Result<(), Error> {
                 for primitive in &self.list {
                     if primitive.primitive_type() != self.primitive_type {
-                        return Err(format!("PrimitiveList type mismatch expected: {} received: {}", self.primitive_type.to_string(), primitive.primitive_type().to_string() ).into());
+                        return Err(format!(
+                            "PrimitiveList type mismatch expected: {} received: {}",
+                            self.primitive_type.to_string(),
+                            primitive.primitive_type().to_string()
+                        )
+                        .into());
                     }
                 }
                 Ok(())
             }
         }
 
-        impl <KIND> Deref for PrimitiveList<KIND>
-            where KIND: Clone
+        impl<KIND> Deref for PrimitiveList<KIND>
+        where
+            KIND: Clone,
         {
             type Target = Vec<Primitive<KIND>>;
 
@@ -3318,26 +3318,21 @@ pub mod generic {
             }
         }
 
-        impl <KIND> DerefMut for PrimitiveList<KIND>
-            where KIND: Clone
+        impl<KIND> DerefMut for PrimitiveList<KIND>
+        where
+            KIND: Clone,
         {
             fn deref_mut(&mut self) -> &mut Self::Target {
                 &mut self.list
             }
         }
 
-
-        impl< FromKind,
-                ToKind,
-            > ConvertFrom<Primitive<FromKind>>
-            for Primitive< ToKind>
+        impl<FromKind, ToKind> ConvertFrom<Primitive<FromKind>> for Primitive<ToKind>
         where
             FromKind: TryInto<ToKind, Error = Error> + Clone,
             ToKind: Clone,
         {
-            fn convert_from(
-                a: Primitive<FromKind>,
-            ) -> Result<Self, Error>
+            fn convert_from(a: Primitive<FromKind>) -> Result<Self, Error>
             where
                 Self: Sized,
             {
@@ -3359,20 +3354,24 @@ pub mod generic {
     }
 
     pub mod pattern {
-        use crate::version::v0_0_1::pattern::{SegmentPattern, SpecificPattern};
-        use crate::version::v0_0_1::id::{AddressSegment, Tks};
-        use crate::version::v0_0_1::util::{ValueMatcher, ValuePattern};
         use crate::error::Error;
+        use crate::version::v0_0_1::id::{AddressSegment, Tks};
+        use crate::version::v0_0_1::pattern::{SegmentPattern, SpecificPattern};
+        use crate::version::v0_0_1::util::{ValueMatcher, ValuePattern};
+        use serde::{Deserialize, Serialize};
         use std::convert::TryInto;
-        use serde::{Serialize,Deserialize};
 
-        #[derive(Debug,Clone,Serialize,Deserialize,Eq, PartialEq)]
-        pub struct AddressKindPattern<ResourceType,Kind> {
-            pub hops: Vec<Hop<ResourceType,Kind>>,
+        #[derive(Debug, Clone, Serialize, Deserialize)]
+        pub struct AddressKindPattern<ResourceType, Kind> {
+            pub hops: Vec<Hop<ResourceType, Kind>>,
         }
 
-        impl <ResourceType,Kind> AddressKindPattern<ResourceType,Kind> {
-            pub fn consume(&self) -> Option<AddressKindPattern<ResourceType,Kind>> {
+        impl<ResourceType, Kind> AddressKindPattern<ResourceType, Kind> {
+            pub fn consume(&self) -> Option<AddressKindPattern<ResourceType, Kind>>
+            where
+                ResourceType: Clone,
+                Kind: Clone,
+            {
                 if self.hops.len() <= 1 {
                     Option::None
                 } else {
@@ -3386,7 +3385,11 @@ pub mod generic {
                 self.hops.len() == 1
             }
 
-            pub fn matches(&self, address_tks_path: &AddressTksPath<Kind>) -> bool {
+            pub fn matches(&self, address_tks_path: &AddressTksPath<Kind>) -> bool
+            where
+                ResourceType: Clone,
+                Kind: Clone,
+            {
                 if address_tks_path.segments.len() < self.hops.len() {
                     return false;
                 }
@@ -3432,57 +3435,62 @@ pub mod generic {
             }
         }
 
-        impl<FromResourceType,FromKind>  AddressKindPattern<FromResourceType,FromKind> {
-            pub fn convert<ToResourceType,ToKind>(self) -> Result<AddressKindPattern<ToResourceType,ToKind>, Error>
-                where
-                    FromResourceType: TryInto<ToResourceType, Error = Error>,
-                    FromKind: TryInto<ToKind, Error = Error>,
+        impl<FromResourceType, FromKind> AddressKindPattern<FromResourceType, FromKind> {
+            pub fn convert<ToResourceType, ToKind>(
+                self,
+            ) -> Result<AddressKindPattern<ToResourceType, ToKind>, Error>
+            where
+                FromResourceType: TryInto<ToResourceType, Error = Error> + Eq + PartialEq,
+                FromKind: TryInto<ToKind, Error = Error> + Eq + PartialEq,
             {
-                let mut hops = vec!();
+                let mut hops = vec![];
                 for hop in self.hops {
-                    hops.push( hop.convert()? );
+                    hops.push(hop.convert()?);
                 }
-                Ok(AddressKindPattern{hops})
+                Ok(AddressKindPattern { hops })
             }
         }
 
         pub type KindPattern<Kind> = Pattern<Kind>;
 
-
-
-        #[derive(Debug,Clone, Serialize,Deserialize)]
-        pub struct Hop<ResourceType,Kind> {
+        #[derive(Debug, Clone, Serialize, Deserialize)]
+        pub struct Hop<ResourceType, Kind> {
             pub segment: SegmentPattern,
-            pub tks: TksPattern<ResourceType,Kind>,
+            pub tks: TksPattern<ResourceType, Kind>,
         }
 
-        impl<FromResourceType,FromKind>  Hop<FromResourceType,FromKind> {
-            pub fn convert<ToResourceType,ToKind>(self) -> Result<Hop<ToResourceType,ToKind>, Error>
-                where
-                    FromResourceType: TryInto<ToResourceType, Error = Error>,
-                    FromKind: TryInto<ToKind, Error = Error>,
+        impl<FromResourceType, FromKind> Hop<FromResourceType, FromKind> {
+            pub fn convert<ToResourceType, ToKind>(
+                self,
+            ) -> Result<Hop<ToResourceType, ToKind>, Error>
+            where
+                FromResourceType: TryInto<ToResourceType, Error = Error> + Eq + PartialEq,
+                FromKind: TryInto<ToKind, Error = Error> + Eq + PartialEq,
             {
-                Ok( Hop{
+                Ok(Hop {
                     segment: self.segment,
-                    tks: self.tks.convert()?
+                    tks: self.tks.convert()?,
                 })
             }
         }
 
-
-        impl <ResourceType,Kind> Hop<ResourceType,Kind> {
+        impl<ResourceType, Kind> Hop<ResourceType, Kind> {
             pub fn matches(&self, address_tks_segment: &AddressTksSegment<Kind>) -> bool {
-                self.segment.matches(&address_tks_segment.address_segment.to_string())
+                self.segment
+                    .matches(&address_tks_segment.address_segment.to_string())
             }
         }
 
-        #[derive(Debug,Clone,Serialize,Deserialize)]
+        #[derive(Debug, Clone, Serialize, Deserialize)]
         pub enum Pattern<P> {
             Any,
             Exact(P),
         }
 
-        impl<P> Pattern<P> where P:Eq+PartialEq {
+        impl<P> Pattern<P>
+        where
+            P: Eq + PartialEq,
+        {
             pub fn matches(&self, t: &P) -> bool {
                 match self {
                     Self::Any => true,
@@ -3501,6 +3509,16 @@ pub mod generic {
                     }
                 }
             }
+
+            pub fn convert<To>(self) -> Result<Pattern<To>, Error>
+            where
+                P: TryInto<To, Error = Error> + Eq + PartialEq,
+            {
+                Ok(match self {
+                    Pattern::Any => Pattern::Any,
+                    Pattern::Exact(exact) => Pattern::Exact(exact.try_into()?),
+                })
+            }
         }
 
         impl Into<Pattern<String>> for Pattern<&str> {
@@ -3513,8 +3531,8 @@ pub mod generic {
         }
 
         impl<P> ToString for Pattern<P>
-            where
-                P: ToString,
+        where
+            P: ToString,
         {
             fn to_string(&self) -> String {
                 match self {
@@ -3526,33 +3544,38 @@ pub mod generic {
 
         pub type ResourceTypePattern<ResourceType> = Pattern<ResourceType>;
 
-        #[derive(Debug,Clone,Serialize,Deserialize)]
-        pub struct TksPattern<ResourceType,Kind> {
+        #[derive(Debug, Clone, Serialize, Deserialize)]
+        pub struct TksPattern<ResourceType, Kind> {
             pub resource_type: ResourceTypePattern<ResourceType>,
             pub kind: KindPattern<Kind>,
-            pub specific: ValuePattern<SpecificPattern>
+            pub specific: ValuePattern<SpecificPattern>,
         }
 
-        impl<FromResourceType,FromKind>  TksPattern<FromResourceType,FromKind> {
-            pub fn convert<ToResourceType,ToKind>(self) -> Result<TksPattern<ToResourceType,ToKind>, Error>
-                where
-                    FromResourceType: TryInto<ToResourceType, Error = Error>,
-                    FromKind: TryInto<ToKind, Error = Error>,
+        impl<FromResourceType, FromKind> TksPattern<FromResourceType, FromKind> {
+            pub fn convert<ToResourceType, ToKind>(
+                self,
+            ) -> Result<TksPattern<ToResourceType, ToKind>, Error>
+            where
+                FromResourceType: TryInto<ToResourceType, Error = Error> + Eq + PartialEq,
+                FromKind: TryInto<ToKind, Error = Error> + Eq + PartialEq,
             {
-                Ok( TksPattern{
-                    resource_type: self.resource_type.try_into()?,
-                    kind: self.kind.try_into()?,
-                    specific: self.specific
+                Ok(TksPattern {
+                    resource_type: self.resource_type.convert()?,
+                    kind: self.kind.convert()?,
+                    specific: self.specific,
                 })
             }
         }
 
-
-        impl <ResourceType,Kind> TksPattern<ResourceType,Kind> where Kind: Tks<ResourceType>, ResourceType: Eq+PartialEq {
+        impl<ResourceType, Kind> TksPattern<ResourceType, Kind>
+        where
+            Kind: Tks<ResourceType>,
+            ResourceType: Eq + PartialEq,
+        {
             pub fn new(
                 resource_type: ResourceTypePattern<ResourceType>,
                 kind: KindPattern<Kind>,
-                specific: ValuePattern<SpecificPattern>
+                specific: ValuePattern<SpecificPattern>,
             ) -> Self {
                 Self {
                     resource_type,
@@ -3561,32 +3584,38 @@ pub mod generic {
                 }
             }
 
-            pub fn matches(&self, kind: &Kind) -> bool {
-               self.resource_type.matches(&kind.resource_type() ) &&
-               self.kind.matches(kind ) &&
-               self.specific.is_match_opt(kind.specific().as_ref() ).is_ok()
+            pub fn matches(&self, kind: &Kind) -> bool
+            where
+                Kind: Eq + PartialEq,
+            {
+                self.resource_type.matches(&kind.resource_type())
+                    && self.kind.matches(kind)
+                    && self.specific.is_match_opt(kind.specific().as_ref()).is_ok()
             }
         }
 
-        impl <ResourceType,Kind> TksPattern<ResourceType,Kind> {
+        impl<ResourceType, Kind> TksPattern<ResourceType, Kind> {
             pub fn any() -> Self {
                 Self {
                     resource_type: ResourceTypePattern::Any,
                     kind: KindPattern::Any,
-                    specific: ValuePattern::Any
+                    specific: ValuePattern::Any,
                 }
             }
         }
 
-        #[derive(Eq, PartialEq)]
+        #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
         pub struct AddressTksPath<Kind> {
             pub segments: Vec<AddressTksSegment<Kind>>,
         }
 
-        impl <Kind> AddressTksPath<Kind> {
-            pub fn consume(&self) -> Option<AddressTksPath<Kind>> {
+        impl<Kind> AddressTksPath<Kind> {
+            pub fn consume(&self) -> Option<AddressTksPath<Kind>>
+            where
+                Kind: Clone,
+            {
                 if self.segments.len() <= 1 {
-                    return Option::None
+                    return Option::None;
                 }
                 let mut segments = self.segments.clone();
                 segments.remove(0);
@@ -3598,7 +3627,7 @@ pub mod generic {
             }
         }
 
-        #[derive(Eq, PartialEq)]
+        #[derive(Debug, Eq, PartialEq, Clone, Serialize, Deserialize)]
         pub struct AddressTksSegment<Kind> {
             pub address_segment: AddressSegment,
             pub tks: Kind,
@@ -3616,69 +3645,52 @@ pub mod util {
     pub enum ValuePattern<T> {
         Any,
         None,
-        Pattern(T)
+        Pattern(T),
     }
 
-    impl <T> ValuePattern<T> {
-        pub fn is_match<X>( &self, x: &X ) -> Result<(),Error>
-            where T: ValueMatcher<X>
+    impl<T> ValuePattern<T> {
+        pub fn is_match<X>(&self, x: &X) -> Result<(), Error>
+        where
+            T: ValueMatcher<X>,
         {
             match self {
-                ValuePattern::Any => {
-                    Ok(())
-                }
-                ValuePattern::Pattern(exact) => {
-                    exact.is_match(x)
-                }
-                ValuePattern::None => {
-                    Err("None pattern".into())
-                }
+                ValuePattern::Any => Ok(()),
+                ValuePattern::Pattern(exact) => exact.is_match(x),
+                ValuePattern::None => Err("None pattern".into()),
             }
         }
 
-        pub fn is_match_opt<X>( &self, x: Option<&X> ) -> Result<(),Error>
-            where T: ValueMatcher<X>
+        pub fn is_match_opt<X>(&self, x: Option<&X>) -> Result<(), Error>
+        where
+            T: ValueMatcher<X>,
         {
             match self {
-                ValuePattern::Any => {
-                    Ok(())
-                }
-                ValuePattern::Pattern(exact) => {
-                    match x {
-                        None => {
-                            Err("option none".into())
-                        }
-                        Some(x) => {
-                            self.is_match(x)
-                        }
-                    }
-                }
-                ValuePattern::None => {
-                    Err("None pattern".into())
-                }
+                ValuePattern::Any => Ok(()),
+                ValuePattern::Pattern(exact) => match x {
+                    None => Err("option none".into()),
+                    Some(x) => self.is_match(x),
+                },
+                ValuePattern::None => Err("None pattern".into()),
             }
         }
     }
 
-    impl <V:ToString> ToString for ValuePattern<V> {
+    impl<V: ToString> ToString for ValuePattern<V> {
         fn to_string(&self) -> String {
             match self {
                 ValuePattern::Any => "*".to_string(),
                 ValuePattern::None => "!".to_string(),
-                ValuePattern::Pattern(pattern) => {
-                    pattern.to_string()
-                }
+                ValuePattern::Pattern(pattern) => pattern.to_string(),
             }
         }
     }
 
-
     pub trait ValueMatcher<X> {
-        fn is_match(&self, x: &X) -> Result<(),Error>;
+        fn is_match(&self, x: &X) -> Result<(), Error>;
     }
 
     pub struct RegexMatcher {
-        pub pattern: String
+        pub pattern: String,
     }
 
     impl ToString for RegexMatcher {
@@ -3689,9 +3701,7 @@ pub mod util {
 
     impl RegexMatcher {
         pub fn new(string: String) -> Self {
-            Self {
-                pattern: string
-            }
+            Self { pattern: string }
         }
     }
 
@@ -3701,16 +3711,14 @@ pub mod util {
             if matches.count() > 0 {
                 Ok(())
             } else {
-                Err(format!("could not match pattern '{}' in '{}'",self.pattern, x).into())
+                Err(format!("could not match pattern '{}' in '{}'", self.pattern, x).into())
             }
         }
     }
 
-
-
-    #[derive(Debug,Eq,PartialEq)]
+    #[derive(Debug, Eq, PartialEq)]
     pub struct StringMatcher {
-        pub pattern: String
+        pub pattern: String,
     }
 
     impl ToString for StringMatcher {
@@ -3721,9 +3729,7 @@ pub mod util {
 
     impl StringMatcher {
         pub fn new(string: String) -> Self {
-            Self {
-                pattern: string
-            }
+            Self { pattern: string }
         }
     }
 
@@ -3737,13 +3743,14 @@ pub mod util {
         }
     }
 
-
-
     pub trait Convert<A> {
         fn convert(self) -> Result<A, Error>;
     }
 
-    pub trait ConvertFrom<A> where Self:Sized {
+    pub trait ConvertFrom<A>
+    where
+        Self: Sized,
+    {
         fn convert_from(a: A) -> Result<Self, Error>;
     }
 
@@ -3807,9 +3814,9 @@ pub mod fail {
         #[derive(Debug, Clone, Serialize, Deserialize)]
         pub enum Create {
             AddressAlreadyInUse(String),
-            WrongParentResourceType{ expected: String, found: String },
-            CannotUpdateArchetype
-}
+            WrongParentResourceType { expected: String, found: String },
+            CannotUpdateArchetype,
+        }
 
         #[derive(Debug, Clone, Serialize, Deserialize)]
         pub enum Update {
@@ -3911,40 +3918,38 @@ pub mod fail {
     }
 }
 
-
 pub mod parse {
-    use nom::{AsChar, InputTakeAtPosition, IResult};
-    use nom::combinator::{all_consuming, recognize, opt, not};
-    use nom::error::{ErrorKind, VerboseError, context};
-    use nom::multi::{separated_list1, many0};
+    use nom::combinator::{all_consuming, not, opt, recognize};
+    use nom::error::{context, ErrorKind, VerboseError};
+    use nom::multi::{many0, separated_list1};
+    use nom::{AsChar, IResult, InputTakeAtPosition};
 
-    use crate::version::v0_0_1::id::{Address, HubSegment, AddressSegment};
-    use nom::bytes::complete::{is_not, is_a};
-    use nom::sequence::{tuple, terminated, preceded, delimited};
-    use nom::bytes::complete::tag;
-    use nom::character::complete::{alpha0, digit1};
     use crate::version::latest::util::StringMatcher;
+    use crate::version::v0_0_1::id::{Address, AddressSegment, HubSegment};
     use nom::branch::alt;
+    use nom::bytes::complete::tag;
+    use nom::bytes::complete::{is_a, is_not};
+    use nom::character::complete::{alpha0, digit1};
+    use nom::sequence::{delimited, preceded, terminated, tuple};
 
-    pub struct Parser {
-    }
+    pub struct Parser {}
 
     impl Parser {
-        pub fn address( input: &str ) -> Res<&str,Address> {
+        pub fn address(input: &str) -> Res<&str, Address> {
             address(input)
         }
 
-        pub fn consume_address( input: &str ) -> Res<&str,Address> {
+        pub fn consume_address(input: &str) -> Res<&str, Address> {
             consume_address(input)
         }
     }
 
-    pub type Res<I,O>=IResult<I,O, VerboseError<I>>;
+    pub type Res<I, O> = IResult<I, O, VerboseError<I>>;
 
     fn any_resource_path_segment<T>(i: T) -> Res<T, T>
-        where
-            T: InputTakeAtPosition,
-            <T as InputTakeAtPosition>::Item: AsChar,
+    where
+        T: InputTakeAtPosition,
+        <T as InputTakeAtPosition>::Item: AsChar,
     {
         i.split_at_position1_complete(
             |item| {
@@ -3960,118 +3965,107 @@ pub mod parse {
     }
 
     pub fn local_hub_segment(input: &str) -> Res<&str, HubSegment> {
-        not(alt((domain_hub_segment,tag_hub_segment)))(input).map( |(next,_)| {
-            (next,HubSegment::Local)
-        })
+        not(alt((domain_hub_segment, tag_hub_segment)))(input)
+            .map(|(next, _)| (next, HubSegment::Local))
     }
 
     pub fn domain_hub_segment(input: &str) -> Res<&str, HubSegment> {
-        terminated( domain_chars, tag("::") )(input).map( |(next,domain)| {
-            (next, HubSegment::Domain(domain.to_string()))
-        } )
+        terminated(domain_chars, tag("::"))(input)
+            .map(|(next, domain)| (next, HubSegment::Domain(domain.to_string())))
     }
 
     pub fn tag_hub_segment(input: &str) -> Res<&str, HubSegment> {
-        terminated(delimited(tag("["), skewer_chars, tag("]")), tag("::") )(input).map( |(next,tag)| {
-            (next, HubSegment::Tag(tag.to_string()))
-        } )
+        terminated(delimited(tag("["), skewer_chars, tag("]")), tag("::"))(input)
+            .map(|(next, tag)| (next, HubSegment::Tag(tag.to_string())))
     }
 
     pub fn hub_segment(input: &str) -> Res<&str, HubSegment> {
-        alt((tag_hub_segment, domain_hub_segment,local_hub_segment) )(input)
+        alt((tag_hub_segment, domain_hub_segment, local_hub_segment))(input)
     }
 
     pub fn space_address_segment(input: &str) -> Res<&str, AddressSegment> {
-        space_chars(input).map( |(next,space)| {
-            (next, AddressSegment::Space(space.to_string()))
-        } )
+        space_chars(input).map(|(next, space)| (next, AddressSegment::Space(space.to_string())))
     }
 
     pub fn base_address_segment(input: &str) -> Res<&str, AddressSegment> {
-        skewer_chars(input).map( |(next,base)| {
-            (next, AddressSegment::Base(base.to_string()))
-        } )
+        skewer_chars(input).map(|(next, base)| (next, AddressSegment::Base(base.to_string())))
     }
 
     pub fn dir_address_segment(input: &str) -> Res<&str, AddressSegment> {
-        tag("/")(input).map( |(next,_)| {
-            (next, AddressSegment::Dir )
-        } )
+        tag("/")(input).map(|(next, _)| (next, AddressSegment::Dir))
     }
 
     pub fn file_address_segment(input: &str) -> Res<&str, AddressSegment> {
-        filepath_chars(input).map( |(next,filename)| {
-            (next, AddressSegment::File(filename.to_string()))
-        } )
+        filepath_chars(input)
+            .map(|(next, filename)| (next, AddressSegment::File(filename.to_string())))
     }
 
     pub fn address(input: &str) -> Res<&str, Address> {
-        tuple((tuple((hub_segment, space_address_segment)), many0(base_address_segment),many0(file_address_segment)))(input).
-            map(|(next,((hub,space),mut bases,mut files))|{
-                let mut segments = vec![];
-                segments.push( space );
-                segments.append(&mut bases);
-                segments.append(&mut files );
+        tuple((
+            tuple((hub_segment, space_address_segment)),
+            many0(base_address_segment),
+            many0(file_address_segment),
+        ))(input)
+        .map(|(next, ((hub, space), mut bases, mut files))| {
+            let mut segments = vec![];
+            segments.push(space);
+            segments.append(&mut bases);
+            segments.append(&mut files);
 
-                let address = Address {
-                    hub,
-                    segments
-                };
+            let address = Address { hub, segments };
 
-                (next, address)
-            })
+            (next, address)
+        })
     }
 
-    pub fn consume_address(input: &str) -> Res<&str,Address> {
+    pub fn consume_address(input: &str) -> Res<&str, Address> {
         all_consuming(address)(input)
     }
 
-
     pub fn asterisk<T, E: nom::error::ParseError<T>>(input: T) -> IResult<T, T, E>
-        where
-            T: InputTakeAtPosition,
-            <T as InputTakeAtPosition>::Item: AsChar,
+    where
+        T: InputTakeAtPosition,
+        <T as InputTakeAtPosition>::Item: AsChar,
     {
-        input.split_at_position_complete(|item| item.as_char() != '*' )
+        input.split_at_position_complete(|item| item.as_char() != '*')
     }
-
 
     pub fn upper<T, E: nom::error::ParseError<T>>(input: T) -> IResult<T, T, E>
-        where
-            T: InputTakeAtPosition,
-            <T as InputTakeAtPosition>::Item: AsChar,
+    where
+        T: InputTakeAtPosition,
+        <T as InputTakeAtPosition>::Item: AsChar,
     {
-        input.split_at_position_complete(|item| { let char_item = item.as_char();
+        input.split_at_position_complete(|item| {
+            let char_item = item.as_char();
 
             !char_item.is_uppercase()
-
-        } )
+        })
     }
 
-/*    fn any_resource_path_segment<T>(i: T) -> Res<T, T>
-        where
-            T: InputTakeAtPosition,
-            <T as InputTakeAtPosition>::Item: AsChar,
-    {
-        i.split_at_position1_complete(
-            |item| {
-                let char_item = item.as_char();
-                !(char_item == '-')
-                    && !(char_item == '.')
-                    && !(char_item == '/')
-                    && !(char_item == '_')
-                    && !(char_item.is_alpha() || char_item.is_dec_digit())
-            },
-            ErrorKind::AlphaNumeric,
-        )
-    }
+    /*    fn any_resource_path_segment<T>(i: T) -> Res<T, T>
+           where
+               T: InputTakeAtPosition,
+               <T as InputTakeAtPosition>::Item: AsChar,
+       {
+           i.split_at_position1_complete(
+               |item| {
+                   let char_item = item.as_char();
+                   !(char_item == '-')
+                       && !(char_item == '.')
+                       && !(char_item == '/')
+                       && !(char_item == '_')
+                       && !(char_item.is_alpha() || char_item.is_dec_digit())
+               },
+               ErrorKind::AlphaNumeric,
+           )
+       }
 
- */
+    */
 
     fn in_double_quotes<T>(i: T) -> Res<T, T>
-        where
-            T: InputTakeAtPosition,
-            <T as InputTakeAtPosition>::Item: AsChar,
+    where
+        T: InputTakeAtPosition,
+        <T as InputTakeAtPosition>::Item: AsChar,
     {
         i.split_at_position1_complete(
             |item| {
@@ -4082,126 +4076,129 @@ pub mod parse {
         )
     }
 
-
     fn domain<T>(i: T) -> Res<T, T>
-        where
-            T: InputTakeAtPosition,
-            <T as InputTakeAtPosition>::Item: AsChar,
+    where
+        T: InputTakeAtPosition,
+        <T as InputTakeAtPosition>::Item: AsChar,
     {
         i.split_at_position1_complete(
             |item| {
                 let char_item = item.as_char();
-                !(char_item == '-') &&
-                    !(char_item == '.')
-                    && !((char_item.is_alpha() && char_item.is_lowercase()) || char_item.is_dec_digit())
+                !(char_item == '-')
+                    && !(char_item == '.')
+                    && !((char_item.is_alpha() && char_item.is_lowercase())
+                        || char_item.is_dec_digit())
             },
             ErrorKind::AlphaNumeric,
         )
     }
 
     pub fn address_segment_chars<T>(i: T) -> Res<T, T>
-        where
-            T: InputTakeAtPosition,
-            <T as InputTakeAtPosition>::Item: AsChar,
-    {
-        i.split_at_position1_complete(
-            |item| {
-                let char_item = item.as_char();
-                !(char_item == '-') &&
-                !(char_item == '.') &&
-                !(char_item.is_alpha()  || char_item.is_dec_digit())
-            },
-            ErrorKind::AlphaNumeric,
-        )
-    }
-
-
-    pub fn version_chars<T>(i: T) -> Res<T, T>
-        where
-            T: InputTakeAtPosition,
-            <T as InputTakeAtPosition>::Item: AsChar,
+    where
+        T: InputTakeAtPosition,
+        <T as InputTakeAtPosition>::Item: AsChar,
     {
         i.split_at_position1_complete(
             |item| {
                 let char_item = item.as_char();
                 !(char_item == '-')
-                    && !((char_item.is_alpha() && char_item.is_lowercase()) || char_item.is_dec_digit())
+                    && !(char_item == '.')
+                    && !(char_item.is_alpha() || char_item.is_dec_digit())
+            },
+            ErrorKind::AlphaNumeric,
+        )
+    }
+
+    pub fn version_chars<T>(i: T) -> Res<T, T>
+    where
+        T: InputTakeAtPosition,
+        <T as InputTakeAtPosition>::Item: AsChar,
+    {
+        i.split_at_position1_complete(
+            |item| {
+                let char_item = item.as_char();
+                !(char_item == '-')
+                    && !((char_item.is_alpha() && char_item.is_lowercase())
+                        || char_item.is_dec_digit())
             },
             ErrorKind::AlphaNumeric,
         )
     }
 
     pub fn version_req_chars<T>(i: T) -> Res<T, T>
-        where
-            T: InputTakeAtPosition,
-            <T as InputTakeAtPosition>::Item: AsChar,
+    where
+        T: InputTakeAtPosition,
+        <T as InputTakeAtPosition>::Item: AsChar,
     {
         i.split_at_position1_complete(
             |item| {
                 let char_item = item.as_char();
-                !(char_item == '-') &&
-                !(char_item == '>') &&
-                !(char_item == '<') &&
-                !(char_item == '^') &&
-                !(char_item == '=') &&
-                !((char_item.is_alpha() && char_item.is_lowercase()) || char_item.is_dec_digit())
+                !(char_item == '-')
+                    && !(char_item == '>')
+                    && !(char_item == '<')
+                    && !(char_item == '^')
+                    && !(char_item == '=')
+                    && !((char_item.is_alpha() && char_item.is_lowercase())
+                        || char_item.is_dec_digit())
             },
             ErrorKind::AlphaNumeric,
         )
     }
 
     pub fn skewer_chars<T>(i: T) -> Res<T, T>
-        where
-            T: InputTakeAtPosition,
-            <T as InputTakeAtPosition>::Item: AsChar,
+    where
+        T: InputTakeAtPosition,
+        <T as InputTakeAtPosition>::Item: AsChar,
     {
         i.split_at_position1_complete(
             |item| {
                 let char_item = item.as_char();
                 !(char_item == '-')
-                    && !((char_item.is_alpha() && char_item.is_lowercase()) || char_item.is_dec_digit())
+                    && !((char_item.is_alpha() && char_item.is_lowercase())
+                        || char_item.is_dec_digit())
             },
             ErrorKind::AlphaNumeric,
         )
     }
 
     pub fn space_chars<T>(i: T) -> Res<T, T>
-        where
-            T: InputTakeAtPosition,
-            <T as InputTakeAtPosition>::Item: AsChar,
+    where
+        T: InputTakeAtPosition,
+        <T as InputTakeAtPosition>::Item: AsChar,
     {
         i.split_at_position1_complete(
             |item| {
                 let char_item = item.as_char();
-                !(char_item == '-') &&
-                    !(char_item == '.') &&
-                    !((char_item.is_alpha() && char_item.is_lowercase()) || char_item.is_dec_digit())
+                !(char_item == '-')
+                    && !(char_item == '.')
+                    && !((char_item.is_alpha() && char_item.is_lowercase())
+                        || char_item.is_dec_digit())
             },
             ErrorKind::AlphaNumeric,
         )
     }
 
     pub fn domain_chars<T>(i: T) -> Res<T, T>
-        where
-            T: InputTakeAtPosition,
-            <T as InputTakeAtPosition>::Item: AsChar,
+    where
+        T: InputTakeAtPosition,
+        <T as InputTakeAtPosition>::Item: AsChar,
     {
         i.split_at_position1_complete(
             |item| {
                 let char_item = item.as_char();
-                !(char_item == '-') &&
-                !(char_item == '.') &&
-                !((char_item.is_alpha() && char_item.is_lowercase()) || char_item.is_dec_digit())
+                !(char_item == '-')
+                    && !(char_item == '.')
+                    && !((char_item.is_alpha() && char_item.is_lowercase())
+                        || char_item.is_dec_digit())
             },
             ErrorKind::AlphaNumeric,
         )
     }
 
-
     pub fn filepath_chars<T>(i: T) -> Res<T, T>
-        where
-            T: InputTakeAtPosition,
-            <T as InputTakeAtPosition>::Item: AsChar,
+    where
+        T: InputTakeAtPosition,
+        <T as InputTakeAtPosition>::Item: AsChar,
     {
         i.split_at_position1_complete(
             |item| {
@@ -4216,30 +4213,31 @@ pub mod parse {
         )
     }
 
-    pub fn not_space(input: &str)->Res<&str,&str> {
+    pub fn not_space(input: &str) -> Res<&str, &str> {
         is_not(" \n\r\t")(input)
     }
 
-
-
-    pub fn path(input: &str ) -> Res<&str,&str> {
-        recognize(tuple((tag("/"), opt(filepath_chars))) )(input)
+    pub fn path(input: &str) -> Res<&str, &str> {
+        recognize(tuple((tag("/"), opt(filepath_chars))))(input)
     }
 
-    pub fn consume_path(input: &str ) -> Res<&str,&str> {
+    pub fn consume_path(input: &str) -> Res<&str, &str> {
         all_consuming(path)(input)
     }
 
-    pub fn path_regex(input: &str ) -> Res<&str,&str> {
-        recognize(tuple((tag("/"), opt(not_space))) )(input)
+    pub fn path_regex(input: &str) -> Res<&str, &str> {
+        recognize(tuple((tag("/"), opt(not_space))))(input)
     }
-    pub fn camel_case( input: &str ) -> Res<&str,&str> {
-        recognize(tuple((is_a("ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"), alpha0)) )(input)
+    pub fn camel_case(input: &str) -> Res<&str, &str> {
+        recognize(tuple((
+            is_a("ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"),
+            alpha0,
+        )))(input)
         //recognize(alpha1)(input)
     }
 
-    pub fn camel_case_to_string( input: &str ) -> Res<&str,StringMatcher> {
-        camel_case(input).map(|(next,camel)| { (next,StringMatcher::new(camel.to_string()))}  )
+    pub fn camel_case_to_string(input: &str) -> Res<&str, StringMatcher> {
+        camel_case(input).map(|(next, camel)| (next, StringMatcher::new(camel.to_string())))
     }
 
     fn parse_version_major_minor_patch(input: &str) -> Res<&str, (&str, &str, &str)> {
@@ -4253,15 +4251,14 @@ pub mod parse {
         )(input)
     }
 
-    pub fn parse_version(input: &str) -> Res<&str, ((&str,&str,&str), Option<&str>)> {
-        tuple((parse_version_major_minor_patch, opt(preceded(tag("-"), skewer_chars))))(input)
+    pub fn parse_version(input: &str) -> Res<&str, ((&str, &str, &str), Option<&str>)> {
+        tuple((
+            parse_version_major_minor_patch,
+            opt(preceded(tag("-"), skewer_chars)),
+        ))(input)
     }
-
 
     pub fn rec_version(input: &str) -> Res<&str, &str> {
         recognize(parse_version)(input)
     }
-
-
-
 }
