@@ -19,12 +19,16 @@ pub mod id {
     use std::collections::HashMap;
     use std::str::FromStr;
 
-    use serde::{Deserialize, Serialize};
+    use serde::{Deserialize, Serialize, Serializer, Deserializer, de};
 
     use crate::error::Error;
     use crate::version::v0_0_1::generic;
     use crate::version::v0_0_1::parse::{address, consume_address, Res};
-    use semver::Version;
+    use std::convert::TryInto;
+    use std::ops::Deref;
+    use serde::de::Visitor;
+    use std::fmt::Formatter;
+    use semver::SemVerError;
 
     pub type ResourceType = String;
     pub type Kind = generic::id::GenericKind<ResourceType>;
@@ -32,6 +36,81 @@ pub mod id {
     pub type AddressAndType = generic::id::AddressAndType<ResourceType>;
     pub type Meta = HashMap<String, String>;
     pub type PayloadClaim = String;
+
+
+    #[derive(Debug,Clone)]
+    pub struct Version {
+        pub version: semver::Version
+    }
+
+    impl Deref for Version {
+        type Target = semver::Version;
+
+        fn deref(&self) -> &Self::Target {
+            &self.version
+        }
+    }
+
+    impl Serialize for Version {
+        fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error> where S: Serializer {
+            serializer.serialize_str(self.version.to_string().as_str() )
+        }
+    }
+
+    struct VersionVisitor;
+
+    impl <'de> Visitor<'de> for VersionVisitor {
+        type Value = Version;
+
+        fn expecting(&self, formatter: &mut Formatter) -> std::fmt::Result {
+            formatter.write_str("SemVer version")
+        }
+
+        fn visit_str<E>(self, v: &str) -> Result<Self::Value, E> where E: de::Error {
+            match Version::from_str(v) {
+                Ok(version) => {Ok(version)}
+                Err(error) => {
+                    //Err(de::Error::custom(error.to_string() ))
+                    Err(de::Error::invalid_type(de::Unexpected::Str(v), &self))
+                }
+            }
+        }
+
+    }
+
+    impl <'de> Deserialize<'de> for Version {
+        fn deserialize<D>(deserializer: D) -> Result<Self, D::Error> where D: Deserializer<'de> {
+            deserializer.deserialize_str(VersionVisitor)
+        }
+    }
+
+
+    impl ToString for Version {
+        fn to_string(&self) -> String {
+            self.version.to_string()
+        }
+    }
+
+    impl TryInto<semver::Version> for Version {
+        type Error = Error;
+
+        fn try_into(self) -> Result<semver::Version, Self::Error> {
+            Ok(self.version)
+        }
+    }
+
+
+    impl FromStr for Version {
+        type Err = Error;
+
+        fn from_str(s: &str) -> Result<Self, Self::Err> {
+            let version = semver::Version::from_str(s)?;
+            Ok( Self{version} )
+        }
+    }
+
+
+
 
     /// Stands for "Type, Kind, Specific"
     pub trait Tks<ResourceType> where ResourceType: Eq+PartialEq{
@@ -240,35 +319,73 @@ pub mod pattern {
     use crate::error::Error;
     use crate::{Serialize,Deserialize};
     use std::convert::TryInto;
+    use serde::{Serializer, Deserializer, de};
+    use semver::ReqParseError;
+    use serde::de::Visitor;
+    use std::fmt::Formatter;
 
     pub type TksPattern = generic::pattern::TksPattern<ResourceType,Kind>;
     pub type KindPattern = generic::pattern::KindPattern<Kind>;
 
-    #[derive(Debug,Clone, Serialize,Deserialize)]
+    #[derive(Debug,Clone)]
     pub struct VersionReq {
-        pub version: String
+        pub version: semver::VersionReq
     }
 
-    impl ToString for VersionReq {
-        fn to_string(&self) -> String {
-            self.version.clone()
+    impl Deref for VersionReq {
+        type Target = semver::VersionReq;
+
+        fn deref(&self) -> &Self::Target {
+            &self.version
         }
     }
 
-    impl VersionReq {
-        pub fn from( version_req : semver::VersionReq ) -> Self {
-            Self {
-                version: version_req.to_string()
+    impl Serialize for VersionReq {
+        fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error> where S: Serializer {
+            serializer.serialize_str(self.version.to_string().as_str() )
+        }
+    }
+
+    impl <'de> Deserialize<'de> for VersionReq {
+        fn deserialize<D>(deserializer: D) -> Result<Self, D::Error> where D: Deserializer<'de> {
+            deserializer.deserialize_str(VersionReqVisitor)
+        }
+    }
+
+    struct VersionReqVisitor;
+
+    impl <'de> Visitor<'de> for VersionReqVisitor {
+        type Value = VersionReq;
+
+        fn expecting(&self, formatter: &mut Formatter) -> std::fmt::Result {
+            formatter.write_str("SemVer version requirement")
+        }
+
+        fn visit_str<E>(self, v: &str) -> Result<Self::Value, E> where E: de::Error {
+            match VersionReq::from_str(v) {
+                Ok(version) => {Ok(version)}
+                Err(error) => {
+                    //Err(de::Error::custom(error.to_string() ))
+                    Err(de::Error::invalid_type(de::Unexpected::Str(v), &self))
+                }
             }
         }
 
+    }
+
+
+
+    impl ToString for VersionReq {
+        fn to_string(&self) -> String {
+            self.version.to_string()
+        }
     }
 
     impl TryInto<semver::VersionReq> for VersionReq {
         type Error = Error;
 
         fn try_into(self) -> Result<semver::VersionReq, Self::Error> {
-            Ok(semver::VersionReq::from_str(self.version.as_str())?)
+            Ok(self.version)
         }
     }
 
@@ -277,8 +394,8 @@ pub mod pattern {
         type Err = Error;
 
         fn from_str(s: &str) -> Result<Self, Self::Err> {
-            let version_req = semver::VersionReq::from_str(s)?;
-            Ok( Self::from(version_req) )
+            let version = semver::VersionReq::from_str(s)?;
+            Ok( Self{version} )
         }
     }
 
@@ -335,11 +452,10 @@ pub mod pattern {
 
     impl ValueMatcher<Specific> for SpecificPattern {
         fn is_match(&self, specific: &Specific) -> Result<(), Error> {
-            let version:semver::VersionReq = self.version.clone().try_into()?;
             if self.vendor.matches(&specific.vendor ) &&
             self.product.matches(&specific.product) &&
             self.variant.matches(&specific.variant) &&
-            version.matches(&specific.version) {
+            self.version.matches(&specific.version) {
                 Ok(())
             } else {
                 Err("Specific does not match pattern".into() )
@@ -1204,10 +1320,9 @@ pub mod generic {
 
         pub mod parse {
             use crate::version::v0_0_1::parse::{Res, skewer_chars, version_chars, domain_chars};
-            use crate::version::v0_0_1::id::Specific;
+            use crate::version::v0_0_1::id::{Specific, Version};
             use nom::sequence::{tuple, delimited};
             use nom::bytes::complete::{tag, is_a};
-            use semver::Version;
             use nom_supreme::{parse_from_str, ParserExt};
             use nom::Parser;
 
@@ -1811,7 +1926,6 @@ pub mod generic {
                     }
                 }
 
-
                 #[derive(Debug,Clone,Serialize,Deserialize)]
                 pub struct AddressTemplate {
                     pub parent: Address,
@@ -1823,6 +1937,7 @@ pub mod generic {
                     // right now only exact is supported
                     Exact(String)
                 }
+
             }
 
             pub mod select {
