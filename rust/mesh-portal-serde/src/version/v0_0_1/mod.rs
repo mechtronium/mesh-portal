@@ -1403,10 +1403,10 @@ pub mod generic {
             use crate::version::v0_0_1::{http, State};
 
             #[derive(Debug, Clone, Serialize, Deserialize)]
-            pub enum ReqEntity<ResourceType, Payload, TksPattern> {
-                Rc(Rc<ResourceType, Payload, TksPattern>),
-                Msg(Msg<Payload>),
-                Http(Http<Payload>),
+            pub enum ReqEntity<ResourceType, Kind, TksPattern> {
+                Rc(Rc<ResourceType, Kind, TksPattern>),
+                Msg(Msg<Kind>),
+                Http(Http<Kind>),
             }
 
             impl<ResourceType, Payload, TksPattern> ReqEntity<ResourceType, Payload, TksPattern> {
@@ -1421,20 +1421,21 @@ pub mod generic {
 
             impl<
                     FromResourceType,
-                    FromPayload,
+                    FromKind,
                     FromTksPattern,
                     ToResourceType,
-                    ToPayload,
+                    ToKind,
                     ToTksPattern,
-                > ConvertFrom<ReqEntity<FromResourceType, FromPayload, FromTksPattern>>
-                for ReqEntity<ToResourceType, ToPayload, ToTksPattern>
+                > ConvertFrom<ReqEntity<FromResourceType, FromKind, FromTksPattern>>
+                for ReqEntity<ToResourceType, ToKind, ToTksPattern>
             where
-                FromPayload: TryInto<ToPayload, Error = Error>+Clone+Eq+PartialEq,
+                FromKind: TryInto<ToKind, Error = Error>+Clone+Eq+PartialEq,
                 FromResourceType: TryInto<ToResourceType, Error = Error>+Clone+Eq+PartialEq,
                 FromTksPattern: TryInto<ToTksPattern, Error = Error>+Clone,
+                Payload<FromKind>: TryInto<Payload<ToKind>,Error=Error>
             {
                 fn convert_from(
-                    a: ReqEntity<FromResourceType, FromPayload, FromTksPattern>,
+                    a: ReqEntity<FromResourceType, FromKind, FromTksPattern>,
                 ) -> Result<Self, Error>
                 where
                     Self: Sized,
@@ -1483,6 +1484,7 @@ pub mod generic {
                 FromResourceType: TryInto<ToResourceType, Error = Error>+Clone+Eq+PartialEq,
                 FromKind: TryInto<ToKind, Error = Error>+Clone+Eq+PartialEq,
                 FromTksPattern: TryInto<ToTksPattern, Error = Error>+Clone,
+                Payload<FromKind>: TryInto<Payload<ToKind>,Error=Error>
             {
                 fn convert_from(
                     a: Rc<FromResourceType, FromKind, FromTksPattern>,
@@ -1505,6 +1507,7 @@ pub mod generic {
                     FromResourceType: TryInto<ToResourceType, Error = Error>+Clone+Eq+PartialEq,
                     FromKind: TryInto<ToKind, Error = Error>+Clone+Eq+PartialEq,
                     FromTksPattern: TryInto<ToTksPattern, Error = Error>+Clone,
+                    Payload<FromKind>: TryInto<Payload<ToKind>,Error=Error>
                 {
                     Ok(Rc {
                         command: self.command.convert()?,
@@ -1523,6 +1526,7 @@ pub mod generic {
                     FromResourceType: TryInto<ToResourceType, Error = Error>+Clone+Eq+PartialEq,
                     FromKind: TryInto<ToKind, Error = Error>+Clone+Eq+PartialEq,
                     FromTksPattern: TryInto<ToTksPattern, Error = Error>+Clone,
+                    Payload<FromKind>: TryInto<Payload<ToKind>,Error=Error>
                 {
                     match self {
                         RcCommand::Create(create) => {
@@ -1539,10 +1543,10 @@ pub mod generic {
             }
 
             #[derive(Debug, Clone, Serialize, Deserialize)]
-            pub struct Msg<PAYLOAD> {
+            pub struct Msg<Kind> {
                 pub action: String,
                 pub path: String,
-                pub payload: PAYLOAD,
+                pub payload: Payload<Kind>,
             }
 
             impl<PAYLOAD> ToString for Msg<PAYLOAD> {
@@ -1551,41 +1555,41 @@ pub mod generic {
                 }
             }
 
-            impl<FromPayload, ToPayload> ConvertFrom<Msg<FromPayload>> for Msg<ToPayload>
+            impl<FromKind, ToKind> ConvertFrom<Msg<FromKind>> for Msg<ToKind>
             where
-                FromPayload: TryInto<ToPayload, Error = Error>,
+                FromKind: TryInto<ToKind, Error = Error>,
             {
-                fn convert_from(a: Msg<FromPayload>) -> Result<Self, Error>
+                fn convert_from(a: Msg<FromKind>) -> Result<Self, Error>
                 where
                     Self: Sized,
                 {
                     Ok(Msg {
                         action: a.action,
                         path: a.path,
-                        payload: a.payload.try_into()?,
+                        payload: a.payload.convert()?,
                     })
                 }
             }
 
-            impl<FromPayload> Msg<FromPayload> {
-                pub fn convert<ToPayload>(self) -> Result<Msg<ToPayload>, Error>
+            impl<FromKind> Msg<FromKind> {
+                pub fn convert<ToKind>(self) -> Result<Msg<ToKind>, Error>
                 where
-                    ToPayload: ConvertFrom<FromPayload>,
+                    FromKind: TryInto<ToKind,Error=Error>,
                 {
                     Ok(Msg {
                         action: self.action,
                         path: self.path,
-                        payload: ConvertFrom::convert_from(self.payload)?,
+                        payload: self.payload.convert()?,
                     })
                 }
             }
 
             #[derive(Debug, Clone, Serialize, Deserialize)]
-            pub struct Http<PAYLOAD> {
+            pub struct Http<Kind> {
                 pub headers: Meta,
                 pub method: HttpMethod,
                 pub path: String,
-                pub body: PAYLOAD,
+                pub body: Payload<Kind>,
             }
 
             impl<PAYLOAD> ToString for Http<PAYLOAD> {
@@ -1594,11 +1598,11 @@ pub mod generic {
                 }
             }
 
-            impl<FromPayload, ToPayload> ConvertFrom<Http<FromPayload>> for Http<ToPayload>
+            impl<FromKind, ToKind> ConvertFrom<Http<FromKind>> for Http<ToKind>
             where
-                FromPayload: TryInto<ToPayload, Error = Error>,
+                FromKind: TryInto<ToKind, Error = Error>,
             {
-                fn convert_from(a: Http<FromPayload>) -> Result<Self, Error>
+                fn convert_from(a: Http<FromKind>) -> Result<Self, Error>
                 where
                     Self: Sized,
                 {
@@ -1606,21 +1610,21 @@ pub mod generic {
                         headers: a.headers,
                         method: a.method,
                         path: a.path,
-                        body: a.body.try_into()?,
+                        body: a.body.convert()?,
                     })
                 }
             }
 
-            impl<FromPayload> Http<FromPayload> {
-                pub fn convert<ToPayload>(self) -> Result<Http<ToPayload>, Error>
+            impl<FromKind> Http<FromKind> {
+                pub fn convert<ToKind>(self) -> Result<Http<ToKind>, Error>
                 where
-                    ToPayload: ConvertFrom<FromPayload>,
+                    FromKind: TryInto<ToKind,Error=Error>,
                 {
                     Ok(Http {
                         headers: self.headers,
                         method: self.method,
                         path: self.path,
-                        body: ConvertFrom::convert_from(self.body)?,
+                        body: self.body.convert()?,
                     })
                 }
             }
@@ -1915,6 +1919,7 @@ pub mod generic {
                     where
                         FromKind: TryInto<ToKind, Error = Error>+Clone,
                         FromTksPattern: TryInto<ToTksPattern, Error = Error>+Clone,
+                        Payload<FromKind>: TryInto<Payload<ToKind>,Error=Error>
                     {
                         Ok(Create {
                             address_template: self.address_template,
@@ -1946,6 +1951,7 @@ pub mod generic {
                 use serde::{Deserialize, Serialize};
                 use std::collections::{HashMap, HashSet};
                 use std::convert::{TryFrom, TryInto};
+                use crate::version::latest::generic::payload::Payload;
 
                 #[derive(Debug, Clone, Serialize, Deserialize)]
                 pub struct Select<ResourceType, Kind, TksPattern> {
@@ -1963,6 +1969,7 @@ pub mod generic {
                         FromResourceType: TryInto<ToResourceType, Error = Error>+Clone+Eq+PartialEq,
                         FromKind: TryInto<ToKind, Error = Error>+Clone+Eq+PartialEq,
                         FromTksPattern: TryInto<ToTksPattern, Error = Error>+Clone,
+                        Payload<FromKind>: TryInto<Payload<ToKind>,Error=Error>
                     {
                         Ok(Select {
                             address_pattern: self.address_pattern.convert()?,
@@ -2441,6 +2448,7 @@ pub mod generic {
             FromKind: TryInto<ToKind, Error = Error>+Clone+Eq+PartialEq,
             FromTksPattern: TryInto<ToTksPattern, Error = Error>+Clone,
             FromResourceType: TryInto<ToResourceType, Error = Error>+Clone+Eq+PartialEq,
+            Payload<FromKind>: TryInto<Payload<ToKind>,Error=Error>
         {
             fn convert_from(
                 a: Option<CallWithConfig<FromResourceType, FromKind, FromTksPattern>>,
@@ -2489,6 +2497,7 @@ pub mod generic {
             FromTksPattern: TryInto<ToTksPattern, Error = Error> + Clone,
             FromResourceType: TryInto<ToResourceType, Error = Error> + Clone+Eq+PartialEq,
             FromKind: TryInto<ToKind, Error = Error> + Clone+Eq+PartialEq,
+            Payload<FromKind>: TryInto<Payload<ToKind>,Error=Error>
         {
             fn convert_from(
                 a: PayloadPattern<FromResourceType, FromKind, FromTksPattern>,
@@ -2511,6 +2520,7 @@ pub mod generic {
             FromTksPattern: TryInto<ToTksPattern, Error = Error> + Clone,
             FromResourceType: TryInto<ToResourceType, Error = Error> + Clone+Eq+PartialEq,
             FromKind: TryInto<ToKind, Error = Error> + Clone+Eq+PartialEq,
+            Payload<FromKind>: TryInto<Payload<ToKind>,Error=Error>
         {
             fn convert_from(
                 a: PayloadTypePattern<FromResourceType, FromKind, FromTksPattern>,
@@ -2560,6 +2570,7 @@ pub mod generic {
                 FromKind: TryInto<ToKind, Error = Error>+Clone+Eq+PartialEq,
                 FromTksPattern: TryInto<ToTksPattern, Error = Error>+Clone,
                 FromResourceType: TryInto<ToResourceType, Error = Error>+Clone+Eq+PartialEq,
+                Payload<FromKind>: TryInto<Payload<ToKind>,Error=Error>
             {
                 Ok(CallWithConfig {
                     call: self.call.convert()?,
@@ -2582,6 +2593,7 @@ pub mod generic {
                 FromKind: TryInto<ToKind, Error = Error>+Clone+Eq+PartialEq,
                 FromTksPattern: TryInto<ToTksPattern, Error = Error>+Clone,
                 FromResourceType: TryInto<ToResourceType, Error = Error>+Clone+Eq+PartialEq,
+                Payload<FromKind>: TryInto<Payload<ToKind>,Error=Error>
             {
                 Ok(Call {
                     address: self.address,
@@ -2607,6 +2619,7 @@ pub mod generic {
                 FromKind: TryInto<ToKind, Error = Error>+Clone+Eq+PartialEq,
                 FromTksPattern: TryInto<ToTksPattern, Error = Error>+Clone,
                 FromResourceType: TryInto<ToResourceType, Error = Error>+Clone+Eq+PartialEq,
+                Payload<FromKind>: TryInto<Payload<ToKind>,Error=Error>
             {
                 Ok(match self {
                     CallKind::Rc(rc) => CallKind::Rc(rc.convert()?),
@@ -2901,6 +2914,7 @@ pub mod generic {
             FromKind: TryInto<ToKind, Error = Error>+Clone+Eq+PartialEq,
             FromTksPattern: TryInto<ToTksPattern, Error = Error>+Clone,
             FromResourceType: TryInto<ToResourceType, Error = Error>+Clone+Eq+PartialEq,
+            Payload<FromKind>: TryInto<Payload<ToKind>,Error=Error>
         {
             fn convert_from(
                 a: MapPattern<FromResourceType, FromKind, FromTksPattern>,
@@ -2927,6 +2941,7 @@ pub mod generic {
                 FromTksPattern: TryInto<ToTksPattern, Error = Error> + Clone,
                 FromResourceType: TryInto<ToResourceType, Error = Error> + Clone+Eq+PartialEq,
                 FromKind: TryInto<ToKind, Error = Error> + Clone+Eq+PartialEq,
+                Payload<FromKind>: TryInto<Payload<ToKind>,Error=Error>
 
         {
             fn convert_from(
