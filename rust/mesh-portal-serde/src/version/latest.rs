@@ -135,8 +135,8 @@ pub mod entity {
         use crate::version::latest::payload::Payload;
         use crate::version::latest::pattern::TksPattern;
 
-        pub type ReqEntity = generic::entity::request::ReqEntity<ResourceType,Kind,TksPattern>;
-        pub type Rc = generic::entity::request::Rc<ResourceType,Kind,TksPattern>;
+        pub type ReqEntity = generic::entity::request::ReqEntity<ResourceType,Kind>;
+        pub type Rc = generic::entity::request::Rc<ResourceType,Kind>;
         pub type Msg = generic::entity::request::Msg<Kind>;
         pub type Http = generic::entity::request::Http<Kind>;
     }
@@ -174,7 +174,7 @@ pub mod portal {
         use crate::version::latest::payload::Payload;
         use crate::version::latest::pattern::TksPattern;
 
-        pub type ReqEntity=generic::entity::request::ReqEntity<ResourceType,Kind,TksPattern>;
+        pub type ReqEntity=generic::entity::request::ReqEntity<ResourceType,Kind>;
         pub type Request=generic::portal::inlet::Request<ReqEntity>;
         pub type Response=generic::portal::inlet::Response<Payload>;
         pub type Frame=generic::portal::inlet::Frame<ReqEntity,Payload>;
@@ -251,8 +251,8 @@ pub mod generic {
             use crate::version::latest::generic::payload::Primitive;
             use crate::version::latest::generic::payload::Payload;
 
-            pub type ReqEntity<ResourceType,Kind,TksPattern> = generic::entity::request::ReqEntity<ResourceType,Kind,TksPattern>;
-            pub type Rc<ResourceType,Kind,TksPattern> = generic::entity::request::Rc<ResourceType,Kind,TksPattern>;
+            pub type ReqEntity<ResourceType,Kind> = generic::entity::request::ReqEntity<ResourceType,Kind>;
+            pub type Rc<ResourceType,Kind> = generic::entity::request::Rc<ResourceType,Kind>;
             pub type Msg<Kind> = generic::entity::request::Msg<Kind>;
             pub type Http<Kind> = generic::entity::request::Http<Kind>;
         }
@@ -288,6 +288,40 @@ pub mod generic {
         pub type Archetype<KIND>=generic::resource::Archetype<KIND>;
         pub type ResourceStub<KIND> = generic::resource::ResourceStub<KIND>;
         pub type Resource<KIND> = generic::resource::Resource<KIND>;
+
+        pub mod command {
+            use crate::version::v0_0_1::generic;
+            use crate::version::v0_0_1::util::ValueMatcher;
+            use serde::{Deserialize, Serialize};
+
+            pub type RcCommand<ResourceType, Kind> = generic::resource::command::RcCommand<ResourceType,Kind>;
+            pub type RcCommandType = generic::resource::command::RcCommandType;
+
+            pub mod common {
+                use crate::version::v0_0_1::generic;
+                pub type StateSrc<Kind> = generic::resource::command::common::StateSrc<Kind>;
+                pub type SetProperties<Kind> = generic::resource::command::common::SetProperties<Kind>;
+            }
+
+            pub mod create {
+                use crate::version::v0_0_1::generic;
+                pub type Create<Kind> = generic::resource::command::create::Create<Kind>;
+                pub type AddressTemplate  = generic::resource::command::create::AddressTemplate;
+                pub type AddressSegmentTemplate = generic::resource::command::create::AddressSegmentTemplate;
+                pub type Strategy = generic::resource::command::create::Strategy;
+            }
+
+            pub mod select {
+                use crate::version::v0_0_1::generic;
+                pub type Select<ResourceType,Kind>=generic::resource::command::select::Select<ResourceType,Kind>;
+                pub type PropertiesPattern = generic::resource::command::select::PropertiesPattern;
+            }
+
+            pub mod update {
+                use crate::version::v0_0_1::generic;
+                pub type Update<Kind>=generic::resource::command::update::Update<Kind>;
+            }
+        }
     }
 
     pub mod portal {
@@ -347,9 +381,10 @@ pub mod generic {
         pub type PayloadTypePattern= payload::PayloadTypePattern;
         pub type PayloadPattern = payload::PayloadPattern;
         pub type Range= payload::Range;
-        pub type RcCommand<ResourceType,Kind,TksPattern> = generic::resource::command::RcCommand<ResourceType,Kind,TksPattern>;
+        pub type RcCommand<ResourceType,Kind> = generic::resource::command::RcCommand<ResourceType,Kind>;
         pub type PayloadFormat = payload::PayloadFormat;
     }
+
 
 }
 
