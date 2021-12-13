@@ -533,7 +533,7 @@ pub enum PipeSegEntry {
 
 
 
-#[derive(Debug,Clone,)]
+#[derive(Debug,Clone,Eq,PartialEq)]
 pub enum PipelineStop {
    Internal,
    Call(Call),

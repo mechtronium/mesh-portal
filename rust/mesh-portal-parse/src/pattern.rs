@@ -276,7 +276,7 @@ pub fn consume_primitive_def(input: &str) -> Res<&str, PrimitiveTypeDef> {
 }
 
 
-#[derive(Clone)]
+#[derive(Clone,Eq,PartialEq)]
 pub enum Block {
     Upload(UploadBlock),
     RequestPattern(PatternBlock),
@@ -780,7 +780,7 @@ pub fn consume_pipeline_block(input: &str ) -> Res<&str,Block> {
     all_consuming(pipeline_block)(input)
 }
 
-#[derive(Clone)]
+#[derive(Clone,Eq,PartialEq)]
 pub struct MapEntryPattern {
     pub key: String,
     pub payload: ValuePattern<PayloadPattern>

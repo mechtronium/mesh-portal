@@ -2334,7 +2334,7 @@ pub mod generic {
             Map,
         }
 
-        #[derive(Debug, Clone, Serialize, Deserialize)]
+        #[derive(Debug, Clone, Serialize, Deserialize,Eq,PartialEq)]
         pub struct ListPattern {
             pub primitive: PrimitiveType,
             pub range: Range,
@@ -2357,14 +2357,14 @@ pub mod generic {
             }
         }
 
-        #[derive(Debug, Clone, Serialize, Deserialize)]
+        #[derive(Debug, Clone, Serialize, Deserialize,Eq,PartialEq)]
         pub enum Range {
             MinMax { min: usize, max: usize },
             Exact(usize),
             Any,
         }
 
-        #[derive(Debug, Clone, Serialize, Deserialize)]
+        #[derive(Debug, Clone, Serialize, Deserialize,Eq,PartialEq)]
         pub enum PayloadTypePattern {
             Empty,
             Primitive(PrimitiveType),
@@ -2434,7 +2434,7 @@ pub mod generic {
             }
         }
 
-        #[derive(Debug, Clone, Serialize, Deserialize)]
+        #[derive(Debug, Clone, Serialize, Deserialize,Eq,PartialEq)]
         pub struct PayloadPattern {
             pub structure: PayloadTypePattern,
             pub format: Option<PayloadFormat>,
@@ -2453,19 +2453,19 @@ pub mod generic {
             }
         }
 
-        #[derive(Debug, Clone, Serialize, Deserialize)]
+        #[derive(Debug, Clone, Serialize, Deserialize,Eq,PartialEq)]
         pub struct CallWithConfig {
             pub call: Call,
             pub config: Option<Address>,
         }
 
-        #[derive(Debug, Clone, Serialize, Deserialize)]
+        #[derive(Debug, Clone, Serialize, Deserialize,Eq,PartialEq)]
         pub struct Call {
             pub address: Address,
             pub kind: CallKind
         }
 
-        #[derive(Debug, Clone, Serialize, Deserialize)]
+        #[derive(Debug, Clone, Serialize, Deserialize,Eq,PartialEq)]
         pub enum CallKind {
             Rc(RcCommandType),
             Msg(MsgCall),
@@ -2656,7 +2656,7 @@ pub mod generic {
             }
         }
 
-        #[derive(Debug, Clone, Serialize, Deserialize)]
+        #[derive(Debug, Clone, Serialize, Deserialize,Eq,PartialEq)]
         pub struct MapPattern {
             pub required:
                 HashMap<String, ValuePattern<PayloadPattern>>,
