@@ -1,4 +1,3 @@
-use crate::parse::{Res, skewer, PipelineStop, call};
 use crate::pattern::{PatternBlock, Block, pipeline_block, entity_pattern, EntityPattern, MsgPattern, msg_pattern, http_pattern, HttpPattern, rc_pattern, RcPattern, msg_pattern_scoped, http_pattern_scoped, rc_pattern_scoped};
 use nom::sequence::{terminated, delimited, tuple};
 use nom::bytes::complete::tag;
@@ -12,6 +11,7 @@ use mesh_portal_serde::version::latest::generic::payload::RcCommand;
 use mesh_portal_serde::version::latest::entity::EntityType;
 use std::convert::TryInto;
 use mesh_portal_serde::error::Error;
+use crate::parse::{PipelineStop, call};
 use mesh_portal_serde::version::v0_0_1::parse::Res;
 
 
@@ -353,7 +353,6 @@ pub fn consume_selector(input: &str ) -> Res<&str, Selector<EntityPattern>>{
 pub mod test {
     use anyhow::Error;
     use crate::bind::{consume_pipeline_step, consume_pipeline_stop, consume_pipeline, Pipeline, PipelineStep, PipelineSegment, StepKind, entity_selector, bind, msg_selectors, msg_section};
-    use crate::parse::{PipelineStop, camel_case, path_regex, upper, camel_case_to_string};
     use mesh_portal_serde::version::latest::payload::Call;
     use std::str::FromStr;
     use crate::pattern::{PatternBlock, entity_pattern, msg_pattern, msg_action, msg_entity_pattern};
@@ -362,6 +361,7 @@ pub mod test {
     use nom::bytes::complete::tag;
     use mesh_portal_serde::version::latest::util::{ValuePattern, StringMatcher};
     use mesh_portal_serde::version::v0_0_1::parse::camel_case;
+    use crate::parse::PipelineStop;
 
     #[test]
     pub fn test_pipeline_step() -> Result<(),Error> {

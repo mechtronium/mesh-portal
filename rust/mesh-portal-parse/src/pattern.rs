@@ -16,7 +16,6 @@ use mesh_portal_serde::version::latest::payload::{PrimitiveType, PayloadType};
 use mesh_portal_serde::version::latest::payload::Primitive;
 use mesh_portal_serde::version::latest::payload::Payload;
 
-use crate::parse::{call, call_with_config, Res, path_regex, camel_case, camel_case_to_string};
 use mesh_portal_serde::error::Error;
 use std::iter::Map;
 use mesh_portal_serde::version::latest::util::{ValuePattern, RegexMatcher, StringMatcher};
@@ -30,13 +29,17 @@ use mesh_portal_serde::version::latest::payload::Call;
 use mesh_portal_serde::version::latest::payload::Range;
 use mesh_portal_serde::version::latest::payload::PayloadFormat;
 use std::ops::RangeTo;
-use mesh_portal_serde::version::latest::generic::entity::request::{ReqEntity, Rc,Msg,Http};
 use mesh_portal_serde::version::latest::payload::{PayloadDelivery, PayloadRef};
 use mesh_portal_serde::version::v0_0_1::id::Address;
 use mesh_portal_serde::version::v0_0_1::util::ValueMatcher;
-use mesh_portal_serde::version::latest::generic::payload::RcCommand;
-use mesh_portal_serde::version::v0_0_1::generic::payload::{HttpMethod};
+use mesh_portal_serde::version::latest::payload::RcCommand;
 use mesh_portal_serde::version::v0_0_1::parse::{Res, camel_case_to_string, path_regex};
+use mesh_portal_serde::version::latest::generic::entity::request::{ReqEntity,Rc,Msg,Http};
+use crate::parse::call_with_config;
+use mesh_portal_serde::version::v0_0_1::generic::payload::HttpMethod;
+use mesh_portal_serde::version::v0_0_1::generic::resource::command::RcCommandType;
+use mesh_portal_serde::version::v0_0_1::generic::pattern::Pattern;
+use mesh_portal_serde::version::v0_0_1::pattern::parse::pattern;
 
 fn skewer<T>(i: T) -> Res<T, T>
     where
@@ -93,13 +96,11 @@ fn filename<T>(i: T) -> Res<T, T>
 
 
 
-#[derive(Eq,PartialEq)]
 pub struct LabeledPrimitiveTypeDef {
     pub label: String,
     pub def: PrimitiveTypeDef
 }
 
-#[derive(Eq,PartialEq)]
 pub struct PrimitiveTypeDef {
     pub primitive: PrimitiveType,
     pub format: Option<PayloadFormat>,
@@ -121,12 +122,16 @@ pub enum EntityPattern {
    Http(HttpPattern)
 }
 
-impl <P> ValueMatcher<ReqEntity<P>> for EntityPattern {
-    fn is_match( &self, entity: &ReqEntity<P> ) -> Result<(),Error>{
+impl <ResourceType,Kind,TksPattern> ValueMatcher<ReqEntity<ResourceType,Kind,TksPattern>> for EntityPattern {
+    fn is_match( &self, entity: &ReqEntity<ResourceType,Kind,TksPattern> ) -> Result<(),Error>{
         match entity {
             ReqEntity::Rc(found) => {
                 if let EntityPattern::Rc(pattern) = self {
-                    pattern.is_match(found)
+                    if pattern.command.matches(&found.command.get_type()) {
+                        Ok(())
+                    } else {
+                        Err("no match".into())
+                    }
                 } else {
                     Err(format!("Entity pattern mismatch. expected: '{}' found: '{}'", self.to_string(), found.to_string() ).into())
                 }
@@ -168,7 +173,7 @@ impl ToString for EntityPattern {
 
 
 pub struct RcPattern {
-    pub command: ValuePattern<RcCommand>
+    pub command: Pattern<RcCommandType>
 }
 
 impl ToString for RcPattern {
@@ -177,11 +182,6 @@ impl ToString for RcPattern {
     }
 }
 
-impl <P> ValueMatcher<Rc<P>> for RcPattern {
-    fn is_match(&self, found: &Rc<P>) -> Result<(), Error> {
-        self.command.is_match(&found.command )
-    }
-}
 
 pub struct MsgPattern{
     pub action: ValuePattern<StringMatcher>,
@@ -276,7 +276,7 @@ pub fn consume_primitive_def(input: &str) -> Res<&str, PrimitiveTypeDef> {
 }
 
 
-#[derive(Clone,Eq,PartialEq)]
+#[derive(Clone)]
 pub enum Block {
     Upload(UploadBlock),
     RequestPattern(PatternBlock),
@@ -612,14 +612,14 @@ pub fn http_pattern( input: &str ) -> Res<&str,HttpPattern> {
     } )
 }
 
-pub fn rc_command( input: &str ) -> Res<&str,RcCommand> {
+pub fn rc_command_type( input: &str ) -> Res<&str,RcCommandType> {
     parse_from_str(alpha1).parse(input)
 }
 
 
 
 pub fn rc_pattern_scoped(input: &str ) -> Res<&str,RcPattern> {
-    value_pattern(input, rc_command).map( |(next,command)| {
+    pattern(rc_command_type)(input).map( |(next,command)| {
         (next, RcPattern{ command } )
     })
 }
@@ -780,7 +780,7 @@ pub fn consume_pipeline_block(input: &str ) -> Res<&str,Block> {
     all_consuming(pipeline_block)(input)
 }
 
-#[derive(Clone,Eq,PartialEq)]
+#[derive(Clone)]
 pub struct MapEntryPattern {
     pub key: String,
     pub payload: ValuePattern<PayloadPattern>
@@ -797,7 +797,7 @@ pub mod test {
 
     use crate::pattern::{ListPattern, consume_payload_structure, consume_data_struct_def, consume_map_entry_pattern, consume_pipeline_block, consume_primitive_def, PayloadTypePattern, ValuePattern, PayloadPattern, Format, primitive, primitive_def, Range, MapEntryPattern, map_pattern_params, pattern_block_def};
     use mesh_portal_serde::version::latest::payload::{PrimitiveType, MapPattern};
-    use mesh_portal_serde::version::latest::generic::payload::PayloadFormat;
+    use mesh_portal_serde::version::latest::payload::PayloadFormat;
     use crate::parse::call;
 
     #[test]

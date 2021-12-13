@@ -2,8 +2,8 @@ use crate::version::latest;
 use crate::version::latest::entity::request::ReqEntity;
 use crate::version::latest::id::Address;
 
-pub type Request = generic::Request<ReqEntity, Address>;
-pub type Response = generic::Response<Address>;
+pub type Request = generic::Request<ReqEntity>;
+pub type Response = generic::Response;
 
 pub mod generic {
     use serde::{Deserialize, Serialize};
@@ -20,11 +20,11 @@ pub mod generic {
     use crate::version::v0_0_1::util::{unique_id, ConvertFrom, Convert};
 
     #[derive(Clone, Serialize, Deserialize)]
-    pub struct Request<ENTITY, ID> {
+    pub struct Request<Entity> {
         pub id: String,
-        pub to: ID,
-        pub from: ID,
-        pub entity: ENTITY,
+        pub to: Address,
+        pub from: Address,
+        pub entity: Entity,
         pub exchange: Exchange,
     }
 
@@ -33,14 +33,14 @@ use crate::version::v0_0_1;
     use crate::version::latest::id::Address;
 
     impl TryInto<latest::portal::outlet::Request>
-        for Request<latest::entity::request::ReqEntity, latest::id::Address>
+        for Request<latest::entity::request::ReqEntity>
 
     {
         type Error = crate::error::Error;
 
         fn try_into(self) -> Result<portal::outlet::Request, Self::Error> {
             Ok(generic::portal::outlet::Request {
-                from: self.from.try_into()?,
+                from: self.from,
                 //entity: ConvertFrom::convert_from(self.entity)?,
                 entity: self.entity,
                 exchange: self.exchange,
@@ -48,8 +48,8 @@ use crate::version::v0_0_1;
         }
     }
 
-    impl<ENTITY, ID> Request<ENTITY, ID> {
-        pub fn new(to: ID, from: ID, entity: ENTITY, exchange: Exchange) -> Self {
+    impl<Entity> Request<Entity> {
+        pub fn new(to: Address, from: Address, entity: Entity, exchange: Exchange) -> Self {
             Request {
                 id: unique_id(),
                 to,
@@ -60,8 +60,8 @@ use crate::version::v0_0_1;
         }
     }
 
-    impl<ID> Request<ReqEntity, ID> {
-        pub fn from(request: inlet::Request, from: ID, to: ID, exchange: Exchange) -> Self {
+    impl Request<ReqEntity> {
+        pub fn from(request: inlet::Request, from: Address, to: Address, exchange: Exchange) -> Self {
             Self {
                 id: request.id,
                 to,
@@ -88,16 +88,16 @@ use crate::version::v0_0_1;
      */
 
     #[derive(Clone, Serialize, Deserialize)]
-    pub struct Response<ID> {
+    pub struct Response {
         pub id: String,
-        pub to: ID,
-        pub from: ID,
+        pub to: Address,
+        pub from: Address,
         pub exchange: ExchangeId,
         pub entity: response::RespEntity,
     }
 
-    impl<ID> Response<ID> {
-        pub fn from(response: outlet::Response, from: ID, to: ID) -> Self {
+    impl Response {
+        pub fn from(response: outlet::Response, from: Address, to: Address ) -> Self {
             Self {
                 id: response.id,
                 to,
@@ -121,7 +121,7 @@ use crate::version::v0_0_1;
 
      */
 
-    impl Into<outlet::Response> for Response<Address> {
+    impl Into<outlet::Response> for Response {
         fn into(self) -> outlet::Response {
             outlet::Response {
                 id: self.id,

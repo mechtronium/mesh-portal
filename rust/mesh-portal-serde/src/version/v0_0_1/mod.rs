@@ -931,12 +931,12 @@ pub mod payload {
     pub type PayloadType = generic::payload::PayloadType;
     pub type PayloadRef = generic::payload::PayloadRef<PayloadClaim, PayloadPattern>;
     pub type PayloadDelivery = generic::payload::PayloadDelivery<Payload, PayloadRef>;
-    pub type Call = generic::payload::Call<ResourceType, Kind, TksPattern>;
-    pub type CallWithConfig = generic::payload::CallWithConfig<ResourceType, Kind, TksPattern>;
-    pub type MapPattern = generic::payload::MapPattern<ResourceType, Kind, TksPattern>;
+    pub type Call = generic::payload::Call;
+    pub type CallWithConfig = generic::payload::CallWithConfig;
+    pub type MapPattern = generic::payload::MapPattern;
     pub type PayloadTypePattern =
-        generic::payload::PayloadTypePattern<ResourceType, Kind, TksPattern>;
-    pub type PayloadPattern = generic::payload::PayloadPattern<ResourceType, Kind, TksPattern>;
+        generic::payload::PayloadTypePattern;
+    pub type PayloadPattern = generic::payload::PayloadPattern;
     pub type ListPattern = generic::payload::ListPattern;
     pub type PayloadMap = generic::payload::PayloadMap<Kind>;
     pub type RcCommand = generic::resource::command::RcCommand<ResourceType, Kind, TksPattern>;
@@ -1216,8 +1216,9 @@ pub mod portal {
         use crate::version::v0_0_1::generic;
         use crate::version::v0_0_1::id::{Address, Kind, ResourceType};
         use crate::version::v0_0_1::payload::Payload;
+        use crate::version::latest::entity::request::ReqEntity;
 
-        pub type Request = generic::portal::outlet::Request<Payload>;
+        pub type Request = generic::portal::outlet::Request<ReqEntity>;
         pub type Response = generic::portal::outlet::Response<Payload>;
         pub type Frame = generic::portal::outlet::Frame<Kind, Payload>;
 
@@ -1820,7 +1821,7 @@ pub mod generic {
             #[derive(Debug, Clone, strum_macros::Display, Serialize, Deserialize)]
             pub enum RcCommand<ResourceType, Kind, TksPattern> {
                 Create(Box<Create<Kind, TksPattern>>),
-                Select(Box<Select<ResourceType, Kind, TksPattern>>),
+                Select(Box<Select<ResourceType, Kind>>),
                 Update(Box<Update<Kind>>),
             }
 
@@ -1834,7 +1835,7 @@ pub mod generic {
                 }
             }
 
-            #[derive(Eq, PartialEq, strum_macros::Display, strum_macros::EnumString)]
+            #[derive(Debug,Clone,Eq, PartialEq, strum_macros::Display, strum_macros::EnumString,Serialize,Deserialize)]
             pub enum RcCommandType {
                 Create,
                 Select,
@@ -1954,32 +1955,30 @@ pub mod generic {
                 use crate::version::latest::generic::payload::Payload;
 
                 #[derive(Debug, Clone, Serialize, Deserialize)]
-                pub struct Select<ResourceType, Kind, TksPattern> {
+                pub struct Select<ResourceType, Kind> {
                     pub address_pattern: AddressKindPattern<ResourceType, Kind>,
-                    pub properties: PropertiesPattern<ResourceType, Kind, TksPattern>,
+                    pub properties: PropertiesPattern,
                 }
 
-                impl<FromResourceType, FromKind, FromTksPattern>
-                    Select<FromResourceType, FromKind, FromTksPattern>
+                impl<FromResourceType, FromKind >
+                    Select<FromResourceType, FromKind>
                 {
-                    pub fn convert<ToResourceType, ToKind, ToTksPattern>(
+                    pub fn convert<ToResourceType, ToKind>(
                         self,
-                    ) -> Result<Select<ToResourceType, ToKind, ToTksPattern>, Error>
+                    ) -> Result<Select<ToResourceType, ToKind>, Error>
                     where
                         FromResourceType: TryInto<ToResourceType, Error = Error>+Clone+Eq+PartialEq,
                         FromKind: TryInto<ToKind, Error = Error>+Clone+Eq+PartialEq,
-                        FromTksPattern: TryInto<ToTksPattern, Error = Error>+Clone,
                         Payload<FromKind>: TryInto<Payload<ToKind>,Error=Error>
                     {
                         Ok(Select {
                             address_pattern: self.address_pattern.convert()?,
-                            properties: ConvertFrom::convert_from(self.properties)?,
+                            properties: self.properties,
                         })
                     }
                 }
 
-                pub type PropertiesPattern<ResourceType, Kind, TksPattern> =
-                    MapPattern<ResourceType, Kind, TksPattern>;
+                pub type PropertiesPattern = MapPattern;
             }
 
             pub mod update {
@@ -2316,6 +2315,7 @@ pub mod generic {
         use crate::version::v0_0_1::resource::Status;
         use crate::version::v0_0_1::util::{Convert, ConvertFrom, ValueMatcher, ValuePattern};
         use crate::version::v0_0_1::{http, State};
+        use crate::version::v0_0_1::generic::resource::command::RcCommandType;
 
         #[derive(
             Debug,
@@ -2365,15 +2365,15 @@ pub mod generic {
         }
 
         #[derive(Debug, Clone, Serialize, Deserialize)]
-        pub enum PayloadTypePattern<ResourceType, Kind, TksPattern> {
+        pub enum PayloadTypePattern {
             Empty,
             Primitive(PrimitiveType),
             List(ListPattern),
-            Map(Box<MapPattern<ResourceType, Kind, TksPattern>>),
+            Map(Box<MapPattern>),
         }
 
-        impl<ResourceType, Kind, TksPattern> PayloadTypePattern<ResourceType, Kind, TksPattern> {
-            pub fn is_match(&self, payload: &Payload<Kind>) -> Result<(), Error> {
+        impl PayloadTypePattern {
+            pub fn is_match<Kind>(&self, payload: &Payload<Kind>) -> Result<(), Error> {
                 match self {
                     PayloadTypePattern::Empty => {
                         if payload.payload_type() == PayloadType::Empty {
@@ -2435,116 +2435,15 @@ pub mod generic {
         }
 
         #[derive(Debug, Clone, Serialize, Deserialize)]
-        pub struct PayloadPattern<ResourceType, Kind, TksPattern> {
-            pub structure: PayloadTypePattern<ResourceType, Kind, TksPattern>,
+        pub struct PayloadPattern {
+            pub structure: PayloadTypePattern,
             pub format: Option<PayloadFormat>,
-            pub validator: Option<CallWithConfig<ResourceType, Kind, TksPattern>>,
+            pub validator: Option<CallWithConfig>,
         }
 
-        impl<FromResourceType, FromKind, FromTksPattern, ToResourceType, ToKind, ToTksPattern>
-            ConvertFrom<Option<CallWithConfig<FromResourceType, FromKind, FromTksPattern>>>
-            for Option<CallWithConfig<ToResourceType, ToKind, ToTksPattern>>
-        where
-            FromKind: TryInto<ToKind, Error = Error>+Clone+Eq+PartialEq,
-            FromTksPattern: TryInto<ToTksPattern, Error = Error>+Clone,
-            FromResourceType: TryInto<ToResourceType, Error = Error>+Clone+Eq+PartialEq,
-            Payload<FromKind>: TryInto<Payload<ToKind>,Error=Error>
-        {
-            fn convert_from(
-                a: Option<CallWithConfig<FromResourceType, FromKind, FromTksPattern>>,
-            ) -> Result<Self, Error>
-            where
-                Self: Sized,
-            {
-                Ok(match a {
-                    None => Option::None,
-                    Some(call_with_config) => Option::Some(call_with_config.convert()?),
-                })
-            }
-        }
 
-        impl<FromResourceType, FromKind, FromTksPattern, ToResourceType, ToKind, ToTksPattern>
-            ConvertFrom<Option<PayloadPattern<FromResourceType, FromKind, FromTksPattern>>>
-            for Option<PayloadPattern<ToResourceType, ToKind, ToTksPattern>>
-        where
-            FromKind: TryInto<ToKind, Error = Error> + Clone,
-            FromTksPattern: TryInto<ToTksPattern, Error = Error> + Clone,
-            FromResourceType: TryInto<ToResourceType, Error = Error> + Clone,
-            ToKind: Clone,
-            PayloadTypePattern<ToResourceType, ToKind, ToTksPattern>:
-                ConvertFrom<PayloadTypePattern<FromResourceType, FromKind, FromTksPattern>>,
-            PayloadPattern<ToResourceType, ToKind, ToTksPattern>:
-                ConvertFrom<PayloadPattern<FromResourceType, FromKind, FromTksPattern>>,
-        {
-            fn convert_from(
-                a: Option<PayloadPattern<FromResourceType, FromKind, FromTksPattern>>,
-            ) -> Result<Self, Error>
-            where
-                Self: Sized,
-            {
-                let rtn = match a {
-                    None => None,
-                    Some(rtn) => Option::Some(ConvertFrom::convert_from(rtn)?),
-                };
-                Ok(rtn)
-            }
-        }
-
-        impl<FromResourceType, FromKind, FromTksPattern, ToResourceType, ToKind, ToTksPattern>
-            ConvertFrom<PayloadPattern<FromResourceType, FromKind, FromTksPattern>>
-            for PayloadPattern<ToResourceType, ToKind, ToTksPattern>
-        where
-            FromTksPattern: TryInto<ToTksPattern, Error = Error> + Clone,
-            FromResourceType: TryInto<ToResourceType, Error = Error> + Clone+Eq+PartialEq,
-            FromKind: TryInto<ToKind, Error = Error> + Clone+Eq+PartialEq,
-            Payload<FromKind>: TryInto<Payload<ToKind>,Error=Error>
-        {
-            fn convert_from(
-                a: PayloadPattern<FromResourceType, FromKind, FromTksPattern>,
-            ) -> Result<Self, Error>
-            where
-                Self: Sized,
-            {
-                Ok(Self {
-                    structure: ConvertFrom::convert_from(a.structure)?,
-                    format: a.format,
-                    validator: ConvertFrom::convert_from(a.validator)?,
-                })
-            }
-        }
-
-        impl<FromResourceType, FromKind, FromTksPattern, ToResourceType, ToKind, ToTksPattern>
-            ConvertFrom<PayloadTypePattern<FromResourceType, FromKind, FromTksPattern>>
-            for PayloadTypePattern<ToResourceType, ToKind, ToTksPattern>
-        where
-            FromTksPattern: TryInto<ToTksPattern, Error = Error> + Clone,
-            FromResourceType: TryInto<ToResourceType, Error = Error> + Clone+Eq+PartialEq,
-            FromKind: TryInto<ToKind, Error = Error> + Clone+Eq+PartialEq,
-            Payload<FromKind>: TryInto<Payload<ToKind>,Error=Error>
-        {
-            fn convert_from(
-                a: PayloadTypePattern<FromResourceType, FromKind, FromTksPattern>,
-            ) -> Result<Self, Error>
-            where
-                Self: Sized,
-            {
-                let rtn = match a {
-                    PayloadTypePattern::Empty => PayloadTypePattern::Empty,
-                    PayloadTypePattern::Primitive(primitive) => {
-                        PayloadTypePattern::Primitive(primitive)
-                    }
-                    PayloadTypePattern::List(list) => PayloadTypePattern::List(list),
-                    PayloadTypePattern::Map(map) => {
-                        PayloadTypePattern::Map(Box::new(ConvertFrom::convert_from(*map)?))
-                    }
-                };
-
-                Ok(rtn)
-            }
-        }
-
-        impl<ResourceType, Kind, TksPattern> ValueMatcher<Payload<Kind>>
-            for PayloadPattern<ResourceType, Kind, TksPattern>
+        impl<Kind> ValueMatcher<Payload<Kind>>
+            for PayloadPattern
         {
             fn is_match(&self, payload: &Payload<Kind>) -> Result<(), Error> {
                 self.structure.is_match(&payload)?;
@@ -2555,81 +2454,25 @@ pub mod generic {
         }
 
         #[derive(Debug, Clone, Serialize, Deserialize)]
-        pub struct CallWithConfig<ResourceType, Kind, TksPattern> {
-            pub call: Call<ResourceType, Kind, TksPattern>,
+        pub struct CallWithConfig {
+            pub call: Call,
             pub config: Option<Address>,
         }
 
-        impl<FromResourceType, FromKind, FromTksPattern>
-            CallWithConfig<FromResourceType, FromKind, FromTksPattern>
-        {
-            fn convert<ToResourceType, ToKind, ToTksPattern>(
-                self,
-            ) -> Result<CallWithConfig<ToResourceType, ToKind, ToTksPattern>, Error>
-            where
-                FromKind: TryInto<ToKind, Error = Error>+Clone+Eq+PartialEq,
-                FromTksPattern: TryInto<ToTksPattern, Error = Error>+Clone,
-                FromResourceType: TryInto<ToResourceType, Error = Error>+Clone+Eq+PartialEq,
-                Payload<FromKind>: TryInto<Payload<ToKind>,Error=Error>
-            {
-                Ok(CallWithConfig {
-                    call: self.call.convert()?,
-                    config: self.config,
-                })
-            }
-        }
-
         #[derive(Debug, Clone, Serialize, Deserialize)]
-        pub struct Call<ResourceType, Kind, TksPattern> {
+        pub struct Call {
             pub address: Address,
-            pub kind: CallKind<ResourceType, Kind, TksPattern>,
-        }
-
-        impl<FromResourceType, FromKind, FromTksPattern> Call<FromResourceType, FromKind, FromTksPattern> {
-            fn convert<ToResourceType, ToKind, ToTksPattern>(
-                self,
-            ) -> Result<Call<ToResourceType, ToKind, ToTksPattern>, Error>
-            where
-                FromKind: TryInto<ToKind, Error = Error>+Clone+Eq+PartialEq,
-                FromTksPattern: TryInto<ToTksPattern, Error = Error>+Clone,
-                FromResourceType: TryInto<ToResourceType, Error = Error>+Clone+Eq+PartialEq,
-                Payload<FromKind>: TryInto<Payload<ToKind>,Error=Error>
-            {
-                Ok(Call {
-                    address: self.address,
-                    kind: self.kind.convert()?,
-                })
-            }
+            pub kind: CallKind
         }
 
         #[derive(Debug, Clone, Serialize, Deserialize)]
-        pub enum CallKind<ResourceType, Kind, TksPattern> {
-            Rc(command::RcCommand<ResourceType, Kind, TksPattern>),
+        pub enum CallKind {
+            Rc(RcCommandType),
             Msg(MsgCall),
             Http(HttpCall),
         }
 
-        impl<FromResourceType, FromKind, FromTksPattern>
-            CallKind<FromResourceType, FromKind, FromTksPattern>
-        {
-            fn convert<ToResourceType, ToKind, ToTksPattern>(
-                self,
-            ) -> Result<CallKind<ToResourceType, ToKind, ToTksPattern>, Error>
-            where
-                FromKind: TryInto<ToKind, Error = Error>+Clone+Eq+PartialEq,
-                FromTksPattern: TryInto<ToTksPattern, Error = Error>+Clone,
-                FromResourceType: TryInto<ToResourceType, Error = Error>+Clone+Eq+PartialEq,
-                Payload<FromKind>: TryInto<Payload<ToKind>,Error=Error>
-            {
-                Ok(match self {
-                    CallKind::Rc(rc) => CallKind::Rc(rc.convert()?),
-                    CallKind::Msg(msg) => CallKind::Msg(msg),
-                    CallKind::Http(http) => CallKind::Http(http),
-                })
-            }
-        }
-
-        impl<ResourceType, Payload, TksPattern> ToString for Call<ResourceType, Payload, TksPattern> {
+        impl ToString for Call{
             fn to_string(&self) -> String {
                 format!("{}^{}", self.address.to_string(), self.kind.to_string())
             }
@@ -2708,7 +2551,7 @@ pub mod generic {
             }
         }
 
-        impl<ResourceType, Kind, TksPattern> ToString for CallKind<ResourceType, Kind, TksPattern> {
+        impl ToString for CallKind{
             fn to_string(&self) -> String {
                 match self {
                     CallKind::Rc(command) => {
@@ -2814,39 +2657,36 @@ pub mod generic {
         }
 
         #[derive(Debug, Clone, Serialize, Deserialize)]
-        pub struct MapPattern<ResourceType, Kind, TksPattern> {
-            kind_phantom: PhantomData<Kind>,
+        pub struct MapPattern {
             pub required:
-                HashMap<String, ValuePattern<PayloadPattern<ResourceType, Kind, TksPattern>>>,
-            pub allowed: ValuePattern<PayloadPattern<ResourceType, Kind, TksPattern>>,
+                HashMap<String, ValuePattern<PayloadPattern>>,
+            pub allowed: ValuePattern<PayloadPattern>,
         }
 
-        impl<ResourceType, Kind, TksPattern> Default for MapPattern<ResourceType, Kind, TksPattern> {
+        impl Default for MapPattern {
             fn default() -> Self {
                 MapPattern {
-                    kind_phantom: Default::default(),
                     required: Default::default(),
                     allowed: ValuePattern::Any,
                 }
             }
         }
 
-        impl<ResourceType, Kind, TksPattern> ToString for MapPattern<ResourceType, Kind, TksPattern> {
+        impl ToString for MapPattern {
             fn to_string(&self) -> String {
                 "Map?".to_string()
             }
         }
 
-        impl<ResourceType, Kind, TksPattern> MapPattern<ResourceType, Kind, TksPattern> {
+        impl MapPattern {
             pub fn new(
                 required: HashMap<
                     String,
-                    ValuePattern<PayloadPattern<ResourceType, Kind, TksPattern>>,
+                    ValuePattern<PayloadPattern>,
                 >,
-                allowed: ValuePattern<PayloadPattern<ResourceType, Kind, TksPattern>>,
+                allowed: ValuePattern<PayloadPattern>,
             ) -> Self {
                 MapPattern {
-                    kind_phantom: Default::default(),
                     required,
                     allowed,
                 }
@@ -2854,7 +2694,6 @@ pub mod generic {
 
             pub fn empty() -> Self {
                 Self {
-                    kind_phantom: Default::default(),
                     required: HashMap::new(),
                     allowed: ValuePattern::None,
                 }
@@ -2862,13 +2701,12 @@ pub mod generic {
 
             pub fn any() -> Self {
                 Self {
-                    kind_phantom: Default::default(),
                     required: HashMap::new(),
                     allowed: ValuePattern::Any,
                 }
             }
 
-            pub fn is_match(&self, map: &PayloadMap<Kind>) -> Result<(), Error> {
+            pub fn is_match<Kind>(&self, map: &PayloadMap<Kind>) -> Result<(), Error> {
                 // if Any keys are allowed then skip
                 for (key, payload) in &map.map {
                     if !self.required.contains_key(key) {
@@ -2907,58 +2745,7 @@ pub mod generic {
             }
         }
 
-        impl<FromResourceType, FromKind, FromTksPattern, ToResourceType, ToKind, ToTksPattern>
-            ConvertFrom<MapPattern<FromResourceType, FromKind, FromTksPattern>>
-            for MapPattern<ToResourceType, ToKind, ToTksPattern>
-        where
-            FromKind: TryInto<ToKind, Error = Error>+Clone+Eq+PartialEq,
-            FromTksPattern: TryInto<ToTksPattern, Error = Error>+Clone,
-            FromResourceType: TryInto<ToResourceType, Error = Error>+Clone+Eq+PartialEq,
-            Payload<FromKind>: TryInto<Payload<ToKind>,Error=Error>
-        {
-            fn convert_from(
-                a: MapPattern<FromResourceType, FromKind, FromTksPattern>,
-            ) -> Result<Self, Error>
-            where
-                Self: Sized,
-            {
-                let mut required = HashMap::new();
-                for (k, v) in a.required {
-                    required.insert(k, ConvertFrom::convert_from(v)?);
-                }
 
-                Ok(MapPattern::new(
-                    required,
-                    ConvertFrom::convert_from(a.allowed)?,
-                ))
-            }
-        }
-
-        impl<FromResourceType, FromKind, FromTksPattern, ToResourceType, ToKind, ToTksPattern>
-            ConvertFrom<ValuePattern<PayloadPattern<FromResourceType, FromKind, FromTksPattern>>>
-            for ValuePattern<PayloadPattern<ToResourceType, ToKind, ToTksPattern>>
-            where
-                FromTksPattern: TryInto<ToTksPattern, Error = Error> + Clone,
-                FromResourceType: TryInto<ToResourceType, Error = Error> + Clone+Eq+PartialEq,
-                FromKind: TryInto<ToKind, Error = Error> + Clone+Eq+PartialEq,
-                Payload<FromKind>: TryInto<Payload<ToKind>,Error=Error>
-
-        {
-            fn convert_from(
-                a: ValuePattern<PayloadPattern<FromResourceType, FromKind, FromTksPattern>>,
-            ) -> Result<Self, Error>
-
-                where Self: Sized,
-            {
-                Ok(match a {
-                    ValuePattern::Any => ValuePattern::Any,
-                    ValuePattern::None => ValuePattern::None,
-                    ValuePattern::Pattern(pattern) => {
-                        ValuePattern::Pattern(ConvertFrom::convert_from(pattern)?)
-                    }
-                })
-            }
-        }
 
         /*
         impl<FromResourceType,FromKind,FromPayload,FromTksPattern, ToResourceType,ToKind,ToPayload,ToTksPattern> ConvertFrom<Valuepattern<PayloadPattern<FromResourceType,FromKind,FromPayload,FromTksPattern>>>
@@ -4077,7 +3864,7 @@ pub mod parse {
 
     */
 
-    fn in_double_quotes<T>(i: T) -> Res<T, T>
+    pub fn in_double_quotes<T>(i: T) -> Res<T, T>
     where
         T: InputTakeAtPosition,
         <T as InputTakeAtPosition>::Item: AsChar,
@@ -4091,7 +3878,7 @@ pub mod parse {
         )
     }
 
-    fn domain<T>(i: T) -> Res<T, T>
+    pub fn domain<T>(i: T) -> Res<T, T>
     where
         T: InputTakeAtPosition,
         <T as InputTakeAtPosition>::Item: AsChar,
