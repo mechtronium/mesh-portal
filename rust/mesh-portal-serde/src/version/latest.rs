@@ -156,7 +156,7 @@ pub mod resource {
 
     pub type Status = resource::Status;
 
-    pub type Archetype= generic::resource::Archetype<Address>;
+    pub type Archetype= generic::resource::Archetype<Kind>;
     pub type ResourceStub = generic::resource::ResourceStub<Kind>;
 }
 
@@ -309,7 +309,7 @@ pub mod generic {
 
             pub type Request<ENTITY> =  outlet::Request<ENTITY>;
             pub type Response<PAYLOAD> =  outlet::Response<PAYLOAD>;
-            pub type Frame<KIND,PAYLOAD> =  outlet::Frame<KIND,PAYLOAD>;
+            pub type Frame<KIND,PAYLOAD,ReqEntity> =  outlet::Frame<KIND,PAYLOAD,ReqEntity>;
         }
     }
 

@@ -1194,7 +1194,7 @@ pub mod portal {
         use crate::version::v0_0_1::pattern::TksPattern;
         use crate::version::v0_0_1::payload::Payload;
 
-        pub type ReqEntity = generic::entity::request::ReqEntity<ResourceType, Payload, TksPattern>;
+        pub type ReqEntity = generic::entity::request::ReqEntity<ResourceType, Kind, TksPattern>;
         pub type Request = generic::portal::inlet::Request<ReqEntity>;
         pub type Response = generic::portal::inlet::Response<Payload>;
         pub type Frame = generic::portal::inlet::Frame<ReqEntity, Payload>;
@@ -1206,6 +1206,7 @@ pub mod portal {
                 Ok(bincode::deserialize(value.data.as_slice())?)
             }
         }
+
     }
 
     pub mod outlet {
@@ -1220,9 +1221,9 @@ pub mod portal {
 
         pub type Request = generic::portal::outlet::Request<ReqEntity>;
         pub type Response = generic::portal::outlet::Response<Payload>;
-        pub type Frame = generic::portal::outlet::Frame<Kind, Payload>;
+        pub type Frame = generic::portal::outlet::Frame<Kind, Payload,ReqEntity>;
 
-        impl TryFrom<PrimitiveFrame> for generic::portal::outlet::Frame<Kind, Payload> {
+        impl TryFrom<PrimitiveFrame> for generic::portal::outlet::Frame<Kind, Payload,ReqEntity> {
             type Error = Error;
 
             fn try_from(value: PrimitiveFrame) -> Result<Self, Self::Error> {
@@ -1261,6 +1262,16 @@ pub mod generic {
             pub resource_type: ResourceType,
             pub kind: Option<String>,
             pub specific: Option<Specific>,
+        }
+
+        impl <ResourceType> GenericKind<ResourceType> {
+            pub fn new( resource_type: ResourceType, kind: Option<String>, specific: Option<Specific>) -> Self {
+                Self {
+                    resource_type,
+                    kind,
+                    specific
+                }
+            }
         }
 
         impl<ResourceType> Tks<ResourceType> for GenericKind<ResourceType>
@@ -2065,11 +2076,11 @@ pub mod generic {
             }
 
             #[derive(Debug, Clone, Serialize, Deserialize)]
-            pub struct Response<PAYLOAD> {
+            pub struct Response<Payload> {
                 pub id: String,
                 pub to: Address,
                 pub exchange: ExchangeId,
-                pub entity: response::RespEntity<PAYLOAD, fail::portal::Fail>,
+                pub entity: response::RespEntity<Payload, fail::portal::Fail>,
             }
 
             impl<FromPayload, ToPayload> ConvertFrom<Response<FromPayload>> for Response<ToPayload>
@@ -2090,17 +2101,32 @@ pub mod generic {
             }
 
             #[derive(Debug, Clone, Serialize, Deserialize, strum_macros::Display)]
-            pub enum Frame<ReqEntity, PAYLOAD> {
+            pub enum Frame<ReqEntity, Payload> {
                 Log(Log),
                 Command(Command),
                 Request(Request<ReqEntity>),
-                Response(Response<PAYLOAD>),
+                Response(Response<Payload>),
                 Status(Status),
                 Close(CloseReason),
             }
 
-            impl<ReqEntity: Serialize, PAYLOAD: Serialize> TryInto<PrimitiveFrame>
-                for Frame<ReqEntity, PAYLOAD>
+            /*
+            impl<'de,ReqEntity: Deserialize<'de>, Payload: Deserialize<'de>> TryFrom<PrimitiveFrame>
+            for Frame<ReqEntity, Payload>
+            {
+                type Error = Error;
+
+                fn try_from(value: PrimitiveFrame) -> Result<Self, Self::Error> {
+                    let data:&'de[u8] = value.data.as_slice();
+                    let frame = bincode::deserialize(data )?;
+                    Ok(frame)
+                }
+            }
+
+             */
+
+            impl<ReqEntity: Serialize, Payload: Serialize> TryInto<PrimitiveFrame>
+                for Frame<ReqEntity, Payload>
             {
                 type Error = Error;
 
@@ -2229,10 +2255,10 @@ pub mod generic {
             }
 
             #[derive(Debug, Clone, Serialize, Deserialize, strum_macros::Display)]
-            pub enum Frame<KIND, PAYLOAD> {
+            pub enum Frame<KIND, PAYLOAD,ReqEntity> {
                 Create(Info<KIND>),
                 CommandEvent(CommandEvent),
-                Request(Request<PAYLOAD>),
+                Request(Request<ReqEntity>),
                 Response(Response<PAYLOAD>),
                 Close(CloseReason),
             }
@@ -2262,7 +2288,7 @@ pub mod generic {
             }
              */
 
-            impl<KIND: Serialize, PAYLOAD: Serialize> TryInto<PrimitiveFrame> for Frame<KIND, PAYLOAD> {
+            impl<KIND: Serialize, PAYLOAD: Serialize, ReqEntity:Serialize> TryInto<PrimitiveFrame> for Frame<KIND, PAYLOAD, ReqEntity> {
                 type Error = Error;
 
                 fn try_into(self) -> Result<PrimitiveFrame, Self::Error> {

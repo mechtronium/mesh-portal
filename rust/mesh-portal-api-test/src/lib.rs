@@ -35,7 +35,7 @@ mod tests {
     use mesh_portal_serde::version::latest::config::{Info, PortalKind};
     use mesh_portal_serde::version::latest::entity::request::{Msg, Rc, ReqEntity};
     use mesh_portal_serde::version::latest::entity::response;
-    use mesh_portal_serde::version::latest::id::{Address};
+    use mesh_portal_serde::version::latest::id::{Address, Kind};
     use mesh_portal_serde::version::latest::messaging::Exchange;
     use mesh_portal_serde::version::latest::payload::{Payload, Primitive};
     use mesh_portal_serde::version::latest::portal::{inlet, outlet};
@@ -192,7 +192,7 @@ mod tests {
                 owner: user,
                 parent: Address::from_str("parent")?,
                 archetype: Archetype {
-                    kind: "Portal".to_string(),
+                    kind: Kind::new( "Portal".to_string(), Option::None, Option::None ),
                     config_src: None,
                 },
                 config: Default::default(),
