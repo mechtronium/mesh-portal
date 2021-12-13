@@ -301,6 +301,8 @@ pub mod generic {
                 use crate::version::v0_0_1::generic;
                 pub type StateSrc<Kind> = generic::resource::command::common::StateSrc<Kind>;
                 pub type SetProperties<Kind> = generic::resource::command::common::SetProperties<Kind>;
+                pub type SetLabel = generic::resource::command::common::SetLabel;
+                pub type SetRegistry = generic::resource::command::common::SetRegistry;
             }
 
             pub mod create {
@@ -309,6 +311,7 @@ pub mod generic {
                 pub type AddressTemplate  = generic::resource::command::create::AddressTemplate;
                 pub type AddressSegmentTemplate = generic::resource::command::create::AddressSegmentTemplate;
                 pub type Strategy = generic::resource::command::create::Strategy;
+                pub type Template = generic::resource::command::create::Template;
             }
 
             pub mod select {

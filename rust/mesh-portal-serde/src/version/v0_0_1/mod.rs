@@ -154,19 +154,23 @@ pub mod id {
     }
 
     #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
-    pub enum HubSegment {
-        Local,
+    pub enum RouteSegment {
+        Resource,
         Domain(String),
         Tag(String),
+        Mesh(String)
     }
 
-    impl ToString for HubSegment {
+    impl ToString for RouteSegment {
         fn to_string(&self) -> String {
             match self {
-                HubSegment::Local => "".to_string(),
-                HubSegment::Domain(domain) => domain.clone(),
-                HubSegment::Tag(tag) => {
+                RouteSegment::Resource => "".to_string(),
+                RouteSegment::Domain(domain) => domain.clone(),
+                RouteSegment::Tag(tag) => {
                     format!("[{}]", tag)
+                }
+                RouteSegment::Mesh(mesh) => {
+                    format!("<<{}>>", mesh)
                 }
             }
         }
@@ -218,7 +222,7 @@ pub mod id {
 
     #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
     pub struct Address {
-        pub hub: HubSegment,
+        pub route: RouteSegment,
         pub segments: Vec<AddressSegment>,
     }
 
@@ -251,13 +255,16 @@ pub mod id {
         fn to_string(&self) -> String {
             let mut rtn = String::new();
 
-            match &self.hub {
-                HubSegment::Local => {}
-                HubSegment::Domain(domain) => {
+            match &self.route {
+                RouteSegment::Resource => {}
+                RouteSegment::Domain(domain) => {
                     rtn.push_str(format!("{}::", domain).as_str());
                 }
-                HubSegment::Tag(tag) => {
+                RouteSegment::Tag(tag) => {
                     rtn.push_str(format!("[{}]::", tag).as_str());
+                }
+                RouteSegment::Mesh(mesh) => {
+                    rtn.push_str(format!("<<{}>>::", mesh).as_str());
                 }
             }
 
@@ -279,7 +286,7 @@ pub mod id {
             let mut segments = self.segments.clone();
             segments.remove(segments.len());
             Option::Some(Self {
-                hub: self.hub.clone(),
+                route: self.route.clone(),
                 segments,
             })
         }
@@ -290,7 +297,7 @@ pub mod id {
 
         pub fn root() -> Self {
             Self {
-                hub: HubSegment::Local,
+                route: RouteSegment::Resource,
                 segments: vec![],
             }
         }
@@ -1889,6 +1896,7 @@ pub mod generic {
                 use crate::version::v0_0_1::generic::payload::PayloadMap;
                 use serde::{Deserialize, Serialize};
                 use std::convert::{TryFrom, TryInto};
+                use std::ops::{Deref, DerefMut};
 
                 #[derive(Debug, Clone, Serialize, Deserialize, strum_macros::Display)]
                 pub enum StateSrc<Kind> {
@@ -1911,15 +1919,47 @@ pub mod generic {
                 }
 
                 pub type SetProperties<KIND> = PayloadMap<KIND>;
+
+                #[derive(Debug, Clone, Serialize, Deserialize, strum_macros::Display)]
+                pub enum SetLabel{
+                    Set(String),
+                    SetValue{ key: String, value: String },
+                    Unset(String)
+                }
+
+                #[derive(Debug, Clone, Serialize, Deserialize)]
+                pub struct SetRegistry {
+                    pub labels: Vec<SetLabel>
+                }
+
+                impl Deref for SetRegistry {
+                    type Target = Vec<SetLabel>;
+
+                    fn deref(&self) -> &Self::Target {
+                        &self.labels
+                    }
+                }
+
+                impl DerefMut for SetRegistry {
+                    fn deref_mut(&mut self) -> &mut Self::Target {
+                        & mut self.labels
+                    }
+                }
+
+                impl Default for SetRegistry {
+                    fn default() -> Self {
+                        Self{
+                            labels:Default::default()
+                        }
+                    }
+                }
             }
 
             pub mod create {
                 use crate::error::Error;
                 use crate::version::latest::generic::payload::Payload;
                 use crate::version::v0_0_1::generic::payload::PayloadMap;
-                use crate::version::v0_0_1::generic::resource::command::common::{
-                    SetProperties, StateSrc,
-                };
+                use crate::version::v0_0_1::generic::resource::command::common::{SetProperties, StateSrc, SetRegistry};
                 use crate::version::v0_0_1::id::Address;
                 use crate::version::v0_0_1::util::ConvertFrom;
                 use serde::{Deserialize, Serialize};
@@ -1927,33 +1967,47 @@ pub mod generic {
                 use crate::version::v0_0_1::pattern::SpecificPattern;
 
                 #[derive(Debug, Clone, Serialize, Deserialize)]
-                pub struct KindTemplate<Kind> {
-                    pub kind: Kind,
-                    pub specific: Option<SpecificPattern>,
+                pub struct Template {
+                   pub address: AddressTemplate,
+                   pub kind: KindTemplate
                 }
 
-                impl<FromKind> KindTemplate<FromKind> {
-                    pub fn convert<ToKind>(self) -> Result<KindTemplate<ToKind>, Error>
-                        where
-                            FromKind: TryInto<ToKind, Error = Error>,
-                    {
-                        Ok(KindTemplate {
-                            kind: self.kind.try_into()?,
-                            specific: self.specific
-                        })
+                impl Template {
+                    pub fn new( address: AddressTemplate, kind: KindTemplate ) -> Self {
+                        Self {
+                            address,
+                            kind
+                        }
                     }
                 }
 
-
                 #[derive(Debug, Clone, Serialize, Deserialize)]
-                pub struct Create<KIND> {
-                    pub address_template: AddressTemplate,
-                    pub kind_template: KindTemplate<KIND>,
-                    pub state: StateSrc<Payload<KIND>>,
-                    pub properties: SetProperties<KIND>,
-                    pub strategy: Strategy
+                pub struct KindTemplate {
+                    pub resource_type: String,
+                    pub kind: Option<String>,
+                    pub specific: Option<SpecificPattern>,
                 }
 
+                #[derive(Debug, Clone, Serialize, Deserialize)]
+                pub struct Create<Kind> {
+                    pub template: Template,
+                    pub state: StateSrc<Kind>,
+                    pub properties: SetProperties<Kind>,
+                    pub strategy: Strategy,
+                    pub registry: SetRegistry
+                }
+
+                impl<Kind> Create<Kind> {
+                    pub fn new( template: Template ) -> Self {
+                        Self {
+                            template,
+                            state: StateSrc::Stateless,
+                            properties: Default::default(),
+                            strategy: Strategy::Create,
+                            registry: Default::default()
+                        }
+                    }
+                }
 
                 impl<FromKind> Create<FromKind> {
                     pub fn convert<ToKind>(
@@ -1964,11 +2018,11 @@ pub mod generic {
                         Payload<FromKind>: TryInto<Payload<ToKind>,Error=Error>
                     {
                         Ok(Create {
-                            address_template: self.address_template,
-                            kind_template: self.kind_template.convert()?,
+                            template: self.template,
                             state: self.state.convert()?,
                             properties: self.properties.convert()?,
-                            strategy: self.strategy
+                            strategy: self.strategy,
+                            registry: self.registry
                         })
                     }
                 }
@@ -3804,11 +3858,11 @@ pub mod parse {
     use nom::{AsChar, IResult, InputTakeAtPosition};
 
     use crate::version::latest::util::StringMatcher;
-    use crate::version::v0_0_1::id::{Address, AddressSegment, HubSegment, Version};
+    use crate::version::v0_0_1::id::{Address, AddressSegment, RouteSegment, Version};
     use nom::branch::alt;
     use nom::bytes::complete::tag;
     use nom::bytes::complete::{is_a, is_not};
-    use nom::character::complete::{alpha0, digit1};
+    use nom::character::complete::{alpha0, digit1, alphanumeric1};
     use nom::sequence::{delimited, preceded, terminated, tuple};
     use nom_supreme::parse_from_str;
     use crate::version::v0_0_1::generic::id::parse::version;
@@ -3845,23 +3899,51 @@ pub mod parse {
         )
     }
 
-    pub fn local_hub_segment(input: &str) -> Res<&str, HubSegment> {
-        not(alt((domain_hub_segment, tag_hub_segment)))(input)
-            .map(|(next, _)| (next, HubSegment::Local))
+    fn mesh_route_chars<T>(i: T) -> Res<T, T>
+        where
+            T: InputTakeAtPosition,
+            <T as InputTakeAtPosition>::Item: AsChar,
+    {
+        i.split_at_position1_complete(
+            |item| {
+                let char_item = item.as_char();
+                !(char_item == '-')
+                    && !(char_item == '.')
+                    && !(char_item == '/')
+                    && !(char_item == '_')
+                    && !(char_item == ':')
+                    && !(char_item == '(')
+                    && !(char_item == ')')
+                    && !(char_item.is_alpha() || char_item.is_dec_digit())
+            },
+            ErrorKind::AlphaNumeric,
+        )
     }
 
-    pub fn domain_hub_segment(input: &str) -> Res<&str, HubSegment> {
+
+    pub fn resource_route_segment(input: &str) -> Res<&str, RouteSegment> {
+        not(alt((domain_route_segment, tag_route_segment)))(input)
+            .map(|(next, _)| (next, RouteSegment::Resource))
+    }
+
+    pub fn domain_route_segment(input: &str) -> Res<&str, RouteSegment> {
         terminated(domain_chars, tag("::"))(input)
-            .map(|(next, domain)| (next, HubSegment::Domain(domain.to_string())))
+            .map(|(next, domain)| (next, RouteSegment::Domain(domain.to_string())))
     }
 
-    pub fn tag_hub_segment(input: &str) -> Res<&str, HubSegment> {
+    pub fn tag_route_segment(input: &str) -> Res<&str, RouteSegment> {
         terminated(delimited(tag("["), skewer_chars, tag("]")), tag("::"))(input)
-            .map(|(next, tag)| (next, HubSegment::Tag(tag.to_string())))
+            .map(|(next, tag)| (next, RouteSegment::Tag(tag.to_string())))
     }
 
-    pub fn hub_segment(input: &str) -> Res<&str, HubSegment> {
-        alt((tag_hub_segment, domain_hub_segment, local_hub_segment))(input)
+    pub fn mesh_route_segment(input: &str) -> Res<&str, RouteSegment> {
+        terminated(delimited(tag("<<"), mesh_route_chars, tag(">>")), tag("::"))(input)
+            .map(|(next, tag)| (next, RouteSegment::Tag(tag.to_string())))
+    }
+
+
+    pub fn hub_segment(input: &str) -> Res<&str, RouteSegment> {
+        alt((tag_route_segment, domain_route_segment, mesh_route_segment,resource_route_segment))(input)
     }
 
     pub fn space_address_segment(input: &str) -> Res<&str, AddressSegment> {
@@ -3906,7 +3988,7 @@ pub mod parse {
             }
             segments.append(&mut files);
 
-            let address = Address { hub, segments };
+            let address = Address { route: hub, segments };
 
             (next, address)
         })
