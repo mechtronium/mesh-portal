@@ -304,6 +304,7 @@ pub mod pattern {
 
     pub type TksPattern = generic::pattern::TksPattern<ResourceType, Kind>;
     pub type KindPattern = generic::pattern::KindPattern<Kind>;
+    pub type AddressKindPattern = generic::pattern::AddressKindPattern<ResourceType,Kind>;
 
     #[derive(Debug, Clone)]
     pub struct VersionReq {

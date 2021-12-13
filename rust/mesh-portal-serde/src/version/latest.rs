@@ -29,9 +29,13 @@ pub mod id {
 }
 
 pub mod pattern {
+    use crate::version::latest::id;
+    pub type Kind= id::Kind;
+    pub type ResourceType = id::ResourceType;
     use crate::version::v0_0_1::pattern;
     pub type TksPattern=pattern::TksPattern;
     pub type KindPattern = pattern::KindPattern;
+    pub type AddressKindPattern = pattern::AddressKindPattern;
 }
 
 pub mod messaging {
@@ -211,6 +215,13 @@ pub mod generic {
         pub type AddressAndType<RESOURCE_TYPE> = generic::id::AddressAndType<RESOURCE_TYPE>;
     }
 
+    pub mod pattern {
+        use crate::version::v0_0_1::generic;
+        pub type TksPattern<ResourceType, Kind> = generic::pattern::TksPattern<ResourceType, Kind>;
+        pub type AddressKindPattern<ResourceType, Kind> = generic::pattern::AddressKindPattern<ResourceType, Kind>;
+        pub type KindPattern<Kind> = generic::pattern::KindPattern<Kind>;
+    }
+
     pub mod config {
         use std::fmt::Debug;
         use std::hash::Hash;
@@ -328,7 +339,9 @@ pub mod generic {
         pub type PayloadMap<KIND> = payload::PayloadMap<KIND>;
         pub type Primitive<KIND> = payload::Primitive<KIND>;
         pub type PayloadDelivery<PAYLOAD,PAYLOAD_REF> = payload::PayloadDelivery<PAYLOAD,PAYLOAD_REF>;
+        pub type Call = payload::Call;
         pub type CallKind = payload::CallKind;
+        pub type CallWithConfig = payload::CallWithConfig;
         pub type MapPattern= payload::MapPattern;
         pub type ListPattern = payload::ListPattern;
         pub type PayloadTypePattern= payload::PayloadTypePattern;
