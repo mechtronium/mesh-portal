@@ -311,7 +311,7 @@ pub mod id {
 pub mod pattern {
     use crate::error::Error;
     use crate::version::v0_0_1::generic;
-    use crate::version::v0_0_1::id::{Kind, ResourceType, Specific};
+    use crate::version::v0_0_1::id::{Kind, ResourceType, Specific, AddressSegment};
     use crate::version::v0_0_1::pattern::specific::{
         ProductPattern, VariantPattern, VendorPattern,
     };
@@ -414,7 +414,18 @@ pub mod pattern {
     }
 
     impl SegmentPattern {
-        pub fn matches(&self, segment: &String) -> bool {
+        pub fn is_exact(&self) -> bool {
+            match self {
+                SegmentPattern::Exact(_) => {
+                    true
+                }
+                _ => {
+                    false
+                }
+            }
+        }
+
+        pub fn matches(&self, segment: &AddressSegment ) -> bool {
             match self {
                 SegmentPattern::Any => true,
                 SegmentPattern::Recursive => true,
@@ -434,7 +445,6 @@ pub mod pattern {
     }
 
     pub type KeySegment = String;
-    pub type AddressSegment = String;
 
     #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
     pub enum ExactSegment {
@@ -518,9 +528,7 @@ pub mod pattern {
 
     pub mod parse {
 
-        use crate::version::v0_0_1::generic::pattern::{
-            Hop, KindPattern, Pattern, ResourceTypePattern, TksPattern,
-        };
+        use crate::version::v0_0_1::generic::pattern::{Hop, KindPattern, Pattern, ResourceTypePattern, TksPattern, EmptyPattern};
         use crate::version::v0_0_1::parse::{
             address_segment_chars, camel_case, domain_chars, skewer_chars, version_req_chars, Res,
         };
@@ -542,6 +550,7 @@ pub mod pattern {
         use nom::{Err, IResult};
         use nom_supreme::{parse_from_str, ParserExt};
         use std::str::FromStr;
+        use crate::version::v0_0_1::id::AddressSegment;
 
         fn any_segment(input: &str) -> Res<&str, SegmentPattern> {
             tag("*")(input).map(|(next, _)| (next, SegmentPattern::Any))
@@ -551,18 +560,49 @@ pub mod pattern {
             tag("**")(input).map(|(next, _)| (next, SegmentPattern::Recursive))
         }
 
-        fn exact_segment(input: &str) -> Res<&str, SegmentPattern> {
+        fn exact_space_segment(input: &str) -> Res<&str, SegmentPattern> {
             address_segment_chars(input).map(|(next, segment)| {
                 (
                     next,
-                    SegmentPattern::Exact(ExactSegment::Address(segment.to_string())),
+                    SegmentPattern::Exact(ExactSegment::Address(AddressSegment::Space(segment.to_string()))),
                 )
             })
         }
 
-        fn segment(input: &str) -> Res<&str, SegmentPattern> {
-            alt((recursive_segment, any_segment, exact_segment))(input)
+
+        fn exact_base_segment(input: &str) -> Res<&str, SegmentPattern> {
+            address_segment_chars(input).map(|(next, segment)| {
+                (
+                    next,
+                    SegmentPattern::Exact(ExactSegment::Address(AddressSegment::Base(segment.to_string()))),
+                )
+            })
         }
+
+        fn exact_file_segment(input: &str) -> Res<&str, SegmentPattern> {
+            address_segment_chars(input).map(|(next, segment)| {
+                (
+                    next,
+                    SegmentPattern::Exact(ExactSegment::Address(AddressSegment::File(segment.to_string()))),
+                )
+            })
+        }
+
+
+        fn space_segment(input: &str) -> Res<&str, SegmentPattern> {
+            alt((recursive_segment, any_segment, exact_space_segment))(input)
+        }
+
+        fn base_segment(input: &str) -> Res<&str, SegmentPattern> {
+            alt((recursive_segment, any_segment, exact_base_segment))(input)
+        }
+
+        fn file_segment(input: &str) -> Res<&str, SegmentPattern> {
+            alt((recursive_segment, any_segment, exact_file_segment))(input)
+        }
+
+
+
 
         pub fn pattern<'r, O, E: ParseError<&'r str>, V>(
             mut value: V,
@@ -701,10 +741,10 @@ pub mod pattern {
             })
         }
 
-        fn hop<ResourceType: FromStr, Kind: FromStr>(
+        fn space_hop<ResourceType: FromStr, Kind: FromStr>(
             input: &str,
         ) -> Res<&str, Hop<ResourceType, Kind>> {
-            tuple((segment, opt(tks)))(input).map(|(next, (segment, tks))| {
+            tuple((space_segment, opt(tks)))(input).map(|(next, (segment, tks))| {
                 let tks = match tks {
                     None => TksPattern::any(),
                     Some(tks) => tks,
@@ -713,17 +753,44 @@ pub mod pattern {
             })
         }
 
+        fn base_hop<ResourceType: FromStr, Kind: FromStr>(
+            input: &str,
+        ) -> Res<&str, Hop<ResourceType, Kind>> {
+            tuple((base_segment, opt(tks)))(input).map(|(next, (segment, tks))| {
+                let tks = match tks {
+                    None => TksPattern::any(),
+                    Some(tks) => tks,
+                };
+                (next, Hop { segment, tks })
+            })
+        }
+
+        fn file_hop<ResourceType: FromStr, Kind: FromStr>(
+            input: &str,
+        ) -> Res<&str, Hop<ResourceType, Kind>> {
+            tuple((file_segment, opt(tks)))(input).map(|(next, (segment, tks))| {
+                let tks = match tks {
+                    None => TksPattern::any(),
+                    Some(tks) => tks,
+                };
+                (next, Hop { segment, tks })
+            })
+        }
+
+
+
         #[cfg(test)]
         pub mod test {
 
             use crate::error::Error;
             use crate::version::v0_0_1::generic::pattern::{Pattern, TksPattern};
-            use crate::version::v0_0_1::pattern::parse::{hop, segment, specific, tks};
+            use crate::version::v0_0_1::pattern::parse::{hop, segment, specific, tks, space_hop};
             use crate::version::v0_0_1::pattern::{
-                ExactSegment, Pattern, SegmentPattern, SpecificPattern, TksPattern, VersionReq,
+                ExactSegment, Pattern, SegmentPattern, SpecificPattern, VersionReq,
             };
             use nom::combinator::all_consuming;
             use std::str::FromStr;
+            use crate::version::v0_0_1::id::AddressSegment;
 
             #[test]
             pub fn test_segs() -> Result<(), Error> {
@@ -733,7 +800,7 @@ pub mod pattern {
                     segment("hello")?
                         == (
                             "",
-                            SegmentPattern::Exact(ExactSegment::Address("hello".to_string()))
+                            SegmentPattern::Exact(ExactSegment::Address(AddressSegment::Base("hello".to_string())))
                         )
                 );
                 Ok(())
@@ -790,16 +857,16 @@ pub mod pattern {
 
             #[test]
             pub fn test_hop() -> Result<(), Error> {
-                hop("*<Database<Relational<mysql.org:mysql:innodb:(^7.0.1)>>>")?;
-                hop("**<Database<Relational<mysql.org:mysql:innodb:(^7.0.1)>>>")?;
-                hop("space.org:<Database<Relational<mysql.org:mysql:innodb:(^7.0.1)>>>")?;
-                hop("space.org:something<Database<Relational<mysql.org:mysql:innodb:(^7.0.1)>>>")?;
-                hop("space.org:no-type")?;
-                hop("space.org:no-type:**")?;
-                hop("space.org:app:users:*:tenant:**")?;
-                hop("space.org:app:users:*:tenant:**<Mechtron>")?;
-                hop("space.org:something:**<*<*<mysql.org:mysql:innodb:(^7.0.1)>>>")?;
-                hop("space.org:something<*>")?;
+                space_hop("*<Database<Relational<mysql.org:mysql:innodb:(^7.0.1)>>>")?;
+                space_hop("**<Database<Relational<mysql.org:mysql:innodb:(^7.0.1)>>>")?;
+                space_hop("space.org:<Database<Relational<mysql.org:mysql:innodb:(^7.0.1)>>>")?;
+                space_hop("space.org:something<Database<Relational<mysql.org:mysql:innodb:(^7.0.1)>>>")?;
+                space_hop("space.org:no-type")?;
+                space_hop("space.org:no-type:**")?;
+                space_hop("space.org:app:users:*:tenant:**")?;
+                space_hop("space.org:app:users:*:tenant:**<Mechtron>")?;
+                space_hop("space.org:something:**<*<*<mysql.org:mysql:innodb:(^7.0.1)>>>")?;
+                space_hop("space.org:something<*>")?;
 
                 Ok(())
             }
@@ -1180,7 +1247,7 @@ pub mod entity {
         use crate::version::v0_0_1::payload::Payload;
         use crate::version::v0_0_1::{fail, generic};
 
-        pub type RespEntity = generic::entity::response::RespEntity<Payload, fail::Fail>;
+        pub type RespEntity = generic::entity::response::RespEntity<Payload>;
     }
 }
 
@@ -1437,6 +1504,7 @@ pub mod generic {
             use crate::version::v0_0_1::id::Meta;
             use crate::version::v0_0_1::util::{Convert, ConvertFrom};
             use crate::version::v0_0_1::{http, State};
+            use crate::version::latest::fail::Fail;
 
             #[derive(Debug, Clone, Serialize, Deserialize)]
             pub enum ReqEntity<ResourceType, Kind> {
@@ -1446,11 +1514,11 @@ pub mod generic {
             }
 
             impl<ResourceType, Payload> ReqEntity<ResourceType, Payload> {
-                pub fn ok<FAIL>(&self, payload: Payload) -> RespEntity<Payload, FAIL> {
+                pub fn ok(&self, payload: Payload) -> RespEntity<Payload> {
                     RespEntity::Ok(payload)
                 }
 
-                pub fn fail<FAIL>(&self, fail: FAIL) -> RespEntity<Payload, FAIL> {
+                pub fn fail(&self, fail: Fail) -> RespEntity<Payload> {
                     RespEntity::Fail(fail)
                 }
             }
@@ -1672,20 +1740,21 @@ pub mod generic {
             use crate::version::v0_0_1::generic::payload::Payload;
             use crate::version::v0_0_1::generic::payload::Primitive;
             use crate::version::v0_0_1::util::ConvertFrom;
+            use crate::version::v0_0_1::fail;
 
             #[derive(Debug, Clone, Serialize, Deserialize)]
-            pub enum RespEntity<PAYLOAD, FAIL> {
+            pub enum RespEntity<PAYLOAD> {
                 Ok(PAYLOAD),
-                Fail(FAIL),
+                Fail(fail::Fail),
             }
 
-            impl<FromPayload, ToPayload, FAIL> ConvertFrom<RespEntity<FromPayload, FAIL>>
-                for RespEntity<ToPayload, FAIL>
+            impl<FromPayload, ToPayload> ConvertFrom<RespEntity<FromPayload>>
+                for RespEntity<ToPayload>
             where
                 FromPayload: TryInto<ToPayload, Error = Error>,
             {
                 fn convert_from(
-                    a: RespEntity<FromPayload, FAIL>,
+                    a: RespEntity<FromPayload>,
                 ) -> Result<Self, crate::error::Error>
                 where
                     Self: Sized,
@@ -1697,8 +1766,8 @@ pub mod generic {
                 }
             }
 
-            impl<FromPayload, FAIL> RespEntity<FromPayload, FAIL> {
-                pub fn convert<ToPayload>(self) -> Result<RespEntity<FromPayload, FAIL>, Error>
+            impl<FromPayload> RespEntity<FromPayload> {
+                pub fn convert<ToPayload>(self) -> Result<RespEntity<FromPayload>, Error>
                 where
                     ToPayload: TryFrom<FromPayload, Error = Error>,
                 {
@@ -1730,11 +1799,14 @@ pub mod generic {
         use crate::version::v0_0_1::id::Address;
         use crate::version::v0_0_1::util::ConvertFrom;
         use crate::version::v0_0_1::State;
+        use crate::version::latest::generic::payload::PayloadMap;
+
+        pub type Properties<Kind> = PayloadMap<Kind>;
 
         #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
         pub struct Archetype<KIND> {
             pub kind: KIND,
-            pub config_src: Option<Address>,
+            pub properties: Properties<KIND>
         }
 
         impl<FromKind, ToKind> ConvertFrom<Archetype<FromKind>> for Archetype<ToKind>
@@ -1747,10 +1819,7 @@ pub mod generic {
             {
                 Ok(Archetype {
                     kind: a.kind.try_into()?,
-                    config_src: match a.config_src {
-                        None => None,
-                        Some(some) => Some(some.try_into()?),
-                    },
+                    properties: a.properties.convert()?,
                 })
             }
         }
@@ -1760,13 +1829,9 @@ pub mod generic {
             where
                 FromKind: TryInto<ToKind, Error = Error>,
             {
-                let config_src = match self.config_src {
-                    None => None,
-                    Some(config_src) => Some(config_src.try_into()?),
-                };
                 Ok(Archetype {
                     kind: self.kind.try_into()?,
-                    config_src,
+                    properties: self.properties.convert()?
                 })
             }
         }
@@ -1774,7 +1839,9 @@ pub mod generic {
         #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
         pub struct ResourceStub<KIND> {
             pub address: Address,
-            pub archetype: Archetype<KIND>,
+            pub kind: KIND,
+            pub properties: Properties<KIND>,
+            pub status: Status
         }
 
         impl<FromKind> ResourceStub<FromKind> {
@@ -1784,7 +1851,9 @@ pub mod generic {
             {
                 Ok(ResourceStub {
                     address: self.address.try_into()?,
-                    archetype: self.archetype.convert()?,
+                    kind: self.kind.try_into()?,
+                    properties: self.properties.convert()?,
+                    status: self.status
                 })
             }
         }
@@ -1799,7 +1868,9 @@ pub mod generic {
             {
                 Ok(ResourceStub {
                     address: a.address.try_into()?,
-                    archetype: ConvertFrom::convert_from(a.archetype)?,
+                    kind: a.kind.try_into()?,
+                    properties:a.properties.convert()?,
+                    status: a.status
                 })
             }
         }
@@ -2173,7 +2244,7 @@ pub mod generic {
                 pub id: String,
                 pub to: Address,
                 pub exchange: ExchangeId,
-                pub entity: response::RespEntity<Payload, fail::portal::Fail>,
+                pub entity: response::RespEntity<Payload>,
             }
 
             impl<FromPayload, ToPayload> ConvertFrom<Response<FromPayload>> for Response<ToPayload>
@@ -2295,7 +2366,7 @@ pub mod generic {
 
                 pub fn fail<PAYLOAD>(
                     self,
-                    fail: fail::portal::Fail,
+                    fail: fail::Fail,
                 ) -> Result<inlet::Response<PAYLOAD>, Error> {
                     Ok(inlet::Response {
                         id: unique_id(),
@@ -2311,7 +2382,7 @@ pub mod generic {
                 pub id: String,
                 pub to: Address,
                 pub from: Address,
-                pub entity: response::RespEntity<PAYLOAD, fail::Fail>,
+                pub entity: response::RespEntity<PAYLOAD>,
                 pub exchange: ExchangeId,
             }
 
@@ -2319,7 +2390,7 @@ pub mod generic {
                 pub fn new(
                     to: Address,
                     from: Address,
-                    entity: response::RespEntity<PAYLOAD, fail::Fail>,
+                    entity: response::RespEntity<PAYLOAD>,
                     exchange: ExchangeId,
                 ) -> Self {
                     Self {
@@ -3029,6 +3100,7 @@ pub mod generic {
         pub struct PayloadMap<KIND> {
             pub map: HashMap<String, Payload<KIND>>,
         }
+
         impl<FromKind> PayloadMap<FromKind> {
             pub fn convert<ToKind>(self) -> Result<PayloadMap<ToKind>, Error>
             where
@@ -3039,6 +3111,20 @@ pub mod generic {
                     map.insert(k, v.convert()?);
                 }
                 Ok(PayloadMap { map })
+            }
+        }
+
+        impl <Kind> Deref for PayloadMap<Kind> {
+            type Target = HashMap<String,Payload<Kind>>;
+
+            fn deref(&self) -> &Self::Target {
+                &self.map
+            }
+        }
+
+        impl <Kind> DerefMut for PayloadMap<Kind> {
+            fn deref_mut(&mut self) -> &mut Self::Target {
+                &mut self.map
             }
         }
 
@@ -3084,21 +3170,7 @@ pub mod generic {
             }
         }
 
-        impl<KIND> Deref for PayloadMap<KIND> {
-            type Target = HashMap<String, Payload<KIND>>;
-
-            fn deref(&self) -> &Self::Target {
-                &self.map
-            }
-        }
-
-        impl<KIND> DerefMut for PayloadMap<KIND> {
-            fn deref_mut(&mut self) -> &mut Self::Target {
-                &mut self.map
-            }
-        }
-
-        impl<FromKind, ToKind> ConvertFrom<Payload<FromKind>> for Payload<ToKind>
+       impl<FromKind, ToKind> ConvertFrom<Payload<FromKind>> for Payload<ToKind>
         where
             FromKind: TryInto<ToKind, Error = Error> + Clone,
             ToKind: Clone,
@@ -3134,7 +3206,7 @@ pub mod generic {
             }
         }
 
-        #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
+        #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq,strum_macros::Display)]
         pub enum Primitive<KIND> {
             Text(String),
             Address(Address),
@@ -3285,11 +3357,12 @@ pub mod generic {
 
     pub mod pattern {
         use crate::error::Error;
-        use crate::version::v0_0_1::id::{AddressSegment, Tks};
-        use crate::version::v0_0_1::pattern::{SegmentPattern, SpecificPattern};
+        use crate::version::v0_0_1::id::{AddressSegment, Tks, RouteSegment};
+        use crate::version::v0_0_1::pattern::{SegmentPattern, SpecificPattern, ExactSegment};
         use crate::version::v0_0_1::util::{ValueMatcher, ValuePattern};
         use serde::{Deserialize, Serialize};
         use std::convert::TryInto;
+        use crate::version::v0_0_1::id::Address;
 
         #[derive(Debug, Clone, Serialize, Deserialize)]
         pub struct AddressKindPattern<ResourceType, Kind> {
@@ -3313,6 +3386,26 @@ pub mod generic {
 
             pub fn is_final(&self) -> bool {
                 self.hops.len() == 1
+            }
+
+            pub fn query_root(&self) -> Address {
+                let mut segments = vec![];
+                for hop in &self.hops {
+                    if let SegmentPattern::Exact(exact) = &hop.segment {
+                        match exact {
+                            ExactSegment::Address(seg) => {
+                                segments.push(seg.clone() );
+                            }
+                        }
+                    } else {
+                        break;
+                    }
+                }
+
+                Address {
+                    route: RouteSegment::Resource,
+                    segments
+                }
             }
 
             pub fn matches(&self, address_tks_path: &AddressTksPath<Kind>) -> bool
@@ -3407,7 +3500,7 @@ pub mod generic {
         impl<ResourceType, Kind> Hop<ResourceType, Kind> {
             pub fn matches(&self, address_tks_segment: &AddressTksSegment<Kind>) -> bool {
                 self.segment
-                    .matches(&address_tks_segment.address_segment.to_string())
+                    .matches(&address_tks_segment.address_segment)
             }
         }
 
@@ -3471,6 +3564,81 @@ pub mod generic {
                 }
             }
         }
+
+
+
+
+
+
+        #[derive(Debug, Clone, Serialize, Deserialize)]
+        pub enum EmptyPattern<P> {
+            Any,
+            Pattern(P),
+        }
+
+        impl<P> EmptyPattern<P>
+            where
+                P: Eq + PartialEq,
+        {
+            pub fn matches(&self, t: &P) -> bool {
+                match self {
+                    Self::Any => true,
+                    Self::Pattern(p) => *p == *t,
+                }
+            }
+            pub fn matches_opt(&self, other: Option<&P>) -> bool {
+                match self {
+                    Self::Any => true,
+                    Self::Pattern(exact) => {
+                        if let Option::Some(other) = other {
+                            *exact == *other
+                        } else {
+                            false
+                        }
+                    }
+                }
+            }
+
+            pub fn convert<To>(self) -> Result<EmptyPattern<To>, Error>
+                where
+                    P: TryInto<To, Error = Error> + Eq + PartialEq,
+            {
+                Ok(match self {
+                    EmptyPattern::Any => EmptyPattern::Any,
+                    EmptyPattern::Pattern(exact) => EmptyPattern::Pattern(exact.try_into()?),
+                })
+            }
+        }
+
+        impl Into<EmptyPattern<String>> for EmptyPattern<&str> {
+            fn into(self) -> EmptyPattern<String> {
+                match self {
+                    EmptyPattern::Any => EmptyPattern::Any,
+                    EmptyPattern::Pattern(f) => EmptyPattern::Pattern(f.to_string()),
+                }
+            }
+        }
+
+        impl<P> ToString for EmptyPattern<P>
+            where
+                P: ToString,
+        {
+            fn to_string(&self) -> String {
+                match self {
+                    EmptyPattern::Any => "".to_string(),
+                    EmptyPattern::Pattern(exact) => exact.to_string(),
+                }
+            }
+        }
+
+
+
+
+
+
+
+
+
 
         pub type ResourceTypePattern<ResourceType> = Pattern<ResourceType>;
 
@@ -3710,21 +3878,21 @@ pub mod fail {
 
         #[derive(Debug, Clone, Serialize, Deserialize)]
         pub enum Fail {
-            Error(String),
-            QueueOverflow,
+            Error(String)
         }
+
     }
 
     pub mod portal {
         use serde::{Deserialize, Serialize};
 
-        use crate::version::v0_0_1::fail::{http, port, resource};
+        use crate::version::v0_0_1::fail::{http, msg, resource};
 
         #[derive(Debug, Clone, Serialize, Deserialize)]
         pub enum Fail {
             Error(String),
             Resource(resource::Fail),
-            Port(port::Fail),
+            Msg(msg::Fail),
             Http(http::Error),
         }
     }
@@ -3749,6 +3917,7 @@ pub mod fail {
             AddressAlreadyInUse(String),
             WrongParentResourceType { expected: String, found: String },
             CannotUpdateArchetype,
+            InvalidProperty{ expected: String, found: String }
         }
 
         #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -3757,7 +3926,7 @@ pub mod fail {
         }
     }
 
-    pub mod port {
+    pub mod msg {
         use serde::{Deserialize, Serialize};
 
         use crate::version::v0_0_1::fail::{BadRequest, Conditional};

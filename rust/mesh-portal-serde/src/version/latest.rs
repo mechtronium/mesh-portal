@@ -25,6 +25,7 @@ pub mod id {
     pub type Specific = id::Specific;
     pub type AddressAndKind = generic::id::AddressAndKind<Kind>;
     pub type AddressAndType = generic::id::AddressAndType<ResourceType>;
+    pub type AddressSegment= id::AddressSegment;
     pub type Meta=id::Meta;
 }
 
@@ -146,7 +147,7 @@ pub mod entity {
         use crate::version::latest::id::{Address, Kind};
         use crate::version::latest::payload::Payload;
 
-        pub type RespEntity = generic::entity::response::RespEntity<Payload,fail::Fail>;
+        pub type RespEntity = generic::entity::response::RespEntity<Payload>;
     }
 
 }
@@ -162,6 +163,7 @@ pub mod resource {
 
     pub type Archetype= generic::resource::Archetype<Kind>;
     pub type ResourceStub = generic::resource::ResourceStub<Kind>;
+    pub type Properties = generic::resource::Properties<Kind>;
 }
 
 pub mod portal {
@@ -217,9 +219,14 @@ pub mod generic {
 
     pub mod pattern {
         use crate::version::v0_0_1::generic;
+        use crate::version::v0_0_1::pattern;
+        use crate::version::v0_0_1::util;
         pub type TksPattern<ResourceType, Kind> = generic::pattern::TksPattern<ResourceType, Kind>;
         pub type AddressKindPattern<ResourceType, Kind> = generic::pattern::AddressKindPattern<ResourceType, Kind>;
         pub type KindPattern<Kind> = generic::pattern::KindPattern<Kind>;
+        pub type Hop<ResourceType, Kind> = generic::pattern::Hop<ResourceType, Kind>;
+        pub type SegmentPattern = pattern::SegmentPattern;
+        pub type ExactSegment = pattern::ExactSegment;
     }
 
     pub mod config {
@@ -267,7 +274,7 @@ pub mod generic {
 
             use serde::{Deserialize, Serialize};
 
-            pub type RespEntity<PAYLOAD,FAIL> = generic::entity::response::RespEntity<PAYLOAD,FAIL>;
+            pub type RespEntity<PAYLOAD> = generic::entity::response::RespEntity<PAYLOAD>;
         }
     }
 
@@ -287,6 +294,7 @@ pub mod generic {
 
         pub type Archetype<KIND>=generic::resource::Archetype<KIND>;
         pub type ResourceStub<KIND> = generic::resource::ResourceStub<KIND>;
+        pub type Properties<KIND> = generic::resource::Properties<KIND>;
         pub type Resource<KIND> = generic::resource::Resource<KIND>;
 
         pub mod command {
@@ -310,6 +318,7 @@ pub mod generic {
                 pub type Create<Kind> = generic::resource::command::create::Create<Kind>;
                 pub type AddressTemplate  = generic::resource::command::create::AddressTemplate;
                 pub type AddressSegmentTemplate = generic::resource::command::create::AddressSegmentTemplate;
+                pub type KindTemplate= generic::resource::command::create::KindTemplate;
                 pub type Strategy = generic::resource::command::create::Strategy;
                 pub type Template = generic::resource::command::create::Template;
             }
@@ -410,7 +419,7 @@ pub mod fail {
     }
 
     pub mod port {
-        pub type Fail=crate::version::v0_0_1::fail::port::Fail;
+        pub type Fail=crate::version::v0_0_1::fail::msg::Fail;
     }
 
     pub mod http {

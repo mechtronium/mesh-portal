@@ -46,6 +46,7 @@ pub fn converter<From,To>(handle_error:fn (error:Error) ) -> (mpsc::Sender<From>
 
 pub mod message {
     use mesh_portal_serde::version::latest::entity::request::ReqEntity;
+    use mesh_portal_serde::version::latest::entity::response::RespEntity;
     use mesh_portal_serde::version::latest::id::Address;
 
     pub type Message = generic::Message<ReqEntity>;

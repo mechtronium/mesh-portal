@@ -122,8 +122,8 @@ pub enum EntityPattern {
    Http(HttpPattern)
 }
 
-impl <ResourceType,Kind,TksPattern> ValueMatcher<ReqEntity<ResourceType,Kind,TksPattern>> for EntityPattern {
-    fn is_match( &self, entity: &ReqEntity<ResourceType,Kind,TksPattern> ) -> Result<(),Error>{
+impl <ResourceType,Kind> ValueMatcher<ReqEntity<ResourceType,Kind>> for EntityPattern {
+    fn is_match( &self, entity: &ReqEntity<ResourceType,Kind> ) -> Result<(),Error>{
         match entity {
             ReqEntity::Rc(found) => {
                 if let EntityPattern::Rc(pattern) = self {
