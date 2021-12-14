@@ -223,6 +223,8 @@ pub mod generic {
         use crate::version::v0_0_1::util;
         pub type TksPattern<ResourceType, Kind> = generic::pattern::TksPattern<ResourceType, Kind>;
         pub type AddressKindPattern<ResourceType, Kind> = generic::pattern::AddressKindPattern<ResourceType, Kind>;
+        pub type AddressTksPath<Kind> = generic::pattern::AddressTksPath<Kind>;
+        pub type AddressTksSegment<Kind> = generic::pattern::AddressTksSegment<Kind>;
         pub type KindPattern<Kind> = generic::pattern::KindPattern<Kind>;
         pub type Hop<ResourceType, Kind> = generic::pattern::Hop<ResourceType, Kind>;
         pub type SegmentPattern = pattern::SegmentPattern;

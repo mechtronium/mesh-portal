@@ -235,6 +235,16 @@ pub mod id {
             Self::from_str(format!("{}{}",self.to_string(),segment).as_str())
         }
 
+        pub fn push_segment( &self, segment: AddressSegment ) -> Self {
+            let mut address = self.clone();
+            address.segments.push(segment);
+            address
+        }
+
+        pub fn last_segment(&self) -> Option<AddressSegment> {
+            self.segments.last().cloned()
+        }
+
     }
 
     impl FromStr for Address {
@@ -2153,16 +2163,16 @@ pub mod generic {
 
                 #[derive(Debug, Clone, Serialize, Deserialize)]
                 pub struct Select<ResourceType, Kind> {
-                    pub address_pattern: AddressKindPattern<ResourceType, Kind>,
+                    pub pattern: AddressKindPattern<ResourceType, Kind>,
                     pub properties: PropertiesPattern,
                     pub into_payload: Box<dyn SelectIntoPayload<Kind>>
                 }
 
                 impl<ResourceType, Kind > Select<ResourceType, Kind>
                 {
-                    fn new(address_pattern:AddressKindPattern<ResourceType, Kind>) -> Self {
+                    fn new(pattern:AddressKindPattern<ResourceType, Kind>) -> Self {
                         Self{
-                            address_pattern,
+                            pattern,
                             properties: Defeault::default(),
                             into_payload: Box::new(SelectIntoStubPayload{} )
                         }
@@ -2182,7 +2192,7 @@ pub mod generic {
                         Payload<FromKind>: TryInto<Payload<ToKind>,Error=Error>
                     {
                         Ok(Select {
-                            address_pattern: self.address_pattern.convert()?,
+                            pattern: self.pattern.convert()?,
                             properties: self.properties,
                             into_payload: self.into_payload
                         })
@@ -3409,7 +3419,7 @@ pub mod generic {
         }
 
         impl<ResourceType, Kind> AddressKindPattern<ResourceType, Kind> {
-            pub fn consume(&self) -> Option<AddressKindPattern<ResourceType, Kind>>
+            fn consume(&self) -> Option<AddressKindPattern<ResourceType, Kind>>
             where
                 ResourceType: Clone,
                 Kind: Clone,
@@ -3484,7 +3494,7 @@ pub mod generic {
                 // special logic is applied to recursives **
                 else if hop.segment.is_recursive() && self.hops.len() >= 2 {
                     // a Recursive is similar to an Any in that it will match anything, however,
-                    // let's see if the NEXT hop will match the segment
+                    // it is not consumed until the NEXT segment matches...
                     let next_hop = self.hops.get(1).expect("next<Hop>");
                     if next_hop.matches(seg) {
                         // since the next hop after the recursive matches, we consume the recursive and continue hopping
@@ -3761,6 +3771,15 @@ pub mod generic {
         }
 
         impl<Kind> AddressTksPath<Kind> {
+
+            pub fn push( &self, segment: AddressTksSegment<Kind> ) -> AddressTksPath<Kind> {
+                let mut segments = self.segments.clone();
+                segments.push(segment);
+                Self{
+                    segments
+                }
+            }
+
             pub fn consume(&self) -> Option<AddressTksPath<Kind>>
             where
                 Kind: Clone,
