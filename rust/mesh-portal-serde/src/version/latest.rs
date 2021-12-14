@@ -325,6 +325,8 @@ pub mod generic {
 
             pub mod select {
                 use crate::version::v0_0_1::generic;
+                pub type SelectIntoPayload<Kind>=generic::resource::command::select::SelectIntoPayload<Kind>;
+                pub type SelectIntoStubPayload<Kind>=generic::resource::command::select::SelectIntoStubPayload<Kind>;
                 pub type Select<ResourceType,Kind>=generic::resource::command::select::Select<ResourceType,Kind>;
                 pub type PropertiesPattern = generic::resource::command::select::PropertiesPattern;
             }
@@ -416,6 +418,7 @@ pub mod fail {
         pub type Fail=crate::version::v0_0_1::fail::resource::Fail;
         pub type Create=crate::version::v0_0_1::fail::resource::Create;
         pub type Update=crate::version::v0_0_1::fail::resource::Update;
+        pub type Select=crate::version::v0_0_1::fail::resource::Select;
     }
 
     pub mod port {

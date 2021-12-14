@@ -1799,7 +1799,8 @@ pub mod generic {
         use crate::version::v0_0_1::id::Address;
         use crate::version::v0_0_1::util::ConvertFrom;
         use crate::version::v0_0_1::State;
-        use crate::version::latest::generic::payload::PayloadMap;
+        use crate::version::v0_0_1::generic::payload::PayloadMap;
+        use crate::version::v0_0_1::resource::Status;
 
         pub type Properties<Kind> = PayloadMap<Kind>;
 
@@ -2122,18 +2123,52 @@ pub mod generic {
             pub mod select {
                 use crate::error::Error;
                 use crate::version::v0_0_1::generic::pattern::AddressKindPattern;
-                use crate::version::v0_0_1::generic::payload::MapPattern;
+                use crate::version::v0_0_1::generic::payload::{MapPattern, PrimitiveList};
                 use crate::version::v0_0_1::util::ConvertFrom;
                 use serde::{Deserialize, Serialize};
                 use std::collections::{HashMap, HashSet};
                 use std::convert::{TryFrom, TryInto};
-                use crate::version::latest::generic::payload::Payload;
+                use crate::version::v0_0_1::generic::payload::Payload;
+                use crate::version::v0_0_1::fail::Fail;
+                use crate::version::v0_0_1::generic::resource::ResourceStub;
+                use crate::version::v0_0_1::payload::{Primitive, PrimitiveType};
+
+                pub trait SelectIntoPayload<Kind> {
+                    fn to_primitive(&self, stubs: Vec<ResourceStub<Kind>> ) ->Result<PrimitiveList<Kind>,Fail>;
+                }
+
+                pub struct SelectIntoStubPayload<Kind>;
+
+                impl <Kind> SelectIntoPayload<Kind> for SelectIntoStubPayload<Kind> {
+                    fn to_primitive(&self, stubs: Vec<ResourceStub<Kind>>) -> Result<PrimitiveList<Kind>, Fail> {
+                        let stubs: Vec<Primitive> = stubs.into_iter().map( |stub| Primitive::Stub(stub) ).collect();
+                        let stubs = PrimitiveList{
+                            primitive_type: PrimitiveType::Stub,
+                            list: stubs
+                        };
+                        Ok(stubs)
+                    }
+                }
+
 
                 #[derive(Debug, Clone, Serialize, Deserialize)]
                 pub struct Select<ResourceType, Kind> {
                     pub address_pattern: AddressKindPattern<ResourceType, Kind>,
                     pub properties: PropertiesPattern,
+                    pub into_payload: Box<dyn SelectIntoPayload<Kind>>
                 }
+
+                impl<ResourceType, Kind > Select<ResourceType, Kind>
+                {
+                    fn new(address_pattern:AddressKindPattern<ResourceType, Kind>) -> Self {
+                        Self{
+                            address_pattern,
+                            properties: Defeault::default(),
+                            into_payload: Box::new(SelectIntoStubPayload{} )
+                        }
+                    }
+                }
+
 
                 impl<FromResourceType, FromKind >
                     Select<FromResourceType, FromKind>
@@ -2149,6 +2184,7 @@ pub mod generic {
                         Ok(Select {
                             address_pattern: self.address_pattern.convert()?,
                             properties: self.properties,
+                            into_payload: self.into_payload
                         })
                     }
                 }
@@ -3259,6 +3295,9 @@ pub mod generic {
             pub primitive_type: PrimitiveType,
             pub list: Vec<Primitive<KIND>>,
         }
+
+
+
         impl<FromKind> PrimitiveList<FromKind> {
             fn convert<ToKind>(self) -> Result<PrimitiveList<ToKind>, Error>
             where
@@ -3407,6 +3446,17 @@ pub mod generic {
                     segments
                 }
             }
+
+            pub fn sub_select_hops(&self) -> Vec<Hop<ResourceType,Kind>>{
+
+                let mut hops= self.hops.clone();
+                let query_root_segments = self.query_root().segments.len();
+                for _ in 0..query_root_segments {
+                    hops.remove(0);
+                }
+                hops
+            }
+
 
             pub fn matches(&self, address_tks_path: &AddressTksPath<Kind>) -> bool
             where
@@ -3907,6 +3957,7 @@ pub mod fail {
         pub enum Fail {
             Create(Create),
             Update(Update),
+            Select(Select),
             BadRequest(BadRequest),
             Conditional(Conditional),
             Messaging(Messaging),
@@ -3923,6 +3974,12 @@ pub mod fail {
         #[derive(Debug, Clone, Serialize, Deserialize)]
         pub enum Update {
             Immutable,
+        }
+
+        #[derive(Debug, Clone, Serialize, Deserialize)]
+        pub enum Select {
+            WrongAddress{required:Address,found:Address},
+            BadSelectRouting{required:String,found:String}
         }
     }
 
