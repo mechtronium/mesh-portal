@@ -327,9 +327,9 @@ pub mod generic {
 
             pub mod select {
                 use crate::version::v0_0_1::generic;
-                pub type SelectIntoPayload<Kind>=generic::resource::command::select::SelectIntoPayload<Kind>;
-                pub type SelectIntoStubPayload<Kind>=generic::resource::command::select::SelectIntoStubPayload<Kind>;
+                pub type SelectIntoPayload=generic::resource::command::select::SelectIntoPayload;
                 pub type Select<ResourceType,Kind>=generic::resource::command::select::Select<ResourceType,Kind>;
+                pub type SubSelector<ResourceType,Kind>=generic::resource::command::select::SubSelector<ResourceType,Kind>;
                 pub type PropertiesPattern = generic::resource::command::select::PropertiesPattern;
             }
 

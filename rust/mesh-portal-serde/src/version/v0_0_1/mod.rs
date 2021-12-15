@@ -801,6 +801,7 @@ pub mod pattern {
             use nom::combinator::all_consuming;
             use std::str::FromStr;
             use crate::version::v0_0_1::id::AddressSegment;
+            use crate::version::latest::util::ValuePattern;
 
             #[test]
             pub fn test_segs() -> Result<(), Error> {
@@ -833,7 +834,7 @@ pub mod pattern {
                 let tks_pattern = TksPattern {
                     resource_type: Pattern::Exact(CamelCase::new("App")),
                     kind: Pattern::Any,
-                    specific: Pattern::Any,
+                    specific: ValuePattern::Any,
                 };
 
                 assert!(tks("<App>")? == ("", tks_pattern));
@@ -841,7 +842,7 @@ pub mod pattern {
                 let tks_pattern = TksPattern {
                     resource_type: Pattern::Exact(CamelCase::new("Database")),
                     kind: Pattern::Exact(CamelCase::new("Relational")),
-                    specific: Pattern::Any,
+                    specific: ValuePattern::Any,
                 };
 
                 assert!(tks("<Database<Relational>>")? == ("", tks_pattern));
@@ -849,7 +850,7 @@ pub mod pattern {
                 let tks_pattern = TksPattern {
                     resource_type: Pattern::Exact(CamelCase::new("Database")),
                     kind: Pattern::Exact(CamelCase::new("Relational")),
-                    specific: Pattern::Exact(SpecificPattern {
+                    specific: ValuePattern::Pattern(SpecificPattern {
                         vendor: Pattern::Exact(DomainCase::new("mysql.org")),
                         product: Pattern::Exact(SkewerCase::new("mysql")),
                         variant: Pattern::Exact(SkewerCase::new("innodb")),
@@ -2139,19 +2140,24 @@ pub mod generic {
                 use std::collections::{HashMap, HashSet};
                 use std::convert::{TryFrom, TryInto};
                 use crate::version::v0_0_1::generic::payload::Payload;
-                use crate::version::v0_0_1::fail::Fail;
+                use crate::version::v0_0_1::fail::{Fail, BadCoercion};
                 use crate::version::v0_0_1::generic::resource::ResourceStub;
-                use crate::version::v0_0_1::payload::{Primitive, PrimitiveType};
+                use crate::version::v0_0_1::payload::PrimitiveType;
+                use crate::version::v0_0_1::generic::payload::Primitive;
+                use std::marker::PhantomData;
+                use crate::version::latest::generic::pattern::{Hop, AddressTksPath};
+                use crate::version::latest::fail;
+                use crate::version::latest::id::Address;
 
-                pub trait SelectIntoPayload<Kind> {
-                    fn to_primitive(&self, stubs: Vec<ResourceStub<Kind>> ) ->Result<PrimitiveList<Kind>,Fail>;
+                #[derive(Debug, Clone, Serialize, Deserialize)]
+                pub enum SelectIntoPayload  {
+                    Stubs
                 }
 
-                pub struct SelectIntoStubPayload<Kind>;
-
-                impl <Kind> SelectIntoPayload<Kind> for SelectIntoStubPayload<Kind> {
-                    fn to_primitive(&self, stubs: Vec<ResourceStub<Kind>>) -> Result<PrimitiveList<Kind>, Fail> {
-                        let stubs: Vec<Primitive> = stubs.into_iter().map( |stub| Primitive::Stub(stub) ).collect();
+                impl SelectIntoPayload {
+                    pub fn to_primitive<Kind>(&self, stubs: Vec<ResourceStub<Kind>>) -> Result<PrimitiveList<Kind>, Fail>
+                    {
+                        let stubs: Vec<Primitive<Kind>> = stubs.into_iter().map( |stub| Primitive::Stub(stub) ).collect();
                         let stubs = PrimitiveList{
                             primitive_type: PrimitiveType::Stub,
                             list: stubs
@@ -2165,20 +2171,121 @@ pub mod generic {
                 pub struct Select<ResourceType, Kind> {
                     pub pattern: AddressKindPattern<ResourceType, Kind>,
                     pub properties: PropertiesPattern,
-                    pub into_payload: Box<dyn SelectIntoPayload<Kind>>
+                    pub into_payload: SelectIntoPayload,
+                    pub kind: SelectionKind<ResourceType,Kind>
                 }
+
+                #[derive(Debug, Clone, Serialize, Deserialize)]
+                pub enum SelectionKind<ResourceType,Kind>{
+                    Initial,
+                    SubSelector{ address: Address, hops: Vec<Hop<ResourceType,Kind>>, address_tks_path: AddressTksPath<Kind> }
+                }
+
+                impl <ResourceType,Kind> TryInto<SubSelector<ResourceType,Kind>> for Select<ResourceType,Kind> {
+                    type Error = Error;
+
+                    fn try_into(self) -> Result<T, Self::Error> {
+                        match self.kind {
+                            SelectionKind::Initial => {
+                                Err("cannot convert an initial Select into a SubSelect".into())
+                            }
+                            SelectionKind::SubSelector { address,hops,address_tks_path } => {
+                                Ok(SubSelector{
+                                    address,
+                                    pattern: self.pattern,
+                                    properties: self.properties,
+                                    into_payload: self.into_payload,
+                                    hops,
+                                    address_tks_path
+                                })
+                            }
+                        }
+                    }
+                }
+
+                impl <ResourceType,Kind> Select<ResourceType,Kind> {
+
+                    fn sub_select(self, address:Address, hops: Vec<Hop<ResourceType,Kind>>, address_tks_path: AddressTksPath<Kind>) -> SubSelector<ResourceType, Kind> {
+
+                                SubSelector{
+                                    address,
+                                    pattern: self.pattern,
+                                    properties: self.properties,
+                                    into_payload: self.into_payload,
+                                    hops,
+                                    address_tks_path
+                                }
+
+                    }
+                }
+
+                #[derive(Debug,Clone,Serialize,Deserialize)]
+                pub struct SubSelector<ResourceType,Kind> {
+                    pub address: Address,
+                    pub pattern: AddressKindPattern<ResourceType, Kind>,
+                    pub properties: PropertiesPattern,
+                    pub into_payload: SelectIntoPayload,
+                    pub hops: Vec<Hop<ResourceType,Kind>>,
+                    pub address_tks_path: AddressTksPath<Kind>
+                }
+
+                impl <ResourceType,Kind> Into<Select<ResourceType,Kind>> for SubSelector<ResourceType,Kind> {
+                    fn into(self) -> Select<ResourceType, Kind> {
+                        Select {
+                            pattern: self.pattern,
+                            properties: self.properties,
+                            into_payload: self.into_payload,
+                            kind: SelectionKind::SubSelector {
+                                address: self.address,
+                                hops: self.hops,
+                                address_tks_path: self.address_tks_path
+                            }
+                        }
+                    }
+                }
+
 
                 impl<ResourceType, Kind > Select<ResourceType, Kind>
                 {
                     fn new(pattern:AddressKindPattern<ResourceType, Kind>) -> Self {
                         Self{
                             pattern,
-                            properties: Defeault::default(),
-                            into_payload: Box::new(SelectIntoStubPayload{} )
+                            properties: Default::default(),
+                            into_payload: SelectIntoPayload::Stubs,
+                            kind: SelectionKind::Initial
                         }
                     }
                 }
 
+                impl<FromResourceType, FromKind >
+                SelectionKind<FromResourceType, FromKind>
+                {
+                    pub fn convert<ToResourceType, ToKind>(
+                        self,
+                    ) -> Result<SelectionKind<ToResourceType, ToKind>, Error>
+                        where
+                            FromResourceType: TryInto<ToResourceType, Error = Error>+Clone+Eq+PartialEq,
+                            FromKind: TryInto<ToKind, Error = Error>+Clone+Eq+PartialEq,
+                            Payload<FromKind>: TryInto<Payload<ToKind>,Error=Error>
+                    {
+                        Ok(match self {
+                            SelectionKind::Initial => {
+                                SelectionKind::Initial
+                            }
+                            SelectionKind::SubSelector { address, hops, address_tks_path } => {
+                                let mut converted_hops = vec![];
+                                for hop in hops {
+                                    converted_hops.push(hop.convert()?);
+                                }
+                                SelectionKind::SubSelector {
+                                    address,
+                                    hops: converted_hops,
+                                    address_tks_path: address_tks_path.convert()?
+                                }
+                            }
+                        })
+                    }
+                }
 
                 impl<FromResourceType, FromKind >
                     Select<FromResourceType, FromKind>
@@ -2194,7 +2301,8 @@ pub mod generic {
                         Ok(Select {
                             pattern: self.pattern.convert()?,
                             properties: self.properties,
-                            into_payload: self.into_payload
+                            into_payload: self.into_payload,
+                            kind: self.kind.convert()?
                         })
                     }
                 }
@@ -3147,6 +3255,13 @@ pub mod generic {
             pub map: HashMap<String, Payload<KIND>>,
         }
 
+        impl<Kind> Into<Payload<Kind>> for PayloadMap<Kind> {
+            fn into(self) -> Payload<Kind> {
+                Payload::Map(self)
+            }
+        }
+
+
         impl<FromKind> PayloadMap<FromKind> {
             pub fn convert<ToKind>(self) -> Result<PayloadMap<ToKind>, Error>
             where
@@ -3412,6 +3527,8 @@ pub mod generic {
         use serde::{Deserialize, Serialize};
         use std::convert::TryInto;
         use crate::version::v0_0_1::id::Address;
+        use crate::version::latest::generic::payload::Payload;
+        use crate::version::latest::fail::Fail;
 
         #[derive(Debug, Clone, Serialize, Deserialize)]
         pub struct AddressKindPattern<ResourceType, Kind> {
@@ -3457,7 +3574,7 @@ pub mod generic {
                 }
             }
 
-            pub fn sub_select_hops(&self) -> Vec<Hop<ResourceType,Kind>>{
+            pub fn sub_select_hops(&self) -> Vec<Hop<ResourceType,Kind>> where ResourceType:Clone, Kind:Clone{
 
                 let mut hops= self.hops.clone();
                 let query_root_segments = self.query_root().segments.len();
@@ -3603,6 +3720,22 @@ pub mod generic {
                 })
             }
         }
+
+
+        /*
+        impl <From,Into> Pattern<From> where From: TryInto<Into>{
+
+            fn convert(self) -> Result<Pattern<Into>, Error> {
+                Ok( match self {
+                    Pattern::Any => {Pattern::Any}
+                    Pattern::Exact(from) => {
+                        Pattern::Exact(from.try_into()?)
+                    }
+                })
+            }
+        }
+
+         */
 
         impl Into<Pattern<String>> for Pattern<&str> {
             fn into(self) -> Pattern<String> {
@@ -3772,7 +3905,7 @@ pub mod generic {
 
         impl<Kind> AddressTksPath<Kind> {
 
-            pub fn push( &self, segment: AddressTksSegment<Kind> ) -> AddressTksPath<Kind> {
+            pub fn push( &self, segment: AddressTksSegment<Kind> ) -> AddressTksPath<Kind> where Kind: Clone {
                 let mut segments = self.segments.clone();
                 segments.push(segment);
                 Self{
@@ -3797,10 +3930,43 @@ pub mod generic {
             }
         }
 
+        impl<FromKind>
+        AddressTksPath<FromKind>
+        {
+            pub fn convert<ToKind>(
+                self,
+            ) -> Result<AddressTksPath<ToKind>, Error>
+                where
+                    FromKind: TryInto<ToKind, Error = Error>+Clone+Eq+PartialEq,
+            {
+                let mut segments = vec![];
+                for segment in self.segments {
+                    segments.push( segment.convert()? );
+                }
+                Ok(AddressTksPath {
+                  segments
+                })
+            }
+        }
         #[derive(Debug, Eq, PartialEq, Clone, Serialize, Deserialize)]
         pub struct AddressTksSegment<Kind> {
             pub address_segment: AddressSegment,
-            pub tks: Kind,
+            pub kind: Kind,
+        }
+
+        impl <FromKind> AddressTksSegment<FromKind> {
+            pub fn convert<ToKind>(
+                self,
+            ) -> Result<AddressTksSegment<ToKind>, Error>
+                where
+                    FromKind: TryInto<ToKind, Error = Error>+Clone+Eq+PartialEq,
+            {
+                Ok(AddressTksSegment {
+                    address_segment: self.address_segment,
+                    kind: self.kind.try_into()?
+                })
+            }
+
         }
     }
 }
@@ -3969,7 +4135,7 @@ pub mod fail {
     pub mod resource {
         use serde::{Deserialize, Serialize};
 
-        use crate::version::v0_0_1::fail::{Bad, BadRequest, Conditional, Messaging, NotFound};
+        use crate::version::v0_0_1::fail::{Bad, BadRequest, Conditional, Messaging, NotFound, BadCoercion};
         use crate::version::v0_0_1::id::Address;
 
         #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -3998,7 +4164,8 @@ pub mod fail {
         #[derive(Debug, Clone, Serialize, Deserialize)]
         pub enum Select {
             WrongAddress{required:Address,found:Address},
-            BadSelectRouting{required:String,found:String}
+            BadSelectRouting{required:String,found:String},
+            BadCoercion(BadCoercion)
         }
     }
 
@@ -4031,6 +4198,12 @@ pub mod fail {
         Bad(Bad),
         Illegal(Illegal),
         Wrong(Wrong),
+    }
+
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub struct BadCoercion {
+        pub from: String,
+        pub into: String
     }
 
     #[derive(Debug, Clone, Serialize, Deserialize)]

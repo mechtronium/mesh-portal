@@ -193,7 +193,7 @@ mod tests {
                 parent: Address::from_str("parent")?,
                 archetype: Archetype {
                     kind: Kind::new( "Portal".to_string(), Option::None, Option::None ),
-                    config_src: None,
+                    properties: Default::default()
                 },
                 config: Default::default(),
                 ext_config: None,
