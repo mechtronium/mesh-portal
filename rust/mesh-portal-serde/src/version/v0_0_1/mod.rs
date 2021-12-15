@@ -180,7 +180,7 @@ pub mod id {
     pub enum AddressSegment {
         Space(String),
         Base(String),
-        Dir,
+        Dir(String),
         File(String),
         Version(Version)
     }
@@ -190,22 +190,11 @@ pub mod id {
             match self {
                 AddressSegment::Space(_) => ":",
                 AddressSegment::Base(_) => ":",
-                AddressSegment::Dir => "",
+                AddressSegment::Dir(_) => "/",
                 AddressSegment::File(_) => "",
                 AddressSegment::Version(_) => ":",
             }
         }
-
-/*        pub fn as_str(&self) -> &str {
-            match self {
-                AddressSegment::Space(space) => space.as_str(),
-                AddressSegment::Base(base) => base.as_str(),
-                AddressSegment::Dir => "/",
-                AddressSegment::File(file) => file.as_str(),
-                AddressSegment::Version(version) => version.to_string().as_str(),
-            }
-        }
- */
     }
 
     impl ToString for AddressSegment {
@@ -213,7 +202,7 @@ pub mod id {
             match self {
                 AddressSegment::Space(space) => space.clone(),
                 AddressSegment::Base(base) => base.clone(),
-                AddressSegment::Dir => "/".to_string(),
+                AddressSegment::Dir(dir) => dir.clone(),
                 AddressSegment::File(file) => file.clone(),
                 AddressSegment::Version(version) => {version.to_string()}
             }
@@ -552,7 +541,7 @@ pub mod pattern {
         use nom::branch::alt;
         use nom::bytes::complete::tag;
         use nom::character::complete::{alpha1, digit1};
-        use nom::combinator::{opt, recognize};
+        use nom::combinator::{opt, recognize, all_consuming};
         use nom::error::{ParseError, VerboseError};
         use nom::multi::many1;
         use nom::sequence::{delimited, terminated, tuple};
@@ -561,6 +550,7 @@ pub mod pattern {
         use nom_supreme::{parse_from_str, ParserExt};
         use std::str::FromStr;
         use crate::version::v0_0_1::id::AddressSegment;
+        use crate::error::Error;
 
         fn any_segment(input: &str) -> Res<&str, SegmentPattern> {
             tag("*")(input).map(|(next, _)| (next, SegmentPattern::Any))
@@ -691,27 +681,41 @@ pub mod pattern {
             })
         }
 
-        fn kind<Kind: FromStr>(input: &str) -> Res<&str, Kind> {
-            parse_from_str(camel_case)
+        fn rec_kind(input: &str) -> Res<&str, &str> {
+            recognize(tuple((camel_case,opt(delimited(tag("<"),tuple((camel_case,opt(delimited(tag("<"), specific, tag(">"))))),tag(">"))))))(input)
+        }
+
+        pub fn kind<Kind: FromStr>(input: &str) -> Res<&str, Kind> {
+            parse_from_str(rec_kind)
                 .parse(input)
                 .map(|(next, kind)| (next, kind))
         }
 
-        fn kind_pattern<Kind: FromStr>(input: &str) -> Res<&str, KindPattern<Kind>> {
+        pub fn delim_kind<Kind: FromStr>(input: &str) -> Res<&str, Kind> {
+            delimited(tag("<"),kind,tag(">"))(input)
+        }
+
+        pub fn consume_kind<Kind: FromStr>(input: &str) -> Result<Kind,Error> {
+            let (_,kind) = all_consuming(kind )(input)?;
+            Ok(kind)
+        }
+
+
+        pub fn kind_pattern<Kind: FromStr>(input: &str) -> Res<&str, KindPattern<Kind>> {
             pattern(kind)(input).map(|(next, kind)| (next, kind))
         }
 
-        fn resource_type<ResourceType: FromStr>(input: &str) -> Res<&str, ResourceType> {
+        pub fn resource_type<ResourceType: FromStr>(input: &str) -> Res<&str, ResourceType> {
             parse_from_str(camel_case).parse(input)
         }
 
-        fn resource_type_pattern<ResourceType: FromStr>(
+        pub fn resource_type_pattern<ResourceType: FromStr>(
             input: &str,
         ) -> Res<&str, ResourceTypePattern<ResourceType>> {
             pattern(resource_type)(input)
         }
 
-        fn tks<ResourceType: FromStr, Kind: FromStr>(
+        pub fn tks<ResourceType: FromStr, Kind: FromStr>(
             input: &str,
         ) -> Res<&str, TksPattern<ResourceType, Kind>> {
             delimited(
@@ -1358,12 +1362,50 @@ pub mod generic {
         use crate::version::v0_0_1::generic;
         use crate::version::v0_0_1::id::{Address, Specific, Tks};
         use crate::version::v0_0_1::util::Convert;
+        use crate::version::v0_0_1::pattern::parse::{consume_kind, resource_type};
+        use nom::combinator::{all_consuming, opt};
+        use nom::sequence::{tuple, delimited};
+        use crate::version::v0_0_1::parse::camel_case;
+        use nom::bytes::complete::tag;
+        use crate::version::v0_0_1::generic::id::parse::specific;
 
         #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
         pub struct GenericKind<ResourceType> {
             pub resource_type: ResourceType,
             pub kind: Option<String>,
             pub specific: Option<Specific>,
+        }
+
+        impl <ResourceType> FromStr for GenericKind<ResourceType> {
+            type Err = Error;
+
+            fn from_str(s: &str) -> Result<Self, Self::Err> {
+
+                let (_,kind) = all_consuming(tuple((resource_type,opt(delimited(tag("<"),tuple((camel_case,opt(delimited(tag("<"), specific, tag(">"))))),tag(">"))))))(input).map( |(next,(resource_type, rest ))| {
+
+                    let mut rtn = GenericKind {
+                        resource_type,
+                        kind: Option::None,
+                        specific: Option::None
+                    };
+
+                    match rest {
+                        Some((kind,specific)) => {
+                            rtn.kind = Option::Some(kind.to_string());
+                            match specific {
+                                Some(specific) => {
+                                    rtn.specific = Option::Some(specific);
+                                },
+                                None => {}
+                            }
+                        }
+                        None => { }
+                    }
+
+                    (next,rtn)
+                } );
+                Ok(kind)
+            }
         }
 
         impl <ResourceType> GenericKind<ResourceType> {
@@ -1429,7 +1471,7 @@ pub mod generic {
                 parse_from_str(version_chars).parse(input)
             }
 
-            fn specific(input: &str) -> Res<&str, Specific> {
+            pub fn specific(input: &str) -> Res<&str, Specific> {
                 tuple((
                     domain_chars,
                     tag(":"),
@@ -1569,11 +1611,17 @@ pub mod generic {
             }
 
             impl<ResourceType, Kind> Rc<ResourceType, Kind> {
-                pub fn new(
+                pub fn with_payload(
                     command: RcCommand<ResourceType, Kind>,
                     payload: Payload<Kind>,
                 ) -> Self {
                     Self { command, payload }
+                }
+
+                pub fn new(
+                    command: RcCommand<ResourceType, Kind>
+                ) -> Self {
+                    Self { command, payload: Payload::Empty}
                 }
             }
 
@@ -1637,13 +1685,16 @@ pub mod generic {
                 {
                     match self {
                         RcCommand::Create(create) => {
-                            Ok(RcCommand::Create(Box::new(create.convert()?)))
+                            Ok(RcCommand::Create(create.convert()?))
                         }
                         RcCommand::Select(select) => {
-                            Ok(RcCommand::Select(Box::new(select.convert()?)))
+                            Ok(RcCommand::Select(select.convert()?))
                         }
                         RcCommand::Update(update) => {
-                            Ok(RcCommand::Update(Box::new(update.convert()?)))
+                            Ok(RcCommand::Update(update.convert()?))
+                        }
+                        RcCommand::Query(query) => {
+                            Ok(RcCommand::Query(query))
                         }
                     }
                 }
@@ -1927,12 +1978,14 @@ pub mod generic {
             use crate::version::v0_0_1::generic::resource::command::update::Update;
             use crate::version::v0_0_1::util::ValueMatcher;
             use serde::{Deserialize, Serialize};
+            use crate::version::v0_0_1::generic::resource::command::query::Query;
 
             #[derive(Debug, Clone, strum_macros::Display, Serialize, Deserialize)]
             pub enum RcCommand<ResourceType, Kind> {
-                Create(Box<Create<Kind>>),
-                Select(Box<Select<ResourceType, Kind>>),
-                Update(Box<Update<Kind>>),
+                Create(Create<Kind>),
+                Select(Select<ResourceType, Kind>),
+                Update(Update<Kind>),
+                Query(Query)
             }
 
             impl<ResourceType, Kind> RcCommand<ResourceType, Kind> {
@@ -1941,6 +1994,7 @@ pub mod generic {
                         RcCommand::Create(_) => RcCommandType::Create,
                         RcCommand::Select(_) => RcCommandType::Select,
                         RcCommand::Update(_) => RcCommandType::Update,
+                        RcCommand::Query(_) => RcCommandType::Query,
                     }
                 }
             }
@@ -1950,6 +2004,7 @@ pub mod generic {
                 Create,
                 Select,
                 Update,
+                Query
             }
 
             impl<ResourceType, KIND >
@@ -2145,7 +2200,7 @@ pub mod generic {
                 use crate::version::v0_0_1::payload::PrimitiveType;
                 use crate::version::v0_0_1::generic::payload::Primitive;
                 use std::marker::PhantomData;
-                use crate::version::latest::generic::pattern::{Hop, AddressTksPath};
+                use crate::version::latest::generic::pattern::{Hop, AddressKindPath};
                 use crate::version::latest::fail;
                 use crate::version::latest::id::Address;
 
@@ -2178,25 +2233,25 @@ pub mod generic {
                 #[derive(Debug, Clone, Serialize, Deserialize)]
                 pub enum SelectionKind<ResourceType,Kind>{
                     Initial,
-                    SubSelector{ address: Address, hops: Vec<Hop<ResourceType,Kind>>, address_tks_path: AddressTksPath<Kind> }
+                    SubSelector{ address: Address, hops: Vec<Hop<ResourceType,Kind>>, address_kind_path: AddressKindPath<Kind> }
                 }
 
                 impl <ResourceType,Kind> TryInto<SubSelector<ResourceType,Kind>> for Select<ResourceType,Kind> {
                     type Error = Error;
 
-                    fn try_into(self) -> Result<T, Self::Error> {
+                    fn try_into(self) -> Result<SubSelector<ResourceType,Kind>, Self::Error> {
                         match self.kind {
                             SelectionKind::Initial => {
                                 Err("cannot convert an initial Select into a SubSelect".into())
                             }
-                            SelectionKind::SubSelector { address,hops,address_tks_path } => {
+                            SelectionKind::SubSelector { address,hops, address_kind_path: address_kind_path } => {
                                 Ok(SubSelector{
                                     address,
                                     pattern: self.pattern,
                                     properties: self.properties,
                                     into_payload: self.into_payload,
                                     hops,
-                                    address_tks_path
+                                    address_kind_path
                                 })
                             }
                         }
@@ -2205,7 +2260,7 @@ pub mod generic {
 
                 impl <ResourceType,Kind> Select<ResourceType,Kind> {
 
-                    pub fn sub_select(self, address:Address, hops: Vec<Hop<ResourceType,Kind>>, address_tks_path: AddressTksPath<Kind>) -> SubSelector<ResourceType, Kind> {
+                    pub fn sub_select(self, address:Address, hops: Vec<Hop<ResourceType,Kind>>, address_kind_path: AddressKindPath<Kind>) -> SubSelector<ResourceType, Kind> {
 
                                 SubSelector{
                                     address,
@@ -2213,7 +2268,7 @@ pub mod generic {
                                     properties: self.properties,
                                     into_payload: self.into_payload,
                                     hops,
-                                    address_tks_path
+                                    address_kind_path
                                 }
 
                     }
@@ -2226,7 +2281,7 @@ pub mod generic {
                     pub properties: PropertiesPattern,
                     pub into_payload: SelectIntoPayload,
                     pub hops: Vec<Hop<ResourceType,Kind>>,
-                    pub address_tks_path: AddressTksPath<Kind>
+                    pub address_kind_path: AddressKindPath<Kind>
                 }
 
                 impl <ResourceType,Kind> Into<Select<ResourceType,Kind>> for SubSelector<ResourceType,Kind> {
@@ -2238,7 +2293,7 @@ pub mod generic {
                             kind: SelectionKind::SubSelector {
                                 address: self.address,
                                 hops: self.hops,
-                                address_tks_path: self.address_tks_path
+                                address_kind_path: self.address_kind_path
                             }
                         }
                     }
@@ -2246,7 +2301,7 @@ pub mod generic {
 
                 impl <ResourceType,Kind> SubSelector<ResourceType,Kind> {
 
-                    pub fn sub_select(self, address:Address, hops: Vec<Hop<ResourceType,Kind>>, address_tks_path: AddressTksPath<Kind>) -> SubSelector<ResourceType, Kind> {
+                    pub fn sub_select(self, address:Address, hops: Vec<Hop<ResourceType,Kind>>, address_tks_path: AddressKindPath<Kind>) -> SubSelector<ResourceType, Kind> {
 
                         SubSelector{
                             address,
@@ -2254,7 +2309,7 @@ pub mod generic {
                             properties: self.properties,
                             into_payload: self.into_payload,
                             hops,
-                            address_tks_path
+                            address_kind_path: address_tks_path
                         }
                     }
                 }
@@ -2287,7 +2342,7 @@ pub mod generic {
                             SelectionKind::Initial => {
                                 SelectionKind::Initial
                             }
-                            SelectionKind::SubSelector { address, hops, address_tks_path } => {
+                            SelectionKind::SubSelector { address, hops, address_kind_path: address_tks_path } => {
                                 let mut converted_hops = vec![];
                                 for hop in hops {
                                     converted_hops.push(hop.convert()?);
@@ -2295,7 +2350,7 @@ pub mod generic {
                                 SelectionKind::SubSelector {
                                     address,
                                     hops: converted_hops,
-                                    address_tks_path: address_tks_path.convert()?
+                                    address_kind_path: address_tks_path.convert()?
                                 }
                             }
                         })
@@ -2350,6 +2405,29 @@ pub mod generic {
                         })
                     }
                 }
+            }
+
+            pub mod query {
+                use serde::{Serialize,Deserialize};
+                use crate::version::latest::generic::pattern::AddressKindPath;
+                use crate::version::latest::generic::payload::RcCommand;
+
+                #[derive(Debug, Clone, Serialize, Deserialize)]
+                pub enum Query {
+                    AddressKindPath
+                }
+
+                #[derive(Debug, Clone, Serialize, Deserialize)]
+                pub enum QueryResult<Kind>{
+                    AddressKindPath(AddressKindPath<Kind>)
+                }
+
+                impl <ResourceType,Kind> Into<RcCommand<ResourceType,Kind>> for Query {
+                    fn into(self)-> RcCommand<ResourceType,Kind> {
+                        RcCommand::Query(self)
+                    }
+                }
+
             }
         }
     }
@@ -3544,6 +3622,9 @@ pub mod generic {
         use crate::version::v0_0_1::id::Address;
         use crate::version::latest::generic::payload::Payload;
         use crate::version::latest::fail::Fail;
+        use std::str::FromStr;
+        use nom::combinator::all_consuming;
+        use crate::version::v0_0_1::parse::{address_kind_path, consume_address_kind_path};
 
         #[derive(Debug, Clone, Serialize, Deserialize)]
         pub struct AddressKindPattern<ResourceType, Kind> {
@@ -3600,26 +3681,26 @@ pub mod generic {
             }
 
 
-            pub fn matches(&self, address_tks_path: &AddressTksPath<Kind>) -> bool
+            pub fn matches(&self, address_kind_path: &AddressKindPath<Kind>) -> bool
             where
                 ResourceType: Clone,
                 Kind: Clone,
             {
-                if address_tks_path.segments.len() < self.hops.len() {
+                if address_kind_path.segments.len() < self.hops.len() {
                     return false;
                 }
 
-                if address_tks_path.segments.is_empty() || self.hops.is_empty() {
+                if address_kind_path.segments.is_empty() || self.hops.is_empty() {
                     return false;
                 }
 
                 let hop = self.hops.first().expect("hop");
-                let seg = address_tks_path.segments.first().expect("segment");
+                let seg = address_kind_path.segments.first().expect("segment");
 
-                if address_tks_path.is_final() && self.is_final() {
+                if address_kind_path.is_final() && self.is_final() {
                     // this is the final hop & segment if they match, everything matches!
                     hop.matches(seg)
-                } else if address_tks_path.is_final() {
+                } else if address_kind_path.is_final() {
                     // we still have hops that haven't been matched and we are all out of path
                     false
                 }
@@ -3634,16 +3715,16 @@ pub mod generic {
                         // space.org:**:users ~ space.org:many:silly:dirs:users
                         self.consume()
                             .expect("AddressTksPattern")
-                            .matches(&address_tks_path.consume().expect("AddressTksPath"))
+                            .matches(&address_kind_path.consume().expect("AddressKindPath"))
                     } else {
                         // the NEXT hop does not match, therefore we do NOT consume() the current hop
-                        self.matches(&address_tks_path.consume().expect("AddressTksPath"))
+                        self.matches(&address_kind_path.consume().expect("AddressKindPath"))
                     }
                 } else if hop.matches(seg) {
                     // in a normal match situation, we consume the hop and move to the next one
                     self.consume()
                         .expect("AddressTksPattern")
-                        .matches(&address_tks_path.consume().expect("AddressTksPath"))
+                        .matches(&address_kind_path.consume().expect("AddressKindPath"))
                 } else {
                     false
                 }
@@ -3690,9 +3771,9 @@ pub mod generic {
         }
 
         impl<ResourceType, Kind> Hop<ResourceType, Kind> {
-            pub fn matches(&self, address_tks_segment: &AddressTksSegment<Kind>) -> bool {
+            pub fn matches(&self, address_kind_segment: &AddressKindSegment<Kind>) -> bool {
                 self.segment
-                    .matches(&address_tks_segment.address_segment)
+                    .matches(&address_kind_segment.address_segment)
             }
         }
 
@@ -3914,21 +3995,23 @@ pub mod generic {
         }
 
         #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
-        pub struct AddressTksPath<Kind> {
-            pub segments: Vec<AddressTksSegment<Kind>>,
+        pub struct AddressKindPath<Kind> {
+            pub route: RouteSegment,
+            pub segments: Vec<AddressKindSegment<Kind>>,
         }
 
-        impl<Kind> AddressTksPath<Kind> {
+        impl<Kind> AddressKindPath<Kind> {
 
-            pub fn push( &self, segment: AddressTksSegment<Kind> ) -> AddressTksPath<Kind> where Kind: Clone {
+            pub fn push(&self, segment: AddressKindSegment<Kind> ) -> AddressKindPath<Kind> where Kind: Clone {
                 let mut segments = self.segments.clone();
                 segments.push(segment);
                 Self{
+                    route: self.route.clone(),
                     segments
                 }
             }
 
-            pub fn consume(&self) -> Option<AddressTksPath<Kind>>
+            pub fn consume(&self) -> Option<AddressKindPath<Kind>>
             where
                 Kind: Clone,
             {
@@ -3937,7 +4020,9 @@ pub mod generic {
                 }
                 let mut segments = self.segments.clone();
                 segments.remove(0);
-                Option::Some(AddressTksPath { segments })
+                Option::Some(AddressKindPath {
+                    route: self.route.clone(),
+                    segments })
             }
 
             pub fn is_final(&self) -> bool {
@@ -3945,12 +4030,42 @@ pub mod generic {
             }
         }
 
+        impl<Kind:FromStr> FromStr for AddressKindPath<Kind> {
+            type Err = Error;
+
+            fn from_str(s: &str) -> Result<Self, Self::Err> {
+                Ok(consume_address_kind_path(s)?)
+            }
+        }
+
+        impl<Kind:ToString> ToString for AddressKindPath<Kind>{
+            fn to_string(&self) -> String {
+                let mut rtn = String::new();
+                match &self.route {
+                    RouteSegment::Resource => {}
+                    route => {
+                        rtn.push_str(r.to_string().as_str());
+                        rtn.push_str("::" );
+                    }
+                }
+
+                for (index,segment) in self.segments.iter().enumerate() {
+                    rtn.push_str( segment.to_string().as_str() );
+                    if index < self.segments.len() {
+                        rtn.push_str( segment.address_segment.terminating_delim() );
+                    }
+                }
+
+                rtn
+            }
+        }
+
         impl<FromKind>
-        AddressTksPath<FromKind>
+        AddressKindPath<FromKind>
         {
             pub fn convert<ToKind>(
                 self,
-            ) -> Result<AddressTksPath<ToKind>, Error>
+            ) -> Result<AddressKindPath<ToKind>, Error>
                 where
                     FromKind: TryInto<ToKind, Error = Error>+Clone+Eq+PartialEq,
             {
@@ -3958,30 +4073,45 @@ pub mod generic {
                 for segment in self.segments {
                     segments.push( segment.convert()? );
                 }
-                Ok(AddressTksPath {
+                Ok(AddressKindPath {
+                    route: self.route,
                   segments
                 })
             }
         }
         #[derive(Debug, Eq, PartialEq, Clone, Serialize, Deserialize)]
-        pub struct AddressTksSegment<Kind> {
+        pub struct AddressKindSegment<Kind> {
             pub address_segment: AddressSegment,
             pub kind: Kind,
         }
 
-        impl <FromKind> AddressTksSegment<FromKind> {
+        impl <FromKind> AddressKindSegment<FromKind> {
             pub fn convert<ToKind>(
                 self,
-            ) -> Result<AddressTksSegment<ToKind>, Error>
+            ) -> Result<AddressKindSegment<ToKind>, Error>
                 where
                     FromKind: TryInto<ToKind, Error = Error>+Clone+Eq+PartialEq,
             {
-                Ok(AddressTksSegment {
+                Ok(AddressKindSegment {
                     address_segment: self.address_segment,
                     kind: self.kind.try_into()?
                 })
             }
+        }
 
+        impl <Kind: ToString> ToString for AddressKindSegment<Kind> {
+            fn to_string(&self) -> String {
+                format!("{}<{}>", self.address_segment.to_string(), self.kind.to_string() )
+            }
+        }
+
+        impl <Kind> FromStr for AddressKindPath<Kind> where Kind: FromStr<Err=Error> {
+            type Err = Error;
+
+            fn from_str(s: &str) -> Result<Self, Self::Err> {
+                let (_,rtn) = all_consuming(address_kind_path)(s)?;
+                Ok(rtn)
+            }
         }
     }
 }
@@ -4299,6 +4429,10 @@ pub mod parse {
     use nom::sequence::{delimited, preceded, terminated, tuple};
     use nom_supreme::parse_from_str;
     use crate::version::v0_0_1::generic::id::parse::version;
+    use crate::version::latest::generic::pattern::{AddressKindSegment, AddressKindPath};
+    use std::str::FromStr;
+    use crate::error::Error;
+    use crate::version::v0_0_1::pattern::parse::{kind, delim_kind};
 
     pub struct Parser {}
 
@@ -4307,8 +4441,9 @@ pub mod parse {
             address(input)
         }
 
-        pub fn consume_address(input: &str) -> Res<&str, Address> {
-            consume_address(input)
+        pub fn consume_address(input: &str) -> Result<Address,Error> {
+            let (_,address) = all_consuming(address)(input)?;
+            Ok(address)
         }
     }
 
@@ -4387,12 +4522,15 @@ pub mod parse {
         skewer_chars(input).map(|(next, base)| (next, AddressSegment::Base(base.to_string())))
     }
 
+    pub fn filepath_address_segment(input: &str) -> Res<&str, AddressSegment> {
+        alt( (file_address_segment,dir_address_segment) )(input)
+    }
     pub fn dir_address_segment(input: &str) -> Res<&str, AddressSegment> {
-        tag("/")(input).map(|(next, _)| (next, AddressSegment::Dir))
+        terminated(filepath_chars,tag("/"))(input).map(|(next, name)| (next, AddressSegment::Dir(name.to_string())))
     }
 
     pub fn file_address_segment(input: &str) -> Res<&str, AddressSegment> {
-        filepath_chars(input)
+        file_chars(input)
             .map(|(next, filename)| (next, AddressSegment::File(filename.to_string())))
     }
 
@@ -4407,7 +4545,7 @@ pub mod parse {
             tuple((hub_segment, space_address_segment)),
             many0(base_address_segment),
             opt( version_address_segment ),
-            many0(file_address_segment ),
+            many0(filepath_address_segment ),
         ))(input)
         .map(|(next, ((hub, space), mut bases, version, mut files))| {
             let mut segments = vec![];
@@ -4427,8 +4565,66 @@ pub mod parse {
         })
     }
 
+
+
+
     pub fn consume_address(input: &str) -> Res<&str, Address> {
         all_consuming(address)(input)
+    }
+
+
+
+    pub fn space_address_kind_segment<Kind>(input: &str) -> Res<&str, AddressKindSegment<Kind>> {
+        tuple((space_address_segment,delim_kind))(input).map(|(next, (address_segment,kind))| (next, AddressKindSegment{ address_segment, kind}))
+    }
+
+    pub fn base_address_kind_segment<Kind>(input: &str) -> Res<&str, AddressKindSegment<Kind>> {
+        tuple((base_address_segment,delim_kind))(input).map(|(next, (address_segment,kind))| (next, AddressKindSegment{ address_segment, kind}))
+    }
+
+    pub fn filepath_address_kind_segment<Kind>(input: &str) -> Res<&str, AddressKindSegment<Kind>> {
+        alt( (file_address_kind_segment,dir_address_kind_segment) )(input)
+    }
+    pub fn dir_address_kind_segment<Kind>(input: &str) -> Res<&str, AddressKindSegment<Kind>> {
+        tuple((dir_address_segment,delim_kind))(input).map(|(next, (address_segment,kind))| (next, AddressKindSegment{ address_segment, kind}))
+    }
+
+    pub fn file_address_kind_segment<Kind>(input: &str) -> Res<&str, AddressKindSegment<Kind>> {
+        tuple((file_address_segment,delim_kind))(input).map(|(next, (address_segment,kind))| (next, AddressKindSegment{ address_segment, kind}))
+    }
+
+    pub fn version_address_kind_segment<Kind>(input: &str) -> Res<&str, AddressKindSegment<Kind>> {
+        tuple((version_address_segment,delim_kind))(input).map(|(next, (address_segment,kind))| (next, AddressKindSegment{ address_segment, kind}))
+    }
+
+    pub fn consume_address_kind_path<Kind>(input: &str) -> Result<AddressKindPath<Kind>,Error> {
+        let (_,rtn ) = all_consuming(address_kind_path)(input)?;
+        Ok(rtn)
+    }
+
+    pub fn address_kind_path<Kind>(input: &str) -> Res<&str, AddressKindPath<Kind>> {
+        tuple((
+            tuple((hub_segment, space_address_kind_segment)),
+            many0(base_address_kind_segment),
+            opt( version_address_kind_segment ),
+            many0(file_address_kind_segment ),
+        ))(input)
+            .map(|(next, ((hub, space), mut bases, version, mut files))| {
+                let mut segments = vec![];
+                segments.push(space);
+                segments.append(&mut bases);
+                match version {
+                    None => {}
+                    Some(version) => {
+                        segments.push(version);
+                    }
+                }
+                segments.append(&mut files);
+
+                let address = AddressKindPath { route: hub, segments };
+
+                (next, address)
+            })
     }
 
     pub fn asterisk<T, E: nom::error::ParseError<T>>(input: T) -> IResult<T, T, E>
@@ -4554,6 +4750,8 @@ pub mod parse {
         )
     }
 
+
+
     pub fn skewer_chars<T>(i: T) -> Res<T, T>
     where
         T: InputTakeAtPosition,
@@ -4621,6 +4819,24 @@ pub mod parse {
             ErrorKind::AlphaNumeric,
         )
     }
+
+    pub fn file_chars<T>(i: T) -> Res<T, T>
+        where
+            T: InputTakeAtPosition,
+            <T as InputTakeAtPosition>::Item: AsChar,
+    {
+        i.split_at_position1_complete(
+            |item| {
+                let char_item = item.as_char();
+                !(char_item == '-')
+                    && !(char_item == '.')
+                    && !(char_item == '_')
+                    && !(char_item.is_alpha() || char_item.is_dec_digit())
+            },
+            ErrorKind::AlphaNumeric,
+        )
+    }
+
 
     pub fn not_space(input: &str) -> Res<&str, &str> {
         is_not(" \n\r\t")(input)
