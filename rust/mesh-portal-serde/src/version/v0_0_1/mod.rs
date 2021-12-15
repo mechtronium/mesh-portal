@@ -2205,7 +2205,7 @@ pub mod generic {
 
                 impl <ResourceType,Kind> Select<ResourceType,Kind> {
 
-                    fn sub_select(self, address:Address, hops: Vec<Hop<ResourceType,Kind>>, address_tks_path: AddressTksPath<Kind>) -> SubSelector<ResourceType, Kind> {
+                    pub fn sub_select(self, address:Address, hops: Vec<Hop<ResourceType,Kind>>, address_tks_path: AddressTksPath<Kind>) -> SubSelector<ResourceType, Kind> {
 
                                 SubSelector{
                                     address,
@@ -2240,6 +2240,21 @@ pub mod generic {
                                 hops: self.hops,
                                 address_tks_path: self.address_tks_path
                             }
+                        }
+                    }
+                }
+
+                impl <ResourceType,Kind> SubSelector<ResourceType,Kind> {
+
+                    pub fn sub_select(self, address:Address, hops: Vec<Hop<ResourceType,Kind>>, address_tks_path: AddressTksPath<Kind>) -> SubSelector<ResourceType, Kind> {
+
+                        SubSelector{
+                            address,
+                            pattern: self.pattern,
+                            properties: self.properties,
+                            into_payload: self.into_payload,
+                            hops,
+                            address_tks_path
                         }
                     }
                 }

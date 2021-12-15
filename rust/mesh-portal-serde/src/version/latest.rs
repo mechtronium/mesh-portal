@@ -73,6 +73,7 @@ pub mod payload {
 
     pub type Primitive = generic::payload::Primitive<Kind>;
     pub type Payload = generic::payload::Payload<Kind>;
+    pub type PrimitiveList= generic::payload::PrimitiveList<Kind>;
     pub type PayloadType = payload::PayloadType;
     pub type PrimitiveType= payload::PrimitiveType;
     pub type PayloadRef = payload::PayloadRef;
@@ -387,6 +388,7 @@ pub mod generic {
 
         pub type Payload<KIND> = payload::Payload<KIND>;
         pub type PayloadMap<KIND> = payload::PayloadMap<KIND>;
+        pub type PrimitiveList<KIND> = payload::PrimitiveList<KIND>;
         pub type Primitive<KIND> = payload::Primitive<KIND>;
         pub type PayloadDelivery<PAYLOAD,PAYLOAD_REF> = payload::PayloadDelivery<PAYLOAD,PAYLOAD_REF>;
         pub type Call = payload::Call;
