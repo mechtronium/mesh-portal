@@ -196,6 +196,17 @@ pub mod id {
                 AddressSegment::Version(_) => ":",
             }
         }
+
+
+        pub fn is_filesystem_ref(&self) -> bool {
+            match self {
+                AddressSegment::Space(_) => {false}
+                AddressSegment::Base(_) => {false}
+                AddressSegment::Dir(_) => {true}
+                AddressSegment::File(_) => {true}
+                AddressSegment::Version(_) => {false}
+            }
+        }
     }
 
     impl ToString for AddressSegment {
@@ -235,6 +246,13 @@ pub mod id {
             self.segments.last().cloned()
         }
 
+        pub fn is_filesystem_ref(&self) -> bool {
+            if let Option::Some(last_segment) = self.last_segment() {
+                last_segment.is_filesystem_ref()
+            } else {
+                false
+            }
+        }
     }
 
     impl FromStr for Address {

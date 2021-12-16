@@ -43,8 +43,11 @@ pub trait PortalCtrl: Sync+Send {
         Ok(())
     }
 
-    async fn handle( &self, request: outlet::Request ) -> Result<Option<inlet::Response>,Error> {
+    async fn handle_request(&self, request: outlet::Request ) -> Result<Option<inlet::Response>,Error> {
         Ok(Option::None)
+    }
+
+    async fn handle_response(&self, response: inlet::Response) {
     }
 }
 
@@ -161,7 +164,7 @@ impl Outlet for Portal {
 
                         async fn handle( ctrl: Arc<dyn PortalCtrl>, inlet_api: InletApi, request: outlet::Request ) -> Result<(),Error> {
                             let exchange = request.exchange.clone();
-                            let response = ctrl.handle(request).await?;
+                            let response = ctrl.handle_request(request).await?;
 
                             if exchange.requires_response() {
                                 if let Some(mut response) = response {

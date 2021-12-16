@@ -22,6 +22,7 @@ pub mod id {
     pub type Address = id::Address;
     pub type ResourceType = id::ResourceType;
     pub type Kind = id::Kind;
+    pub type Version = id::Version;
     pub type Specific = id::Specific;
     pub type AddressAndKind = generic::id::AddressAndKind<Kind>;
     pub type AddressAndType = generic::id::AddressAndType<ResourceType>;
@@ -231,6 +232,7 @@ pub mod generic {
         pub type Hop<ResourceType, Kind> = generic::pattern::Hop<ResourceType, Kind>;
         pub type SegmentPattern = pattern::SegmentPattern;
         pub type ExactSegment = pattern::ExactSegment;
+        pub type Pattern<P> = generic::pattern::Pattern<P>;
     }
 
     pub mod config {
