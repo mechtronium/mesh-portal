@@ -1381,7 +1381,7 @@ pub mod generic {
 
             fn from_str(s: &str) -> Result<Self, Self::Err> {
 
-                let (_,kind) = all_consuming(tuple((resource_type,opt(delimited(tag("<"),tuple((camel_case,opt(delimited(tag("<"), specific, tag(">"))))),tag(">"))))))(input).map( |(next,(resource_type, rest ))| {
+                let (_,kind) = all_consuming(tuple((resource_type,opt(delimited(tag("<"),tuple((camel_case,opt(delimited(tag("<"), specific, tag(">"))))),tag(">"))))))(s).map( |(next,(resource_type, rest ))| {
 
                     let mut rtn = GenericKind {
                         resource_type,
@@ -1808,6 +1808,15 @@ pub mod generic {
             pub enum RespEntity<PAYLOAD> {
                 Ok(PAYLOAD),
                 Fail(fail::Fail),
+            }
+
+            impl <Payload> RespEntity<Payload> {
+                pub fn ok_or(self) -> Result<Payload,fail::Fail> {
+                    match self {
+                        Self::Ok(payload) => Result::Ok(payload),
+                        Self::Fail(fail) => Result::Err(fail)
+                    }
+                }
             }
 
             impl<FromPayload, ToPayload> ConvertFrom<RespEntity<FromPayload>>
@@ -2411,6 +2420,8 @@ pub mod generic {
                 use serde::{Serialize,Deserialize};
                 use crate::version::latest::generic::pattern::AddressKindPath;
                 use crate::version::latest::generic::payload::RcCommand;
+                use std::convert::TryInto;
+                use crate::error::Error;
 
                 #[derive(Debug, Clone, Serialize, Deserialize)]
                 pub enum Query {
@@ -2420,6 +2431,26 @@ pub mod generic {
                 #[derive(Debug, Clone, Serialize, Deserialize)]
                 pub enum QueryResult<Kind>{
                     AddressKindPath(AddressKindPath<Kind>)
+                }
+
+                impl <Kind> TryInto<AddressKindPath<Kind>> for QueryResult<Kind> {
+                    type Error=Error;
+
+                    fn try_into(self)-> Result<AddressKindPath<Kind>,Error> {
+                        match self {
+                            QueryResult::AddressKindPath(address_kind_path) => {Ok(address_kind_path)}
+                        }
+                    }
+                }
+
+                impl <Kind> ToString for QueryResult<Kind> {
+                    fn to_string(&self) -> String {
+                        match self {
+                            QueryResult::AddressKindPath(address_kind_path) => {
+                                address_kind_path.to_string()
+                            }
+                        }
+                    }
                 }
 
                 impl <ResourceType,Kind> Into<RcCommand<ResourceType,Kind>> for Query {
@@ -3329,6 +3360,17 @@ pub mod generic {
             }
         }
 
+        impl <Kind> TryInto<Primitive<Kind>> for Payload<Kind> {
+            type Error = Error;
+
+            fn try_into(self) -> Result<Primitive<Kind>, Self::Error> {
+                match self {
+                    Payload::Primitive(primitive) => {Ok(primitive)}
+                    p => Err(format!("coercion error expected: Primitive, found: {}",p.to_string() ).into())
+                }
+            }
+        }
+
         impl<FromKind> Payload<FromKind> {
             pub fn convert<ToKind>(self) -> Result<Payload<ToKind>, Error>
             where
@@ -3507,6 +3549,31 @@ pub mod generic {
                 }
             }
         }
+
+        impl <Kind> TryInto<String> for Primitive<Kind> {
+            type Error = Error;
+
+            fn try_into(self) -> Result<String, Self::Error> {
+                match self {
+                    Primitive::Text(text) => {Ok(text)}
+                    p => Err(format!("coercion error expected: Text, found: {}",p.to_string() ).into())
+                }
+            }
+        }
+
+
+        impl <Kind> TryInto<Address> for Primitive<Kind> {
+            type Error = Error;
+
+            fn try_into(self) -> Result<Address, Self::Error> {
+                match self {
+                    Primitive::Address(address) => {Ok(address)}
+                    p => Err(format!("coercion error expected: Address, found: {}",p.to_string() ).into())
+                }
+            }
+        }
+
+
 
         #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
         pub struct PrimitiveList<KIND> {
@@ -4044,7 +4111,7 @@ pub mod generic {
                 match &self.route {
                     RouteSegment::Resource => {}
                     route => {
-                        rtn.push_str(r.to_string().as_str());
+                        rtn.push_str(route.to_string().as_str());
                         rtn.push_str("::" );
                     }
                 }

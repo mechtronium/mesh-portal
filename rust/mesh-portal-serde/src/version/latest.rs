@@ -332,6 +332,7 @@ pub mod generic {
                 pub type Select<ResourceType,Kind>=generic::resource::command::select::Select<ResourceType,Kind>;
                 pub type SubSelector<ResourceType,Kind>=generic::resource::command::select::SubSelector<ResourceType,Kind>;
                 pub type PropertiesPattern = generic::resource::command::select::PropertiesPattern;
+                pub type SelectionKind<ResourceType,Kind>= generic::resource::command::select::SelectionKind<ResourceType,Kind>;
             }
 
             pub mod update {

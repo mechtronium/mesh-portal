@@ -22,11 +22,11 @@ pub mod generic {
     use crate::version::v0_0_1::util::{unique_id, Convert, ConvertFrom};
 
     #[derive(Clone, Serialize, Deserialize)]
-    pub struct Request<Entity> {
+    pub struct Request {
         pub id: String,
         pub to: Address,
         pub from: Address,
-        pub entity: Entity,
+        pub entity: ReqEntity,
         pub exchange: Exchange,
     }
 
