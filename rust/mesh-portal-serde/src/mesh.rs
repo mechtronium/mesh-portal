@@ -4,7 +4,7 @@ use crate::version::latest::entity::response::RespEntity;
 use crate::version::latest::fail;
 use crate::version::latest::id::Address;
 
-pub type Request = generic::Request<ReqEntity>;
+pub type Request = generic::Request;
 pub type Response = generic::Response;
 
 pub mod generic {
@@ -35,11 +35,11 @@ pub mod generic {
     use crate::version::latest::id::Address;
     use crate::version::v0_0_1;
 
-    impl TryInto<latest::portal::outlet::Request> for Request<latest::entity::request::ReqEntity> {
+    impl TryInto<portal::outlet::Request> for Request {
         type Error = crate::error::Error;
 
         fn try_into(self) -> Result<portal::outlet::Request, Self::Error> {
-            Ok(generic::portal::outlet::Request {
+            Ok(portal::outlet::Request {
                 from: self.from,
                 //entity: ConvertFrom::convert_from(self.entity)?,
                 entity: self.entity,
@@ -48,8 +48,8 @@ pub mod generic {
         }
     }
 
-    impl<Entity> Request<Entity> {
-        pub fn new(to: Address, from: Address, entity: Entity, exchange: Exchange) -> Self {
+    impl Request {
+        pub fn new(to: Address, from: Address, entity: ReqEntity, exchange: Exchange) -> Self {
             Request {
                 id: unique_id(),
                 to,
@@ -60,7 +60,7 @@ pub mod generic {
         }
     }
 
-    impl Request<ReqEntity> {
+    impl Request {
         pub fn from(
             request: inlet::Request,
             from: Address,

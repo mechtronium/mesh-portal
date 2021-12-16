@@ -216,6 +216,7 @@ pub mod generic {
 
         pub type AddressAndKind<KIND> = generic::id::AddressAndKind<KIND>;
         pub type AddressAndType<RESOURCE_TYPE> = generic::id::AddressAndType<RESOURCE_TYPE>;
+        pub type KindParts<RESOURCE_TYPE> = generic::id::KindParts<RESOURCE_TYPE>;
     }
 
     pub mod pattern {

@@ -31,7 +31,7 @@ pub mod id {
     use std::ops::Deref;
 
     pub type ResourceType = String;
-    pub type Kind = generic::id::GenericKind<ResourceType>;
+    pub type Kind = generic::id::KindParts<ResourceType>;
     pub type AddressAndKind = generic::id::AddressAndKind<Kind>;
     pub type AddressAndType = generic::id::AddressAndType<ResourceType>;
     pub type Meta = HashMap<String, String>;
@@ -113,6 +113,7 @@ pub mod id {
             Ok(Self { version })
         }
     }
+
 
     /// Stands for "Type, Kind, Specific"
     pub trait Tks<ResourceType>
@@ -551,6 +552,9 @@ pub mod pattern {
         use std::str::FromStr;
         use crate::version::v0_0_1::id::AddressSegment;
         use crate::error::Error;
+        use crate::version::latest::generic::id::KindParts;
+        use crate::version::v0_0_1::generic::id::parse::specific;
+        use std::convert::TryFrom;
 
         fn any_segment(input: &str) -> Res<&str, SegmentPattern> {
             tag("*")(input).map(|(next, _)| (next, SegmentPattern::Any))
@@ -652,7 +656,7 @@ pub mod pattern {
             recognize(alt((skewer_chars, rec_domain)))(input)
         }
 
-        fn specific(input: &str) -> Res<&str, SpecificPattern> {
+        fn specific_pattern(input: &str) -> Res<&str, SpecificPattern> {
             tuple((
                 pattern(rec_domain),
                 tag(":"),
@@ -681,27 +685,52 @@ pub mod pattern {
             })
         }
 
-        fn rec_kind(input: &str) -> Res<&str, &str> {
-            recognize(tuple((camel_case,opt(delimited(tag("<"),tuple((camel_case,opt(delimited(tag("<"), specific, tag(">"))))),tag(">"))))))(input)
+        fn kind_parts<ResourceType:FromStr>(input: &str) -> Res<&str, KindParts<ResourceType>> {
+            tuple((resource_type,opt(delimited(tag("<"), tuple((camel_case,opt(delimited(tag("<"), specific, tag(">"))))), tag(">")))))(input).map( |(next,(resource_type,more))| {
+                let mut parts = KindParts {
+                    resource_type,
+                    kind: None,
+                    specific: None
+                };
+
+                match more {
+                    Some((kind,specific)) => {
+                        parts.kind = Option::Some(kind.to_string());
+                        match specific {
+                            Some(specific) => {}
+                            None => {}
+                        }
+                    }
+                    None => {}
+                }
+
+                    (next, parts)
+
+            })
         }
 
-        pub fn kind<Kind: FromStr>(input: &str) -> Res<&str, Kind> {
+
+        fn rec_kind<ResourceType:FromStr>(input: &str) -> Res<&str, &str> {
+            recognize(kind_parts)(input)
+        }
+
+        pub fn kind<Kind>(input: &str) -> Res<&str, Kind> where Kind: FromStr{
             parse_from_str(rec_kind)
                 .parse(input)
                 .map(|(next, kind)| (next, kind))
         }
 
-        pub fn delim_kind<Kind: FromStr>(input: &str) -> Res<&str, Kind> {
+        pub fn delim_kind<Kind>(input: &str) -> Res<&str, Kind> where  Kind: FromStr{
             delimited(tag("<"),kind,tag(">"))(input)
         }
 
-        pub fn consume_kind<Kind: FromStr>(input: &str) -> Result<Kind,Error> {
-            let (_,kind) = all_consuming(kind )(input)?;
-            Ok(kind)
+        pub fn consume_kind<ResourceType,Kind>(input: &str) -> Result<Kind,Error> where ResourceType: FromStr, Kind: FromStr+TryFrom<KindParts<ResourceType>>{
+            let (_,kind_parts) = all_consuming(kind_parts)(input);
+
+            Ok(kind_parts.try_into()?)
         }
 
-
-        pub fn kind_pattern<Kind: FromStr>(input: &str) -> Res<&str, KindPattern<Kind>> {
+        pub fn kind_pattern<ResourceType,Kind>(input: &str) -> Res<&str, KindPattern<Kind>> where ResourceType: FromStr, Kind: FromStr+TryFrom<KindParts<ResourceType>>{
             pattern(kind)(input).map(|(next, kind)| (next, kind))
         }
 
@@ -726,7 +755,7 @@ pub mod pattern {
                         tag("<"),
                         tuple((
                             kind_pattern,
-                            opt(delimited(tag("<"), value_pattern(specific), tag(">"))),
+                            opt(delimited(tag("<"), value_pattern(specific_pattern), tag(">"))),
                         )),
                         tag(">"),
                     )),
@@ -798,7 +827,7 @@ pub mod pattern {
 
             use crate::error::Error;
             use crate::version::v0_0_1::generic::pattern::{Pattern, TksPattern};
-            use crate::version::v0_0_1::pattern::parse::{hop, segment, specific, tks, space_hop};
+            use crate::version::v0_0_1::pattern::parse::{hop, segment, specific_pattern, tks, space_hop};
             use crate::version::v0_0_1::pattern::{
                 ExactSegment, Pattern, SegmentPattern, SpecificPattern, VersionReq,
             };
@@ -823,11 +852,11 @@ pub mod pattern {
 
             #[test]
             pub fn test_specific() -> Result<(), Error> {
-                let (_, x) = specific("mysql.org:mysql:innodb:(7.0.1)'")?;
+                let (_, x) = specific_pattern("mysql.org:mysql:innodb:(7.0.1)'")?;
                 println!("specific: '{}'", x.to_string());
-                let (_, x) = specific("mysql.org:mysql:innodb:(>=7.0.1, <8.0.0)")?;
+                let (_, x) = specific_pattern("mysql.org:mysql:innodb:(>=7.0.1, <8.0.0)")?;
                 println!("specific: '{}'", x.to_string());
-                let (_, x) = specific("mysql.org:*:innodb:(>=7.0.1, <8.0.0)")?;
+                let (_, x) = specific_pattern("mysql.org:*:innodb:(>=7.0.1, <8.0.0)")?;
                 println!("specific: '{}'", x.to_string());
 
                 Ok(())
@@ -1370,20 +1399,20 @@ pub mod generic {
         use crate::version::v0_0_1::generic::id::parse::specific;
 
         #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
-        pub struct GenericKind<ResourceType> {
+        pub struct KindParts<ResourceType> {
             pub resource_type: ResourceType,
             pub kind: Option<String>,
             pub specific: Option<Specific>,
         }
 
-        impl <ResourceType> FromStr for GenericKind<ResourceType> {
+        impl <ResourceType:FromStr> FromStr for KindParts<ResourceType> {
             type Err = Error;
 
             fn from_str(s: &str) -> Result<Self, Self::Err> {
 
                 let (_,kind) = all_consuming(tuple((resource_type,opt(delimited(tag("<"),tuple((camel_case,opt(delimited(tag("<"), specific, tag(">"))))),tag(">"))))))(s).map( |(next,(resource_type, rest ))| {
 
-                    let mut rtn = GenericKind {
+                    let mut rtn = KindParts {
                         resource_type,
                         kind: Option::None,
                         specific: Option::None
@@ -1403,12 +1432,12 @@ pub mod generic {
                     }
 
                     (next,rtn)
-                } );
+                } )?;
                 Ok(kind)
             }
         }
 
-        impl <ResourceType> GenericKind<ResourceType> {
+        impl <ResourceType> KindParts<ResourceType> {
             pub fn new( resource_type: ResourceType, kind: Option<String>, specific: Option<Specific>) -> Self {
                 Self {
                     resource_type,
@@ -1418,7 +1447,7 @@ pub mod generic {
             }
         }
 
-        impl<ResourceType> Tks<ResourceType> for GenericKind<ResourceType>
+        impl<ResourceType> Tks<ResourceType> for KindParts<ResourceType>
         where
             ResourceType: Eq + PartialEq + Clone,
         {
@@ -2443,7 +2472,7 @@ pub mod generic {
                     }
                 }
 
-                impl <Kind> ToString for QueryResult<Kind> {
+                impl <Kind:ToString> ToString for QueryResult<Kind> {
                     fn to_string(&self) -> String {
                         match self {
                             QueryResult::AddressKindPath(address_kind_path) => {
@@ -4097,13 +4126,6 @@ pub mod generic {
             }
         }
 
-        impl<Kind:FromStr> FromStr for AddressKindPath<Kind> {
-            type Err = Error;
-
-            fn from_str(s: &str) -> Result<Self, Self::Err> {
-                Ok(consume_address_kind_path(s)?)
-            }
-        }
 
         impl<Kind:ToString> ToString for AddressKindPath<Kind>{
             fn to_string(&self) -> String {
@@ -4176,8 +4198,7 @@ pub mod generic {
             type Err = Error;
 
             fn from_str(s: &str) -> Result<Self, Self::Err> {
-                let (_,rtn) = all_consuming(address_kind_path)(s)?;
-                Ok(rtn)
+                Ok(consume_address_kind_path(s)?)
             }
         }
     }
@@ -4641,35 +4662,35 @@ pub mod parse {
 
 
 
-    pub fn space_address_kind_segment<Kind>(input: &str) -> Res<&str, AddressKindSegment<Kind>> {
+    pub fn space_address_kind_segment<Kind:FromStr>(input: &str) -> Res<&str, AddressKindSegment<Kind>> {
         tuple((space_address_segment,delim_kind))(input).map(|(next, (address_segment,kind))| (next, AddressKindSegment{ address_segment, kind}))
     }
 
-    pub fn base_address_kind_segment<Kind>(input: &str) -> Res<&str, AddressKindSegment<Kind>> {
+    pub fn base_address_kind_segment<Kind:FromStr>(input: &str) -> Res<&str, AddressKindSegment<Kind>> {
         tuple((base_address_segment,delim_kind))(input).map(|(next, (address_segment,kind))| (next, AddressKindSegment{ address_segment, kind}))
     }
 
-    pub fn filepath_address_kind_segment<Kind>(input: &str) -> Res<&str, AddressKindSegment<Kind>> {
+    pub fn filepath_address_kind_segment<Kind:FromStr>(input: &str) -> Res<&str, AddressKindSegment<Kind>> {
         alt( (file_address_kind_segment,dir_address_kind_segment) )(input)
     }
-    pub fn dir_address_kind_segment<Kind>(input: &str) -> Res<&str, AddressKindSegment<Kind>> {
+    pub fn dir_address_kind_segment<Kind:FromStr>(input: &str) -> Res<&str, AddressKindSegment<Kind>> {
         tuple((dir_address_segment,delim_kind))(input).map(|(next, (address_segment,kind))| (next, AddressKindSegment{ address_segment, kind}))
     }
 
-    pub fn file_address_kind_segment<Kind>(input: &str) -> Res<&str, AddressKindSegment<Kind>> {
+    pub fn file_address_kind_segment<Kind:FromStr>(input: &str) -> Res<&str, AddressKindSegment<Kind>> {
         tuple((file_address_segment,delim_kind))(input).map(|(next, (address_segment,kind))| (next, AddressKindSegment{ address_segment, kind}))
     }
 
-    pub fn version_address_kind_segment<Kind>(input: &str) -> Res<&str, AddressKindSegment<Kind>> {
+    pub fn version_address_kind_segment<Kind:FromStr>(input: &str) -> Res<&str, AddressKindSegment<Kind>> {
         tuple((version_address_segment,delim_kind))(input).map(|(next, (address_segment,kind))| (next, AddressKindSegment{ address_segment, kind}))
     }
 
-    pub fn consume_address_kind_path<Kind>(input: &str) -> Result<AddressKindPath<Kind>,Error> {
+    pub fn consume_address_kind_path<Kind:FromStr>(input: &str) -> Result<AddressKindPath<Kind>,Error> {
         let (_,rtn ) = all_consuming(address_kind_path)(input)?;
         Ok(rtn)
     }
 
-    pub fn address_kind_path<Kind>(input: &str) -> Res<&str, AddressKindPath<Kind>> {
+    pub fn address_kind_path<Kind:FromStr>(input: &str) -> Res<&str, AddressKindPath<Kind>> {
         tuple((
             tuple((hub_segment, space_address_kind_segment)),
             many0(base_address_kind_segment),

@@ -49,7 +49,7 @@ pub mod message {
     use mesh_portal_serde::version::latest::entity::response::RespEntity;
     use mesh_portal_serde::version::latest::id::Address;
 
-    pub type Message = generic::Message<ReqEntity>;
+    pub type Message = generic::Message;
 
     pub mod generic {
         use serde::{Serialize,Deserialize};
@@ -57,12 +57,12 @@ pub mod message {
         use mesh_portal_serde::version::latest::id::Address;
 
         #[derive(Clone,Serialize,Deserialize)]
-        pub enum Message<ReqEntity> {
-            Request(Request<ReqEntity>),
+        pub enum Message {
+            Request(Request),
             Response(Response)
         }
 
-        impl<ReqEntity> Message<ReqEntity>{
+        impl Message{
             pub fn to(&self) -> Address {
                 match self {
                     Message::Request(request) => {
@@ -75,13 +75,13 @@ pub mod message {
             }
         }
 
-        impl<ReqEntity> From<Request<ReqEntity>> for Message<ReqEntity> {
-            fn from(request: Request<ReqEntity>) -> Self {
+        impl From<Request> for Message {
+            fn from(request: Request) -> Self {
                 Self::Request(request)
             }
         }
 
-        impl<ReqEntity> From<Response> for Message<ReqEntity> {
+        impl From<Response> for Message {
             fn from(response: Response) -> Self {
                 Self::Response(response)
             }
