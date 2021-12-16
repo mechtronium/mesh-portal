@@ -554,7 +554,7 @@ pub mod pattern {
         use crate::error::Error;
         use crate::version::latest::generic::id::KindParts;
         use crate::version::v0_0_1::generic::id::parse::specific;
-        use std::convert::TryFrom;
+        use std::convert::{TryFrom, TryInto};
 
         fn any_segment(input: &str) -> Res<&str, SegmentPattern> {
             tag("*")(input).map(|(next, _)| (next, SegmentPattern::Any))
@@ -711,27 +711,27 @@ pub mod pattern {
 
 
         fn rec_kind<ResourceType:FromStr>(input: &str) -> Res<&str, &str> {
-            recognize(kind_parts)(input)
+            recognize(kind_parts::<ResourceType>)(input)
         }
 
-        pub fn kind<Kind>(input: &str) -> Res<&str, Kind> where Kind: FromStr{
-            parse_from_str(rec_kind)
+        pub fn kind<ResourceType,Kind>(input: &str) -> Res<&str, Kind> where ResourceType: FromStr, Kind: FromStr{
+            parse_from_str(rec_kind::<ResourceType>)
                 .parse(input)
                 .map(|(next, kind)| (next, kind))
         }
 
-        pub fn delim_kind<Kind>(input: &str) -> Res<&str, Kind> where  Kind: FromStr{
-            delimited(tag("<"),kind,tag(">"))(input)
+        pub fn delim_kind<ResourceType,Kind>(input: &str) -> Res<&str, Kind> where  ResourceType:FromStr, Kind: FromStr{
+            delimited(tag("<"),kind::<ResourceType,Kind>,tag(">"))(input)
         }
 
-        pub fn consume_kind<ResourceType,Kind>(input: &str) -> Result<Kind,Error> where ResourceType: FromStr, Kind: FromStr+TryFrom<KindParts<ResourceType>>{
-            let (_,kind_parts) = all_consuming(kind_parts)(input);
+        pub fn consume_kind<ResourceType,Kind>(input: &str) -> Result<Kind,Error> where ResourceType: FromStr, Kind: FromStr+TryFrom<KindParts<ResourceType>,Error=Error>{
+            let (_,kind_parts) = all_consuming(kind_parts::<ResourceType>)(input)?;
 
             Ok(kind_parts.try_into()?)
         }
 
-        pub fn kind_pattern<ResourceType,Kind>(input: &str) -> Res<&str, KindPattern<Kind>> where ResourceType: FromStr, Kind: FromStr+TryFrom<KindParts<ResourceType>>{
-            pattern(kind)(input).map(|(next, kind)| (next, kind))
+        pub fn kind_pattern<ResourceType,Kind>(input: &str) -> Res<&str, KindPattern<Kind>> where ResourceType: FromStr, Kind: FromStr{
+            pattern(kind::<ResourceType,Kind>)(input).map(|(next, kind)| (next, kind))
         }
 
         pub fn resource_type<ResourceType: FromStr>(input: &str) -> Res<&str, ResourceType> {
@@ -754,7 +754,7 @@ pub mod pattern {
                     opt(delimited(
                         tag("<"),
                         tuple((
-                            kind_pattern,
+                            kind_pattern::<ResourceType,Kind>,
                             opt(delimited(tag("<"), value_pattern(specific_pattern), tag(">"))),
                         )),
                         tag(">"),
@@ -3721,6 +3721,7 @@ pub mod generic {
         use std::str::FromStr;
         use nom::combinator::all_consuming;
         use crate::version::v0_0_1::parse::{address_kind_path, consume_address_kind_path};
+        use crate::version::latest::generic::id::KindParts;
 
         #[derive(Debug, Clone, Serialize, Deserialize)]
         pub struct AddressKindPattern<ResourceType, Kind> {
@@ -4194,11 +4195,11 @@ pub mod generic {
             }
         }
 
-        impl <Kind> FromStr for AddressKindPath<Kind> where Kind: FromStr<Err=Error> {
+        impl <ResourceType> FromStr for AddressKindPath<KindParts<ResourceType>> where ResourceType: FromStr<Err=Error> {
             type Err = Error;
 
             fn from_str(s: &str) -> Result<Self, Self::Err> {
-                Ok(consume_address_kind_path(s)?)
+                Ok(consume_address_kind_path::<ResourceType,KindParts<ResourceType>>(s)?)
             }
         }
     }
@@ -4662,40 +4663,40 @@ pub mod parse {
 
 
 
-    pub fn space_address_kind_segment<Kind:FromStr>(input: &str) -> Res<&str, AddressKindSegment<Kind>> {
-        tuple((space_address_segment,delim_kind))(input).map(|(next, (address_segment,kind))| (next, AddressKindSegment{ address_segment, kind}))
+    pub fn space_address_kind_segment<ResourceType,Kind>(input: &str) -> Res<&str, AddressKindSegment<Kind>> where ResourceType: FromStr, Kind: FromStr{
+        tuple((space_address_segment,delim_kind::<ResourceType,Kind>))(input).map(|(next, (address_segment,kind))| (next, AddressKindSegment{ address_segment, kind}))
     }
 
-    pub fn base_address_kind_segment<Kind:FromStr>(input: &str) -> Res<&str, AddressKindSegment<Kind>> {
-        tuple((base_address_segment,delim_kind))(input).map(|(next, (address_segment,kind))| (next, AddressKindSegment{ address_segment, kind}))
+    pub fn base_address_kind_segment<ResourceType,Kind>(input: &str) -> Res<&str, AddressKindSegment<Kind>> where ResourceType: FromStr, Kind: FromStr{
+        tuple((base_address_segment,delim_kind::<ResourceType,Kind>))(input).map(|(next, (address_segment,kind))| (next, AddressKindSegment{ address_segment, kind}))
     }
 
-    pub fn filepath_address_kind_segment<Kind:FromStr>(input: &str) -> Res<&str, AddressKindSegment<Kind>> {
-        alt( (file_address_kind_segment,dir_address_kind_segment) )(input)
+    pub fn filepath_address_kind_segment<ResourceType,Kind>(input: &str) -> Res<&str, AddressKindSegment<Kind>> where ResourceType: FromStr, Kind: FromStr{
+        alt( (file_address_kind_segment::<ResourceType,Kind>,dir_address_kind_segment::<ResourceType,Kind>) )(input)
     }
-    pub fn dir_address_kind_segment<Kind:FromStr>(input: &str) -> Res<&str, AddressKindSegment<Kind>> {
-        tuple((dir_address_segment,delim_kind))(input).map(|(next, (address_segment,kind))| (next, AddressKindSegment{ address_segment, kind}))
-    }
-
-    pub fn file_address_kind_segment<Kind:FromStr>(input: &str) -> Res<&str, AddressKindSegment<Kind>> {
-        tuple((file_address_segment,delim_kind))(input).map(|(next, (address_segment,kind))| (next, AddressKindSegment{ address_segment, kind}))
+    pub fn dir_address_kind_segment<ResourceType,Kind>(input: &str) -> Res<&str, AddressKindSegment<Kind>> where ResourceType: FromStr, Kind: FromStr{
+        tuple((dir_address_segment,delim_kind::<ResourceType,Kind>))(input).map(|(next, (address_segment,kind))| (next, AddressKindSegment{ address_segment, kind}))
     }
 
-    pub fn version_address_kind_segment<Kind:FromStr>(input: &str) -> Res<&str, AddressKindSegment<Kind>> {
-        tuple((version_address_segment,delim_kind))(input).map(|(next, (address_segment,kind))| (next, AddressKindSegment{ address_segment, kind}))
+    pub fn file_address_kind_segment<ResourceType,Kind>(input: &str) -> Res<&str, AddressKindSegment<Kind>> where ResourceType: FromStr, Kind: FromStr{
+        tuple((file_address_segment,delim_kind::<ResourceType,Kind>))(input).map(|(next, (address_segment,kind))| (next, AddressKindSegment{ address_segment, kind}))
     }
 
-    pub fn consume_address_kind_path<Kind:FromStr>(input: &str) -> Result<AddressKindPath<Kind>,Error> {
-        let (_,rtn ) = all_consuming(address_kind_path)(input)?;
+    pub fn version_address_kind_segment<ResourceType,Kind>(input: &str) -> Res<&str, AddressKindSegment<Kind>> where ResourceType: FromStr, Kind: FromStr{
+        tuple((version_address_segment,delim_kind::<ResourceType,Kind>))(input).map(|(next, (address_segment,kind))| (next, AddressKindSegment{ address_segment, kind}))
+    }
+
+    pub fn consume_address_kind_path<ResourceType,Kind>(input: &str) -> Result<AddressKindPath<Kind>,Error> where ResourceType: FromStr, Kind: FromStr{
+        let (_,rtn ) = all_consuming(address_kind_path::<ResourceType,Kind>)(input)?;
         Ok(rtn)
     }
 
-    pub fn address_kind_path<Kind:FromStr>(input: &str) -> Res<&str, AddressKindPath<Kind>> {
+    pub fn address_kind_path<ResourceType,Kind>(input: &str) -> Res<&str, AddressKindPath<Kind>> where ResourceType: FromStr, Kind: FromStr{
         tuple((
-            tuple((hub_segment, space_address_kind_segment)),
-            many0(base_address_kind_segment),
-            opt( version_address_kind_segment ),
-            many0(file_address_kind_segment ),
+            tuple((hub_segment, space_address_kind_segment::<ResourceType,Kind>)),
+            many0(base_address_kind_segment::<ResourceType,Kind>),
+            opt( version_address_kind_segment::<ResourceType,Kind> ),
+            many0(file_address_kind_segment::<ResourceType,Kind> ),
         ))(input)
             .map(|(next, ((hub, space), mut bases, version, mut files))| {
                 let mut segments = vec![];
