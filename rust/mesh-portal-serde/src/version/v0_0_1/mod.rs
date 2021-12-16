@@ -1743,6 +1743,9 @@ pub mod generic {
                         RcCommand::Query(query) => {
                             Ok(RcCommand::Query(query))
                         }
+                        RcCommand::Get => {
+                            Ok(RcCommand::Get)
+                        }
                     }
                 }
             }
@@ -2035,13 +2038,15 @@ pub mod generic {
             use crate::version::v0_0_1::util::ValueMatcher;
             use serde::{Deserialize, Serialize};
             use crate::version::v0_0_1::generic::resource::command::query::Query;
+            use crate::version::v0_0_1::generic::resource::command::get::Get;
 
             #[derive(Debug, Clone, strum_macros::Display, Serialize, Deserialize)]
             pub enum RcCommand<ResourceType, Kind> {
                 Create(Create<Kind>),
                 Select(Select<ResourceType, Kind>),
                 Update(Update<Kind>),
-                Query(Query)
+                Query(Query),
+                Get
             }
 
             impl<ResourceType, Kind> RcCommand<ResourceType, Kind> {
@@ -2051,6 +2056,7 @@ pub mod generic {
                         RcCommand::Select(_) => RcCommandType::Select,
                         RcCommand::Update(_) => RcCommandType::Update,
                         RcCommand::Query(_) => RcCommandType::Query,
+                        RcCommand::Get => {RcCommandType::Get}
                     }
                 }
             }
@@ -2060,7 +2066,8 @@ pub mod generic {
                 Create,
                 Select,
                 Update,
-                Query
+                Query,
+                Get
             }
 
             impl<ResourceType, KIND >
@@ -2506,6 +2513,12 @@ pub mod generic {
                     }
                 }
 
+            }
+
+            pub mod get {
+                pub struct Get {
+
+                }
             }
         }
     }

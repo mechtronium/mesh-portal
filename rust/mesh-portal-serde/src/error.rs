@@ -79,3 +79,11 @@ impl From<SemVerError> for Error {
         }
     }
 }
+
+impl From<strum::ParseError> for Error {
+    fn from(error: strum::ParseError) -> Self {
+        Self {
+            message: error.to_string()
+        }
+    }
+}
