@@ -1861,10 +1861,10 @@ pub mod generic {
             }
 
             impl <Payload> RespEntity<Payload> {
-                pub fn ok_or(self) -> Result<Payload,fail::Fail> {
+                pub fn ok_or(self) -> Result<Payload,Error> {
                     match self {
                         Self::Ok(payload) => Result::Ok(payload),
-                        Self::Fail(fail) => Result::Err(fail)
+                        Self::Fail(fail) => Result::Err(fail.into())
                     }
                 }
             }
@@ -2296,7 +2296,7 @@ pub mod generic {
                 #[derive(Debug, Clone, Serialize, Deserialize)]
                 pub enum SelectionKind<ResourceType,Kind>{
                     Initial,
-                    SubSelector{ address: Address, hops: Vec<Hop<ResourceType,Kind>>, address_kind_path: AddressKindPath<Kind> }
+                    SubSelector{ address: Address, hops: Vec<Hop<ResourceType,Kind>>, address_kind_path: AddressKindPath<ResourceType,Kind> }
                 }
 
                 impl <ResourceType,Kind> TryInto<SubSelector<ResourceType,Kind>> for Select<ResourceType,Kind> {
@@ -2323,7 +2323,7 @@ pub mod generic {
 
                 impl <ResourceType,Kind> Select<ResourceType,Kind> {
 
-                    pub fn sub_select(self, address:Address, hops: Vec<Hop<ResourceType,Kind>>, address_kind_path: AddressKindPath<Kind>) -> SubSelector<ResourceType, Kind> {
+                    pub fn sub_select(self, address:Address, hops: Vec<Hop<ResourceType,Kind>>, address_kind_path: AddressKindPath<ResourceType,Kind>) -> SubSelector<ResourceType, Kind> {
 
                                 SubSelector{
                                     address,
@@ -2344,7 +2344,7 @@ pub mod generic {
                     pub properties: PropertiesPattern,
                     pub into_payload: SelectIntoPayload,
                     pub hops: Vec<Hop<ResourceType,Kind>>,
-                    pub address_kind_path: AddressKindPath<Kind>
+                    pub address_kind_path: AddressKindPath<ResourceType,Kind>
                 }
 
                 impl <ResourceType,Kind> Into<Select<ResourceType,Kind>> for SubSelector<ResourceType,Kind> {
@@ -2364,7 +2364,7 @@ pub mod generic {
 
                 impl <ResourceType,Kind> SubSelector<ResourceType,Kind> {
 
-                    pub fn sub_select(self, address:Address, hops: Vec<Hop<ResourceType,Kind>>, address_tks_path: AddressKindPath<Kind>) -> SubSelector<ResourceType, Kind> {
+                    pub fn sub_select(self, address:Address, hops: Vec<Hop<ResourceType,Kind>>, address_tks_path: AddressKindPath<ResourceType,Kind>) -> SubSelector<ResourceType, Kind> {
 
                         SubSelector{
                             address,
@@ -2483,21 +2483,21 @@ pub mod generic {
                 }
 
                 #[derive(Debug, Clone, Serialize, Deserialize)]
-                pub enum QueryResult<Kind>{
-                    AddressKindPath(AddressKindPath<Kind>)
+                pub enum QueryResult<ResourceType,Kind>{
+                    AddressKindPath(AddressKindPath<ResourceType,Kind>)
                 }
 
-                impl <Kind> TryInto<AddressKindPath<Kind>> for QueryResult<Kind> {
+                impl <ResourceType,Kind> TryInto<AddressKindPath<ResourceType,Kind>> for QueryResult<ResourceType,Kind> {
                     type Error=Error;
 
-                    fn try_into(self)-> Result<AddressKindPath<Kind>,Error> {
+                    fn try_into(self)-> Result<AddressKindPath<ResourceType,Kind>,Error> {
                         match self {
                             QueryResult::AddressKindPath(address_kind_path) => {Ok(address_kind_path)}
                         }
                     }
                 }
 
-                impl <Kind:ToString> ToString for QueryResult<Kind> {
+                impl <ResourceType,Kind> ToString for QueryResult<ResourceType,Kind>  where Kind: ToString, ResourceType: ToString {
                     fn to_string(&self) -> String {
                         match self {
                             QueryResult::AddressKindPath(address_kind_path) => {
@@ -3621,6 +3621,18 @@ pub mod generic {
             }
         }
 
+        impl <Kind> TryInto<Bin> for Primitive<Kind> {
+            type Error = Error;
+
+            fn try_into(self) -> Result<Bin, Self::Error> {
+                match self {
+                    Primitive::Bin(bin) => {Ok(bin)}
+                    p => Err(format!("coercion error expected: Bin, found: {}",p.to_string() ).into())
+                }
+            }
+        }
+
+
 
         impl <Kind> TryInto<Address> for Primitive<Kind> {
             type Error = Error;
@@ -3753,6 +3765,7 @@ pub mod generic {
         use nom::combinator::all_consuming;
         use crate::version::v0_0_1::parse::{address_kind_path, consume_address_kind_path};
         use crate::version::latest::generic::id::KindParts;
+        use std::marker::PhantomData;
 
         #[derive(Debug, Clone, Serialize, Deserialize)]
         pub struct AddressKindPattern<ResourceType, Kind> {
@@ -3809,7 +3822,7 @@ pub mod generic {
             }
 
 
-            pub fn matches(&self, address_kind_path: &AddressKindPath<Kind>) -> bool
+            pub fn matches(&self, address_kind_path: &AddressKindPath<ResourceType,Kind>) -> bool
             where
                 ResourceType: Clone,
                 Kind: Clone,
@@ -4123,25 +4136,38 @@ pub mod generic {
         }
 
         #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
-        pub struct AddressKindPath<Kind> {
+        pub struct AddressKindPath<ResourceType,Kind> {
             pub route: RouteSegment,
             pub segments: Vec<AddressKindSegment<Kind>>,
+            phantom: PhantomData<ResourceType>
         }
 
-        impl<Kind> AddressKindPath<Kind> {
 
-            pub fn push(&self, segment: AddressKindSegment<Kind> ) -> AddressKindPath<Kind> where Kind: Clone {
+
+        impl<ResourceType,Kind> AddressKindPath<ResourceType,Kind> {
+
+            pub fn new( route: RouteSegment, segments: Vec<AddressKindSegment<Kind>>) -> Self {
+                Self {
+                    route,
+                    segments,
+                    phantom:Default::default()
+                }
+            }
+
+            pub fn push(&self, segment: AddressKindSegment<Kind> ) -> AddressKindPath<ResourceType,Kind> where Kind: Clone, ResourceType: Clone{
                 let mut segments = self.segments.clone();
                 segments.push(segment);
                 Self{
                     route: self.route.clone(),
-                    segments
+                    segments,
+                    phantom: Default::default()
                 }
             }
 
-            pub fn consume(&self) -> Option<AddressKindPath<Kind>>
+            pub fn consume(&self) -> Option<AddressKindPath<ResourceType,Kind>>
             where
                 Kind: Clone,
+                ResourceType: Clone,
             {
                 if self.segments.len() <= 1 {
                     return Option::None;
@@ -4150,7 +4176,8 @@ pub mod generic {
                 segments.remove(0);
                 Option::Some(AddressKindPath {
                     route: self.route.clone(),
-                    segments })
+                    segments,
+                phantom: Default::default()})
             }
 
             pub fn is_final(&self) -> bool {
@@ -4159,7 +4186,7 @@ pub mod generic {
         }
 
 
-        impl<Kind:ToString> ToString for AddressKindPath<Kind>{
+        impl<ResourceType,Kind> ToString for AddressKindPath<ResourceType,Kind> where Kind: ToString{
             fn to_string(&self) -> String {
                 let mut rtn = String::new();
                 match &self.route {
@@ -4181,14 +4208,15 @@ pub mod generic {
             }
         }
 
-        impl<FromKind>
-        AddressKindPath<FromKind>
+        impl<FromResourceType,FromKind>
+        AddressKindPath<FromResourceType,FromKind>
         {
-            pub fn convert<ToKind>(
+            pub fn convert<ToResourceType,ToKind>(
                 self,
-            ) -> Result<AddressKindPath<ToKind>, Error>
+            ) -> Result<AddressKindPath<ToResourceType, ToKind>, Error>
                 where
                     FromKind: TryInto<ToKind, Error = Error>+Clone+Eq+PartialEq,
+                    FromResourceType: TryInto<ToResourceType, Error = Error>+Clone+Eq+PartialEq,
             {
                 let mut segments = vec![];
                 for segment in self.segments {
@@ -4196,7 +4224,9 @@ pub mod generic {
                 }
                 Ok(AddressKindPath {
                     route: self.route,
-                  segments
+                  segments,
+                    phantom: Default::default()
+
                 })
             }
         }
@@ -4226,13 +4256,14 @@ pub mod generic {
             }
         }
 
-        impl <ResourceType> FromStr for AddressKindPath<KindParts<ResourceType>> where ResourceType: FromStr<Err=Error> {
+        impl <ResourceType,Kind> FromStr for AddressKindPath<ResourceType,Kind> where ResourceType: FromStr<Err=Error>,Kind: FromStr<Err=Error> {
             type Err = Error;
 
             fn from_str(s: &str) -> Result<Self, Self::Err> {
-                Ok(consume_address_kind_path::<ResourceType,KindParts<ResourceType>>(s)?)
+                Ok(consume_address_kind_path::<ResourceType,Kind>(s)?)
             }
         }
+
     }
 }
 
@@ -4372,6 +4403,7 @@ pub mod fail {
     use serde::{Deserialize, Serialize};
 
     use crate::version::v0_0_1::id::Specific;
+    use crate::error::Error;
 
     pub mod mesh {
         use serde::{Deserialize, Serialize};
@@ -4531,6 +4563,14 @@ pub mod fail {
         Mesh(mesh::Fail),
         Resource(resource::Fail),
         Portal(portal::Fail),
+    }
+
+    impl Into<Error> for Fail{
+        fn into(self) -> Error {
+            Error {
+                message: "Fail".to_string()
+            }
+        }
     }
 }
 
@@ -4717,12 +4757,12 @@ pub mod parse {
         tuple((version_address_segment,delim_kind::<ResourceType,Kind>))(input).map(|(next, (address_segment,kind))| (next, AddressKindSegment{ address_segment, kind}))
     }
 
-    pub fn consume_address_kind_path<ResourceType,Kind>(input: &str) -> Result<AddressKindPath<Kind>,Error> where ResourceType: FromStr, Kind: FromStr{
+    pub fn consume_address_kind_path<ResourceType,Kind>(input: &str) -> Result<AddressKindPath<ResourceType,Kind>,Error> where ResourceType: FromStr, Kind: FromStr{
         let (_,rtn ) = all_consuming(address_kind_path::<ResourceType,Kind>)(input)?;
         Ok(rtn)
     }
 
-    pub fn address_kind_path<ResourceType,Kind>(input: &str) -> Res<&str, AddressKindPath<Kind>> where ResourceType: FromStr, Kind: FromStr{
+    pub fn address_kind_path<ResourceType,Kind>(input: &str) -> Res<&str, AddressKindPath<ResourceType,Kind>> where ResourceType: FromStr, Kind: FromStr{
         tuple((
             tuple((hub_segment, space_address_kind_segment::<ResourceType,Kind>)),
             many0(base_address_kind_segment::<ResourceType,Kind>),
@@ -4741,7 +4781,7 @@ pub mod parse {
                 }
                 segments.append(&mut files);
 
-                let address = AddressKindPath { route: hub, segments };
+                let address = AddressKindPath::new ( hub, segments );
 
                 (next, address)
             })

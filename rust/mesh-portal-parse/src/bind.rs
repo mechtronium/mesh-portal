@@ -5,7 +5,8 @@ use nom::multi::{many0, many1};
 use nom::combinator::{all_consuming, opt};
 use nom::character::complete::{space0, multispace0, alphanumeric1};
 use nom::branch::alt;
-use mesh_portal_serde::version::latest::entity::request::Msg;
+use mesh_portal_serde::version::latest::generic::entity::request::ReqEntity;
+use mesh_portal_serde::version::latest::entity::request::{Msg};
 use mesh_portal_serde::version::latest::util::ValuePattern;
 use mesh_portal_serde::version::latest::generic::payload::RcCommand;
 use mesh_portal_serde::version::latest::entity::EntityType;
@@ -76,6 +77,19 @@ impl Default for Bind {
             msg: Scope::new( EntityType::Msg, vec![] ),
             http: Scope::new( EntityType::Http, vec![] ),
             rc: Scope::new( EntityType::Rc, vec![] ),
+        }
+    }
+}
+
+impl Bind {
+
+    pub fn select<ResourceType,Kind>( &self, entity: ReqEntity<ResourceType,Kind> ) {
+        match entity {
+            ReqEntity::Rc(_) => {
+
+            }
+            ReqEntity::Msg(_) => {}
+            ReqEntity::Http(_) => {}
         }
     }
 }
