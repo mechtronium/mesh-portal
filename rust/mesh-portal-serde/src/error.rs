@@ -4,6 +4,7 @@ use std::string::FromUtf8Error;
 
 use nom::error::VerboseError;
 use semver::{ReqParseError, SemVerError};
+use std::num::ParseIntError;
 
 #[derive(Debug)]
 pub struct Error {
@@ -84,6 +85,14 @@ impl From<strum::ParseError> for Error {
     fn from(error: strum::ParseError) -> Self {
         Self {
             message: error.to_string()
+        }
+    }
+}
+
+impl From<ParseIntError> for Error {
+    fn from(x: ParseIntError) -> Self {
+        Self{
+            message: x.to_string()
         }
     }
 }

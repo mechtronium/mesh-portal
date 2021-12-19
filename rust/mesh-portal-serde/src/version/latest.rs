@@ -162,10 +162,52 @@ pub mod resource {
     use crate::version::latest::id::{Address, Kind, ResourceType};
 
     pub type Status = resource::Status;
+    pub type Code = resource::Code;
+    pub type Progress= resource::Progress;
 
     pub type Archetype= generic::resource::Archetype<Kind>;
     pub type ResourceStub = generic::resource::ResourceStub<Kind>;
     pub type Properties = generic::resource::Properties<Kind>;
+
+    pub mod command {
+
+        pub mod common {
+            use crate::version::v0_0_1::generic;
+            use crate::version::latest::id::{Address, Kind, ResourceType};
+
+            pub type StateSrc=generic::resource::command::common::StateSrc<Kind>;
+        }
+
+        pub mod create {
+            use crate::version::v0_0_1::generic;
+            use crate::version::latest::id::{Address, Kind, ResourceType};
+
+            pub type Create=generic::resource::command::create::Create<Kind>;
+        }
+
+        pub mod select{
+            use crate::version::v0_0_1::generic;
+            use crate::version::latest::id::{Address, Kind, ResourceType};
+
+            pub type Select=generic::resource::command::select::Select<ResourceType,Kind>;
+        }
+
+        pub mod update{
+            use crate::version::v0_0_1::generic;
+            use crate::version::latest::id::{Address, Kind, ResourceType};
+
+            pub type Select=generic::resource::command::update::Update<Kind>;
+        }
+
+        pub mod query{
+            use crate::version::v0_0_1::generic;
+            use crate::version::latest::id::{Address, Kind, ResourceType};
+
+            pub type Select=generic::resource::command::query::Query;
+        }
+
+
+    }
 }
 
 pub mod portal {

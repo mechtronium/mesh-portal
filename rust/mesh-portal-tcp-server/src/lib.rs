@@ -27,6 +27,7 @@ use mesh_portal_serde::version::latest::frame::CloseReason;
 use mesh_portal_serde::version::latest::log::Log;
 use mesh_portal_serde::version::latest::portal::{inlet, outlet};
 use mesh_portal_serde::version::latest::resource::Status;
+use mesh_portal_serde::version::latest::resource::Code;
 use mesh_portal_tcp_common::{FrameReader, FrameWriter, PrimitiveFrameReader, PrimitiveFrameWriter};
 use mesh_portal_api::message::Message;
 
@@ -152,7 +153,7 @@ impl PortalTcpServer {
                         self.broadcaster_tx.send( Event::ClientConnected ).unwrap_or_default();
                         (&self).handle(stream).await;
                     }
-                    self.broadcaster_tx.send( Event::Status(Status::Done("done".to_string())) ).unwrap_or_default();
+                    self.broadcaster_tx.send( Event::Status(Status::Done(Code::Ok)) ).unwrap_or_default();
                 }
                 Err(error) => {
                     let message = format!("FATAL: could not setup TcpListener {}", error);

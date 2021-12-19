@@ -1318,18 +1318,148 @@ pub mod resource {
 
     use crate::version::v0_0_1::generic;
     use crate::version::v0_0_1::id::{Address, Kind, ResourceType};
+    use std::str::FromStr;
+    use crate::version::v0_0_1::parse::{Res, address};
+    use nom::character::complete::{alpha1, digit1};
+    use crate::error::Error;
+    use nom::bytes::complete::{tag, is_a};
+    use nom::sequence::{tuple, delimited};
+    use nom::branch::alt;
+    use nom::combinator::{not, recognize};
+    use nom::error::{VerboseError, ParseError, ErrorKind};
+    use crate::mesh;
+    use nom::CompareResult::Incomplete;
 
-    #[derive(Debug, Clone, Serialize, Deserialize, strum_macros::Display, Eq, PartialEq)]
+    #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
     pub enum Status {
         Unknown,              // initial status or when we status cannot be determined
         Pending,              // resource is now registered but not assigned to a host
         Assigning,            // resource is being assigned to at least one host
-        Initializing(String), // assigned to a host and undergoing custom initialization...This resource can send requests but not receive requests.  The String gives a progress indication like 2/10 (step 2 of 10) or 7/? when the number of steps are not known.
+        Initializing(Progress), // assigned to a host and undergoing custom initialization...This resource can send requests but not receive requests.  The String gives a progress indication like 2/10 (step 2 of 10) or 7/? when the number of steps are not known.
         Ready,                // ready to take requests
-        Paused(String), // can not receive requests (probably because it is waiting for some other resource to make updates)... String should be some form of meaningful identifier of which resource Paused this resource
-        Resuming(String), // like Initializing but triggered after a pause is lifted, the resource may be doing something before it is ready to accept requests again.  String is a progress indication just like Initializing.
+        Paused(Address), // can not receive requests (probably because it is waiting for some other resource to make updates)... String should be some form of meaningful identifier of which resource Paused this resource
+        Resuming(Progress), // like Initializing but triggered after a pause is lifted, the resource may be doing something before it is ready to accept requests again.  String is a progress indication just like Initializing.
         Panic(String), // something is wrong... all requests are blocked and responses are cancelled. String is a hopefully  meaningful message describing why the Resource has Panic
-        Done(String), // this resource had a life span and has now completed succesfully it can no longer receive requests. String is a hopefully meaningful or useful Status message that is returned
+        Done(Code), // this resource had a life span and has now completed succesfully it can no longer receive requests. String is a hopefully meaningful or useful Status message that is returned
+    }
+
+    #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
+    pub enum Code {
+        Ok,
+        Error(i32)
+    }
+
+    impl ToString for Code{
+        fn to_string(&self) -> String {
+            match self {
+                Code::Ok => {
+                    "Ok".to_string()
+                }
+                Code::Error(code) => {
+                    format!("Err({})",code)
+                }
+            }
+        }
+    }
+
+
+    #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
+    pub struct Progress {
+        pub step: u16,
+        pub total: u16
+    }
+
+    impl ToString for Progress{
+        fn to_string(&self) -> String {
+            format!("{}/{}",self.step,self.total)
+        }
+    }
+
+    impl ToString for Status {
+        fn to_string(&self) -> String {
+            match self {
+                Status::Unknown => "Unknown".to_string(),
+                Status::Pending => "Pending".to_string(),
+                Status::Assigning => "Assigning".to_string(),
+                Status::Initializing(progress) => format!("Initializing({})",progress.to_string()),
+                Status::Ready => "Ready".to_string(),
+                Status::Paused(address) => format!("Paused({})",address.to_string()),
+                Status::Resuming(progress) => format!("Resuming({})",progress.to_string()),
+                Status::Panic(message) => format!("Panic('{}')",message),
+                Status::Done(code) => format!("Done({})",code.to_string())
+            }
+        }
+    }
+
+    pub fn delim_progress( input: &str ) -> Result<Progress,Error> {
+        let (_,(step,_,total)) = delimited(tag("("),tuple( (digit1,tag("/"),digit1)),tag(")"))(input)?;
+        let step = step.parse()?;
+        let total = total.parse()?;
+        Ok(Progress{
+            step,
+            total
+        })
+    }
+
+    pub fn delim_address( input: &str ) -> Result<Address,Error> {
+        let (_,address) = delimited(tag("("),address,tag(")"))(input)?;
+        Ok(address)
+    }
+
+    pub fn ok_code( input: &str ) -> Res<&str,Code> {
+        tag("Ok")(input).map( |(next,code)|(next,Code::Ok))
+    }
+
+    pub fn error_code( input: &str ) -> Res<&str,Code> {
+        let (next, err_code) = delimited(tag("Err("),digit1,tag(")"))(input)?;
+        Ok((next,Code::Error(match err_code.parse(){
+            Ok(i) => i,
+            Err(err) =>
+                {
+                    return Err(nom::Err::Error(VerboseError::from_error_kind(input, ErrorKind::Tag )))
+                }
+        })))
+    }
+
+    pub fn code( input: &str ) -> Res<&str,Code> {
+        alt((error_code,ok_code))(input)
+    }
+
+    pub fn delim_code( input: &str ) -> Result<Code,Error> {
+        let (_,code) = delimited(tag("("),code,tag(")"))(input)?;
+        Ok(code)
+    }
+
+    pub fn delim_panic( input: &str ) -> Result<String,Error> {
+        let (_,panic) = delimited(tag("("), recognize(not(is_a(")"))), tag(")"))(input)?;
+        Ok(panic.to_string())
+    }
+
+
+    pub fn status( input: &str ) -> Result<Status,Error> {
+        let (next,status) = alpha1(input)?;
+        Ok(match status {
+            "Unknown" => Status::Unknown,
+            "Pending" => Status::Pending,
+            "Assigning" => Status::Assigning,
+            "Initializing" => Status::Initializing(delim_progress(next)?),
+            "Ready" => Status::Ready,
+            "Paused" => Status::Paused(delim_address(next)?),
+            "Resuming" => Status::Resuming(delim_progress(next)?),
+            "Panic" => Status::Panic(delim_panic(next)?),
+            "Done" => Status::Done(delim_code(next)?),
+            what => {
+                return Err(format!("unknown status {}",what).into());
+            }
+        })
+    }
+
+    impl FromStr for Status {
+        type Err = Error;
+
+        fn from_str(s: &str) -> Result<Self, Self::Err> {
+            Ok(status(s)?)
+        }
     }
 
     pub type Archetype = generic::resource::Archetype<Address>;
@@ -1421,6 +1551,18 @@ pub mod generic {
             pub resource_type: ResourceType,
             pub kind: Option<String>,
             pub specific: Option<Specific>,
+        }
+
+        impl <ResourceType> ToString for KindParts<ResourceType> where ResourceType: ToString {
+            fn to_string(&self) -> String {
+                if self.kind.is_some() && self.specific.is_some() {
+                    format!("{}<{}<{}>>",self.resource_type.to_string(), self.kind.as_ref().expect("kind"), self.specific.as_ref().expect("specific").to_string())
+                } else if self.kind.is_some() {
+                    format!("{}<{}>",self.resource_type.to_string(), self.kind.as_ref().expect("kind"))
+                } else {
+                    self.resource_type.to_string()
+                }
+            }
         }
 
         impl <ResourceType:FromStr> FromStr for KindParts<ResourceType> {
@@ -1623,6 +1765,24 @@ pub mod generic {
                 }
             }
 
+            impl<FromResourceType, FromKind > ReqEntity<FromResourceType, FromKind> {
+                pub fn convert<ToResourceType, ToKind>(
+                    self,
+                ) -> Result<ReqEntity<ToResourceType, ToKind>, Error>
+                    where
+                        FromResourceType: TryInto<ToResourceType, Error = Error>+Clone+Eq+PartialEq,
+                        FromKind: TryInto<ToKind, Error = Error>+Clone+Eq+PartialEq,
+                        Payload<FromKind>: TryInto<Payload<ToKind>,Error=Error>
+                {
+                    Ok(match self {
+                        ReqEntity::Rc(rc) => {ReqEntity::Rc(rc.convert()?)}
+                        ReqEntity::Msg(msg) => {ReqEntity::Msg(msg.convert()?)}
+                        ReqEntity::Http(http) => {ReqEntity::Http(http.convert()?)}
+                    })
+                }
+            }
+
+
             impl<
                     FromResourceType,
                     FromKind,
@@ -1719,6 +1879,7 @@ pub mod generic {
                 }
             }
 
+            /*
             impl<FromResourceType, FromKind >
                 RcCommand<FromResourceType, FromKind>
             {
@@ -1749,6 +1910,8 @@ pub mod generic {
                     }
                 }
             }
+
+             */
 
             #[derive(Debug, Clone, Serialize, Deserialize)]
             pub struct Msg<Kind> {
@@ -2039,6 +2202,9 @@ pub mod generic {
             use serde::{Deserialize, Serialize};
             use crate::version::v0_0_1::generic::resource::command::query::Query;
             use crate::version::v0_0_1::generic::resource::command::get::Get;
+            use std::convert::TryInto;
+            use crate::version::v0_0_1::generic::payload::Payload;
+            use crate::error::Error;
 
             #[derive(Debug, Clone, strum_macros::Display, Serialize, Deserialize)]
             pub enum RcCommand<ResourceType, Kind> {
@@ -2047,6 +2213,25 @@ pub mod generic {
                 Update(Update<Kind>),
                 Query(Query),
                 Get
+            }
+
+            impl<FromResourceType,FromKind> RcCommand<FromResourceType,FromKind> {
+                pub fn convert<ToResourceType,ToKind>(
+                    self,
+                ) -> Result<RcCommand<ToResourceType,ToKind>, Error>
+                    where
+                        FromResourceType: TryInto<ToResourceType, Error = Error>+Clone+Eq+PartialEq,
+                        FromKind: TryInto<ToKind, Error = Error>+Clone+Eq+PartialEq,
+                        Payload<FromKind>: TryInto<Payload<ToKind>,Error=Error>
+                {
+                    Ok(match self {
+                        RcCommand::Create(create) => {RcCommand::Create(create.convert()?)}
+                        RcCommand::Select(select) => {RcCommand::Select(select.convert()?)}
+                        RcCommand::Update(update) => {RcCommand::Update(update.convert()?)}
+                        RcCommand::Query(query) => {RcCommand::Query(query)}
+                        RcCommand::Get => {RcCommand::Get}
+                    })
+                }
             }
 
             impl<ResourceType, Kind> RcCommand<ResourceType, Kind> {
@@ -2364,15 +2549,15 @@ pub mod generic {
 
                 impl <ResourceType,Kind> SubSelector<ResourceType,Kind> {
 
-                    pub fn sub_select(self, address:Address, hops: Vec<Hop<ResourceType,Kind>>, address_tks_path: AddressKindPath<ResourceType,Kind>) -> SubSelector<ResourceType, Kind> {
+                    pub fn sub_select(&self, address:Address, hops: Vec<Hop<ResourceType,Kind>>, address_kind_path: AddressKindPath<ResourceType,Kind>) -> SubSelector<ResourceType, Kind> where ResourceType: Clone, Kind: Clone{
 
                         SubSelector{
                             address,
-                            pattern: self.pattern,
-                            properties: self.properties,
-                            into_payload: self.into_payload,
+                            pattern: self.pattern.clone(),
+                            properties: self.properties.clone(),
+                            into_payload: self.into_payload.clone(),
                             hops,
-                            address_kind_path: address_tks_path
+                            address_kind_path
                         }
                     }
                 }
@@ -3049,6 +3234,7 @@ pub mod generic {
             PartialEq,
             Serialize,
             Deserialize,
+            Hash,
             strum_macros::Display,
             strum_macros::EnumString,
         )]
@@ -4563,6 +4749,13 @@ pub mod fail {
         Mesh(mesh::Fail),
         Resource(resource::Fail),
         Portal(portal::Fail),
+    }
+
+    impl ToString for Fail {
+        fn to_string(&self) -> String {
+            "Fail".to_string()
+        }
+
     }
 
     impl Into<Error> for Fail{
