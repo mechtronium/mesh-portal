@@ -29,7 +29,7 @@ mod tests {
     use tokio::sync::oneshot::error::RecvError;
     use tokio::time::Duration;
 
-    use mesh_portal_api_client::{client, InletApi, PortalCtrl, PortalSkel };
+    use mesh_portal_api_client::{client, InletApi, ResourceCtrl, PortalSkel };
     use mesh_portal_api_server::{MuxCall, Portal, PortalMuxer, Router};
     use mesh_portal_serde::mesh;
     use mesh_portal_serde::version::latest::config::{Info, PortalKind};
@@ -329,7 +329,7 @@ mod tests {
         }
 
 
-        fn portal_ctrl_factory(&self)->Box<dyn Fn(PortalSkel)->Result<Box<dyn PortalCtrl>,Error>> {
+        fn portal_ctrl_factory(&self)->Box<dyn Fn(PortalSkel)->Result<Box<dyn ResourceCtrl>,Error>> {
             Box::new(friendly_portal_ctrl_factory)
         }
 
@@ -341,7 +341,7 @@ mod tests {
         }
     }
 
-    fn friendly_portal_ctrl_factory(skel: PortalSkel) -> Result<Box<dyn PortalCtrl>,Error> {
+    fn friendly_portal_ctrl_factory(skel: PortalSkel) -> Result<Box<dyn ResourceCtrl>,Error> {
         Ok(Box::new(FriendlyPortalCtrl { skel }))
     }
 
@@ -350,7 +350,7 @@ mod tests {
     }
 
     #[async_trait]
-    impl PortalCtrl for FriendlyPortalCtrl {
+    impl ResourceCtrl for FriendlyPortalCtrl {
         async fn init(&mut self) -> Result<(), Error> {
             println!("FriendlyPortalCtrl.init()");
             // wait just a bit to make sure everyone got chance to be in the muxer

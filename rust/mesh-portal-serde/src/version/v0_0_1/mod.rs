@@ -1246,6 +1246,7 @@ pub mod config {
     use crate::version::v0_0_1::config::bind::BindConfig;
     use crate::version::v0_0_1::config::mechtron::MechtronConfig;
     use crate::version::latest::generic::resource::ResourceStub;
+    use crate::version::v0_0_1::config::subportal::SubPortalConfig;
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub enum PortalKind {
@@ -1286,7 +1287,7 @@ pub mod config {
 
     #[derive(Debug,Clone,Serialize,Deserialize)]
     pub struct Assign<Kind> {
-       pub config: Config<PortConfigBody>,
+       pub config: Config<ResourceConfigBody>,
        pub stub: ResourceStub<Kind>
     }
 
@@ -1304,8 +1305,8 @@ pub mod config {
 
 
     #[derive(Debug,Clone,Serialize,Deserialize)]
-    pub enum PortConfigBody {
-        Port(String),
+    pub enum ResourceConfigBody {
+        SubPortal(SubPortalConfig),
         Mechtron(MechtronConfig)
     }
 
@@ -1316,11 +1317,20 @@ pub mod config {
         #[derive(Debug,Clone,Serialize,Deserialize)]
         pub struct MechtronConfig {
             pub wasm: Address,
-            pub name: String,
+            pub kind: String,
         }
     }
 
 
+    pub mod subportal{
+        use crate::version::v0_0_1::id::Address;
+        use sedre::{Serialize,Deserialize};
+
+        #[derive(Debug,Clone,Serialize,Deserialize)]
+        pub struct SubPortalConfig {
+            pub kind: String,
+        }
+    }
 
     pub mod bind {
         use crate::error::Error;
@@ -3373,6 +3383,7 @@ pub mod generic {
 
             #[derive(Debug, Clone, Serialize, Deserialize)]
             pub struct Request<ReqEntity> {
+                pub to: Address,
                 pub from: Address,
                 pub entity: ReqEntity,
                 pub exchange: Exchange,
@@ -3381,6 +3392,7 @@ pub mod generic {
             impl<ReqEntity> Request<ReqEntity> {
                 pub fn exchange(self, exchange: Exchange) -> Request<ReqEntity> {
                     Self {
+                        to: self.to,
                         from: self.from,
                         entity: self.entity,
                         exchange,
@@ -3471,6 +3483,32 @@ pub mod generic {
                 Artifact(ArtifactResponse<Artifact>),
                 Config(ArtifactResponse<Config<ConfigBody>>),
                 Close(CloseReason),
+            }
+
+
+            impl <KIND, PAYLOAD, ReqEntity> Frame<KIND, PAYLOAD, ReqEntity> {
+                pub fn to(&self) -> Option<Address> {
+                    match self {
+                        Frame::Assign(assign) => {
+                            Option::Some(assign.stub.address.clone())
+                        }
+                        Frame::Request(request) => {
+                            Option::Some(request.to.clone())
+                        }
+                        Frame::Response(response) => {
+                            Option::Some(response.to.clone())
+                        }
+                        Frame::Artifact(artifact) => {
+                            Option::Some(artifact.to.clone())
+                        }
+                        Frame::Config(config) => {
+                            Option::Some(config.to.clone())
+                        }
+                        Frame::Close(_) => {
+                            Option::None
+                        }
+                    }
+                }
             }
 
             /*

@@ -8,7 +8,7 @@ extern crate anyhow;
 
 use mesh_portal_tcp_common::{PrimitiveFrameReader, PrimitiveFrameWriter, FrameWriter, FrameReader};
 use anyhow::Error;
-use mesh_portal_api_client::{Portal, PortalCtrl, PortalSkel, InletApi, Inlet };
+use mesh_portal_api_client::{Portal, ResourceCtrl, PortalSkel, InletApi, Inlet };
 use std::sync::Arc;
 use tokio::net::TcpStream;
 use tokio::sync::mpsc;
@@ -123,7 +123,7 @@ impl PortalTcpClient {
 pub trait PortalClient: Send+Sync {
     fn flavor(&self) -> String;
     async fn auth( &self, reader: & mut PrimitiveFrameReader, writer: & mut PrimitiveFrameWriter ) -> Result<(),Error>;
-    fn portal_ctrl_factory(&self)->Box<dyn Fn(PortalSkel)->Result<Box<dyn PortalCtrl>,Error>>;
+    fn portal_ctrl_factory(&self)->Box<dyn Fn(PortalSkel)->Result<Box<dyn ResourceCtrl>,Error>>;
     fn logger(&self) -> fn(message: &str);
 }
 
@@ -133,7 +133,7 @@ struct TcpInlet {
 }
 
 impl Inlet for TcpInlet {
-    fn send_frame(&self, frame: inlet::Frame) {
+    fn inlet_frame(&self, frame: inlet::Frame) {
         match self.sender.try_send(frame)
         {
             Ok(_) => {}

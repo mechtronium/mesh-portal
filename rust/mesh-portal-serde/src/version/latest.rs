@@ -116,15 +116,7 @@ pub mod config {
     use crate::version::latest::id::{Address, Kind};
     use crate::version::v0_0_1::config;
 
-    pub type PortalKind = config::PortalKind;
-    pub type Info = generic::config::Info<Kind>;
-    pub type Config = config::Config;
-    pub type SchemaRef = config::SchemaRef;
-    pub type BindConfig = config::BindConfig;
-    pub type PortConfig = config::PortConfigBody;
-    pub type EntityConfig = config::EntityConfig;
-    pub type ResourceConfig = config::ResourceConfig;
-    pub type PayloadConfig = config::PayloadConfig;
+
 }
 
 pub mod entity {
