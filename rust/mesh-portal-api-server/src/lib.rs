@@ -121,7 +121,7 @@ impl Portal {
             let info = info.clone();
             let status_tx = status_tx.clone();
             tokio::spawn(async move {
-                match outlet_tx.send(outlet::Frame::Create(info.clone())).await {
+                match outlet_tx.send(outlet::Frame::Assign(info.clone())).await {
                     Result::Ok(_) => {}
                     Result::Err(err) => {
                         logger(Log::Fatal("FATAL: could not send Frame::Init".to_string()));
@@ -323,7 +323,7 @@ impl Portal {
         self.status = PortalStatus::Initializing;
 
         self.outlet_tx
-            .try_send(outlet::Frame::Create(self.info.clone()))?;
+            .try_send(outlet::Frame::Assign(self.info.clone()))?;
         let mut status_rx = self.status_tx.subscribe();
         let (tx, rx) = tokio::sync::oneshot::channel();
         let config = self.info.config.clone();

@@ -322,10 +322,13 @@ pub mod example {
     impl PortalCtrl for HelloCtrl {
 
         async fn init(&mut self) -> Result<(), Error> {
+            unimplemented!();
+            /*
             let mut request =
                 inlet::Request::new(entity::request::ReqEntity::Msg( Msg {
                     action: "HelloWorld".to_string(),
                     payload: Payload::Empty,
+
                     path: "/".to_string()
                 }));
 
@@ -339,6 +342,8 @@ pub mod example {
                 return Err(anyhow!("unexpected signal"));
             }
 
+
+             */
             Ok(())
         }
 

@@ -7,28 +7,56 @@ use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 
+use mesh_portal_parse::bind::{PipelineSegment, Section, StepKind};
+use mesh_portal_parse::pattern::{Block, HttpPattern, MsgPattern, RcPattern};
+
+use crate::error::Error;
+use crate::version::latest::entity::EntityType;
+use crate::version::latest::generic::entity::request::ReqEntity;
 use crate::version::v0_0_1::bin::Bin;
 
 pub type State = HashMap<String, Bin>;
 
-pub type ArtifactRef = String;
-pub type Artifact = Arc<Vec<u8>>;
+pub mod artifact {
+    use crate::version::v0_0_1::bin::Bin;
+    use crate::version::v0_0_1::id::Address;
+    use serde::{Serialize,Deserialize};
+
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub struct Artifact {
+        pub address: Address,
+        pub bin: Bin,
+    }
+
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub struct ArtifactRequest {
+        pub address: Address,
+        pub from: Address
+    }
+
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub struct ArtifactResponse<B>{
+        pub to: Address,
+        pub payload: B
+    }
+}
+
 pub type Port = String;
 
 pub mod id {
     use std::collections::HashMap;
+    use std::convert::TryInto;
+    use std::fmt::Formatter;
+    use std::ops::Deref;
     use std::str::FromStr;
 
+    use semver::SemVerError;
+    use serde::de::Visitor;
     use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 
     use crate::error::Error;
     use crate::version::v0_0_1::generic;
     use crate::version::v0_0_1::parse::{address, consume_address, Res};
-    use semver::SemVerError;
-    use serde::de::Visitor;
-    use std::convert::TryInto;
-    use std::fmt::Formatter;
-    use std::ops::Deref;
 
     pub type ResourceType = String;
     pub type Kind = generic::id::KindParts<ResourceType>;
@@ -114,7 +142,6 @@ pub mod id {
         }
     }
 
-
     /// Stands for "Type, Kind, Specific"
     pub trait Tks<ResourceType>
     where
@@ -159,7 +186,7 @@ pub mod id {
         Resource,
         Domain(String),
         Tag(String),
-        Mesh(String)
+        Mesh(String),
     }
 
     impl ToString for RouteSegment {
@@ -183,7 +210,7 @@ pub mod id {
         Base(String),
         Dir(String),
         File(String),
-        Version(Version)
+        Version(Version),
     }
 
     impl AddressSegment {
@@ -197,14 +224,13 @@ pub mod id {
             }
         }
 
-
         pub fn is_filesystem_ref(&self) -> bool {
             match self {
-                AddressSegment::Space(_) => {false}
-                AddressSegment::Base(_) => {false}
-                AddressSegment::Dir(_) => {true}
-                AddressSegment::File(_) => {true}
-                AddressSegment::Version(_) => {false}
+                AddressSegment::Space(_) => false,
+                AddressSegment::Base(_) => false,
+                AddressSegment::Dir(_) => true,
+                AddressSegment::File(_) => true,
+                AddressSegment::Version(_) => false,
             }
         }
     }
@@ -216,7 +242,7 @@ pub mod id {
                 AddressSegment::Base(base) => base.clone(),
                 AddressSegment::Dir(dir) => dir.clone(),
                 AddressSegment::File(file) => file.clone(),
-                AddressSegment::Version(version) => {version.to_string()}
+                AddressSegment::Version(version) => version.to_string(),
             }
         }
     }
@@ -228,15 +254,15 @@ pub mod id {
     }
 
     impl Address {
-        pub fn push( &self, segment: String ) -> Result<Self,Error> {
-            Self::from_str(format!("{}:{}",self.to_string(),segment).as_str())
+        pub fn push(&self, segment: String) -> Result<Self, Error> {
+            Self::from_str(format!("{}:{}", self.to_string(), segment).as_str())
         }
 
-        pub fn push_file( &self, segment: String ) -> Result<Self,Error> {
-            Self::from_str(format!("{}{}",self.to_string(),segment).as_str())
+        pub fn push_file(&self, segment: String) -> Result<Self, Error> {
+            Self::from_str(format!("{}{}", self.to_string(), segment).as_str())
         }
 
-        pub fn push_segment( &self, segment: AddressSegment ) -> Self {
+        pub fn push_segment(&self, segment: AddressSegment) -> Self {
             let mut address = self.clone();
             address.segments.push(segment);
             address
@@ -327,25 +353,27 @@ pub mod id {
 }
 
 pub mod pattern {
-    use crate::error::Error;
-    use crate::version::v0_0_1::generic;
-    use crate::version::v0_0_1::id::{Kind, ResourceType, Specific, AddressSegment};
-    use crate::version::v0_0_1::pattern::specific::{
-        ProductPattern, VariantPattern, VendorPattern,
-    };
-    use crate::version::v0_0_1::util::ValueMatcher;
-    use crate::{Deserialize, Serialize};
-    use semver::ReqParseError;
-    use serde::de::Visitor;
-    use serde::{de, Deserializer, Serializer};
     use std::convert::TryInto;
     use std::fmt::Formatter;
     use std::ops::Deref;
     use std::str::FromStr;
 
+    use semver::ReqParseError;
+    use serde::de::Visitor;
+    use serde::{de, Deserializer, Serializer};
+
+    use crate::error::Error;
+    use crate::version::v0_0_1::generic;
+    use crate::version::v0_0_1::id::{AddressSegment, Kind, ResourceType, Specific};
+    use crate::version::v0_0_1::pattern::specific::{
+        ProductPattern, VariantPattern, VendorPattern,
+    };
+    use crate::version::v0_0_1::util::ValueMatcher;
+    use crate::{Deserialize, Serialize};
+
     pub type TksPattern = generic::pattern::TksPattern<ResourceType, Kind>;
     pub type KindPattern = generic::pattern::KindPattern<Kind>;
-    pub type AddressKindPattern = generic::pattern::AddressKindPattern<ResourceType,Kind>;
+    pub type AddressKindPattern = generic::pattern::AddressKindPattern<ResourceType, Kind>;
 
     #[derive(Debug, Clone)]
     pub struct VersionReq {
@@ -434,16 +462,12 @@ pub mod pattern {
     impl SegmentPattern {
         pub fn is_exact(&self) -> bool {
             match self {
-                SegmentPattern::Exact(_) => {
-                    true
-                }
-                _ => {
-                    false
-                }
+                SegmentPattern::Exact(_) => true,
+                _ => false,
             }
         }
 
-        pub fn matches(&self, segment: &AddressSegment ) -> bool {
+        pub fn matches(&self, segment: &AddressSegment) -> bool {
             match self {
                 SegmentPattern::Any => true,
                 SegmentPattern::Recursive => true,
@@ -511,10 +535,11 @@ pub mod pattern {
         }
     }
     pub mod specific {
-        use crate::error::Error;
-        use crate::version::v0_0_1::generic::pattern::Pattern;
         use std::ops::Deref;
         use std::str::FromStr;
+
+        use crate::error::Error;
+        use crate::version::v0_0_1::generic::pattern::Pattern;
 
         pub struct VersionReq {
             pub req: semver::VersionReq,
@@ -545,8 +570,27 @@ pub mod pattern {
     }
 
     pub mod parse {
+        use std::convert::{TryFrom, TryInto};
+        use std::str::FromStr;
 
-        use crate::version::v0_0_1::generic::pattern::{Hop, KindPattern, Pattern, ResourceTypePattern, TksPattern, EmptyPattern};
+        use nom::branch::alt;
+        use nom::bytes::complete::tag;
+        use nom::character::complete::{alpha1, digit1};
+        use nom::combinator::{all_consuming, opt, recognize};
+        use nom::error::{ParseError, VerboseError};
+        use nom::multi::many1;
+        use nom::sequence::{delimited, terminated, tuple};
+        use nom::Parser;
+        use nom::{Err, IResult};
+        use nom_supreme::{parse_from_str, ParserExt};
+
+        use crate::error::Error;
+        use crate::version::latest::generic::id::KindParts;
+        use crate::version::v0_0_1::generic::id::parse::specific;
+        use crate::version::v0_0_1::generic::pattern::{
+            EmptyPattern, Hop, KindPattern, Pattern, ResourceTypePattern, TksPattern,
+        };
+        use crate::version::v0_0_1::id::AddressSegment;
         use crate::version::v0_0_1::parse::{
             address_segment_chars, camel_case, domain_chars, skewer_chars, version_req_chars, Res,
         };
@@ -557,22 +601,6 @@ pub mod pattern {
             ExactSegment, SegmentPattern, SpecificPattern, VersionReq,
         };
         use crate::version::v0_0_1::util::ValuePattern;
-        use nom::branch::alt;
-        use nom::bytes::complete::tag;
-        use nom::character::complete::{alpha1, digit1};
-        use nom::combinator::{opt, recognize, all_consuming};
-        use nom::error::{ParseError, VerboseError};
-        use nom::multi::many1;
-        use nom::sequence::{delimited, terminated, tuple};
-        use nom::Parser;
-        use nom::{Err, IResult};
-        use nom_supreme::{parse_from_str, ParserExt};
-        use std::str::FromStr;
-        use crate::version::v0_0_1::id::AddressSegment;
-        use crate::error::Error;
-        use crate::version::latest::generic::id::KindParts;
-        use crate::version::v0_0_1::generic::id::parse::specific;
-        use std::convert::{TryFrom, TryInto};
 
         fn any_segment(input: &str) -> Res<&str, SegmentPattern> {
             tag("*")(input).map(|(next, _)| (next, SegmentPattern::Any))
@@ -586,17 +614,20 @@ pub mod pattern {
             address_segment_chars(input).map(|(next, segment)| {
                 (
                     next,
-                    SegmentPattern::Exact(ExactSegment::Address(AddressSegment::Space(segment.to_string()))),
+                    SegmentPattern::Exact(ExactSegment::Address(AddressSegment::Space(
+                        segment.to_string(),
+                    ))),
                 )
             })
         }
-
 
         fn exact_base_segment(input: &str) -> Res<&str, SegmentPattern> {
             address_segment_chars(input).map(|(next, segment)| {
                 (
                     next,
-                    SegmentPattern::Exact(ExactSegment::Address(AddressSegment::Base(segment.to_string()))),
+                    SegmentPattern::Exact(ExactSegment::Address(AddressSegment::Base(
+                        segment.to_string(),
+                    ))),
                 )
             })
         }
@@ -605,11 +636,12 @@ pub mod pattern {
             address_segment_chars(input).map(|(next, segment)| {
                 (
                     next,
-                    SegmentPattern::Exact(ExactSegment::Address(AddressSegment::File(segment.to_string()))),
+                    SegmentPattern::Exact(ExactSegment::Address(AddressSegment::File(
+                        segment.to_string(),
+                    ))),
                 )
             })
         }
-
 
         fn space_segment(input: &str) -> Res<&str, SegmentPattern> {
             alt((recursive_segment, any_segment, exact_space_segment))(input)
@@ -622,9 +654,6 @@ pub mod pattern {
         fn file_segment(input: &str) -> Res<&str, SegmentPattern> {
             alt((recursive_segment, any_segment, exact_file_segment))(input)
         }
-
-
-
 
         pub fn pattern<'r, O, E: ParseError<&'r str>, V>(
             mut value: V,
@@ -703,16 +732,24 @@ pub mod pattern {
             })
         }
 
-        fn kind_parts<ResourceType:FromStr>(input: &str) -> Res<&str, KindParts<ResourceType>> {
-            tuple((resource_type,opt(delimited(tag("<"), tuple((camel_case,opt(delimited(tag("<"), specific, tag(">"))))), tag(">")))))(input).map( |(next,(resource_type,more))| {
+        fn kind_parts<ResourceType: FromStr>(input: &str) -> Res<&str, KindParts<ResourceType>> {
+            tuple((
+                resource_type,
+                opt(delimited(
+                    tag("<"),
+                    tuple((camel_case, opt(delimited(tag("<"), specific, tag(">"))))),
+                    tag(">"),
+                )),
+            ))(input)
+            .map(|(next, (resource_type, more))| {
                 let mut parts = KindParts {
                     resource_type,
                     kind: None,
-                    specific: None
+                    specific: None,
                 };
 
                 match more {
-                    Some((kind,specific)) => {
+                    Some((kind, specific)) => {
                         parts.kind = Option::Some(kind.to_string());
                         match specific {
                             Some(specific) => {}
@@ -722,34 +759,48 @@ pub mod pattern {
                     None => {}
                 }
 
-                    (next, parts)
-
+                (next, parts)
             })
         }
 
-
-        fn rec_kind<ResourceType:FromStr>(input: &str) -> Res<&str, &str> {
+        fn rec_kind<ResourceType: FromStr>(input: &str) -> Res<&str, &str> {
             recognize(kind_parts::<ResourceType>)(input)
         }
 
-        pub fn kind<ResourceType,Kind>(input: &str) -> Res<&str, Kind> where ResourceType: FromStr, Kind: FromStr{
+        pub fn kind<ResourceType, Kind>(input: &str) -> Res<&str, Kind>
+        where
+            ResourceType: FromStr,
+            Kind: FromStr,
+        {
             parse_from_str(rec_kind::<ResourceType>)
                 .parse(input)
                 .map(|(next, kind)| (next, kind))
         }
 
-        pub fn delim_kind<ResourceType,Kind>(input: &str) -> Res<&str, Kind> where  ResourceType:FromStr, Kind: FromStr{
-            delimited(tag("<"),kind::<ResourceType,Kind>,tag(">"))(input)
+        pub fn delim_kind<ResourceType, Kind>(input: &str) -> Res<&str, Kind>
+        where
+            ResourceType: FromStr,
+            Kind: FromStr,
+        {
+            delimited(tag("<"), kind::<ResourceType, Kind>, tag(">"))(input)
         }
 
-        pub fn consume_kind<ResourceType,Kind>(input: &str) -> Result<Kind,Error> where ResourceType: FromStr, Kind: FromStr+TryFrom<KindParts<ResourceType>,Error=Error>{
-            let (_,kind_parts) = all_consuming(kind_parts::<ResourceType>)(input)?;
+        pub fn consume_kind<ResourceType, Kind>(input: &str) -> Result<Kind, Error>
+        where
+            ResourceType: FromStr,
+            Kind: FromStr + TryFrom<KindParts<ResourceType>, Error = Error>,
+        {
+            let (_, kind_parts) = all_consuming(kind_parts::<ResourceType>)(input)?;
 
             Ok(kind_parts.try_into()?)
         }
 
-        pub fn kind_pattern<ResourceType,Kind>(input: &str) -> Res<&str, KindPattern<Kind>> where ResourceType: FromStr, Kind: FromStr{
-            pattern(kind::<ResourceType,Kind>)(input).map(|(next, kind)| (next, kind))
+        pub fn kind_pattern<ResourceType, Kind>(input: &str) -> Res<&str, KindPattern<Kind>>
+        where
+            ResourceType: FromStr,
+            Kind: FromStr,
+        {
+            pattern(kind::<ResourceType, Kind>)(input).map(|(next, kind)| (next, kind))
         }
 
         pub fn resource_type<ResourceType: FromStr>(input: &str) -> Res<&str, ResourceType> {
@@ -772,8 +823,12 @@ pub mod pattern {
                     opt(delimited(
                         tag("<"),
                         tuple((
-                            kind_pattern::<ResourceType,Kind>,
-                            opt(delimited(tag("<"), value_pattern(specific_pattern), tag(">"))),
+                            kind_pattern::<ResourceType, Kind>,
+                            opt(delimited(
+                                tag("<"),
+                                value_pattern(specific_pattern),
+                                tag(">"),
+                            )),
                         )),
                         tag(">"),
                     )),
@@ -838,21 +893,22 @@ pub mod pattern {
             })
         }
 
-
-
         #[cfg(test)]
         pub mod test {
+            use std::str::FromStr;
+
+            use nom::combinator::all_consuming;
 
             use crate::error::Error;
+            use crate::version::latest::util::ValuePattern;
             use crate::version::v0_0_1::generic::pattern::{Pattern, TksPattern};
-            use crate::version::v0_0_1::pattern::parse::{hop, segment, specific_pattern, tks, space_hop};
+            use crate::version::v0_0_1::id::AddressSegment;
+            use crate::version::v0_0_1::pattern::parse::{
+                hop, segment, space_hop, specific_pattern, tks,
+            };
             use crate::version::v0_0_1::pattern::{
                 ExactSegment, Pattern, SegmentPattern, SpecificPattern, VersionReq,
             };
-            use nom::combinator::all_consuming;
-            use std::str::FromStr;
-            use crate::version::v0_0_1::id::AddressSegment;
-            use crate::version::latest::util::ValuePattern;
 
             #[test]
             pub fn test_segs() -> Result<(), Error> {
@@ -862,7 +918,9 @@ pub mod pattern {
                     segment("hello")?
                         == (
                             "",
-                            SegmentPattern::Exact(ExactSegment::Address(AddressSegment::Base("hello".to_string())))
+                            SegmentPattern::Exact(ExactSegment::Address(AddressSegment::Base(
+                                "hello".to_string()
+                            )))
                         )
                 );
                 Ok(())
@@ -922,7 +980,9 @@ pub mod pattern {
                 space_hop("*<Database<Relational<mysql.org:mysql:innodb:(^7.0.1)>>>")?;
                 space_hop("**<Database<Relational<mysql.org:mysql:innodb:(^7.0.1)>>>")?;
                 space_hop("space.org:<Database<Relational<mysql.org:mysql:innodb:(^7.0.1)>>>")?;
-                space_hop("space.org:something<Database<Relational<mysql.org:mysql:innodb:(^7.0.1)>>>")?;
+                space_hop(
+                    "space.org:something<Database<Relational<mysql.org:mysql:innodb:(^7.0.1)>>>",
+                )?;
                 space_hop("space.org:no-type")?;
                 space_hop("space.org:no-type:**")?;
                 space_hop("space.org:app:users:*:tenant:**")?;
@@ -937,9 +997,11 @@ pub mod pattern {
 }
 
 pub mod messaging {
-    use crate::error::Error;
-    use serde::{Deserialize, Serialize};
     use std::convert::TryInto;
+
+    use serde::{Deserialize, Serialize};
+
+    use crate::error::Error;
 
     pub type ExchangeId = String;
 
@@ -1076,7 +1138,6 @@ pub mod payload {
     use crate::version::v0_0_1::bin::Bin;
     use crate::version::v0_0_1::generic;
     use crate::version::v0_0_1::id::{Address, Kind, PayloadClaim, ResourceType};
-
     use crate::version::v0_0_1::pattern::TksPattern;
 
     pub type Primitive = generic::payload::Primitive<Kind>;
@@ -1087,8 +1148,7 @@ pub mod payload {
     pub type Call = generic::payload::Call;
     pub type CallWithConfig = generic::payload::CallWithConfig;
     pub type MapPattern = generic::payload::MapPattern;
-    pub type PayloadTypePattern =
-        generic::payload::PayloadTypePattern;
+    pub type PayloadTypePattern = generic::payload::PayloadTypePattern;
     pub type PayloadPattern = generic::payload::PayloadPattern;
     pub type ListPattern = generic::payload::ListPattern;
     pub type PayloadMap = generic::payload::PayloadMap<Kind>;
@@ -1183,6 +1243,9 @@ pub mod config {
     use crate::version::v0_0_1::generic;
     use crate::version::v0_0_1::id::{Address, Kind};
     use crate::version::v0_0_1::ArtifactRef;
+    use crate::version::v0_0_1::config::bind::BindConfig;
+    use crate::version::v0_0_1::config::mechtron::MechtronConfig;
+    use crate::version::latest::generic::resource::ResourceStub;
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub enum PortalKind {
@@ -1202,83 +1265,459 @@ pub mod config {
     pub type Info = generic::config::Info<Kind>;
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
-    pub struct Config {
+    pub struct PortalConfig {
         pub max_payload_size: u32,
         pub init_timeout: u64,
         pub frame_timeout: u64,
         pub response_timeout: u64,
-        pub bind: BindConfig,
     }
 
-    impl Config {
-        pub fn with_bind_config(bind: BindConfig) -> Self {
-            Self {
-                max_payload_size: 128 * 1024,
-                init_timeout: 30,
-                frame_timeout: 5,
-                response_timeout: 15,
-                bind,
-            }
-        }
-    }
 
-    impl Default for Config {
+    impl Default for PortalConfig {
         fn default() -> Self {
             Self {
                 max_payload_size: 128 * 1024,
                 init_timeout: 30,
                 frame_timeout: 5,
                 response_timeout: 15,
-                bind: Default::default(),
             }
         }
     }
 
-    #[derive(Debug, Clone, Serialize, Deserialize)]
-    pub struct SchemaRef {
-        pub schema: String,
-        pub artifact: Option<ArtifactRef>,
+    #[derive(Debug,Clone,Serialize,Deserialize)]
+    pub struct Assign<Kind> {
+       pub config: Config<PortConfigBody>,
+       pub stub: ResourceStub<Kind>
     }
 
-    #[derive(Debug, Clone, Serialize, Deserialize)]
-    pub struct BindConfig {
-        pub ports: HashMap<String, PortConfig>,
+    #[derive(Debug,Clone,Serialize,Deserialize)]
+    pub struct Config<Body>{
+        pub address: Address,
+        pub body: Body
     }
 
-    impl Default for BindConfig {
-        fn default() -> Self {
-            Self {
-                ports: Default::default(),
-            }
+    #[derive(Debug,Clone,Serialize,Deserialize)]
+    pub enum ConfigBody {
+        Bind(BindConfig),
+        Mechtron(MechtronConfig)
+    }
+
+
+    #[derive(Debug,Clone,Serialize,Deserialize)]
+    pub enum PortConfigBody {
+        Port(String),
+        Mechtron(MechtronConfig)
+    }
+
+    pub mod mechtron {
+        use crate::version::v0_0_1::id::Address;
+        use sedre::{Serialize,Deserialize};
+
+        #[derive(Debug,Clone,Serialize,Deserialize)]
+        pub struct MechtronConfig {
+            pub wasm: Address,
+            pub name: String,
         }
     }
 
-    #[derive(Debug, Clone, Serialize, Deserialize)]
-    pub struct PortConfig {
-        pub payload: PayloadConfig,
-        pub response: EntityConfig,
-    }
 
-    #[derive(Debug, Clone, Serialize, Deserialize)]
-    pub enum EntityConfig {
-        Empty,
-        Resource(ResourceConfig),
-        Payload(PayloadConfig),
-    }
 
-    #[derive(Debug, Clone, Serialize, Deserialize)]
-    pub enum ResourceConfig {
-        None,
-        Resource,
-        Resources,
-        State,
-    }
+    pub mod bind {
+        use crate::error::Error;
+        use crate::version::v0_0_1::entity::EntityType;
+        use crate::version::v0_0_1::generic::entity::request::ReqEntity;
+        use crate::version::v0_0_1::payload::Call;
+        use std::convert::TryInto;
+        use crate::version::v0_0_1::payload::{Payload, PayloadPattern};
+        use crate::version::v0_0_1::util::ValuePattern;
+        use sedre::{Serialize,Deserialize};
 
-    #[derive(Debug, Clone, Serialize, Deserialize)]
-    pub enum PayloadConfig {
-        Text,
-        Bin(SchemaRef),
-        Bins(HashMap<String, SchemaRef>),
+        pub struct ProtoBind {
+            pub sections: Vec<Section>,
+        }
+
+        impl TryInto<BindConfig> for ProtoBind {
+            type Error = Error;
+
+            fn try_into(self) -> Result<BindConfig, Self::Error> {
+                let mut opt_msg = Option::None;
+                let mut opt_http = Option::None;
+                let mut opt_rc = Option::None;
+
+                for section in self.sections {
+                    match section {
+                        Section::Msg(msg) => {
+                            if opt_msg.is_some() {
+                                return Err("multiple Msg sections not allowed.".into());
+                            }
+                            opt_msg = Some(msg);
+                        }
+                        Section::Http(http) => {
+                            if opt_http.is_some() {
+                                return Err("multiple Http sections not allowed.".into());
+                            }
+                            opt_http = Some(http);
+                        }
+                        Section::Rc(rc) => {
+                            if opt_rc.is_some() {
+                                return Err("multiple Rc sections not allowed.".into());
+                            }
+                            opt_rc = Some(rc);
+                        }
+                    }
+                }
+                let mut bind: BindConfig = Default::default();
+                if let Option::Some(msg) = opt_msg {
+                    bind.msg = msg;
+                }
+                if let Option::Some(http) = opt_http {
+                    bind.http = http;
+                }
+                if let Option::Some(rc) = opt_rc {
+                    bind.rc = rc;
+                }
+                Ok(bind)
+            }
+        }
+
+        #[derive(Debug,Clone,Serialize,Deserialize)]
+        pub struct BindConfig {
+            pub msg: Scope<EntityType, Selector<MsgPattern>>,
+            pub http: Scope<EntityType, Selector<HttpPattern>>,
+            pub rc: Scope<EntityType, Selector<RcPattern>>,
+        }
+
+        impl Default for BindConfig {
+            fn default() -> Self {
+                Self {
+                    msg: Scope::new(EntityType::Msg, vec![]),
+                    http: Scope::new(EntityType::Http, vec![]),
+                    rc: Scope::new(EntityType::Rc, vec![]),
+                }
+            }
+        }
+
+        impl BindConfig {
+            pub fn select<ResourceType, Kind>(&self, entity: ReqEntity<ResourceType, Kind>) {
+                match entity {
+                    ReqEntity::Rc(_) => {}
+                    ReqEntity::Msg(_) => {}
+                    ReqEntity::Http(_) => {}
+                }
+            }
+        }
+
+        #[derive(Debug,Clone,Serialize,Deserialize)]
+        pub struct Scope<T, E> {
+            pub scope_type: T,
+            pub elements: Vec<E>,
+        }
+
+        impl<T, E> Scope<T, E> {
+            pub fn new(scope_type: T, elements: Vec<E>) -> Self {
+                Self {
+                    scope_type,
+                    elements,
+                }
+            }
+        }
+
+        #[derive(Clone, Serialize,Deserialize,Eq, PartialEq)]
+        pub struct Pipeline {
+            pub segments: Vec<PipelineSegment>,
+        }
+
+        impl Pipeline {
+            pub fn new() -> Self {
+                Self { segments: vec![] }
+            }
+        }
+
+        #[derive(Debug,Clone, Serialize,Deserialize,Eq, PartialEq)]
+        pub struct PipelineStep {
+            pub kind: StepKind,
+            pub blocks: Vec<Block>,
+        }
+
+        impl PipelineStep {
+            pub fn new(kind: StepKind) -> Self {
+                Self {
+                    kind,
+                    blocks: vec![],
+                }
+            }
+        }
+
+        #[derive(Clone,Eq,PartialEq)]
+        pub enum Block {
+            Upload(UploadBlock),
+            RequestPattern(PatternBlock),
+            ResponsePattern(PatternBlock),
+            Payload(Payload),
+        }
+
+
+        #[derive(Debug,Clone,Eq,PartialEq)]
+        pub struct UploadBlock{
+            pub name: String
+        }
+
+        /*
+        #[derive(Debug,Clone,Eq,PartialEq)]
+        pub struct CreateBlock{
+            pub payload: Payload
+        }
+
+         */
+
+
+        pub type PatternBlock = ValuePattern<PayloadPattern>;
+
+        #[derive(Debug, Clone, Eq, PartialEq)]
+        pub enum PipelineStop {
+            Internal,
+            Call(Call),
+            Return,
+        }
+
+        #[derive(Debug,Clone,Serialize,Deserialize)]
+        pub struct Selector<P> {
+            pub pattern: P,
+            pub pipeline: Pipeline,
+        }
+
+        impl<P> Selector<P> {
+            pub fn new(pattern: P, pipeline: Pipeline) -> Self {
+                Selector { pattern, pipeline }
+            }
+        }
+
+        pub enum Whitelist {
+            Any,
+            None,
+            Enumerated(Vec<CallPattern>),
+        }
+
+        pub enum CallPattern {
+            Any,
+            Call,
+        }
+
+        #[derive(Debug,Clone, Serialize,Deserialize,Eq, PartialEq)]
+        pub struct PipelineSegment {
+            pub step: PipelineStep,
+            pub stop: PipelineStop,
+        }
+
+        #[derive(Debug,Clone, Serialize,Deserialize,Eq, PartialEq)]
+        pub enum StepKind {
+            Request,
+            Response,
+        }
+
+        pub enum Section {
+            Msg(Scope<EntityType, Selector<MsgPattern>>),
+            Http(Scope<EntityType, Selector<HttpPattern>>),
+            Rc(Scope<EntityType, Selector<RcPattern>>),
+        }
+
+        pub enum ScopeType {
+            Bind,
+            Msg,
+            Http,
+            Rc,
+        }
+
+        pub mod parse {
+            use crate::version::v0_0_1::bind::{PipelineSegment, PipelineStep, ProtoBind, Scope, Section, StepKind, PipelineStop, Selector, Pipeline};
+            use crate::version::v0_0_1::entity::EntityType;
+            use crate::version::v0_0_1::parse::Res;
+            use nom::branch::alt;
+            use nom::bytes::complete::tag;
+            use nom::character::complete::multispace0;
+            use nom::combinator::{all_consuming, opt};
+            use nom::multi::{many0, many1};
+            use nom::sequence::{delimited, tuple};
+            use crate::version::v0_0_1::config::bind::{ProtoBind, Section, Scope, PipelineStep, StepKind, PipelineStop, PipelineSegment, Pipeline, Selector};
+
+            pub fn bind(input: &str) -> Res<&str, ProtoBind> {
+                delimited(
+                    multispace0,
+                    tuple((
+                        tag("Bind"),
+                        multispace0,
+                        delimited(
+                            tag("{"),
+                            delimited(multispace0, sections, multispace0),
+                            tag("}"),
+                        ),
+                    )),
+                    multispace0,
+                )(input)
+                    .map(|(next, (_, _, sections))| {
+                        let bind = ProtoBind { sections };
+
+                        (next, bind)
+                    })
+            }
+
+            pub fn sections(input: &str) -> Res<&str, Vec<Section>> {
+                delimited(
+                    multispace0,
+                    many0(delimited(multispace0, section, multispace0)),
+                    multispace0,
+                )(input)
+            }
+
+            pub fn section(input: &str) -> Res<&str, Section> {
+                alt((msg_section,http_section,rc_section))(input)
+            }
+
+            pub fn msg_section(input: &str) -> Res<&str, Section> {
+                tuple((
+                    tag("Msg"),
+                    multispace0,
+                    delimited(
+                        tag("{"),
+                        delimited(multispace0, msg_selectors, multispace0),
+                        tag("}"),
+                    ),
+                ))(input)
+                    .map(|(next, (_, _, selectors))| {
+                        (next, Section::Msg(Scope::new(EntityType::Msg, selectors)))
+                    })
+            }
+
+            pub fn http_section(input: &str) -> Res<&str, Section> {
+                tuple((
+                    tag("Http"),
+                    multispace0,
+                    delimited(
+                        tag("{"),
+                        delimited(multispace0, http_selectors, multispace0),
+                        tag("}"),
+                    ),
+                ))(input)
+                    .map(|(next, (_, _, selectors))| {
+                        (next, Section::Http(Scope::new(EntityType::Http, selectors)))
+                    })
+            }
+
+            pub fn rc_section(input: &str) -> Res<&str, Section> {
+                tuple((
+                    tag("Rc"),
+                    multispace0,
+                    delimited(
+                        tag("{"),
+                        delimited(multispace0, rc_selectors, multispace0),
+                        tag("}"),
+                    ),
+                ))(input)
+                    .map(|(next, (_, _, selectors))| {
+                        (next, Section::Rc(Scope::new(EntityType::Rc, selectors)))
+                    })
+            }
+
+            pub fn pipeline_step(input: &str) -> Res<&str, PipelineStep> {
+                tuple((many0(pipeline_block), alt((tag("->"), tag("=>")))))(input).map(
+                    |(next, (blocks, kind))| {
+                        let kind = match kind {
+                            "->" => StepKind::Request,
+                            "=>" => StepKind::Response,
+                            _ => panic!("nom parse rules should have selected -> or =>"),
+                        };
+                        (next, PipelineStep { kind, blocks })
+                    },
+                )
+            }
+
+            pub fn inner_pipeline_stop(input: &str) -> Res<&str, PipelineStop> {
+                delimited(
+                    tag("{{"),
+                    delimited(multispace0, opt(tag("*")), multispace0),
+                    tag("}}"),
+                )(input)
+                    .map(|(next, _)| (next, PipelineStop::Internal))
+            }
+
+            pub fn return_pipeline_stop(input: &str) -> Res<&str, PipelineStop> {
+                tag("&")(input).map(|(next, _)| (next, PipelineStop::Return))
+            }
+
+            pub fn call_pipeline_stop(input: &str) -> Res<&str, PipelineStop> {
+                call(input).map(|(next, call)| (next, PipelineStop::Call(call)))
+            }
+
+            pub fn pipeline_stop(input: &str) -> Res<&str, PipelineStop> {
+                alt((
+                    inner_pipeline_stop,
+                    return_pipeline_stop,
+                    call_pipeline_stop,
+                ))(input)
+            }
+
+            pub fn consume_pipeline_step(input: &str) -> Res<&str, PipelineStep> {
+                all_consuming(pipeline_step)(input)
+            }
+
+            pub fn consume_pipeline_stop(input: &str) -> Res<&str, PipelineStop> {
+                all_consuming(pipeline_stop)(input)
+            }
+
+            pub fn pipeline_segment(input: &str) -> Res<&str, PipelineSegment> {
+                tuple((
+                    multispace0,
+                    pipeline_step,
+                    multispace0,
+                    pipeline_stop,
+                    multispace0,
+                ))(input)
+                    .map(|(next, (_, step, _, stop, _))| (next, PipelineSegment { step, stop }))
+            }
+
+            pub fn pipeline(input: &str) -> Res<&str, Pipeline> {
+                many1(pipeline_segment)(input).map(|(next, segments)| (next, Pipeline { segments }))
+            }
+
+            pub fn consume_pipeline(input: &str) -> Res<&str, Pipeline> {
+                all_consuming(pipeline)(input)
+            }
+
+            pub fn entity_selectors(input: &str) -> Res<&str, Vec<Selector<EntityPattern>>> {
+                many0(delimited(multispace0, entity_selector, multispace0))(input)
+            }
+
+            pub fn msg_selectors(input: &str) -> Res<&str, Vec<Selector<MsgPattern>>> {
+                many0(delimited(multispace0, msg_selector, multispace0))(input)
+            }
+
+            pub fn http_selectors(input: &str) -> Res<&str, Vec<Selector<HttpPattern>>> {
+                many0(delimited(multispace0, http_selector, multispace0))(input)
+            }
+
+            pub fn rc_selectors(input: &str) -> Res<&str, Vec<Selector<RcPattern>>> {
+                many0(delimited(multispace0, rc_selector, multispace0))(input)
+            }
+
+            pub fn entity_selector(input: &str) -> Res<&str, Selector<EntityPattern>> {
+                tuple((entity_pattern, multispace0, pipeline, tag(";")))(input)
+                    .map(|(next, (pattern, _, pipeline, _))| (next, Selector::new(pattern, pipeline)))
+            }
+
+            pub fn msg_selector(input: &str) -> Res<&str, Selector<MsgPattern>> {
+                tuple((msg_pattern_scoped, multispace0, pipeline, tag(";")))(input)
+                    .map(|(next, (pattern, _, pipeline, _))| (next, Selector::new(pattern, pipeline)))
+            }
+
+            pub fn http_selector(input: &str) -> Res<&str, Selector<HttpPattern>> {
+                tuple((http_pattern_scoped, multispace0, pipeline, tag(";")))(input)
+                    .map(|(next, (pattern, _, pipeline, _))| (next, Selector::new(pattern, pipeline)))
+            }
+
+            pub fn consume_selector(input: &str) -> Res<&str, Selector<EntityPattern>> {
+                all_consuming(entity_selector)(input)
+            }
+        }
     }
 }
 
@@ -1314,29 +1753,36 @@ pub mod entity {
 }
 
 pub mod resource {
+    use std::str::FromStr;
+
+    use nom::branch::alt;
+    use nom::bytes::complete::{is_a, tag};
+    use nom::character::complete::{alpha1, digit1};
+    use nom::combinator::{not, recognize};
+    use nom::error::{ErrorKind, ParseError, VerboseError};
+    use nom::sequence::{delimited, tuple};
+    use nom::CompareResult::Incomplete;
     use serde::{Deserialize, Serialize};
 
+    use crate::error::Error;
+    use crate::mesh;
     use crate::version::v0_0_1::generic;
     use crate::version::v0_0_1::id::{Address, Kind, ResourceType};
-    use std::str::FromStr;
-    use crate::version::v0_0_1::parse::{Res, address};
-    use nom::character::complete::{alpha1, digit1};
-    use crate::error::Error;
-    use nom::bytes::complete::{tag, is_a};
-    use nom::sequence::{tuple, delimited};
-    use nom::branch::alt;
-    use nom::combinator::{not, recognize};
-    use nom::error::{VerboseError, ParseError, ErrorKind};
-    use crate::mesh;
-    use nom::CompareResult::Incomplete;
+    use crate::version::v0_0_1::parse::{address, Res};
+
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub struct StatusUpdate {
+        pub from: Address,
+        pub status: Status,
+    }
 
     #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
     pub enum Status {
-        Unknown,              // initial status or when we status cannot be determined
-        Pending,              // resource is now registered but not assigned to a host
-        Assigning,            // resource is being assigned to at least one host
+        Unknown,                // initial status or when we status cannot be determined
+        Pending,                // resource is now registered but not assigned to a host
+        Assigning,              // resource is being assigned to at least one host
         Initializing(Progress), // assigned to a host and undergoing custom initialization...This resource can send requests but not receive requests.  The String gives a progress indication like 2/10 (step 2 of 10) or 7/? when the number of steps are not known.
-        Ready,                // ready to take requests
+        Ready,                  // ready to take requests
         Paused(Address), // can not receive requests (probably because it is waiting for some other resource to make updates)... String should be some form of meaningful identifier of which resource Paused this resource
         Resuming(Progress), // like Initializing but triggered after a pause is lifted, the resource may be doing something before it is ready to accept requests again.  String is a progress indication just like Initializing.
         Panic(String), // something is wrong... all requests are blocked and responses are cancelled. String is a hopefully  meaningful message describing why the Resource has Panic
@@ -1346,32 +1792,29 @@ pub mod resource {
     #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
     pub enum Code {
         Ok,
-        Error(i32)
+        Error(i32),
     }
 
-    impl ToString for Code{
+    impl ToString for Code {
         fn to_string(&self) -> String {
             match self {
-                Code::Ok => {
-                    "Ok".to_string()
-                }
+                Code::Ok => "Ok".to_string(),
                 Code::Error(code) => {
-                    format!("Err({})",code)
+                    format!("Err({})", code)
                 }
             }
         }
     }
 
-
     #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
     pub struct Progress {
         pub step: u16,
-        pub total: u16
+        pub total: u16,
     }
 
-    impl ToString for Progress{
+    impl ToString for Progress {
         fn to_string(&self) -> String {
-            format!("{}/{}",self.step,self.total)
+            format!("{}/{}", self.step, self.total)
         }
     }
 
@@ -1381,63 +1824,65 @@ pub mod resource {
                 Status::Unknown => "Unknown".to_string(),
                 Status::Pending => "Pending".to_string(),
                 Status::Assigning => "Assigning".to_string(),
-                Status::Initializing(progress) => format!("Initializing({})",progress.to_string()),
+                Status::Initializing(progress) => format!("Initializing({})", progress.to_string()),
                 Status::Ready => "Ready".to_string(),
-                Status::Paused(address) => format!("Paused({})",address.to_string()),
-                Status::Resuming(progress) => format!("Resuming({})",progress.to_string()),
-                Status::Panic(message) => format!("Panic('{}')",message),
-                Status::Done(code) => format!("Done({})",code.to_string())
+                Status::Paused(address) => format!("Paused({})", address.to_string()),
+                Status::Resuming(progress) => format!("Resuming({})", progress.to_string()),
+                Status::Panic(message) => format!("Panic('{}')", message),
+                Status::Done(code) => format!("Done({})", code.to_string()),
             }
         }
     }
 
-    pub fn delim_progress( input: &str ) -> Result<Progress,Error> {
-        let (_,(step,_,total)) = delimited(tag("("),tuple( (digit1,tag("/"),digit1)),tag(")"))(input)?;
+    pub fn delim_progress(input: &str) -> Result<Progress, Error> {
+        let (_, (step, _, total)) =
+            delimited(tag("("), tuple((digit1, tag("/"), digit1)), tag(")"))(input)?;
         let step = step.parse()?;
         let total = total.parse()?;
-        Ok(Progress{
-            step,
-            total
-        })
+        Ok(Progress { step, total })
     }
 
-    pub fn delim_address( input: &str ) -> Result<Address,Error> {
-        let (_,address) = delimited(tag("("),address,tag(")"))(input)?;
+    pub fn delim_address(input: &str) -> Result<Address, Error> {
+        let (_, address) = delimited(tag("("), address, tag(")"))(input)?;
         Ok(address)
     }
 
-    pub fn ok_code( input: &str ) -> Res<&str,Code> {
-        tag("Ok")(input).map( |(next,code)|(next,Code::Ok))
+    pub fn ok_code(input: &str) -> Res<&str, Code> {
+        tag("Ok")(input).map(|(next, code)| (next, Code::Ok))
     }
 
-    pub fn error_code( input: &str ) -> Res<&str,Code> {
-        let (next, err_code) = delimited(tag("Err("),digit1,tag(")"))(input)?;
-        Ok((next,Code::Error(match err_code.parse(){
-            Ok(i) => i,
-            Err(err) =>
-                {
-                    return Err(nom::Err::Error(VerboseError::from_error_kind(input, ErrorKind::Tag )))
+    pub fn error_code(input: &str) -> Res<&str, Code> {
+        let (next, err_code) = delimited(tag("Err("), digit1, tag(")"))(input)?;
+        Ok((
+            next,
+            Code::Error(match err_code.parse() {
+                Ok(i) => i,
+                Err(err) => {
+                    return Err(nom::Err::Error(VerboseError::from_error_kind(
+                        input,
+                        ErrorKind::Tag,
+                    )))
                 }
-        })))
+            }),
+        ))
     }
 
-    pub fn code( input: &str ) -> Res<&str,Code> {
-        alt((error_code,ok_code))(input)
+    pub fn code(input: &str) -> Res<&str, Code> {
+        alt((error_code, ok_code))(input)
     }
 
-    pub fn delim_code( input: &str ) -> Result<Code,Error> {
-        let (_,code) = delimited(tag("("),code,tag(")"))(input)?;
+    pub fn delim_code(input: &str) -> Result<Code, Error> {
+        let (_, code) = delimited(tag("("), code, tag(")"))(input)?;
         Ok(code)
     }
 
-    pub fn delim_panic( input: &str ) -> Result<String,Error> {
-        let (_,panic) = delimited(tag("("), recognize(not(is_a(")"))), tag(")"))(input)?;
+    pub fn delim_panic(input: &str) -> Result<String, Error> {
+        let (_, panic) = delimited(tag("("), recognize(not(is_a(")"))), tag(")"))(input)?;
         Ok(panic.to_string())
     }
 
-
-    pub fn status( input: &str ) -> Result<Status,Error> {
-        let (next,status) = alpha1(input)?;
+    pub fn status(input: &str) -> Result<Status, Error> {
+        let (next, status) = alpha1(input)?;
         Ok(match status {
             "Unknown" => Status::Unknown,
             "Pending" => Status::Pending,
@@ -1449,7 +1894,7 @@ pub mod resource {
             "Panic" => Status::Panic(delim_panic(next)?),
             "Done" => Status::Done(delim_code(next)?),
             what => {
-                return Err(format!("unknown status {}",what).into());
+                return Err(format!("unknown status {}", what).into());
             }
         })
     }
@@ -1489,24 +1934,23 @@ pub mod portal {
                 Ok(bincode::deserialize(value.data.as_slice())?)
             }
         }
-
     }
 
     pub mod outlet {
         use std::convert::TryFrom;
 
         use crate::error::Error;
+        use crate::version::latest::entity::request::ReqEntity;
         use crate::version::v0_0_1::frame::PrimitiveFrame;
         use crate::version::v0_0_1::generic;
         use crate::version::v0_0_1::id::{Address, Kind, ResourceType};
         use crate::version::v0_0_1::payload::Payload;
-        use crate::version::latest::entity::request::ReqEntity;
 
         pub type Request = generic::portal::outlet::Request<ReqEntity>;
         pub type Response = generic::portal::outlet::Response<Payload>;
-        pub type Frame = generic::portal::outlet::Frame<Kind, Payload,ReqEntity>;
+        pub type Frame = generic::portal::outlet::Frame<Kind, Payload, ReqEntity>;
 
-        impl TryFrom<PrimitiveFrame> for generic::portal::outlet::Frame<Kind, Payload,ReqEntity> {
+        impl TryFrom<PrimitiveFrame> for generic::portal::outlet::Frame<Kind, Payload, ReqEntity> {
             type Error = Error;
 
             fn try_from(value: PrimitiveFrame) -> Result<Self, Self::Error> {
@@ -1533,18 +1977,18 @@ pub mod generic {
         use std::hash::Hash;
         use std::str::FromStr;
 
+        use nom::bytes::complete::tag;
+        use nom::combinator::{all_consuming, opt};
+        use nom::sequence::{delimited, tuple};
         use serde::{Deserialize, Serialize};
 
         use crate::error::Error;
         use crate::version::v0_0_1::generic;
-        use crate::version::v0_0_1::id::{Address, Specific, Tks};
-        use crate::version::v0_0_1::util::Convert;
-        use crate::version::v0_0_1::pattern::parse::{consume_kind, resource_type};
-        use nom::combinator::{all_consuming, opt};
-        use nom::sequence::{tuple, delimited};
-        use crate::version::v0_0_1::parse::camel_case;
-        use nom::bytes::complete::tag;
         use crate::version::v0_0_1::generic::id::parse::specific;
+        use crate::version::v0_0_1::id::{Address, Specific, Tks};
+        use crate::version::v0_0_1::parse::camel_case;
+        use crate::version::v0_0_1::pattern::parse::{consume_kind, resource_type};
+        use crate::version::v0_0_1::util::Convert;
 
         #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
         pub struct KindParts<ResourceType> {
@@ -1553,56 +1997,78 @@ pub mod generic {
             pub specific: Option<Specific>,
         }
 
-        impl <ResourceType> ToString for KindParts<ResourceType> where ResourceType: ToString {
+        impl<ResourceType> ToString for KindParts<ResourceType>
+        where
+            ResourceType: ToString,
+        {
             fn to_string(&self) -> String {
                 if self.kind.is_some() && self.specific.is_some() {
-                    format!("{}<{}<{}>>",self.resource_type.to_string(), self.kind.as_ref().expect("kind"), self.specific.as_ref().expect("specific").to_string())
+                    format!(
+                        "{}<{}<{}>>",
+                        self.resource_type.to_string(),
+                        self.kind.as_ref().expect("kind"),
+                        self.specific.as_ref().expect("specific").to_string()
+                    )
                 } else if self.kind.is_some() {
-                    format!("{}<{}>",self.resource_type.to_string(), self.kind.as_ref().expect("kind"))
+                    format!(
+                        "{}<{}>",
+                        self.resource_type.to_string(),
+                        self.kind.as_ref().expect("kind")
+                    )
                 } else {
                     self.resource_type.to_string()
                 }
             }
         }
 
-        impl <ResourceType:FromStr> FromStr for KindParts<ResourceType> {
+        impl<ResourceType: FromStr> FromStr for KindParts<ResourceType> {
             type Err = Error;
 
             fn from_str(s: &str) -> Result<Self, Self::Err> {
-
-                let (_,kind) = all_consuming(tuple((resource_type,opt(delimited(tag("<"),tuple((camel_case,opt(delimited(tag("<"), specific, tag(">"))))),tag(">"))))))(s).map( |(next,(resource_type, rest ))| {
-
+                let (_, kind) = all_consuming(tuple((
+                    resource_type,
+                    opt(delimited(
+                        tag("<"),
+                        tuple((camel_case, opt(delimited(tag("<"), specific, tag(">"))))),
+                        tag(">"),
+                    )),
+                )))(s)
+                .map(|(next, (resource_type, rest))| {
                     let mut rtn = KindParts {
                         resource_type,
                         kind: Option::None,
-                        specific: Option::None
+                        specific: Option::None,
                     };
 
                     match rest {
-                        Some((kind,specific)) => {
+                        Some((kind, specific)) => {
                             rtn.kind = Option::Some(kind.to_string());
                             match specific {
                                 Some(specific) => {
                                     rtn.specific = Option::Some(specific);
-                                },
+                                }
                                 None => {}
                             }
                         }
-                        None => { }
+                        None => {}
                     }
 
-                    (next,rtn)
-                } )?;
+                    (next, rtn)
+                })?;
                 Ok(kind)
             }
         }
 
-        impl <ResourceType> KindParts<ResourceType> {
-            pub fn new( resource_type: ResourceType, kind: Option<String>, specific: Option<Specific>) -> Self {
+        impl<ResourceType> KindParts<ResourceType> {
+            pub fn new(
+                resource_type: ResourceType,
+                kind: Option<String>,
+                specific: Option<Specific>,
+            ) -> Self {
                 Self {
                     resource_type,
                     kind,
-                    specific
+                    specific,
                 }
             }
         }
@@ -1649,12 +2115,13 @@ pub mod generic {
         }
 
         pub mod parse {
-            use crate::version::v0_0_1::id::{Specific, Version};
-            use crate::version::v0_0_1::parse::{domain_chars, skewer_chars, version_chars, Res};
             use nom::bytes::complete::{is_a, tag};
             use nom::sequence::{delimited, tuple};
             use nom::Parser;
             use nom_supreme::{parse_from_str, ParserExt};
+
+            use crate::version::v0_0_1::id::{Specific, Version};
+            use crate::version::v0_0_1::parse::{domain_chars, skewer_chars, version_chars, Res};
 
             pub fn version(input: &str) -> Res<&str, Version> {
                 parse_from_str(version_chars).parse(input)
@@ -1692,6 +2159,7 @@ pub mod generic {
         use serde::{Deserialize, Serialize};
 
         use crate::error::Error;
+        use crate::version::latest::generic::resource::ResourceStub;
         use crate::version::v0_0_1::config::{Config, PortalKind};
         use crate::version::v0_0_1::generic;
         use crate::version::v0_0_1::generic::resource::Archetype;
@@ -1700,12 +2168,7 @@ pub mod generic {
 
         #[derive(Debug, Clone, Serialize, Deserialize)]
         pub struct Info<KIND> {
-            pub address: Address,
-            pub owner: String,
-            pub parent: Address,
-            pub archetype: Archetype<KIND>,
-            pub config: Config,
-            pub ext_config: Option<ArtifactRef>,
+            pub stub: ResourceStub<KIND>,
             pub kind: PortalKind,
         }
 
@@ -1715,12 +2178,7 @@ pub mod generic {
                 ToKind: TryFrom<FromKind, Error = Error>,
             {
                 Ok(Info {
-                    address: self.address.try_into()?,
-                    owner: self.owner,
-                    parent: self.parent.try_into()?,
-                    archetype: self.archetype.convert()?,
-                    config: self.config,
-                    ext_config: self.ext_config,
+                    stub: self.stub.convert()?,
                     kind: self.kind,
                 })
             }
@@ -1737,6 +2195,7 @@ pub mod generic {
             use serde::{Deserialize, Serialize};
 
             use crate::error::Error;
+            use crate::version::latest::fail::Fail;
             use crate::version::v0_0_1::bin::Bin;
             use crate::version::v0_0_1::generic;
             use crate::version::v0_0_1::generic::entity::response::RespEntity;
@@ -1746,7 +2205,6 @@ pub mod generic {
             use crate::version::v0_0_1::id::Meta;
             use crate::version::v0_0_1::util::{Convert, ConvertFrom};
             use crate::version::v0_0_1::{http, State};
-            use crate::version::latest::fail::Fail;
 
             #[derive(Debug, Clone, Serialize, Deserialize)]
             pub enum ReqEntity<ResourceType, Kind> {
@@ -1765,39 +2223,33 @@ pub mod generic {
                 }
             }
 
-            impl<FromResourceType, FromKind > ReqEntity<FromResourceType, FromKind> {
+            impl<FromResourceType, FromKind> ReqEntity<FromResourceType, FromKind> {
                 pub fn convert<ToResourceType, ToKind>(
                     self,
                 ) -> Result<ReqEntity<ToResourceType, ToKind>, Error>
-                    where
-                        FromResourceType: TryInto<ToResourceType, Error = Error>+Clone+Eq+PartialEq,
-                        FromKind: TryInto<ToKind, Error = Error>+Clone+Eq+PartialEq,
-                        Payload<FromKind>: TryInto<Payload<ToKind>,Error=Error>
+                where
+                    FromResourceType:
+                        TryInto<ToResourceType, Error = Error> + Clone + Eq + PartialEq,
+                    FromKind: TryInto<ToKind, Error = Error> + Clone + Eq + PartialEq,
+                    Payload<FromKind>: TryInto<Payload<ToKind>, Error = Error>,
                 {
                     Ok(match self {
-                        ReqEntity::Rc(rc) => {ReqEntity::Rc(rc.convert()?)}
-                        ReqEntity::Msg(msg) => {ReqEntity::Msg(msg.convert()?)}
-                        ReqEntity::Http(http) => {ReqEntity::Http(http.convert()?)}
+                        ReqEntity::Rc(rc) => ReqEntity::Rc(rc.convert()?),
+                        ReqEntity::Msg(msg) => ReqEntity::Msg(msg.convert()?),
+                        ReqEntity::Http(http) => ReqEntity::Http(http.convert()?),
                     })
                 }
             }
 
-
-            impl<
-                    FromResourceType,
-                    FromKind,
-                    ToResourceType,
-                    ToKind,
-                > ConvertFrom<ReqEntity<FromResourceType, FromKind>>
+            impl<FromResourceType, FromKind, ToResourceType, ToKind>
+                ConvertFrom<ReqEntity<FromResourceType, FromKind>>
                 for ReqEntity<ToResourceType, ToKind>
             where
-                FromKind: TryInto<ToKind, Error = Error>+Clone+Eq+PartialEq,
-                FromResourceType: TryInto<ToResourceType, Error = Error>+Clone+Eq+PartialEq,
-                Payload<FromKind>: TryInto<Payload<ToKind>,Error=Error>
+                FromKind: TryInto<ToKind, Error = Error> + Clone + Eq + PartialEq,
+                FromResourceType: TryInto<ToResourceType, Error = Error> + Clone + Eq + PartialEq,
+                Payload<FromKind>: TryInto<Payload<ToKind>, Error = Error>,
             {
-                fn convert_from(
-                    a: ReqEntity<FromResourceType, FromKind>,
-                ) -> Result<Self, Error>
+                fn convert_from(a: ReqEntity<FromResourceType, FromKind>) -> Result<Self, Error>
                 where
                     Self: Sized,
                 {
@@ -1825,10 +2277,11 @@ pub mod generic {
                     Self { command, payload }
                 }
 
-                pub fn new(
-                    command: RcCommand<ResourceType, Kind>
-                ) -> Self {
-                    Self { command, payload: Payload::Empty}
+                pub fn new(command: RcCommand<ResourceType, Kind>) -> Self {
+                    Self {
+                        command,
+                        payload: Payload::Empty,
+                    }
                 }
             }
 
@@ -1838,21 +2291,14 @@ pub mod generic {
                 }
             }
 
-            impl<
-                    FromResourceType,
-                    FromKind,
-                    ToResourceType,
-                    ToKind,
-                > ConvertFrom<Rc<FromResourceType, FromKind>>
-                for Rc<ToResourceType, ToKind>
+            impl<FromResourceType, FromKind, ToResourceType, ToKind>
+                ConvertFrom<Rc<FromResourceType, FromKind>> for Rc<ToResourceType, ToKind>
             where
-                FromResourceType: TryInto<ToResourceType, Error = Error>+Clone+Eq+PartialEq,
-                FromKind: TryInto<ToKind, Error = Error>+Clone+Eq+PartialEq,
-                Payload<FromKind>: TryInto<Payload<ToKind>,Error=Error>
+                FromResourceType: TryInto<ToResourceType, Error = Error> + Clone + Eq + PartialEq,
+                FromKind: TryInto<ToKind, Error = Error> + Clone + Eq + PartialEq,
+                Payload<FromKind>: TryInto<Payload<ToKind>, Error = Error>,
             {
-                fn convert_from(
-                    a: Rc<FromResourceType, FromKind>,
-                ) -> Result<Self, Error>
+                fn convert_from(a: Rc<FromResourceType, FromKind>) -> Result<Self, Error>
                 where
                     Self: Sized,
                 {
@@ -1863,14 +2309,15 @@ pub mod generic {
                 }
             }
 
-            impl<FromResourceType, FromKind > Rc<FromResourceType, FromKind> {
+            impl<FromResourceType, FromKind> Rc<FromResourceType, FromKind> {
                 pub fn convert<ToResourceType, ToKind>(
                     self,
                 ) -> Result<Rc<ToResourceType, ToKind>, Error>
                 where
-                    FromResourceType: TryInto<ToResourceType, Error = Error>+Clone+Eq+PartialEq,
-                    FromKind: TryInto<ToKind, Error = Error>+Clone+Eq+PartialEq,
-                    Payload<FromKind>: TryInto<Payload<ToKind>,Error=Error>
+                    FromResourceType:
+                        TryInto<ToResourceType, Error = Error> + Clone + Eq + PartialEq,
+                    FromKind: TryInto<ToKind, Error = Error> + Clone + Eq + PartialEq,
+                    Payload<FromKind>: TryInto<Payload<ToKind>, Error = Error>,
                 {
                     Ok(Rc {
                         command: self.command.convert()?,
@@ -1945,7 +2392,7 @@ pub mod generic {
             impl<FromKind> Msg<FromKind> {
                 pub fn convert<ToKind>(self) -> Result<Msg<ToKind>, Error>
                 where
-                    FromKind: TryInto<ToKind,Error=Error>,
+                    FromKind: TryInto<ToKind, Error = Error>,
                 {
                     Ok(Msg {
                         action: self.action,
@@ -1989,7 +2436,7 @@ pub mod generic {
             impl<FromKind> Http<FromKind> {
                 pub fn convert<ToKind>(self) -> Result<Http<ToKind>, Error>
                 where
-                    FromKind: TryInto<ToKind,Error=Error>,
+                    FromKind: TryInto<ToKind, Error = Error>,
                 {
                     Ok(Http {
                         headers: self.headers,
@@ -2011,11 +2458,11 @@ pub mod generic {
 
             use crate::error::Error;
             use crate::version::v0_0_1::bin::Bin;
+            use crate::version::v0_0_1::fail;
             use crate::version::v0_0_1::fail::portal::Fail;
             use crate::version::v0_0_1::generic::payload::Payload;
             use crate::version::v0_0_1::generic::payload::Primitive;
             use crate::version::v0_0_1::util::ConvertFrom;
-            use crate::version::v0_0_1::fail;
 
             #[derive(Debug, Clone, Serialize, Deserialize)]
             pub enum RespEntity<PAYLOAD> {
@@ -2023,23 +2470,20 @@ pub mod generic {
                 Fail(fail::Fail),
             }
 
-            impl <Payload> RespEntity<Payload> {
-                pub fn ok_or(self) -> Result<Payload,Error> {
+            impl<Payload> RespEntity<Payload> {
+                pub fn ok_or(self) -> Result<Payload, Error> {
                     match self {
                         Self::Ok(payload) => Result::Ok(payload),
-                        Self::Fail(fail) => Result::Err(fail.into())
+                        Self::Fail(fail) => Result::Err(fail.into()),
                     }
                 }
             }
 
-            impl<FromPayload, ToPayload> ConvertFrom<RespEntity<FromPayload>>
-                for RespEntity<ToPayload>
+            impl<FromPayload, ToPayload> ConvertFrom<RespEntity<FromPayload>> for RespEntity<ToPayload>
             where
                 FromPayload: TryInto<ToPayload, Error = Error>,
             {
-                fn convert_from(
-                    a: RespEntity<FromPayload>,
-                ) -> Result<Self, crate::error::Error>
+                fn convert_from(a: RespEntity<FromPayload>) -> Result<Self, crate::error::Error>
                 where
                     Self: Sized,
                 {
@@ -2076,22 +2520,22 @@ pub mod generic {
         use crate::error::Error;
         use crate::version::v0_0_1::generic;
         use crate::version::v0_0_1::generic::id::AddressAndKind;
+        use crate::version::v0_0_1::generic::payload::PayloadMap;
         use crate::version::v0_0_1::generic::payload::Primitive;
         use crate::version::v0_0_1::generic::payload::{
             HttpCall, MapPattern, MsgCall, Payload, PayloadType,
         };
         use crate::version::v0_0_1::id::Address;
+        use crate::version::v0_0_1::resource::Status;
         use crate::version::v0_0_1::util::ConvertFrom;
         use crate::version::v0_0_1::State;
-        use crate::version::v0_0_1::generic::payload::PayloadMap;
-        use crate::version::v0_0_1::resource::Status;
 
         pub type Properties<Kind> = PayloadMap<Kind>;
 
         #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
         pub struct Archetype<KIND> {
             pub kind: KIND,
-            pub properties: Properties<KIND>
+            pub properties: Properties<KIND>,
         }
 
         impl<FromKind, ToKind> ConvertFrom<Archetype<FromKind>> for Archetype<ToKind>
@@ -2116,7 +2560,7 @@ pub mod generic {
             {
                 Ok(Archetype {
                     kind: self.kind.try_into()?,
-                    properties: self.properties.convert()?
+                    properties: self.properties.convert()?,
                 })
             }
         }
@@ -2126,7 +2570,7 @@ pub mod generic {
             pub address: Address,
             pub kind: KIND,
             pub properties: Properties<KIND>,
-            pub status: Status
+            pub status: Status,
         }
 
         impl<FromKind> ResourceStub<FromKind> {
@@ -2138,7 +2582,7 @@ pub mod generic {
                     address: self.address.try_into()?,
                     kind: self.kind.try_into()?,
                     properties: self.properties.convert()?,
-                    status: self.status
+                    status: self.status,
                 })
             }
         }
@@ -2154,8 +2598,8 @@ pub mod generic {
                 Ok(ResourceStub {
                     address: a.address.try_into()?,
                     kind: a.kind.try_into()?,
-                    properties:a.properties.convert()?,
-                    status: a.status
+                    properties: a.properties.convert()?,
+                    status: a.status,
                 })
             }
         }
@@ -2195,16 +2639,18 @@ pub mod generic {
         }
 
         pub mod command {
+            use std::convert::TryInto;
+
+            use serde::{Deserialize, Serialize};
+
+            use crate::error::Error;
+            use crate::version::v0_0_1::generic::payload::Payload;
             use crate::version::v0_0_1::generic::resource::command::create::Create;
+            use crate::version::v0_0_1::generic::resource::command::get::Get;
+            use crate::version::v0_0_1::generic::resource::command::query::Query;
             use crate::version::v0_0_1::generic::resource::command::select::Select;
             use crate::version::v0_0_1::generic::resource::command::update::Update;
             use crate::version::v0_0_1::util::ValueMatcher;
-            use serde::{Deserialize, Serialize};
-            use crate::version::v0_0_1::generic::resource::command::query::Query;
-            use crate::version::v0_0_1::generic::resource::command::get::Get;
-            use std::convert::TryInto;
-            use crate::version::v0_0_1::generic::payload::Payload;
-            use crate::error::Error;
 
             #[derive(Debug, Clone, strum_macros::Display, Serialize, Deserialize)]
             pub enum RcCommand<ResourceType, Kind> {
@@ -2212,24 +2658,25 @@ pub mod generic {
                 Select(Select<ResourceType, Kind>),
                 Update(Update<Kind>),
                 Query(Query),
-                Get
+                Get,
             }
 
-            impl<FromResourceType,FromKind> RcCommand<FromResourceType,FromKind> {
-                pub fn convert<ToResourceType,ToKind>(
+            impl<FromResourceType, FromKind> RcCommand<FromResourceType, FromKind> {
+                pub fn convert<ToResourceType, ToKind>(
                     self,
-                ) -> Result<RcCommand<ToResourceType,ToKind>, Error>
-                    where
-                        FromResourceType: TryInto<ToResourceType, Error = Error>+Clone+Eq+PartialEq,
-                        FromKind: TryInto<ToKind, Error = Error>+Clone+Eq+PartialEq,
-                        Payload<FromKind>: TryInto<Payload<ToKind>,Error=Error>
+                ) -> Result<RcCommand<ToResourceType, ToKind>, Error>
+                where
+                    FromResourceType:
+                        TryInto<ToResourceType, Error = Error> + Clone + Eq + PartialEq,
+                    FromKind: TryInto<ToKind, Error = Error> + Clone + Eq + PartialEq,
+                    Payload<FromKind>: TryInto<Payload<ToKind>, Error = Error>,
                 {
                     Ok(match self {
-                        RcCommand::Create(create) => {RcCommand::Create(create.convert()?)}
-                        RcCommand::Select(select) => {RcCommand::Select(select.convert()?)}
-                        RcCommand::Update(update) => {RcCommand::Update(update.convert()?)}
-                        RcCommand::Query(query) => {RcCommand::Query(query)}
-                        RcCommand::Get => {RcCommand::Get}
+                        RcCommand::Create(create) => RcCommand::Create(create.convert()?),
+                        RcCommand::Select(select) => RcCommand::Select(select.convert()?),
+                        RcCommand::Update(update) => RcCommand::Update(update.convert()?),
+                        RcCommand::Query(query) => RcCommand::Query(query),
+                        RcCommand::Get => RcCommand::Get,
                     })
                 }
             }
@@ -2241,22 +2688,30 @@ pub mod generic {
                         RcCommand::Select(_) => RcCommandType::Select,
                         RcCommand::Update(_) => RcCommandType::Update,
                         RcCommand::Query(_) => RcCommandType::Query,
-                        RcCommand::Get => {RcCommandType::Get}
+                        RcCommand::Get => RcCommandType::Get,
                     }
                 }
             }
 
-            #[derive(Debug,Clone,Eq, PartialEq, strum_macros::Display, strum_macros::EnumString,Serialize,Deserialize)]
+            #[derive(
+                Debug,
+                Clone,
+                Eq,
+                PartialEq,
+                strum_macros::Display,
+                strum_macros::EnumString,
+                Serialize,
+                Deserialize,
+            )]
             pub enum RcCommandType {
                 Create,
                 Select,
                 Update,
                 Query,
-                Get
+                Get,
             }
 
-            impl<ResourceType, KIND >
-                ValueMatcher<RcCommand<ResourceType, KIND>>
+            impl<ResourceType, KIND> ValueMatcher<RcCommand<ResourceType, KIND>>
                 for RcCommand<ResourceType, KIND>
             {
                 fn is_match(
@@ -2277,12 +2732,14 @@ pub mod generic {
             }
 
             pub mod common {
+                use std::convert::{TryFrom, TryInto};
+                use std::ops::{Deref, DerefMut};
+
+                use serde::{Deserialize, Serialize};
+
                 use crate::error::Error;
                 use crate::version::latest::generic::payload::Payload;
                 use crate::version::v0_0_1::generic::payload::PayloadMap;
-                use serde::{Deserialize, Serialize};
-                use std::convert::{TryFrom, TryInto};
-                use std::ops::{Deref, DerefMut};
 
                 #[derive(Debug, Clone, Serialize, Deserialize, strum_macros::Display)]
                 pub enum StateSrc<Kind> {
@@ -2307,15 +2764,15 @@ pub mod generic {
                 pub type SetProperties<KIND> = PayloadMap<KIND>;
 
                 #[derive(Debug, Clone, Serialize, Deserialize, strum_macros::Display)]
-                pub enum SetLabel{
+                pub enum SetLabel {
                     Set(String),
-                    SetValue{ key: String, value: String },
-                    Unset(String)
+                    SetValue { key: String, value: String },
+                    Unset(String),
                 }
 
                 #[derive(Debug, Clone, Serialize, Deserialize)]
                 pub struct SetRegistry {
-                    pub labels: Vec<SetLabel>
+                    pub labels: Vec<SetLabel>,
                 }
 
                 impl Deref for SetRegistry {
@@ -2328,42 +2785,43 @@ pub mod generic {
 
                 impl DerefMut for SetRegistry {
                     fn deref_mut(&mut self) -> &mut Self::Target {
-                        & mut self.labels
+                        &mut self.labels
                     }
                 }
 
                 impl Default for SetRegistry {
                     fn default() -> Self {
-                        Self{
-                            labels:Default::default()
+                        Self {
+                            labels: Default::default(),
                         }
                     }
                 }
             }
 
             pub mod create {
+                use std::convert::TryInto;
+
+                use serde::{Deserialize, Serialize};
+
                 use crate::error::Error;
                 use crate::version::latest::generic::payload::Payload;
                 use crate::version::v0_0_1::generic::payload::PayloadMap;
-                use crate::version::v0_0_1::generic::resource::command::common::{SetProperties, StateSrc, SetRegistry};
+                use crate::version::v0_0_1::generic::resource::command::common::{
+                    SetProperties, SetRegistry, StateSrc,
+                };
                 use crate::version::v0_0_1::id::Address;
-                use crate::version::v0_0_1::util::ConvertFrom;
-                use serde::{Deserialize, Serialize};
-                use std::convert::TryInto;
                 use crate::version::v0_0_1::pattern::SpecificPattern;
+                use crate::version::v0_0_1::util::ConvertFrom;
 
                 #[derive(Debug, Clone, Serialize, Deserialize)]
                 pub struct Template {
-                   pub address: AddressTemplate,
-                   pub kind: KindTemplate
+                    pub address: AddressTemplate,
+                    pub kind: KindTemplate,
                 }
 
                 impl Template {
-                    pub fn new( address: AddressTemplate, kind: KindTemplate ) -> Self {
-                        Self {
-                            address,
-                            kind
-                        }
+                    pub fn new(address: AddressTemplate, kind: KindTemplate) -> Self {
+                        Self { address, kind }
                     }
                 }
 
@@ -2380,45 +2838,42 @@ pub mod generic {
                     pub state: StateSrc<Kind>,
                     pub properties: SetProperties<Kind>,
                     pub strategy: Strategy,
-                    pub registry: SetRegistry
+                    pub registry: SetRegistry,
                 }
 
                 impl<Kind> Create<Kind> {
-                    pub fn new( template: Template ) -> Self {
+                    pub fn new(template: Template) -> Self {
                         Self {
                             template,
                             state: StateSrc::Stateless,
                             properties: Default::default(),
                             strategy: Strategy::Create,
-                            registry: Default::default()
+                            registry: Default::default(),
                         }
                     }
                 }
 
                 impl<FromKind> Create<FromKind> {
-                    pub fn convert<ToKind>(
-                        self,
-                    ) -> Result<Create<ToKind>, Error>
+                    pub fn convert<ToKind>(self) -> Result<Create<ToKind>, Error>
                     where
-                        FromKind: TryInto<ToKind, Error = Error>+Clone,
-                        Payload<FromKind>: TryInto<Payload<ToKind>,Error=Error>
+                        FromKind: TryInto<ToKind, Error = Error> + Clone,
+                        Payload<FromKind>: TryInto<Payload<ToKind>, Error = Error>,
                     {
                         Ok(Create {
                             template: self.template,
                             state: self.state.convert()?,
                             properties: self.properties.convert()?,
                             strategy: self.strategy,
-                            registry: self.registry
+                            registry: self.registry,
                         })
                     }
                 }
 
-
                 #[derive(Debug, Clone, Serialize, Deserialize)]
-                pub enum Strategy{
+                pub enum Strategy {
                     Create,
                     CreateOrUpdate,
-                    Ensure
+                    Ensure,
                 }
 
                 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -2435,104 +2890,118 @@ pub mod generic {
             }
 
             pub mod select {
-                use crate::error::Error;
-                use crate::version::v0_0_1::generic::pattern::AddressKindPattern;
-                use crate::version::v0_0_1::generic::payload::{MapPattern, PrimitiveList};
-                use crate::version::v0_0_1::util::ConvertFrom;
-                use serde::{Deserialize, Serialize};
                 use std::collections::{HashMap, HashSet};
                 use std::convert::{TryFrom, TryInto};
+                use std::marker::PhantomData;
+
+                use serde::{Deserialize, Serialize};
+
+                use crate::error::Error;
+                use crate::version::latest::fail;
+                use crate::version::latest::generic::pattern::{AddressKindPath, Hop};
+                use crate::version::latest::id::Address;
+                use crate::version::v0_0_1::fail::{BadCoercion, Fail};
+                use crate::version::v0_0_1::generic::pattern::AddressKindPattern;
                 use crate::version::v0_0_1::generic::payload::Payload;
-                use crate::version::v0_0_1::fail::{Fail, BadCoercion};
+                use crate::version::v0_0_1::generic::payload::Primitive;
+                use crate::version::v0_0_1::generic::payload::{MapPattern, PrimitiveList};
                 use crate::version::v0_0_1::generic::resource::ResourceStub;
                 use crate::version::v0_0_1::payload::PrimitiveType;
-                use crate::version::v0_0_1::generic::payload::Primitive;
-                use std::marker::PhantomData;
-                use crate::version::latest::generic::pattern::{Hop, AddressKindPath};
-                use crate::version::latest::fail;
-                use crate::version::latest::id::Address;
+                use crate::version::v0_0_1::util::ConvertFrom;
 
                 #[derive(Debug, Clone, Serialize, Deserialize)]
-                pub enum SelectIntoPayload  {
-                    Stubs
+                pub enum SelectIntoPayload {
+                    Stubs,
                 }
 
                 impl SelectIntoPayload {
-                    pub fn to_primitive<Kind>(&self, stubs: Vec<ResourceStub<Kind>>) -> Result<PrimitiveList<Kind>, Fail>
-                    {
-                        let stubs: Vec<Primitive<Kind>> = stubs.into_iter().map( |stub| Primitive::Stub(stub) ).collect();
-                        let stubs = PrimitiveList{
+                    pub fn to_primitive<Kind>(
+                        &self,
+                        stubs: Vec<ResourceStub<Kind>>,
+                    ) -> Result<PrimitiveList<Kind>, Fail> {
+                        let stubs: Vec<Primitive<Kind>> = stubs
+                            .into_iter()
+                            .map(|stub| Primitive::Stub(stub))
+                            .collect();
+                        let stubs = PrimitiveList {
                             primitive_type: PrimitiveType::Stub,
-                            list: stubs
+                            list: stubs,
                         };
                         Ok(stubs)
                     }
                 }
-
 
                 #[derive(Debug, Clone, Serialize, Deserialize)]
                 pub struct Select<ResourceType, Kind> {
                     pub pattern: AddressKindPattern<ResourceType, Kind>,
                     pub properties: PropertiesPattern,
                     pub into_payload: SelectIntoPayload,
-                    pub kind: SelectionKind<ResourceType,Kind>
+                    pub kind: SelectionKind<ResourceType, Kind>,
                 }
 
                 #[derive(Debug, Clone, Serialize, Deserialize)]
-                pub enum SelectionKind<ResourceType,Kind>{
+                pub enum SelectionKind<ResourceType, Kind> {
                     Initial,
-                    SubSelector{ address: Address, hops: Vec<Hop<ResourceType,Kind>>, address_kind_path: AddressKindPath<ResourceType,Kind> }
+                    SubSelector {
+                        address: Address,
+                        hops: Vec<Hop<ResourceType, Kind>>,
+                        address_kind_path: AddressKindPath<ResourceType, Kind>,
+                    },
                 }
 
-                impl <ResourceType,Kind> TryInto<SubSelector<ResourceType,Kind>> for Select<ResourceType,Kind> {
+                impl<ResourceType, Kind> TryInto<SubSelector<ResourceType, Kind>> for Select<ResourceType, Kind> {
                     type Error = Error;
 
-                    fn try_into(self) -> Result<SubSelector<ResourceType,Kind>, Self::Error> {
+                    fn try_into(self) -> Result<SubSelector<ResourceType, Kind>, Self::Error> {
                         match self.kind {
                             SelectionKind::Initial => {
                                 Err("cannot convert an initial Select into a SubSelect".into())
                             }
-                            SelectionKind::SubSelector { address,hops, address_kind_path: address_kind_path } => {
-                                Ok(SubSelector{
-                                    address,
-                                    pattern: self.pattern,
-                                    properties: self.properties,
-                                    into_payload: self.into_payload,
-                                    hops,
-                                    address_kind_path
-                                })
-                            }
+                            SelectionKind::SubSelector {
+                                address,
+                                hops,
+                                address_kind_path: address_kind_path,
+                            } => Ok(SubSelector {
+                                address,
+                                pattern: self.pattern,
+                                properties: self.properties,
+                                into_payload: self.into_payload,
+                                hops,
+                                address_kind_path,
+                            }),
                         }
                     }
                 }
 
-                impl <ResourceType,Kind> Select<ResourceType,Kind> {
-
-                    pub fn sub_select(self, address:Address, hops: Vec<Hop<ResourceType,Kind>>, address_kind_path: AddressKindPath<ResourceType,Kind>) -> SubSelector<ResourceType, Kind> {
-
-                                SubSelector{
-                                    address,
-                                    pattern: self.pattern,
-                                    properties: self.properties,
-                                    into_payload: self.into_payload,
-                                    hops,
-                                    address_kind_path
-                                }
-
+                impl<ResourceType, Kind> Select<ResourceType, Kind> {
+                    pub fn sub_select(
+                        self,
+                        address: Address,
+                        hops: Vec<Hop<ResourceType, Kind>>,
+                        address_kind_path: AddressKindPath<ResourceType, Kind>,
+                    ) -> SubSelector<ResourceType, Kind> {
+                        SubSelector {
+                            address,
+                            pattern: self.pattern,
+                            properties: self.properties,
+                            into_payload: self.into_payload,
+                            hops,
+                            address_kind_path,
+                        }
                     }
                 }
 
-                #[derive(Debug,Clone,Serialize,Deserialize)]
-                pub struct SubSelector<ResourceType,Kind> {
+                #[derive(Debug, Clone, Serialize, Deserialize)]
+                pub struct SubSelector<ResourceType, Kind> {
                     pub address: Address,
                     pub pattern: AddressKindPattern<ResourceType, Kind>,
                     pub properties: PropertiesPattern,
                     pub into_payload: SelectIntoPayload,
-                    pub hops: Vec<Hop<ResourceType,Kind>>,
-                    pub address_kind_path: AddressKindPath<ResourceType,Kind>
+                    pub hops: Vec<Hop<ResourceType, Kind>>,
+                    pub address_kind_path: AddressKindPath<ResourceType, Kind>,
                 }
 
-                impl <ResourceType,Kind> Into<Select<ResourceType,Kind>> for SubSelector<ResourceType,Kind> {
+                impl<ResourceType, Kind> Into<Select<ResourceType, Kind>> for SubSelector<ResourceType, Kind> {
                     fn into(self) -> Select<ResourceType, Kind> {
                         Select {
                             pattern: self.pattern,
@@ -2541,56 +3010,62 @@ pub mod generic {
                             kind: SelectionKind::SubSelector {
                                 address: self.address,
                                 hops: self.hops,
-                                address_kind_path: self.address_kind_path
-                            }
+                                address_kind_path: self.address_kind_path,
+                            },
                         }
                     }
                 }
 
-                impl <ResourceType,Kind> SubSelector<ResourceType,Kind> {
-
-                    pub fn sub_select(&self, address:Address, hops: Vec<Hop<ResourceType,Kind>>, address_kind_path: AddressKindPath<ResourceType,Kind>) -> SubSelector<ResourceType, Kind> where ResourceType: Clone, Kind: Clone{
-
-                        SubSelector{
+                impl<ResourceType, Kind> SubSelector<ResourceType, Kind> {
+                    pub fn sub_select(
+                        &self,
+                        address: Address,
+                        hops: Vec<Hop<ResourceType, Kind>>,
+                        address_kind_path: AddressKindPath<ResourceType, Kind>,
+                    ) -> SubSelector<ResourceType, Kind>
+                    where
+                        ResourceType: Clone,
+                        Kind: Clone,
+                    {
+                        SubSelector {
                             address,
                             pattern: self.pattern.clone(),
                             properties: self.properties.clone(),
                             into_payload: self.into_payload.clone(),
                             hops,
-                            address_kind_path
+                            address_kind_path,
                         }
                     }
                 }
 
-
-                impl<ResourceType, Kind > Select<ResourceType, Kind>
-                {
-                    fn new(pattern:AddressKindPattern<ResourceType, Kind>) -> Self {
-                        Self{
+                impl<ResourceType, Kind> Select<ResourceType, Kind> {
+                    fn new(pattern: AddressKindPattern<ResourceType, Kind>) -> Self {
+                        Self {
                             pattern,
                             properties: Default::default(),
                             into_payload: SelectIntoPayload::Stubs,
-                            kind: SelectionKind::Initial
+                            kind: SelectionKind::Initial,
                         }
                     }
                 }
 
-                impl<FromResourceType, FromKind >
-                SelectionKind<FromResourceType, FromKind>
-                {
+                impl<FromResourceType, FromKind> SelectionKind<FromResourceType, FromKind> {
                     pub fn convert<ToResourceType, ToKind>(
                         self,
                     ) -> Result<SelectionKind<ToResourceType, ToKind>, Error>
-                        where
-                            FromResourceType: TryInto<ToResourceType, Error = Error>+Clone+Eq+PartialEq,
-                            FromKind: TryInto<ToKind, Error = Error>+Clone+Eq+PartialEq,
-                            Payload<FromKind>: TryInto<Payload<ToKind>,Error=Error>
+                    where
+                        FromResourceType:
+                            TryInto<ToResourceType, Error = Error> + Clone + Eq + PartialEq,
+                        FromKind: TryInto<ToKind, Error = Error> + Clone + Eq + PartialEq,
+                        Payload<FromKind>: TryInto<Payload<ToKind>, Error = Error>,
                     {
                         Ok(match self {
-                            SelectionKind::Initial => {
-                                SelectionKind::Initial
-                            }
-                            SelectionKind::SubSelector { address, hops, address_kind_path: address_tks_path } => {
+                            SelectionKind::Initial => SelectionKind::Initial,
+                            SelectionKind::SubSelector {
+                                address,
+                                hops,
+                                address_kind_path: address_tks_path,
+                            } => {
                                 let mut converted_hops = vec![];
                                 for hop in hops {
                                     converted_hops.push(hop.convert()?);
@@ -2598,29 +3073,28 @@ pub mod generic {
                                 SelectionKind::SubSelector {
                                     address,
                                     hops: converted_hops,
-                                    address_kind_path: address_tks_path.convert()?
+                                    address_kind_path: address_tks_path.convert()?,
                                 }
                             }
                         })
                     }
                 }
 
-                impl<FromResourceType, FromKind >
-                    Select<FromResourceType, FromKind>
-                {
+                impl<FromResourceType, FromKind> Select<FromResourceType, FromKind> {
                     pub fn convert<ToResourceType, ToKind>(
                         self,
                     ) -> Result<Select<ToResourceType, ToKind>, Error>
                     where
-                        FromResourceType: TryInto<ToResourceType, Error = Error>+Clone+Eq+PartialEq,
-                        FromKind: TryInto<ToKind, Error = Error>+Clone+Eq+PartialEq,
-                        Payload<FromKind>: TryInto<Payload<ToKind>,Error=Error>
+                        FromResourceType:
+                            TryInto<ToResourceType, Error = Error> + Clone + Eq + PartialEq,
+                        FromKind: TryInto<ToKind, Error = Error> + Clone + Eq + PartialEq,
+                        Payload<FromKind>: TryInto<Payload<ToKind>, Error = Error>,
                     {
                         Ok(Select {
                             pattern: self.pattern.convert()?,
                             properties: self.properties,
                             into_payload: self.into_payload,
-                            kind: self.kind.convert()?
+                            kind: self.kind.convert()?,
                         })
                     }
                 }
@@ -2629,12 +3103,14 @@ pub mod generic {
             }
 
             pub mod update {
+                use std::convert::TryInto;
+
+                use serde::{Deserialize, Serialize};
+
                 use crate::error::Error;
                 use crate::version::v0_0_1::generic::payload::PayloadMap;
                 use crate::version::v0_0_1::generic::resource::command::common::SetProperties;
                 use crate::version::v0_0_1::id::Address;
-                use serde::{Deserialize, Serialize};
-                use std::convert::TryInto;
 
                 #[derive(Debug, Clone, Serialize, Deserialize)]
                 pub struct Update<KIND> {
@@ -2656,33 +3132,43 @@ pub mod generic {
             }
 
             pub mod query {
-                use serde::{Serialize,Deserialize};
+                use std::convert::TryInto;
+
+                use serde::{Deserialize, Serialize};
+
+                use crate::error::Error;
                 use crate::version::latest::generic::pattern::AddressKindPath;
                 use crate::version::latest::generic::payload::RcCommand;
-                use std::convert::TryInto;
-                use crate::error::Error;
 
                 #[derive(Debug, Clone, Serialize, Deserialize)]
                 pub enum Query {
-                    AddressKindPath
+                    AddressKindPath,
                 }
 
                 #[derive(Debug, Clone, Serialize, Deserialize)]
-                pub enum QueryResult<ResourceType,Kind>{
-                    AddressKindPath(AddressKindPath<ResourceType,Kind>)
+                pub enum QueryResult<ResourceType, Kind> {
+                    AddressKindPath(AddressKindPath<ResourceType, Kind>),
                 }
 
-                impl <ResourceType,Kind> TryInto<AddressKindPath<ResourceType,Kind>> for QueryResult<ResourceType,Kind> {
-                    type Error=Error;
+                impl<ResourceType, Kind> TryInto<AddressKindPath<ResourceType, Kind>>
+                    for QueryResult<ResourceType, Kind>
+                {
+                    type Error = Error;
 
-                    fn try_into(self)-> Result<AddressKindPath<ResourceType,Kind>,Error> {
+                    fn try_into(self) -> Result<AddressKindPath<ResourceType, Kind>, Error> {
                         match self {
-                            QueryResult::AddressKindPath(address_kind_path) => {Ok(address_kind_path)}
+                            QueryResult::AddressKindPath(address_kind_path) => {
+                                Ok(address_kind_path)
+                            }
                         }
                     }
                 }
 
-                impl <ResourceType,Kind> ToString for QueryResult<ResourceType,Kind>  where Kind: ToString, ResourceType: ToString {
+                impl<ResourceType, Kind> ToString for QueryResult<ResourceType, Kind>
+                where
+                    Kind: ToString,
+                    ResourceType: ToString,
+                {
                     fn to_string(&self) -> String {
                         match self {
                             QueryResult::AddressKindPath(address_kind_path) => {
@@ -2692,18 +3178,15 @@ pub mod generic {
                     }
                 }
 
-                impl <ResourceType,Kind> Into<RcCommand<ResourceType,Kind>> for Query {
-                    fn into(self)-> RcCommand<ResourceType,Kind> {
+                impl<ResourceType, Kind> Into<RcCommand<ResourceType, Kind>> for Query {
+                    fn into(self) -> RcCommand<ResourceType, Kind> {
                         RcCommand::Query(self)
                     }
                 }
-
             }
 
             pub mod get {
-                pub struct Get {
-
-                }
+                pub struct Get {}
             }
         }
     }
@@ -2729,22 +3212,25 @@ pub mod generic {
             use crate::version::v0_0_1::log::Log;
             use crate::version::v0_0_1::messaging::Exchange;
             use crate::version::v0_0_1::messaging::ExchangeId;
-            use crate::version::v0_0_1::resource::Status;
+            use crate::version::v0_0_1::resource::{Status, StatusUpdate};
             use crate::version::v0_0_1::util::{unique_id, ConvertFrom};
+            use crate::version::v0_0_1::artifact::ArtifactRequest;
 
             #[derive(Debug, Clone, Serialize, Deserialize)]
             pub struct Request<ReqEntity> {
                 pub id: String,
                 pub to: Vec<Address>,
+                pub from: Address,
                 pub entity: ReqEntity,
                 pub exchange: Exchange,
             }
 
             impl<ReqEntity> Request<ReqEntity> {
-                pub fn new(entity: ReqEntity) -> Self {
+                pub fn new(entity: ReqEntity, from: Address) -> Self {
                     Self {
                         id: unique_id(),
                         to: vec![],
+                        from,
                         entity,
                         exchange: Exchange::Notification,
                     }
@@ -2756,6 +3242,7 @@ pub mod generic {
                     Request {
                         id: self.id,
                         to: self.to,
+                        from: self.from,
                         entity: self.entity,
                         exchange,
                     }
@@ -2790,11 +3277,41 @@ pub mod generic {
             #[derive(Debug, Clone, Serialize, Deserialize, strum_macros::Display)]
             pub enum Frame<ReqEntity, Payload> {
                 Log(Log),
-                Command(Command),
                 Request(Request<ReqEntity>),
                 Response(Response<Payload>),
-                Status(Status),
+                Artifact(ArtifactRequest),  // portal inlet will cache and return artifact
+                Config(ArtifactRequest),    // portal inlet will cache, parse and return artifact config
+                Status(StatusUpdate),
                 Close(CloseReason),
+            }
+
+            impl <ReqEntity, Payload> Frame<ReqEntity, Payload> {
+                pub fn from(&self) -> Option<Address> {
+                    match self {
+                        Frame::Log(_) => {
+                            Option::None
+                        }
+                        Frame::Request(request) => {
+                            request.from.clone()
+                        }
+                        Frame::Response(response) => {
+                            // Response will need a from field for it to work within Ports
+                            Option::None
+                        }
+                        Frame::Artifact(artifact) => {
+                            artifact.from.clone()
+                        }
+                        Frame::Config(config) => {
+                            config.from.clone()
+                        }
+                        Frame::Status(status) => {
+                            status.from.clone()
+                        }
+                        Frame::Close(_) => {
+                            Option::None
+                        }
+                    }
+                }
             }
 
             /*
@@ -2835,6 +3352,9 @@ pub mod generic {
             use serde::{Deserialize, Serialize};
 
             use crate::error::Error;
+            use crate::version::latest::bin::Bin;
+            use crate::version::latest::Artifact;
+            use crate::version::v0_0_1::artifact::{Artifact, ArtifactResponse};
             use crate::version::v0_0_1::command::CommandEvent;
             use crate::version::v0_0_1::fail;
             use crate::version::v0_0_1::frame::{CloseReason, PrimitiveFrame};
@@ -2845,9 +3365,11 @@ pub mod generic {
             use crate::version::v0_0_1::generic::entity::response::RespEntity;
             use crate::version::v0_0_1::generic::payload::Primitive;
             use crate::version::v0_0_1::generic::portal::inlet;
+            use crate::version::v0_0_1::generic::resource::ResourceStub;
             use crate::version::v0_0_1::id::{Address, Kind, ResourceType};
             use crate::version::v0_0_1::messaging::{Exchange, ExchangeId};
             use crate::version::v0_0_1::util::{unique_id, ConvertFrom};
+            use crate::version::v0_0_1::config::{Config, Assign, ConfigBody};
 
             #[derive(Debug, Clone, Serialize, Deserialize)]
             pub struct Request<ReqEntity> {
@@ -2942,11 +3464,12 @@ pub mod generic {
             }
 
             #[derive(Debug, Clone, Serialize, Deserialize, strum_macros::Display)]
-            pub enum Frame<KIND, PAYLOAD,ReqEntity> {
-                Create(Info<KIND>),
-                CommandEvent(CommandEvent),
+            pub enum Frame<KIND, PAYLOAD, ReqEntity> {
+                Assign(Assign<KIND>),
                 Request(Request<ReqEntity>),
                 Response(Response<PAYLOAD>),
+                Artifact(ArtifactResponse<Artifact>),
+                Config(ArtifactResponse<Config<ConfigBody>>),
                 Close(CloseReason),
             }
 
@@ -2975,7 +3498,9 @@ pub mod generic {
             }
              */
 
-            impl<KIND: Serialize, PAYLOAD: Serialize, ReqEntity:Serialize> TryInto<PrimitiveFrame> for Frame<KIND, PAYLOAD, ReqEntity> {
+            impl<KIND: Serialize, PAYLOAD: Serialize, ReqEntity: Serialize> TryInto<PrimitiveFrame>
+                for Frame<KIND, PAYLOAD, ReqEntity>
+            {
                 type Error = Error;
 
                 fn try_into(self) -> Result<PrimitiveFrame, Self::Error> {
@@ -3022,13 +3547,13 @@ pub mod generic {
         use crate::error::Error;
         use crate::version::v0_0_1::bin::Bin;
         use crate::version::v0_0_1::generic;
+        use crate::version::v0_0_1::generic::resource::command::RcCommandType;
         use crate::version::v0_0_1::generic::resource::{command, Resource, ResourceStub};
         use crate::version::v0_0_1::id::{Address, Meta};
         use crate::version::v0_0_1::payload::PrimitiveType;
         use crate::version::v0_0_1::resource::Status;
         use crate::version::v0_0_1::util::{Convert, ConvertFrom, ValueMatcher, ValuePattern};
         use crate::version::v0_0_1::{http, State};
-        use crate::version::v0_0_1::generic::resource::command::RcCommandType;
 
         #[derive(
             Debug,
@@ -3047,7 +3572,7 @@ pub mod generic {
             Map,
         }
 
-        #[derive(Debug, Clone, Serialize, Deserialize,Eq,PartialEq)]
+        #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
         pub struct ListPattern {
             pub primitive: PrimitiveType,
             pub range: Range,
@@ -3070,14 +3595,14 @@ pub mod generic {
             }
         }
 
-        #[derive(Debug, Clone, Serialize, Deserialize,Eq,PartialEq)]
+        #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
         pub enum Range {
             MinMax { min: usize, max: usize },
             Exact(usize),
             Any,
         }
 
-        #[derive(Debug, Clone, Serialize, Deserialize,Eq,PartialEq)]
+        #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
         pub enum PayloadTypePattern {
             Empty,
             Primitive(PrimitiveType),
@@ -3147,17 +3672,14 @@ pub mod generic {
             }
         }
 
-        #[derive(Debug, Clone, Serialize, Deserialize,Eq,PartialEq)]
+        #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
         pub struct PayloadPattern {
             pub structure: PayloadTypePattern,
             pub format: Option<PayloadFormat>,
             pub validator: Option<CallWithConfig>,
         }
 
-
-        impl<Kind> ValueMatcher<Payload<Kind>>
-            for PayloadPattern
-        {
+        impl<Kind> ValueMatcher<Payload<Kind>> for PayloadPattern {
             fn is_match(&self, payload: &Payload<Kind>) -> Result<(), Error> {
                 self.structure.is_match(&payload)?;
 
@@ -3166,26 +3688,26 @@ pub mod generic {
             }
         }
 
-        #[derive(Debug, Clone, Serialize, Deserialize,Eq,PartialEq)]
+        #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
         pub struct CallWithConfig {
             pub call: Call,
             pub config: Option<Address>,
         }
 
-        #[derive(Debug, Clone, Serialize, Deserialize,Eq,PartialEq)]
+        #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
         pub struct Call {
             pub address: Address,
-            pub kind: CallKind
+            pub kind: CallKind,
         }
 
-        #[derive(Debug, Clone, Serialize, Deserialize,Eq,PartialEq)]
+        #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
         pub enum CallKind {
             Rc(RcCommandType),
             Msg(MsgCall),
             Http(HttpCall),
         }
 
-        impl ToString for Call{
+        impl ToString for Call {
             fn to_string(&self) -> String {
                 format!("{}^{}", self.address.to_string(), self.kind.to_string())
             }
@@ -3265,7 +3787,7 @@ pub mod generic {
             }
         }
 
-        impl ToString for CallKind{
+        impl ToString for CallKind {
             fn to_string(&self) -> String {
                 match self {
                     CallKind::Rc(command) => {
@@ -3370,10 +3892,9 @@ pub mod generic {
             }
         }
 
-        #[derive(Debug, Clone, Serialize, Deserialize,Eq,PartialEq)]
+        #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
         pub struct MapPattern {
-            pub required:
-                HashMap<String, ValuePattern<PayloadPattern>>,
+            pub required: HashMap<String, ValuePattern<PayloadPattern>>,
             pub allowed: ValuePattern<PayloadPattern>,
         }
 
@@ -3394,16 +3915,10 @@ pub mod generic {
 
         impl MapPattern {
             pub fn new(
-                required: HashMap<
-                    String,
-                    ValuePattern<PayloadPattern>,
-                >,
+                required: HashMap<String, ValuePattern<PayloadPattern>>,
                 allowed: ValuePattern<PayloadPattern>,
             ) -> Self {
-                MapPattern {
-                    required,
-                    allowed,
-                }
+                MapPattern { required, allowed }
             }
 
             pub fn empty() -> Self {
@@ -3458,8 +3973,6 @@ pub mod generic {
                 Ok(())
             }
         }
-
-
 
         /*
         impl<FromResourceType,FromKind,FromPayload,FromTksPattern, ToResourceType,ToKind,ToPayload,ToTksPattern> ConvertFrom<Valuepattern<PayloadPattern<FromResourceType,FromKind,FromPayload,FromTksPattern>>>
@@ -3606,13 +4119,17 @@ pub mod generic {
             }
         }
 
-        impl <Kind> TryInto<Primitive<Kind>> for Payload<Kind> {
+        impl<Kind> TryInto<Primitive<Kind>> for Payload<Kind> {
             type Error = Error;
 
             fn try_into(self) -> Result<Primitive<Kind>, Self::Error> {
                 match self {
-                    Payload::Primitive(primitive) => {Ok(primitive)}
-                    p => Err(format!("coercion error expected: Primitive, found: {}",p.to_string() ).into())
+                    Payload::Primitive(primitive) => Ok(primitive),
+                    p => Err(format!(
+                        "coercion error expected: Primitive, found: {}",
+                        p.to_string()
+                    )
+                    .into()),
                 }
             }
         }
@@ -3642,7 +4159,6 @@ pub mod generic {
             }
         }
 
-
         impl<FromKind> PayloadMap<FromKind> {
             pub fn convert<ToKind>(self) -> Result<PayloadMap<ToKind>, Error>
             where
@@ -3656,28 +4172,26 @@ pub mod generic {
             }
         }
 
-        impl <Kind> Deref for PayloadMap<Kind> {
-            type Target = HashMap<String,Payload<Kind>>;
+        impl<Kind> Deref for PayloadMap<Kind> {
+            type Target = HashMap<String, Payload<Kind>>;
 
             fn deref(&self) -> &Self::Target {
                 &self.map
             }
         }
 
-        impl <Kind> DerefMut for PayloadMap<Kind> {
+        impl<Kind> DerefMut for PayloadMap<Kind> {
             fn deref_mut(&mut self) -> &mut Self::Target {
                 &mut self.map
             }
         }
 
-        impl <Kind> Default for PayloadMap<Kind> {
-
+        impl<Kind> Default for PayloadMap<Kind> {
             fn default() -> Self {
                 Self {
-                    map: Default::default()
+                    map: Default::default(),
                 }
             }
-
         }
         /*
         impl <ToKind,FromKind> TryInto<ToKind> for PayloadMap<FromKind> {
@@ -3712,7 +4226,7 @@ pub mod generic {
             }
         }
 
-       impl<FromKind, ToKind> ConvertFrom<Payload<FromKind>> for Payload<ToKind>
+        impl<FromKind, ToKind> ConvertFrom<Payload<FromKind>> for Payload<ToKind>
         where
             FromKind: TryInto<ToKind, Error = Error> + Clone,
             ToKind: Clone,
@@ -3748,7 +4262,7 @@ pub mod generic {
             }
         }
 
-        #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq,strum_macros::Display)]
+        #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, strum_macros::Display)]
         pub enum Primitive<KIND> {
             Text(String),
             Address(Address),
@@ -3796,50 +4310,51 @@ pub mod generic {
             }
         }
 
-        impl <Kind> TryInto<String> for Primitive<Kind> {
+        impl<Kind> TryInto<String> for Primitive<Kind> {
             type Error = Error;
 
             fn try_into(self) -> Result<String, Self::Error> {
                 match self {
-                    Primitive::Text(text) => {Ok(text)}
-                    p => Err(format!("coercion error expected: Text, found: {}",p.to_string() ).into())
+                    Primitive::Text(text) => Ok(text),
+                    p => Err(
+                        format!("coercion error expected: Text, found: {}", p.to_string()).into(),
+                    ),
                 }
             }
         }
 
-        impl <Kind> TryInto<Bin> for Primitive<Kind> {
+        impl<Kind> TryInto<Bin> for Primitive<Kind> {
             type Error = Error;
 
             fn try_into(self) -> Result<Bin, Self::Error> {
                 match self {
-                    Primitive::Bin(bin) => {Ok(bin)}
-                    p => Err(format!("coercion error expected: Bin, found: {}",p.to_string() ).into())
+                    Primitive::Bin(bin) => Ok(bin),
+                    p => Err(
+                        format!("coercion error expected: Bin, found: {}", p.to_string()).into(),
+                    ),
                 }
             }
         }
 
-
-
-        impl <Kind> TryInto<Address> for Primitive<Kind> {
+        impl<Kind> TryInto<Address> for Primitive<Kind> {
             type Error = Error;
 
             fn try_into(self) -> Result<Address, Self::Error> {
                 match self {
-                    Primitive::Address(address) => {Ok(address)}
-                    p => Err(format!("coercion error expected: Address, found: {}",p.to_string() ).into())
+                    Primitive::Address(address) => Ok(address),
+                    p => Err(
+                        format!("coercion error expected: Address, found: {}", p.to_string())
+                            .into(),
+                    ),
                 }
             }
         }
-
-
 
         #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
         pub struct PrimitiveList<KIND> {
             pub primitive_type: PrimitiveType,
             pub list: Vec<Primitive<KIND>>,
         }
-
-
 
         impl<FromKind> PrimitiveList<FromKind> {
             fn convert<ToKind>(self) -> Result<PrimitiveList<ToKind>, Error>
@@ -3938,20 +4453,22 @@ pub mod generic {
     }
 
     pub mod pattern {
-        use crate::error::Error;
-        use crate::version::v0_0_1::id::{AddressSegment, Tks, RouteSegment};
-        use crate::version::v0_0_1::pattern::{SegmentPattern, SpecificPattern, ExactSegment};
-        use crate::version::v0_0_1::util::{ValueMatcher, ValuePattern};
-        use serde::{Deserialize, Serialize};
         use std::convert::TryInto;
-        use crate::version::v0_0_1::id::Address;
-        use crate::version::latest::generic::payload::Payload;
-        use crate::version::latest::fail::Fail;
-        use std::str::FromStr;
-        use nom::combinator::all_consuming;
-        use crate::version::v0_0_1::parse::{address_kind_path, consume_address_kind_path};
-        use crate::version::latest::generic::id::KindParts;
         use std::marker::PhantomData;
+        use std::str::FromStr;
+
+        use nom::combinator::all_consuming;
+        use serde::{Deserialize, Serialize};
+
+        use crate::error::Error;
+        use crate::version::latest::fail::Fail;
+        use crate::version::latest::generic::id::KindParts;
+        use crate::version::latest::generic::payload::Payload;
+        use crate::version::v0_0_1::id::Address;
+        use crate::version::v0_0_1::id::{AddressSegment, RouteSegment, Tks};
+        use crate::version::v0_0_1::parse::{address_kind_path, consume_address_kind_path};
+        use crate::version::v0_0_1::pattern::{ExactSegment, SegmentPattern, SpecificPattern};
+        use crate::version::v0_0_1::util::{ValueMatcher, ValuePattern};
 
         #[derive(Debug, Clone, Serialize, Deserialize)]
         pub struct AddressKindPattern<ResourceType, Kind> {
@@ -3983,7 +4500,7 @@ pub mod generic {
                     if let SegmentPattern::Exact(exact) = &hop.segment {
                         match exact {
                             ExactSegment::Address(seg) => {
-                                segments.push(seg.clone() );
+                                segments.push(seg.clone());
                             }
                         }
                     } else {
@@ -3993,13 +4510,16 @@ pub mod generic {
 
                 Address {
                     route: RouteSegment::Resource,
-                    segments
+                    segments,
                 }
             }
 
-            pub fn sub_select_hops(&self) -> Vec<Hop<ResourceType,Kind>> where ResourceType:Clone, Kind:Clone{
-
-                let mut hops= self.hops.clone();
+            pub fn sub_select_hops(&self) -> Vec<Hop<ResourceType, Kind>>
+            where
+                ResourceType: Clone,
+                Kind: Clone,
+            {
+                let mut hops = self.hops.clone();
                 let query_root_segments = self.query_root().segments.len();
                 for _ in 0..query_root_segments {
                     hops.remove(0);
@@ -4007,8 +4527,7 @@ pub mod generic {
                 hops
             }
 
-
-            pub fn matches(&self, address_kind_path: &AddressKindPath<ResourceType,Kind>) -> bool
+            pub fn matches(&self, address_kind_path: &AddressKindPath<ResourceType, Kind>) -> bool
             where
                 ResourceType: Clone,
                 Kind: Clone,
@@ -4099,8 +4618,7 @@ pub mod generic {
 
         impl<ResourceType, Kind> Hop<ResourceType, Kind> {
             pub fn matches(&self, address_kind_segment: &AddressKindSegment<Kind>) -> bool {
-                self.segment
-                    .matches(&address_kind_segment.address_segment)
+                self.segment.matches(&address_kind_segment.address_segment)
             }
         }
 
@@ -4144,7 +4662,6 @@ pub mod generic {
             }
         }
 
-
         /*
         impl <From,Into> Pattern<From> where From: TryInto<Into>{
 
@@ -4181,11 +4698,6 @@ pub mod generic {
             }
         }
 
-
-
-
-
-
         #[derive(Debug, Clone, Serialize, Deserialize)]
         pub enum EmptyPattern<P> {
             Any,
@@ -4193,8 +4705,8 @@ pub mod generic {
         }
 
         impl<P> EmptyPattern<P>
-            where
-                P: Eq + PartialEq,
+        where
+            P: Eq + PartialEq,
         {
             pub fn matches(&self, t: &P) -> bool {
                 match self {
@@ -4216,8 +4728,8 @@ pub mod generic {
             }
 
             pub fn convert<To>(self) -> Result<EmptyPattern<To>, Error>
-                where
-                    P: TryInto<To, Error = Error> + Eq + PartialEq,
+            where
+                P: TryInto<To, Error = Error> + Eq + PartialEq,
             {
                 Ok(match self {
                     EmptyPattern::Any => EmptyPattern::Any,
@@ -4236,8 +4748,8 @@ pub mod generic {
         }
 
         impl<P> ToString for EmptyPattern<P>
-            where
-                P: ToString,
+        where
+            P: ToString,
         {
             fn to_string(&self) -> String {
                 match self {
@@ -4247,15 +4759,6 @@ pub mod generic {
             }
         }
 
-
-
-
-
-
-
-
-
-
         pub type ResourceTypePattern<ResourceType> = Pattern<ResourceType>;
 
         #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -4264,9 +4767,6 @@ pub mod generic {
             pub kind: KindPattern<Kind>,
             pub specific: ValuePattern<SpecificPattern>,
         }
-
-
-
 
         impl<FromResourceType, FromKind> TksPattern<FromResourceType, FromKind> {
             pub fn convert<ToResourceType, ToKind>(
@@ -4322,35 +4822,39 @@ pub mod generic {
         }
 
         #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
-        pub struct AddressKindPath<ResourceType,Kind> {
+        pub struct AddressKindPath<ResourceType, Kind> {
             pub route: RouteSegment,
             pub segments: Vec<AddressKindSegment<Kind>>,
-            phantom: PhantomData<ResourceType>
+            phantom: PhantomData<ResourceType>,
         }
 
-
-
-        impl<ResourceType,Kind> AddressKindPath<ResourceType,Kind> {
-
-            pub fn new( route: RouteSegment, segments: Vec<AddressKindSegment<Kind>>) -> Self {
+        impl<ResourceType, Kind> AddressKindPath<ResourceType, Kind> {
+            pub fn new(route: RouteSegment, segments: Vec<AddressKindSegment<Kind>>) -> Self {
                 Self {
                     route,
                     segments,
-                    phantom:Default::default()
+                    phantom: Default::default(),
                 }
             }
 
-            pub fn push(&self, segment: AddressKindSegment<Kind> ) -> AddressKindPath<ResourceType,Kind> where Kind: Clone, ResourceType: Clone{
+            pub fn push(
+                &self,
+                segment: AddressKindSegment<Kind>,
+            ) -> AddressKindPath<ResourceType, Kind>
+            where
+                Kind: Clone,
+                ResourceType: Clone,
+            {
                 let mut segments = self.segments.clone();
                 segments.push(segment);
-                Self{
+                Self {
                     route: self.route.clone(),
                     segments,
-                    phantom: Default::default()
+                    phantom: Default::default(),
                 }
             }
 
-            pub fn consume(&self) -> Option<AddressKindPath<ResourceType,Kind>>
+            pub fn consume(&self) -> Option<AddressKindPath<ResourceType, Kind>>
             where
                 Kind: Clone,
                 ResourceType: Clone,
@@ -4363,7 +4867,8 @@ pub mod generic {
                 Option::Some(AddressKindPath {
                     route: self.route.clone(),
                     segments,
-                phantom: Default::default()})
+                    phantom: Default::default(),
+                })
             }
 
             pub fn is_final(&self) -> bool {
@@ -4371,22 +4876,24 @@ pub mod generic {
             }
         }
 
-
-        impl<ResourceType,Kind> ToString for AddressKindPath<ResourceType,Kind> where Kind: ToString{
+        impl<ResourceType, Kind> ToString for AddressKindPath<ResourceType, Kind>
+        where
+            Kind: ToString,
+        {
             fn to_string(&self) -> String {
                 let mut rtn = String::new();
                 match &self.route {
                     RouteSegment::Resource => {}
                     route => {
                         rtn.push_str(route.to_string().as_str());
-                        rtn.push_str("::" );
+                        rtn.push_str("::");
                     }
                 }
 
-                for (index,segment) in self.segments.iter().enumerate() {
-                    rtn.push_str( segment.to_string().as_str() );
+                for (index, segment) in self.segments.iter().enumerate() {
+                    rtn.push_str(segment.to_string().as_str());
                     if index < self.segments.len() {
-                        rtn.push_str( segment.address_segment.terminating_delim() );
+                        rtn.push_str(segment.address_segment.terminating_delim());
                     }
                 }
 
@@ -4394,25 +4901,22 @@ pub mod generic {
             }
         }
 
-        impl<FromResourceType,FromKind>
-        AddressKindPath<FromResourceType,FromKind>
-        {
-            pub fn convert<ToResourceType,ToKind>(
+        impl<FromResourceType, FromKind> AddressKindPath<FromResourceType, FromKind> {
+            pub fn convert<ToResourceType, ToKind>(
                 self,
             ) -> Result<AddressKindPath<ToResourceType, ToKind>, Error>
-                where
-                    FromKind: TryInto<ToKind, Error = Error>+Clone+Eq+PartialEq,
-                    FromResourceType: TryInto<ToResourceType, Error = Error>+Clone+Eq+PartialEq,
+            where
+                FromKind: TryInto<ToKind, Error = Error> + Clone + Eq + PartialEq,
+                FromResourceType: TryInto<ToResourceType, Error = Error> + Clone + Eq + PartialEq,
             {
                 let mut segments = vec![];
                 for segment in self.segments {
-                    segments.push( segment.convert()? );
+                    segments.push(segment.convert()?);
                 }
                 Ok(AddressKindPath {
                     route: self.route,
-                  segments,
-                    phantom: Default::default()
-
+                    segments,
+                    phantom: Default::default(),
                 })
             }
         }
@@ -4422,34 +4926,39 @@ pub mod generic {
             pub kind: Kind,
         }
 
-        impl <FromKind> AddressKindSegment<FromKind> {
-            pub fn convert<ToKind>(
-                self,
-            ) -> Result<AddressKindSegment<ToKind>, Error>
-                where
-                    FromKind: TryInto<ToKind, Error = Error>+Clone+Eq+PartialEq,
+        impl<FromKind> AddressKindSegment<FromKind> {
+            pub fn convert<ToKind>(self) -> Result<AddressKindSegment<ToKind>, Error>
+            where
+                FromKind: TryInto<ToKind, Error = Error> + Clone + Eq + PartialEq,
             {
                 Ok(AddressKindSegment {
                     address_segment: self.address_segment,
-                    kind: self.kind.try_into()?
+                    kind: self.kind.try_into()?,
                 })
             }
         }
 
-        impl <Kind: ToString> ToString for AddressKindSegment<Kind> {
+        impl<Kind: ToString> ToString for AddressKindSegment<Kind> {
             fn to_string(&self) -> String {
-                format!("{}<{}>", self.address_segment.to_string(), self.kind.to_string() )
+                format!(
+                    "{}<{}>",
+                    self.address_segment.to_string(),
+                    self.kind.to_string()
+                )
             }
         }
 
-        impl <ResourceType,Kind> FromStr for AddressKindPath<ResourceType,Kind> where ResourceType: FromStr<Err=Error>,Kind: FromStr<Err=Error> {
+        impl<ResourceType, Kind> FromStr for AddressKindPath<ResourceType, Kind>
+        where
+            ResourceType: FromStr<Err = Error>,
+            Kind: FromStr<Err = Error>,
+        {
             type Err = Error;
 
             fn from_str(s: &str) -> Result<Self, Self::Err> {
-                Ok(consume_address_kind_path::<ResourceType,Kind>(s)?)
+                Ok(consume_address_kind_path::<ResourceType, Kind>(s)?)
             }
         }
-
     }
 }
 
@@ -4588,17 +5097,16 @@ pub mod util {
 pub mod fail {
     use serde::{Deserialize, Serialize};
 
-    use crate::version::v0_0_1::id::Specific;
     use crate::error::Error;
+    use crate::version::v0_0_1::id::Specific;
 
     pub mod mesh {
         use serde::{Deserialize, Serialize};
 
         #[derive(Debug, Clone, Serialize, Deserialize)]
         pub enum Fail {
-            Error(String)
+            Error(String),
         }
-
     }
 
     pub mod portal {
@@ -4618,7 +5126,9 @@ pub mod fail {
     pub mod resource {
         use serde::{Deserialize, Serialize};
 
-        use crate::version::v0_0_1::fail::{Bad, BadRequest, Conditional, Messaging, NotFound, BadCoercion};
+        use crate::version::v0_0_1::fail::{
+            Bad, BadCoercion, BadRequest, Conditional, Messaging, NotFound,
+        };
         use crate::version::v0_0_1::id::Address;
 
         #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -4636,7 +5146,7 @@ pub mod fail {
             AddressAlreadyInUse(String),
             WrongParentResourceType { expected: String, found: String },
             CannotUpdateArchetype,
-            InvalidProperty{ expected: String, found: String }
+            InvalidProperty { expected: String, found: String },
         }
 
         #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -4646,9 +5156,9 @@ pub mod fail {
 
         #[derive(Debug, Clone, Serialize, Deserialize)]
         pub enum Select {
-            WrongAddress{required:Address,found:Address},
-            BadSelectRouting{required:String,found:String},
-            BadCoercion(BadCoercion)
+            WrongAddress { required: Address, found: Address },
+            BadSelectRouting { required: String, found: String },
+            BadCoercion(BadCoercion),
         }
     }
 
@@ -4686,7 +5196,7 @@ pub mod fail {
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct BadCoercion {
         pub from: String,
-        pub into: String
+        pub into: String,
     }
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -4755,37 +5265,37 @@ pub mod fail {
         fn to_string(&self) -> String {
             "Fail".to_string()
         }
-
     }
 
-    impl Into<Error> for Fail{
+    impl Into<Error> for Fail {
         fn into(self) -> Error {
             Error {
-                message: "Fail".to_string()
+                message: "Fail".to_string(),
             }
         }
     }
 }
 
 pub mod parse {
-    use nom::combinator::{all_consuming, not, opt, recognize};
-    use nom::error::{context, ErrorKind, VerboseError};
-    use nom::multi::{many0, separated_list1};
-    use nom::{AsChar, IResult, InputTakeAtPosition};
+    use std::str::FromStr;
 
-    use crate::version::latest::util::StringMatcher;
-    use crate::version::v0_0_1::id::{Address, AddressSegment, RouteSegment, Version};
     use nom::branch::alt;
     use nom::bytes::complete::tag;
     use nom::bytes::complete::{is_a, is_not};
-    use nom::character::complete::{alpha0, digit1, alphanumeric1};
+    use nom::character::complete::{alpha0, alphanumeric1, digit1};
+    use nom::combinator::{all_consuming, not, opt, recognize};
+    use nom::error::{context, ErrorKind, VerboseError};
+    use nom::multi::{many0, separated_list1};
     use nom::sequence::{delimited, preceded, terminated, tuple};
+    use nom::{AsChar, IResult, InputTakeAtPosition};
     use nom_supreme::parse_from_str;
-    use crate::version::v0_0_1::generic::id::parse::version;
-    use crate::version::latest::generic::pattern::{AddressKindSegment, AddressKindPath};
-    use std::str::FromStr;
+
     use crate::error::Error;
-    use crate::version::v0_0_1::pattern::parse::{kind, delim_kind};
+    use crate::version::latest::generic::pattern::{AddressKindPath, AddressKindSegment};
+    use crate::version::latest::util::StringMatcher;
+    use crate::version::v0_0_1::generic::id::parse::version;
+    use crate::version::v0_0_1::id::{Address, AddressSegment, RouteSegment, Version};
+    use crate::version::v0_0_1::pattern::parse::{delim_kind, kind};
 
     pub struct Parser {}
 
@@ -4794,8 +5304,8 @@ pub mod parse {
             address(input)
         }
 
-        pub fn consume_address(input: &str) -> Result<Address,Error> {
-            let (_,address) = all_consuming(address)(input)?;
+        pub fn consume_address(input: &str) -> Result<Address, Error> {
+            let (_, address) = all_consuming(address)(input)?;
             Ok(address)
         }
     }
@@ -4821,9 +5331,9 @@ pub mod parse {
     }
 
     fn mesh_route_chars<T>(i: T) -> Res<T, T>
-        where
-            T: InputTakeAtPosition,
-            <T as InputTakeAtPosition>::Item: AsChar,
+    where
+        T: InputTakeAtPosition,
+        <T as InputTakeAtPosition>::Item: AsChar,
     {
         i.split_at_position1_complete(
             |item| {
@@ -4840,7 +5350,6 @@ pub mod parse {
             ErrorKind::AlphaNumeric,
         )
     }
-
 
     pub fn resource_route_segment(input: &str) -> Res<&str, RouteSegment> {
         not(alt((domain_route_segment, tag_route_segment)))(input)
@@ -4862,9 +5371,13 @@ pub mod parse {
             .map(|(next, tag)| (next, RouteSegment::Tag(tag.to_string())))
     }
 
-
     pub fn hub_segment(input: &str) -> Res<&str, RouteSegment> {
-        alt((tag_route_segment, domain_route_segment, mesh_route_segment,resource_route_segment))(input)
+        alt((
+            tag_route_segment,
+            domain_route_segment,
+            mesh_route_segment,
+            resource_route_segment,
+        ))(input)
     }
 
     pub fn space_address_segment(input: &str) -> Res<&str, AddressSegment> {
@@ -4876,29 +5389,27 @@ pub mod parse {
     }
 
     pub fn filepath_address_segment(input: &str) -> Res<&str, AddressSegment> {
-        alt( (file_address_segment,dir_address_segment) )(input)
+        alt((file_address_segment, dir_address_segment))(input)
     }
     pub fn dir_address_segment(input: &str) -> Res<&str, AddressSegment> {
-        terminated(filepath_chars,tag("/"))(input).map(|(next, name)| (next, AddressSegment::Dir(name.to_string())))
+        terminated(filepath_chars, tag("/"))(input)
+            .map(|(next, name)| (next, AddressSegment::Dir(name.to_string())))
     }
 
     pub fn file_address_segment(input: &str) -> Res<&str, AddressSegment> {
-        file_chars(input)
-            .map(|(next, filename)| (next, AddressSegment::File(filename.to_string())))
+        file_chars(input).map(|(next, filename)| (next, AddressSegment::File(filename.to_string())))
     }
 
     pub fn version_address_segment(input: &str) -> Res<&str, AddressSegment> {
-       version(input)
-            .map(|(next, version)| (next, AddressSegment::Version(version)))
+        version(input).map(|(next, version)| (next, AddressSegment::Version(version)))
     }
-
 
     pub fn address(input: &str) -> Res<&str, Address> {
         tuple((
             tuple((hub_segment, space_address_segment)),
             many0(base_address_segment),
-            opt( version_address_segment ),
-            many0(filepath_address_segment ),
+            opt(version_address_segment),
+            many0(filepath_address_segment),
         ))(input)
         .map(|(next, ((hub, space), mut bases, version, mut files))| {
             let mut segments = vec![];
@@ -4912,72 +5423,174 @@ pub mod parse {
             }
             segments.append(&mut files);
 
-            let address = Address { route: hub, segments };
+            let address = Address {
+                route: hub,
+                segments,
+            };
 
             (next, address)
         })
     }
 
-
-
-
     pub fn consume_address(input: &str) -> Res<&str, Address> {
         all_consuming(address)(input)
     }
 
-
-
-    pub fn space_address_kind_segment<ResourceType,Kind>(input: &str) -> Res<&str, AddressKindSegment<Kind>> where ResourceType: FromStr, Kind: FromStr{
-        tuple((space_address_segment,delim_kind::<ResourceType,Kind>))(input).map(|(next, (address_segment,kind))| (next, AddressKindSegment{ address_segment, kind}))
+    pub fn space_address_kind_segment<ResourceType, Kind>(
+        input: &str,
+    ) -> Res<&str, AddressKindSegment<Kind>>
+    where
+        ResourceType: FromStr,
+        Kind: FromStr,
+    {
+        tuple((space_address_segment, delim_kind::<ResourceType, Kind>))(input).map(
+            |(next, (address_segment, kind))| {
+                (
+                    next,
+                    AddressKindSegment {
+                        address_segment,
+                        kind,
+                    },
+                )
+            },
+        )
     }
 
-    pub fn base_address_kind_segment<ResourceType,Kind>(input: &str) -> Res<&str, AddressKindSegment<Kind>> where ResourceType: FromStr, Kind: FromStr{
-        tuple((base_address_segment,delim_kind::<ResourceType,Kind>))(input).map(|(next, (address_segment,kind))| (next, AddressKindSegment{ address_segment, kind}))
+    pub fn base_address_kind_segment<ResourceType, Kind>(
+        input: &str,
+    ) -> Res<&str, AddressKindSegment<Kind>>
+    where
+        ResourceType: FromStr,
+        Kind: FromStr,
+    {
+        tuple((base_address_segment, delim_kind::<ResourceType, Kind>))(input).map(
+            |(next, (address_segment, kind))| {
+                (
+                    next,
+                    AddressKindSegment {
+                        address_segment,
+                        kind,
+                    },
+                )
+            },
+        )
     }
 
-    pub fn filepath_address_kind_segment<ResourceType,Kind>(input: &str) -> Res<&str, AddressKindSegment<Kind>> where ResourceType: FromStr, Kind: FromStr{
-        alt( (file_address_kind_segment::<ResourceType,Kind>,dir_address_kind_segment::<ResourceType,Kind>) )(input)
+    pub fn filepath_address_kind_segment<ResourceType, Kind>(
+        input: &str,
+    ) -> Res<&str, AddressKindSegment<Kind>>
+    where
+        ResourceType: FromStr,
+        Kind: FromStr,
+    {
+        alt((
+            file_address_kind_segment::<ResourceType, Kind>,
+            dir_address_kind_segment::<ResourceType, Kind>,
+        ))(input)
     }
-    pub fn dir_address_kind_segment<ResourceType,Kind>(input: &str) -> Res<&str, AddressKindSegment<Kind>> where ResourceType: FromStr, Kind: FromStr{
-        tuple((dir_address_segment,delim_kind::<ResourceType,Kind>))(input).map(|(next, (address_segment,kind))| (next, AddressKindSegment{ address_segment, kind}))
+    pub fn dir_address_kind_segment<ResourceType, Kind>(
+        input: &str,
+    ) -> Res<&str, AddressKindSegment<Kind>>
+    where
+        ResourceType: FromStr,
+        Kind: FromStr,
+    {
+        tuple((dir_address_segment, delim_kind::<ResourceType, Kind>))(input).map(
+            |(next, (address_segment, kind))| {
+                (
+                    next,
+                    AddressKindSegment {
+                        address_segment,
+                        kind,
+                    },
+                )
+            },
+        )
     }
 
-    pub fn file_address_kind_segment<ResourceType,Kind>(input: &str) -> Res<&str, AddressKindSegment<Kind>> where ResourceType: FromStr, Kind: FromStr{
-        tuple((file_address_segment,delim_kind::<ResourceType,Kind>))(input).map(|(next, (address_segment,kind))| (next, AddressKindSegment{ address_segment, kind}))
+    pub fn file_address_kind_segment<ResourceType, Kind>(
+        input: &str,
+    ) -> Res<&str, AddressKindSegment<Kind>>
+    where
+        ResourceType: FromStr,
+        Kind: FromStr,
+    {
+        tuple((file_address_segment, delim_kind::<ResourceType, Kind>))(input).map(
+            |(next, (address_segment, kind))| {
+                (
+                    next,
+                    AddressKindSegment {
+                        address_segment,
+                        kind,
+                    },
+                )
+            },
+        )
     }
 
-    pub fn version_address_kind_segment<ResourceType,Kind>(input: &str) -> Res<&str, AddressKindSegment<Kind>> where ResourceType: FromStr, Kind: FromStr{
-        tuple((version_address_segment,delim_kind::<ResourceType,Kind>))(input).map(|(next, (address_segment,kind))| (next, AddressKindSegment{ address_segment, kind}))
+    pub fn version_address_kind_segment<ResourceType, Kind>(
+        input: &str,
+    ) -> Res<&str, AddressKindSegment<Kind>>
+    where
+        ResourceType: FromStr,
+        Kind: FromStr,
+    {
+        tuple((version_address_segment, delim_kind::<ResourceType, Kind>))(input).map(
+            |(next, (address_segment, kind))| {
+                (
+                    next,
+                    AddressKindSegment {
+                        address_segment,
+                        kind,
+                    },
+                )
+            },
+        )
     }
 
-    pub fn consume_address_kind_path<ResourceType,Kind>(input: &str) -> Result<AddressKindPath<ResourceType,Kind>,Error> where ResourceType: FromStr, Kind: FromStr{
-        let (_,rtn ) = all_consuming(address_kind_path::<ResourceType,Kind>)(input)?;
+    pub fn consume_address_kind_path<ResourceType, Kind>(
+        input: &str,
+    ) -> Result<AddressKindPath<ResourceType, Kind>, Error>
+    where
+        ResourceType: FromStr,
+        Kind: FromStr,
+    {
+        let (_, rtn) = all_consuming(address_kind_path::<ResourceType, Kind>)(input)?;
         Ok(rtn)
     }
 
-    pub fn address_kind_path<ResourceType,Kind>(input: &str) -> Res<&str, AddressKindPath<ResourceType,Kind>> where ResourceType: FromStr, Kind: FromStr{
+    pub fn address_kind_path<ResourceType, Kind>(
+        input: &str,
+    ) -> Res<&str, AddressKindPath<ResourceType, Kind>>
+    where
+        ResourceType: FromStr,
+        Kind: FromStr,
+    {
         tuple((
-            tuple((hub_segment, space_address_kind_segment::<ResourceType,Kind>)),
-            many0(base_address_kind_segment::<ResourceType,Kind>),
-            opt( version_address_kind_segment::<ResourceType,Kind> ),
-            many0(file_address_kind_segment::<ResourceType,Kind> ),
+            tuple((
+                hub_segment,
+                space_address_kind_segment::<ResourceType, Kind>,
+            )),
+            many0(base_address_kind_segment::<ResourceType, Kind>),
+            opt(version_address_kind_segment::<ResourceType, Kind>),
+            many0(file_address_kind_segment::<ResourceType, Kind>),
         ))(input)
-            .map(|(next, ((hub, space), mut bases, version, mut files))| {
-                let mut segments = vec![];
-                segments.push(space);
-                segments.append(&mut bases);
-                match version {
-                    None => {}
-                    Some(version) => {
-                        segments.push(version);
-                    }
+        .map(|(next, ((hub, space), mut bases, version, mut files))| {
+            let mut segments = vec![];
+            segments.push(space);
+            segments.append(&mut bases);
+            match version {
+                None => {}
+                Some(version) => {
+                    segments.push(version);
                 }
-                segments.append(&mut files);
+            }
+            segments.append(&mut files);
 
-                let address = AddressKindPath::new ( hub, segments );
+            let address = AddressKindPath::new(hub, segments);
 
-                (next, address)
-            })
+            (next, address)
+        })
     }
 
     pub fn asterisk<T, E: nom::error::ParseError<T>>(input: T) -> IResult<T, T, E>
@@ -5103,8 +5716,6 @@ pub mod parse {
         )
     }
 
-
-
     pub fn skewer_chars<T>(i: T) -> Res<T, T>
     where
         T: InputTakeAtPosition,
@@ -5174,9 +5785,9 @@ pub mod parse {
     }
 
     pub fn file_chars<T>(i: T) -> Res<T, T>
-        where
-            T: InputTakeAtPosition,
-            <T as InputTakeAtPosition>::Item: AsChar,
+    where
+        T: InputTakeAtPosition,
+        <T as InputTakeAtPosition>::Item: AsChar,
     {
         i.split_at_position1_complete(
             |item| {
@@ -5189,7 +5800,6 @@ pub mod parse {
             ErrorKind::AlphaNumeric,
         )
     }
-
 
     pub fn not_space(input: &str) -> Res<&str, &str> {
         is_not(" \n\r\t")(input)
@@ -5239,5 +5849,6 @@ pub mod parse {
     pub fn rec_version(input: &str) -> Res<&str, &str> {
         recognize(parse_version)(input)
     }
-
 }
+
+

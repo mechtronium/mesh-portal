@@ -86,7 +86,7 @@ impl PortalTcpClient {
         });
 
 
-        if let outlet::Frame::Create(info) = reader.read( ).await?  {
+        if let outlet::Frame::Assign(info) = reader.read( ).await?  {
 
             let portal = Portal::new(info, inlet, client.portal_ctrl_factory(), client.logger()).await?;
 

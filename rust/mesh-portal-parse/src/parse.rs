@@ -533,11 +533,5 @@ pub enum PipeSegEntry {
 
 
 
-#[derive(Debug,Clone,Eq,PartialEq)]
-pub enum PipelineStop {
-   Internal,
-   Call(Call),
-   Return
-}
 
 

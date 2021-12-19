@@ -11,10 +11,6 @@ use crate::version::v0_0_1::bin::Bin;
 
 pub type State=crate::version::v0_0_1::State;
 
-pub type ArtifactRef=crate::version::v0_0_1::ArtifactRef;
-pub type Artifact=crate::version::v0_0_1::Artifact;
-pub type Port=crate::version::v0_0_1::Port;
-
 pub mod id {
     use crate::version::v0_0_1::id;
     use crate::version::latest::generic;
@@ -28,6 +24,11 @@ pub mod id {
     pub type AddressAndType = generic::id::AddressAndType<ResourceType>;
     pub type AddressSegment= id::AddressSegment;
     pub type Meta=id::Meta;
+}
+
+pub mod artifact {
+    use crate::version::v0_0_1::artifact;
+    pub type Artifact = artifact::Artifact;
 }
 
 pub mod pattern {
@@ -120,7 +121,7 @@ pub mod config {
     pub type Config = config::Config;
     pub type SchemaRef = config::SchemaRef;
     pub type BindConfig = config::BindConfig;
-    pub type PortConfig = config::PortConfig;
+    pub type PortConfig = config::PortConfigBody;
     pub type EntityConfig = config::EntityConfig;
     pub type ResourceConfig = config::ResourceConfig;
     pub type PayloadConfig = config::PayloadConfig;
