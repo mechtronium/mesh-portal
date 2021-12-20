@@ -29,6 +29,8 @@ pub struct PortalTcpClient {
 impl PortalTcpClient {
 
     pub async fn new( host: String, client: Box<dyn PortalClient> ) -> Result<Self,Error> {
+        unimplemented!();
+        /*
 
         let stream = TcpStream::connect(host.clone()).await?;
 
@@ -86,7 +88,7 @@ impl PortalTcpClient {
         });
 
 
-        if let outlet::Frame::Assign(info) = reader.read( ).await?  {
+        if let outlet::Frame::Assign(assign) = reader.read( ).await?  {
 
             let portal = Portal::new(info, inlet, client.portal_ctrl_factory(), client.logger()).await?;
 
@@ -116,6 +118,8 @@ impl PortalTcpClient {
             (client.logger())(message.as_str());
             return Err(anyhow!(message));
         }
+
+         */
     }
 }
 

@@ -277,8 +277,7 @@ pub mod generic {
 
         use serde::{Deserialize, Serialize};
 
-        use crate::version::latest::ArtifactRef;
-        use crate::version::latest::config::{Config, PortalKind};
+        use crate::version::v0_0_1::config::{Config, PortalKind};
         use crate::version::latest::generic::resource::Archetype;
         use crate::version::v0_0_1::generic;
 

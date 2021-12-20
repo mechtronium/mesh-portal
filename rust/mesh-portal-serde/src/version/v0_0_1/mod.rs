@@ -7,9 +7,6 @@ use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 
-use mesh_portal_parse::bind::{PipelineSegment, Section, StepKind};
-use mesh_portal_parse::pattern::{Block, HttpPattern, MsgPattern, RcPattern};
-
 use crate::error::Error;
 use crate::version::latest::entity::EntityType;
 use crate::version::latest::generic::entity::request::ReqEntity;
@@ -20,7 +17,7 @@ pub type State = HashMap<String, Bin>;
 pub mod artifact {
     use crate::version::v0_0_1::bin::Bin;
     use crate::version::v0_0_1::id::Address;
-    use serde::{Serialize,Deserialize};
+    use serde::{Deserialize, Serialize};
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct Artifact {
@@ -31,13 +28,13 @@ pub mod artifact {
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct ArtifactRequest {
         pub address: Address,
-        pub from: Address
+        pub from: Address,
     }
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
-    pub struct ArtifactResponse<B>{
+    pub struct ArtifactResponse<B> {
         pub to: Address,
-        pub payload: B
+        pub payload: B,
     }
 }
 
@@ -352,6 +349,102 @@ pub mod id {
     }
 }
 
+pub mod path {
+    use crate::error::Error;
+    use crate::version::v0_0_1::parse::consume_path;
+    use serde::{Deserialize, Serialize};
+    use std::str::FromStr;
+
+    #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
+    pub struct Path {
+        string: String,
+    }
+
+    impl Path {
+        fn new(string: &str) -> Self {
+            Path {
+                string: string.to_string(),
+            }
+        }
+
+        pub fn make_absolute(string: &str) -> Result<Self, Error> {
+            if string.starts_with("/") {
+                Path::from_str(string)
+            } else {
+                Path::from_str(format!("/{}", string).as_str())
+            }
+        }
+
+        pub fn bin(&self) -> Result<Vec<u8>, Error> {
+            let bin = bincode::serialize(self)?;
+            Ok(bin)
+        }
+
+        pub fn is_absolute(&self) -> bool {
+            self.string.starts_with("/")
+        }
+
+        pub fn cat(&self, path: &Path) -> Result<Self, Error> {
+            if self.string.ends_with("/") {
+                Path::from_str(format!("{}{}", self.string.as_str(), path.string.as_str()).as_str())
+            } else {
+                Path::from_str(
+                    format!("{}/{}", self.string.as_str(), path.string.as_str()).as_str(),
+                )
+            }
+        }
+
+        pub fn parent(&self) -> Option<Path> {
+            let s = self.to_string();
+            let parent = std::path::Path::new(s.as_str()).parent();
+            match parent {
+                None => Option::None,
+                Some(path) => match path.to_str() {
+                    None => Option::None,
+                    Some(some) => match Self::from_str(some) {
+                        Ok(parent) => Option::Some(parent),
+                        Err(error) => {
+                            eprintln!("{}", error.to_string());
+                            Option::None
+                        }
+                    },
+                },
+            }
+        }
+
+        pub fn last_segment(&self) -> Option<String> {
+            let split = self.string.split("/");
+            match split.last() {
+                None => Option::None,
+                Some(last) => Option::Some(last.to_string()),
+            }
+        }
+
+        pub fn to_relative(&self) -> String {
+            let mut rtn = self.string.clone();
+            rtn.remove(0);
+            rtn
+        }
+    }
+
+    impl FromStr for Path {
+        type Err = Error;
+
+        fn from_str(s: &str) -> Result<Self, Self::Err> {
+            let (_, path) = consume_path(s)?;
+            Ok(Self {
+                string: path.to_string(),
+            })
+        }
+    }
+
+    impl ToString for Path {
+        fn to_string(&self) -> String {
+            self.string.clone()
+        }
+    }
+}
+
 pub mod pattern {
     use std::convert::TryInto;
     use std::fmt::Formatter;
@@ -363,13 +456,37 @@ pub mod pattern {
     use serde::{de, Deserializer, Serializer};
 
     use crate::error::Error;
+    use crate::version::latest::generic::payload::{Call, Primitive};
     use crate::version::v0_0_1::generic;
-    use crate::version::v0_0_1::id::{AddressSegment, Kind, ResourceType, Specific};
+    use crate::version::v0_0_1::generic::entity::request::ReqEntity;
+    use crate::version::v0_0_1::generic::entity::request::{Http, Msg};
+    use crate::version::v0_0_1::generic::pattern::Pattern;
+    use crate::version::v0_0_1::generic::payload::HttpMethod;
+    use crate::version::v0_0_1::generic::payload::{
+        CallKind, CallWithConfig, HttpCall, MapPattern, MsgCall, PayloadFormat, PayloadTypePattern,
+        Range,
+    };
+    use crate::version::v0_0_1::generic::resource::command::RcCommandType;
+    use crate::version::v0_0_1::id::{Address, AddressSegment, Kind, ResourceType, Specific};
+    use crate::version::v0_0_1::parse::{address, camel_case_to_string, path, path_regex, Res};
+    use crate::version::v0_0_1::pattern::parse::pattern;
     use crate::version::v0_0_1::pattern::specific::{
         ProductPattern, VariantPattern, VendorPattern,
     };
-    use crate::version::v0_0_1::util::ValueMatcher;
+    use crate::version::v0_0_1::payload::{ListPattern, Payload, PayloadPattern, PrimitiveType};
+    use crate::version::v0_0_1::util::{StringMatcher, ValueMatcher, ValuePattern};
     use crate::{Deserialize, Serialize};
+    use nom::branch::alt;
+    use nom::bytes::complete::tag;
+    use nom::character::complete::{alpha1, alphanumeric1, digit1, multispace0};
+    use nom::combinator::{all_consuming, opt, recognize};
+    use nom::error::{ErrorKind, VerboseError};
+    use nom::multi::separated_list0;
+    use nom::sequence::{delimited, preceded, tuple};
+    use nom::{AsChar, InputTakeAtPosition, Parser};
+    use nom_supreme::{parse_from_str, ParserExt};
+    use std::collections::HashMap;
+    use nom_supreme::parser_ext::FromStrParser;
 
     pub type TksPattern = generic::pattern::TksPattern<ResourceType, Kind>;
     pub type KindPattern = generic::pattern::KindPattern<Kind>;
@@ -582,7 +699,6 @@ pub mod pattern {
         use nom::sequence::{delimited, terminated, tuple};
         use nom::Parser;
         use nom::{Err, IResult};
-        use nom_supreme::{parse_from_str, ParserExt};
 
         use crate::error::Error;
         use crate::version::latest::generic::id::KindParts;
@@ -601,6 +717,7 @@ pub mod pattern {
             ExactSegment, SegmentPattern, SpecificPattern, VersionReq,
         };
         use crate::version::v0_0_1::util::ValuePattern;
+        use nom_supreme::{parse_from_str,ParserExt};
 
         fn any_segment(input: &str) -> Res<&str, SegmentPattern> {
             tag("*")(input).map(|(next, _)| (next, SegmentPattern::Any))
@@ -994,6 +1111,833 @@ pub mod pattern {
             }
         }
     }
+
+    fn skewer<T>(i: T) -> Res<T, T>
+    where
+        T: InputTakeAtPosition,
+        <T as InputTakeAtPosition>::Item: AsChar,
+    {
+        i.split_at_position1_complete(
+            |item| {
+                let char_item = item.as_char();
+                !(char_item == '-')
+                    && !((char_item.is_alpha() && char_item.is_lowercase())
+                        || char_item.is_dec_digit())
+            },
+            ErrorKind::AlphaNumeric,
+        )
+    }
+
+    fn not_quote<T>(i: T) -> Res<T, T>
+    where
+        T: InputTakeAtPosition,
+        <T as InputTakeAtPosition>::Item: AsChar,
+    {
+        i.split_at_position1_complete(
+            |item| {
+                let char_item = item.as_char();
+                (char_item == '"')
+            },
+            ErrorKind::AlphaNumeric,
+        )
+    }
+
+    fn filename<T>(i: T) -> Res<T, T>
+    where
+        T: InputTakeAtPosition,
+        <T as InputTakeAtPosition>::Item: AsChar,
+    {
+        i.split_at_position1_complete(
+            |item| {
+                let char_item = item.as_char();
+                !(char_item == '-') && !(char_item.is_alpha() || char_item.is_dec_digit())
+            },
+            ErrorKind::AlphaNumeric,
+        )
+    }
+
+    pub struct LabeledPrimitiveTypeDef {
+        pub label: String,
+        pub def: PrimitiveTypeDef,
+    }
+
+    pub struct PrimitiveTypeDef {
+        pub primitive: PrimitiveType,
+        pub format: Option<PayloadFormat>,
+        pub verifier: Option<CallWithConfig>,
+    }
+
+    #[derive(Debug, Clone, strum_macros::Display, strum_macros::EnumString, Eq, PartialEq)]
+    pub enum Format {
+        #[strum(serialize = "json")]
+        Json,
+        #[strum(serialize = "image")]
+        Image,
+    }
+
+    pub enum EntityPattern {
+        Rc(RcPattern),
+        Msg(MsgPattern),
+        Http(HttpPattern),
+    }
+
+    impl<ResourceType, Kind> ValueMatcher<ReqEntity<ResourceType, Kind>> for EntityPattern {
+        fn is_match(&self, entity: &ReqEntity<ResourceType, Kind>) -> Result<(), Error> {
+            match entity {
+                ReqEntity::Rc(found) => {
+                    if let EntityPattern::Rc(pattern) = self {
+                        if pattern.command.matches(&found.command.get_type()) {
+                            Ok(())
+                        } else {
+                            Err("no match".into())
+                        }
+                    } else {
+                        Err(format!(
+                            "Entity pattern mismatch. expected: '{}' found: '{}'",
+                            self.to_string(),
+                            found.to_string()
+                        )
+                        .into())
+                    }
+                }
+                ReqEntity::Msg(found) => {
+                    if let EntityPattern::Msg(pattern) = self {
+                        pattern.is_match(found)
+                    } else {
+                        Err(format!(
+                            "Entity pattern mismatch. expected: '{}' found: '{}'",
+                            self.to_string(),
+                            found.to_string()
+                        )
+                        .into())
+                    }
+                }
+                ReqEntity::Http(found) => {
+                    if let EntityPattern::Http(pattern) = self {
+                        pattern.is_match(found)
+                    } else {
+                        Err(format!(
+                            "Entity pattern mismatch. expected: '{}' found: '{}'",
+                            self.to_string(),
+                            found.to_string()
+                        )
+                        .into())
+                    }
+                }
+            }
+        }
+    }
+
+    impl ToString for EntityPattern {
+        fn to_string(&self) -> String {
+            match self {
+                EntityPattern::Rc(rc) => rc.to_string(),
+                EntityPattern::Msg(msg) => msg.to_string(),
+                EntityPattern::Http(http) => http.to_string(),
+            }
+        }
+    }
+
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub struct RcPattern {
+        pub command: Pattern<RcCommandType>,
+    }
+
+    impl ToString for RcPattern {
+        fn to_string(&self) -> String {
+            format!("Rc<{}>", self.command.to_string())
+        }
+    }
+
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub struct MsgPattern {
+        pub action: ValuePattern<StringMatcher>,
+        pub path_regex: String,
+    }
+
+    impl ToString for MsgPattern {
+        fn to_string(&self) -> String {
+            format!("Msg<{}>{}", self.action.to_string(), self.path_regex)
+        }
+    }
+
+    impl<P> ValueMatcher<Msg<P>> for MsgPattern {
+        fn is_match(&self, found: &Msg<P>) -> Result<(), Error> {
+            self.action.is_match(&found.action)?;
+            let matches = found.path.matches(&self.path_regex);
+            if matches.count() > 0 {
+                Ok(())
+            } else {
+                Err(format!(
+                    "Could not match Msg path: '{}' with: '{}'",
+                    found.path, self.path_regex
+                )
+                .into())
+            }
+        }
+    }
+
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub struct HttpPattern {
+        pub method: ValuePattern<HttpMethod>,
+        pub path_regex: String,
+    }
+
+    impl ToString for HttpPattern {
+        fn to_string(&self) -> String {
+            format!("Http<{}>{}", self.method.to_string(), self.path_regex)
+        }
+    }
+
+    impl<P> ValueMatcher<Http<P>> for HttpPattern {
+        fn is_match(&self, found: &Http<P>) -> Result<(), Error> {
+            self.method.is_match(&found.method)?;
+
+            let matches = found.path.matches(&self.path_regex);
+            if matches.count() > 0 {
+                Ok(())
+            } else {
+                Err(format!(
+                    "Could not match Msg path: '{}' with: '{}'",
+                    found.path, self.path_regex
+                )
+                .into())
+            }
+        }
+    }
+    pub fn primitive(input: &str) -> Res<&str, PrimitiveType> {
+        parse_from_str(alpha1).parse(input)
+    }
+
+    pub fn format(input: &str) -> Res<&str, PayloadFormat> {
+        parse_from_str(alpha1).parse(input)
+    }
+
+    pub fn primitive_def(input: &str) -> Res<&str, PrimitiveTypeDef> {
+        tuple((
+            primitive,
+            opt(preceded(tag("~"), opt(format))),
+            opt(preceded(tag("~"), call_with_config)),
+        ))(input)
+        .map(|(next, (primitive, format, verifier))| {
+            (
+                next,
+                PrimitiveTypeDef {
+                    primitive,
+                    format: match format {
+                        Some(Some(format)) => Some(format),
+                        _ => Option::None,
+                    },
+                    verifier,
+                },
+            )
+        })
+    }
+
+    pub fn consume_primitive_def(input: &str) -> Res<&str, PrimitiveTypeDef> {
+        all_consuming(primitive_def)(input)
+    }
+
+    pub fn call_with_config(input: &str) -> Res<&str, CallWithConfig> {
+        tuple((call, opt(preceded(tag("+"), Address::parse))))(input)
+            .map(|(next, (call, config))| (next, CallWithConfig { call, config }))
+    }
+
+    pub fn rc_command(input: &str) -> Res<&str, RcCommandType> {
+        parse_from_str(alpha1).parse(input)
+    }
+
+    pub fn rc_call_kind(input: &str) -> Res<&str, CallKind> {
+        delimited(tag("Rc<"), rc_command, tag(">"))(input)
+            .map(|(next, rc_command)| (next, CallKind::Rc(rc_command)))
+    }
+
+    pub fn msg_call(input: &str) -> Res<&str, CallKind> {
+        tuple((
+            delimited(tag("Msg<"), alphanumeric1, tag(">")),
+            opt(recognize(path)),
+        ))(input)
+        .map(|(next, (action, path))| {
+            let path = match path {
+                None => "/",
+                Some(path) => path,
+            };
+            (
+                next,
+                CallKind::Msg(MsgCall::new(action.to_string(), path.to_string())),
+            )
+        })
+    }
+
+    pub fn http_call(input: &str) -> Res<&str, CallKind> {
+        tuple((
+            delimited(tag("Http<"), parse_from_str(alphanumeric1), tag(">")),
+            path,
+        ))(input)
+        .map(|(next, (method, path))| {
+            (
+                next,
+                CallKind::Http(HttpCall::new(method, path.to_string())),
+            )
+        })
+    }
+
+    pub fn call_kind(input: &str) -> Res<&str, CallKind> {
+        alt((rc_call_kind, msg_call, http_call))(input)
+    }
+
+    pub fn call(input: &str) -> Res<&str, Call> {
+        tuple((address, preceded(tag("^"), call_kind)))(input)
+            .map(|(next, (address, kind))| (next, Call { address, kind }))
+    }
+
+    pub fn consume_call(input: &str) -> Res<&str, Call> {
+        all_consuming(call)(input)
+    }
+
+    pub fn labeled_primitive_def(input: &str) -> Res<&str, LabeledPrimitiveTypeDef> {
+        tuple((skewer, delimited(tag("<"), primitive_def, tag(">"))))(input).map(
+            |(next, (label, primitive_def))| {
+                let labeled_def = LabeledPrimitiveTypeDef {
+                    label: label.to_string(),
+                    def: primitive_def,
+                };
+                (next, labeled_def)
+            },
+        )
+    }
+
+    #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
+    pub enum Block {
+        Upload(UploadBlock),
+        RequestPattern(PatternBlock),
+        ResponsePattern(PatternBlock),
+        Payload(Payload),
+    }
+
+    #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
+    pub struct UploadBlock {
+        pub name: String,
+    }
+
+    #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
+    pub struct CreateBlock {
+        pub payload: Payload,
+    }
+
+    pub type PatternBlock = ValuePattern<PayloadPattern>;
+
+    pub fn digit_range(input: &str) -> Res<&str, Range> {
+        tuple((digit1, tag("-"), digit1))(input).map(|(next, (min, _, max))| {
+            let min: usize = usize::from_str(min).expect("usize");
+            let max: usize = usize::from_str(max).expect("usize");
+            let range = Range::MinMax { min, max };
+
+            (next, range)
+        })
+    }
+
+    pub fn exact_range(input: &str) -> Res<&str, Range> {
+        digit1(input).map(|(next, exact)| {
+            (
+                next,
+                Range::Exact(
+                    usize::from_str(exact)
+                        .expect("expect to be able to change digit string into usize"),
+                ),
+            )
+        })
+    }
+
+    pub fn range(input: &str) -> Res<&str, Range> {
+        delimited(
+            multispace0,
+            opt(alt((digit_range, exact_range))),
+            multispace0,
+        )(input)
+        .map(|(next, range)| {
+            let range = match range {
+                Some(range) => range,
+                None => Range::Any,
+            };
+            (next, range)
+        })
+    }
+
+    pub fn primitive_data_struct(input: &str) -> Res<&str, PayloadTypePattern> {
+        primitive(input).map(|(next, primitive)| (next, PayloadTypePattern::Primitive(primitive)))
+    }
+
+    pub fn array_data_struct(input: &str) -> Res<&str, PayloadTypePattern> {
+        tuple((primitive, delimited(tag("["), range, tag("]"))))(input).map(
+            |(next, (primitive, range))| {
+                (
+                    next,
+                    PayloadTypePattern::List(ListPattern { primitive, range }),
+                )
+            },
+        )
+    }
+
+    pub fn map_entry_pattern_any(input: &str) -> Res<&str, ValuePattern<MapEntryPattern>> {
+        delimited(multispace0, tag("*"), multispace0)(input)
+            .map(|(next, _)| (next, ValuePattern::Any))
+    }
+
+    pub fn map_entry_pattern(input: &str) -> Res<&str, MapEntryPattern> {
+        tuple((skewer, opt(delimited(tag("<"), payload_pattern, tag(">")))))(input).map(
+            |(next, (key_con, payload_con))| {
+                let payload_con = match payload_con {
+                    None => ValuePattern::Any,
+                    Some(payload_con) => payload_con,
+                };
+
+                let map_entry_con = MapEntryPattern {
+                    key: key_con.to_string(),
+                    payload: payload_con,
+                };
+                (next, map_entry_con)
+            },
+        )
+    }
+
+    pub fn map_entry_patterns(input: &str) -> Res<&str, Vec<MapEntryPattern>> {
+        separated_list0(
+            delimited(multispace0, tag(","), multispace0),
+            map_entry_pattern,
+        )(input)
+    }
+
+    pub fn consume_map_entry_pattern(input: &str) -> Res<&str, MapEntryPattern> {
+        all_consuming(map_entry_pattern)(input)
+    }
+
+    pub fn required_map_entry_pattern(input: &str) -> Res<&str, Vec<MapEntryPattern>> {
+        delimited(tag("["), map_entry_patterns, tag("]"))(input)
+            .map(|(next, params)| (next, params))
+    }
+
+    pub fn allowed_map_entry_pattern(input: &str) -> Res<&str, ValuePattern<PayloadPattern>> {
+        payload_pattern(input).map(|(next, con)| (next, con))
+    }
+
+    //  [ required1<Bin>, required2<Text> ] *<Bin>
+    pub fn map_pattern_params(input: &str) -> Res<&str, MapPattern> {
+        tuple((
+            opt(map_entry_patterns),
+            multispace0,
+            opt(allowed_map_entry_pattern),
+        ))(input)
+        .map(|(next, (required, _, allowed))| {
+            let mut required_map = HashMap::new();
+            match required {
+                Option::Some(required) => {
+                    for require in required {
+                        required_map.insert(require.key, require.payload);
+                    }
+                }
+                Option::None => {}
+            }
+
+            let allowed = match allowed {
+                Some(allowed) => allowed,
+                None => ValuePattern::None,
+            };
+
+            let con = MapPattern::new(required_map, allowed);
+
+            (next, con)
+        })
+    }
+
+    enum MapConParam {
+        Required(Vec<ValuePattern<MapEntryPattern>>),
+        Allowed(ValuePattern<PayloadPattern>),
+    }
+
+    // EXAMPLE:
+    //  Map { [ required1<Bin>, required2<Text> ] *<Bin> }
+    pub fn map_pattern(input: &str) -> Res<&str, MapPattern> {
+        tuple((
+            delimited(multispace0, tag("Map"), multispace0),
+            opt(delimited(
+                tag("{"),
+                delimited(multispace0, map_pattern_params, multispace0),
+                tag("}"),
+            )),
+        ))(input)
+        .map(|(next, (_, entries))| {
+            let mut entries = entries;
+            let con = match entries {
+                None => MapPattern::any(),
+                Some(con) => con,
+            };
+
+            (next, con)
+        })
+    }
+
+    /*
+    fn value_pattern<I,O,E>(input: I) -> IResult<I, ValuePattern<O>, E>
+        where
+            I: InputTake + Clone + Compare<I>+ InputTakeAtPosition, <I as InputTakeAtPosition>::Item: AsChar + Clone,
+            E: ParseError<I>
+
+    {
+        alt((tag("*"),multispace0))(input).map( |(next,tag):(&str,&str)|{
+            let rtn = match tag{
+                "*" => ValuePattern::Any,
+                _ => ValuePattern::None
+            };
+            (next,rtn)
+        })
+    }*/
+
+    pub fn value_pattern<V>(
+        input: &str,
+        parser: fn(&str) -> Res<&str, V>,
+    ) -> Res<&str, ValuePattern<V>> {
+        let result = parser(input);
+        match result {
+            Ok((next, v)) => {
+                return Ok((next, ValuePattern::Pattern(v)));
+            }
+            Err(error) => {
+                // do nothing
+            }
+        }
+
+        alt((tag("*"), multispace0))(input).map(|(next, tag)| {
+            let rtn = match tag {
+                "*" => ValuePattern::Any,
+                _ => ValuePattern::None,
+            };
+            (next, rtn)
+        })
+    }
+
+    /*
+    pub fn value_pattern_wrapper<'a,'b,V,F>( mut parser: F ) -> impl FnMut(&'a str) -> Res<&'b str,ValuePattern<V>>
+      where F: 'a+ Parser<&'a str,ValuePattern<V>,VerboseError<&'b str>>
+    {
+        move |input: &str| {
+            parser.parse(input)
+        }
+    }
+
+     */
+
+    /*
+    pub fn value_pattern_wrapper<I:Clone, O, E: ParseError<I>, F>(
+        mut first: F,
+    ) -> impl FnMut(I) -> IResult<I, ValuePattern<O>, E>
+
+        where
+            F: Parser<I, ValuePattern<O>, E>,
+            I: InputTake + Clone + Compare<I>+ InputTakeAtPosition, <I as InputTakeAtPosition>::Item: AsChar + Clone
+    {
+        move |input: I| {
+            //let result1 = value_pattern(input.clone());
+            first.parse(input)//.or(result1)
+        }
+    }
+
+     */
+
+    /*
+    pub fn value_pattern_wrapper<O>(
+        mut parser: F,
+    ) -> impl FnMut(&str) -> Res<&str,ValuePattern<O>>
+        where
+            F: Parser<Res<&str,ValyePattern<O>>>,
+    {
+        move |input: &str| {
+            match parser.parse(input ).or( ) {
+                Ok((i, out)) => {
+                    Ok((i, ValuePattern::Pattern(out)))
+                }
+                Err(e) => {
+                    value_pattern::<O>(input)
+                }
+            }
+        }
+    }
+
+     */
+
+    pub fn value_constrained_map_pattern(input: &str) -> Res<&str, ValuePattern<MapPattern>> {
+        value_pattern(input, map_pattern)
+    }
+
+    pub fn msg_action(input: &str) -> Res<&str, ValuePattern<StringMatcher>> {
+        value_pattern(input, camel_case_to_string)
+    }
+
+    pub fn msg_pattern_scoped(input: &str) -> Res<&str, MsgPattern> {
+        tuple((msg_action, opt(path_regex)))(input).map(|(next, (action, path_regex))| {
+            let path_regex = match path_regex {
+                None => "*".to_string(),
+                Some(path_regex) => path_regex.to_string(),
+            };
+            let rtn = MsgPattern {
+                action,
+                path_regex: path_regex.to_string(),
+            };
+            (next, rtn)
+        })
+    }
+
+    pub fn msg_pattern(input: &str) -> Res<&str, MsgPattern> {
+        tuple((
+            tag("Msg"),
+            delimited(tag("<"), msg_action, tag(">")),
+            opt(path_regex),
+        ))(input)
+        .map(|(next, (_, action, path_regex))| {
+            let path_regex = match path_regex {
+                None => "*".to_string(),
+                Some(path_regex) => path_regex.to_string(),
+            };
+            let rtn = MsgPattern {
+                action,
+                path_regex: path_regex.to_string(),
+            };
+            (next, rtn)
+        })
+    }
+
+    pub fn http_method(input: &str) -> Res<&str, HttpMethod> {
+        parse_from_str(alpha1).parse(input)
+    }
+
+    pub fn http_method_pattern(input: &str) -> Res<&str, ValuePattern<HttpMethod>> {
+        value_pattern(input, http_method)
+    }
+
+    pub fn http_pattern_scoped(input: &str) -> Res<&str, HttpPattern> {
+        tuple((http_method_pattern, opt(path_regex)))(input).map(|(next, (method, path_regex))| {
+            let path_regex = match path_regex {
+                None => "*".to_string(),
+                Some(path_regex) => path_regex.to_string(),
+            };
+            let rtn = HttpPattern {
+                method,
+                path_regex: path_regex.to_string(),
+            };
+            (next, rtn)
+        })
+    }
+
+    pub fn http_pattern(input: &str) -> Res<&str, HttpPattern> {
+        tuple((
+            tag("Http"),
+            delimited(tag("<"), http_method_pattern, tag(">")),
+            opt(path_regex),
+        ))(input)
+        .map(|(next, (_, method, path_regex))| {
+            let path_regex = match path_regex {
+                None => "*".to_string(),
+                Some(path_regex) => path_regex.to_string(),
+            };
+            let rtn = HttpPattern {
+                method,
+                path_regex: path_regex.to_string(),
+            };
+            (next, rtn)
+        })
+    }
+
+    pub fn rc_command_type(input: &str) -> Res<&str, RcCommandType> {
+        parse_from_str(alpha1).parse(input)
+    }
+
+    pub fn rc_pattern_scoped(input: &str) -> Res<&str, RcPattern> {
+        pattern(rc_command_type)(input).map(|(next, command)| (next, RcPattern { command }))
+    }
+
+    pub fn rc_pattern(input: &str) -> Res<&str, RcPattern> {
+        tuple((tag("Rc"), delimited(tag("<"), rc_pattern_scoped, tag(">"))))(input)
+            .map(|(next, (_, pattern))| (next, pattern))
+    }
+
+    pub fn map_pattern_payload_structure(input: &str) -> Res<&str, PayloadTypePattern> {
+        map_pattern(input).map(|(next, con)| (next, PayloadTypePattern::Map(Box::new(con))))
+    }
+
+    pub fn payload_structure(input: &str) -> Res<&str, PayloadTypePattern> {
+        alt((
+            array_data_struct,
+            primitive_data_struct,
+            map_pattern_payload_structure,
+        ))(input)
+    }
+
+    pub fn msg_entity_pattern(input: &str) -> Res<&str, EntityPattern> {
+        msg_pattern(input).map(|(next, pattern)| (next, EntityPattern::Msg(pattern)))
+    }
+    pub fn http_entity_pattern(input: &str) -> Res<&str, EntityPattern> {
+        http_pattern(input).map(|(next, pattern)| (next, EntityPattern::Http(pattern)))
+    }
+
+    pub fn rc_entity_pattern(input: &str) -> Res<&str, EntityPattern> {
+        rc_pattern(input).map(|(next, pattern)| (next, EntityPattern::Rc(pattern)))
+    }
+
+    pub fn entity_pattern(input: &str) -> Res<&str, EntityPattern> {
+        alt((msg_entity_pattern, http_entity_pattern, rc_entity_pattern))(input)
+    }
+
+    pub fn payload_structure_with_validation(input: &str) -> Res<&str, PayloadPattern> {
+        tuple((
+            payload_structure,
+            opt(preceded(tag("~"), opt(format))),
+            opt(preceded(tag("~"), call_with_config)),
+        ))(input)
+        .map(|(next, (data, format, verifier))| {
+            (
+                next,
+                PayloadPattern {
+                    structure: data,
+                    format: match format {
+                        Some(Some(format)) => Some(format),
+                        _ => Option::None,
+                    },
+                    validator: verifier,
+                },
+            )
+        })
+    }
+
+    pub fn consume_payload_structure(input: &str) -> Res<&str, PayloadTypePattern> {
+        all_consuming(payload_structure)(input)
+    }
+
+    pub fn consume_data_struct_def(input: &str) -> Res<&str, PayloadPattern> {
+        all_consuming(payload_structure_with_validation)(input)
+    }
+
+    pub fn payload_pattern_any(input: &str) -> Res<&str, ValuePattern<PayloadPattern>> {
+        tag("*")(input).map(|(next, _)| (next, ValuePattern::Any))
+    }
+
+    pub fn payload_pattern(input: &str) -> Res<&str, ValuePattern<PayloadPattern>> {
+        value_pattern(input, payload_structure_with_validation)
+            .map(|(next, payload_pattern)| (next, payload_pattern))
+    }
+
+    pub fn payload_patterns(input: &str) -> Res<&str, ValuePattern<PayloadPattern>> {
+        alt((tag("*"), recognize(payload_structure_with_validation)))(input).map(|(next, data)| {
+            let data = match data {
+                "*" => ValuePattern::Any,
+                exact => ValuePattern::Pattern(
+                    payload_structure_with_validation(input)
+                        .expect("recognize already passed this...")
+                        .1,
+                ),
+            };
+            (next, data)
+        })
+    }
+
+    pub fn pattern_block_empty(input: &str) -> Res<&str, PatternBlock> {
+        multispace0(input).map(|(next, _)| (input, PatternBlock::None))
+    }
+
+    pub fn pattern_block_any(input: &str) -> Res<&str, PatternBlock> {
+        let (next, _) = delimited(multispace0, tag("*"), multispace0)(input)?;
+
+        Ok((next, PatternBlock::Any))
+    }
+
+    pub fn pattern_block_def(input: &str) -> Res<&str, PatternBlock> {
+        payload_structure_with_validation(input)
+            .map(|(next, pattern)| (next, PatternBlock::Pattern(pattern)))
+    }
+
+    fn insert_block_pattern(input: &str) -> Res<&str, UploadBlock> {
+        delimited(multispace0, filename, multispace0)(input).map(|(next, filename)| {
+            (
+                next,
+                UploadBlock {
+                    name: filename.to_string(),
+                },
+            )
+        })
+    }
+
+    pub fn text_payload_block(input: &str) -> Res<&str, Block> {
+        delimited(
+            tag("+["),
+            tuple((
+                multispace0,
+                delimited(tag("\""), not_quote, tag("\"")),
+                multispace0,
+            )),
+            tag("]"),
+        )(input)
+        .map(|(next, (_, text, _))| {
+            (
+                next,
+                Block::Payload(Payload::Primitive(Primitive::Text(text.to_string()))),
+            )
+        })
+    }
+
+    pub fn upload_pattern_block(input: &str) -> Res<&str, Block> {
+        delimited(
+            tag("^["),
+            tuple((multispace0, filename, multispace0)),
+            tag("]"),
+        )(input)
+        .map(|(next, (_, block, filename))| {
+            (
+                next,
+                Block::Upload(UploadBlock {
+                    name: filename.to_string(),
+                }),
+            )
+        })
+    }
+
+    pub fn request_pattern_block(input: &str) -> Res<&str, Block> {
+        delimited(
+            tag("-["),
+            tuple((
+                multispace0,
+                alt((pattern_block_any, pattern_block_def, pattern_block_empty)),
+                multispace0,
+            )),
+            tag("]"),
+        )(input)
+        .map(|(next, (_, block, _))| (next, Block::RequestPattern(block)))
+    }
+
+    pub fn response_pattern_block(input: &str) -> Res<&str, Block> {
+        delimited(
+            tag("=["),
+            tuple((
+                multispace0,
+                alt((pattern_block_any, pattern_block_def, pattern_block_empty)),
+                multispace0,
+            )),
+            tag("]"),
+        )(input)
+        .map(|(next, (_, block, _))| (next, Block::ResponsePattern(block)))
+    }
+
+    pub fn pipeline_block(input: &str) -> Res<&str, Block> {
+        alt((request_pattern_block, response_pattern_block))(input)
+    }
+
+    pub fn consume_pipeline_block(input: &str) -> Res<&str, Block> {
+        all_consuming(pipeline_block)(input)
+    }
+
+    #[derive(Clone, Eq, PartialEq)]
+    pub struct MapEntryPattern {
+        pub key: String,
+        pub payload: ValuePattern<PayloadPattern>,
+    }
 }
 
 pub mod messaging {
@@ -1139,6 +2083,7 @@ pub mod payload {
     use crate::version::v0_0_1::generic;
     use crate::version::v0_0_1::id::{Address, Kind, PayloadClaim, ResourceType};
     use crate::version::v0_0_1::pattern::TksPattern;
+    use std::str::FromStr;
 
     pub type Primitive = generic::payload::Primitive<Kind>;
     pub type Payload = generic::payload::Payload<Kind>;
@@ -1158,7 +2103,6 @@ pub mod payload {
         Debug,
         Clone,
         strum_macros::Display,
-        strum_macros::EnumString,
         Eq,
         PartialEq,
         Hash,
@@ -1176,6 +2120,26 @@ pub mod payload {
         Stub,
         Status,
         Resource,
+    }
+
+    impl FromStr for PrimitiveType {
+        type Err = Error;
+
+        fn from_str(s: &str) -> Result<Self, Self::Err> {
+            Ok(match s {
+                "Address" => Self::Address,
+                "Text" => Self::Text,
+                "Boolean" => Self::Boolean,
+                "Code" => Self::Code,
+                "Int" => Self::Int,
+                "Meta" => Self::Meta,
+                "Bin" => Self::Bin,
+                "Stub" => Self::Stub,
+                "Status" => Self::Status,
+                "Resource" => Self::Resource,
+                what => return Err(format!("unrecognized PrimitiveType: {}",what).into())
+            })
+        }
     }
 }
 
@@ -1240,13 +2204,12 @@ pub mod config {
 
     use serde::{Deserialize, Serialize};
 
-    use crate::version::v0_0_1::generic;
-    use crate::version::v0_0_1::id::{Address, Kind};
-    use crate::version::v0_0_1::ArtifactRef;
+    use crate::version::latest::generic::resource::ResourceStub;
     use crate::version::v0_0_1::config::bind::BindConfig;
     use crate::version::v0_0_1::config::mechtron::MechtronConfig;
-    use crate::version::latest::generic::resource::ResourceStub;
     use crate::version::v0_0_1::config::subportal::SubPortalConfig;
+    use crate::version::v0_0_1::generic;
+    use crate::version::v0_0_1::id::{Address, Kind};
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub enum PortalKind {
@@ -1273,7 +2236,6 @@ pub mod config {
         pub response_timeout: u64,
     }
 
-
     impl Default for PortalConfig {
         fn default() -> Self {
             Self {
@@ -1285,48 +2247,46 @@ pub mod config {
         }
     }
 
-    #[derive(Debug,Clone,Serialize,Deserialize)]
+    #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct Assign<Kind> {
-       pub config: Config<ResourceConfigBody>,
-       pub stub: ResourceStub<Kind>
+        pub config: Config<ResourceConfigBody>,
+        pub stub: ResourceStub<Kind>,
     }
 
-    #[derive(Debug,Clone,Serialize,Deserialize)]
-    pub struct Config<Body>{
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub struct Config<Body> {
         pub address: Address,
-        pub body: Body
+        pub body: Body,
     }
 
-    #[derive(Debug,Clone,Serialize,Deserialize)]
+    #[derive(Debug, Clone, Serialize, Deserialize)]
     pub enum ConfigBody {
         Bind(BindConfig),
-        Mechtron(MechtronConfig)
+        Mechtron(MechtronConfig),
     }
 
-
-    #[derive(Debug,Clone,Serialize,Deserialize)]
+    #[derive(Debug, Clone, Serialize, Deserialize)]
     pub enum ResourceConfigBody {
         SubPortal(SubPortalConfig),
-        Mechtron(MechtronConfig)
+        Mechtron(MechtronConfig),
     }
 
     pub mod mechtron {
         use crate::version::v0_0_1::id::Address;
-        use sedre::{Serialize,Deserialize};
+        use serde::{Deserialize, Serialize};
 
-        #[derive(Debug,Clone,Serialize,Deserialize)]
+        #[derive(Debug, Clone, Serialize, Deserialize)]
         pub struct MechtronConfig {
             pub wasm: Address,
             pub kind: String,
         }
     }
 
-
-    pub mod subportal{
+    pub mod subportal {
         use crate::version::v0_0_1::id::Address;
-        use sedre::{Serialize,Deserialize};
+        use serde::{Deserialize, Serialize};
 
-        #[derive(Debug,Clone,Serialize,Deserialize)]
+        #[derive(Debug, Clone, Serialize, Deserialize)]
         pub struct SubPortalConfig {
             pub kind: String,
         }
@@ -1336,11 +2296,12 @@ pub mod config {
         use crate::error::Error;
         use crate::version::v0_0_1::entity::EntityType;
         use crate::version::v0_0_1::generic::entity::request::ReqEntity;
+        use crate::version::v0_0_1::pattern::{Block, HttpPattern, MsgPattern, RcPattern};
         use crate::version::v0_0_1::payload::Call;
-        use std::convert::TryInto;
         use crate::version::v0_0_1::payload::{Payload, PayloadPattern};
         use crate::version::v0_0_1::util::ValuePattern;
-        use sedre::{Serialize,Deserialize};
+        use serde::{Deserialize, Serialize};
+        use std::convert::TryInto;
 
         pub struct ProtoBind {
             pub sections: Vec<Section>,
@@ -1390,7 +2351,7 @@ pub mod config {
             }
         }
 
-        #[derive(Debug,Clone,Serialize,Deserialize)]
+        #[derive(Debug, Clone, Serialize, Deserialize)]
         pub struct BindConfig {
             pub msg: Scope<EntityType, Selector<MsgPattern>>,
             pub http: Scope<EntityType, Selector<HttpPattern>>,
@@ -1417,7 +2378,7 @@ pub mod config {
             }
         }
 
-        #[derive(Debug,Clone,Serialize,Deserialize)]
+        #[derive(Debug, Clone, Serialize, Deserialize)]
         pub struct Scope<T, E> {
             pub scope_type: T,
             pub elements: Vec<E>,
@@ -1432,7 +2393,7 @@ pub mod config {
             }
         }
 
-        #[derive(Clone, Serialize,Deserialize,Eq, PartialEq)]
+        #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
         pub struct Pipeline {
             pub segments: Vec<PipelineSegment>,
         }
@@ -1443,7 +2404,7 @@ pub mod config {
             }
         }
 
-        #[derive(Debug,Clone, Serialize,Deserialize,Eq, PartialEq)]
+        #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
         pub struct PipelineStep {
             pub kind: StepKind,
             pub blocks: Vec<Block>,
@@ -1458,20 +2419,6 @@ pub mod config {
             }
         }
 
-        #[derive(Clone,Eq,PartialEq)]
-        pub enum Block {
-            Upload(UploadBlock),
-            RequestPattern(PatternBlock),
-            ResponsePattern(PatternBlock),
-            Payload(Payload),
-        }
-
-
-        #[derive(Debug,Clone,Eq,PartialEq)]
-        pub struct UploadBlock{
-            pub name: String
-        }
-
         /*
         #[derive(Debug,Clone,Eq,PartialEq)]
         pub struct CreateBlock{
@@ -1480,17 +2427,16 @@ pub mod config {
 
          */
 
-
         pub type PatternBlock = ValuePattern<PayloadPattern>;
 
-        #[derive(Debug, Clone, Eq, PartialEq)]
+        #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
         pub enum PipelineStop {
             Internal,
             Call(Call),
             Return,
         }
 
-        #[derive(Debug,Clone,Serialize,Deserialize)]
+        #[derive(Debug, Clone, Serialize, Deserialize)]
         pub struct Selector<P> {
             pub pattern: P,
             pub pipeline: Pipeline,
@@ -1513,13 +2459,13 @@ pub mod config {
             Call,
         }
 
-        #[derive(Debug,Clone, Serialize,Deserialize,Eq, PartialEq)]
+        #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
         pub struct PipelineSegment {
             pub step: PipelineStep,
             pub stop: PipelineStop,
         }
 
-        #[derive(Debug,Clone, Serialize,Deserialize,Eq, PartialEq)]
+        #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
         pub enum StepKind {
             Request,
             Response,
@@ -1539,16 +2485,22 @@ pub mod config {
         }
 
         pub mod parse {
-            use crate::version::v0_0_1::bind::{PipelineSegment, PipelineStep, ProtoBind, Scope, Section, StepKind, PipelineStop, Selector, Pipeline};
+            use crate::version::v0_0_1::config::bind::{
+                Pipeline, PipelineSegment, PipelineStep, PipelineStop, ProtoBind, Scope, Section,
+                Selector, StepKind,
+            };
             use crate::version::v0_0_1::entity::EntityType;
             use crate::version::v0_0_1::parse::Res;
+            use crate::version::v0_0_1::pattern::{
+                call, entity_pattern, http_pattern_scoped, msg_pattern_scoped, pipeline_block,
+                rc_pattern_scoped, EntityPattern, HttpPattern, MsgPattern, RcPattern,
+            };
             use nom::branch::alt;
             use nom::bytes::complete::tag;
             use nom::character::complete::multispace0;
             use nom::combinator::{all_consuming, opt};
             use nom::multi::{many0, many1};
             use nom::sequence::{delimited, tuple};
-            use crate::version::v0_0_1::config::bind::{ProtoBind, Section, Scope, PipelineStep, StepKind, PipelineStop, PipelineSegment, Pipeline, Selector};
 
             pub fn bind(input: &str) -> Res<&str, ProtoBind> {
                 delimited(
@@ -1564,11 +2516,11 @@ pub mod config {
                     )),
                     multispace0,
                 )(input)
-                    .map(|(next, (_, _, sections))| {
-                        let bind = ProtoBind { sections };
+                .map(|(next, (_, _, sections))| {
+                    let bind = ProtoBind { sections };
 
-                        (next, bind)
-                    })
+                    (next, bind)
+                })
             }
 
             pub fn sections(input: &str) -> Res<&str, Vec<Section>> {
@@ -1580,7 +2532,7 @@ pub mod config {
             }
 
             pub fn section(input: &str) -> Res<&str, Section> {
-                alt((msg_section,http_section,rc_section))(input)
+                alt((msg_section, http_section, rc_section))(input)
             }
 
             pub fn msg_section(input: &str) -> Res<&str, Section> {
@@ -1593,9 +2545,9 @@ pub mod config {
                         tag("}"),
                     ),
                 ))(input)
-                    .map(|(next, (_, _, selectors))| {
-                        (next, Section::Msg(Scope::new(EntityType::Msg, selectors)))
-                    })
+                .map(|(next, (_, _, selectors))| {
+                    (next, Section::Msg(Scope::new(EntityType::Msg, selectors)))
+                })
             }
 
             pub fn http_section(input: &str) -> Res<&str, Section> {
@@ -1608,9 +2560,9 @@ pub mod config {
                         tag("}"),
                     ),
                 ))(input)
-                    .map(|(next, (_, _, selectors))| {
-                        (next, Section::Http(Scope::new(EntityType::Http, selectors)))
-                    })
+                .map(|(next, (_, _, selectors))| {
+                    (next, Section::Http(Scope::new(EntityType::Http, selectors)))
+                })
             }
 
             pub fn rc_section(input: &str) -> Res<&str, Section> {
@@ -1623,9 +2575,9 @@ pub mod config {
                         tag("}"),
                     ),
                 ))(input)
-                    .map(|(next, (_, _, selectors))| {
-                        (next, Section::Rc(Scope::new(EntityType::Rc, selectors)))
-                    })
+                .map(|(next, (_, _, selectors))| {
+                    (next, Section::Rc(Scope::new(EntityType::Rc, selectors)))
+                })
             }
 
             pub fn pipeline_step(input: &str) -> Res<&str, PipelineStep> {
@@ -1647,7 +2599,7 @@ pub mod config {
                     delimited(multispace0, opt(tag("*")), multispace0),
                     tag("}}"),
                 )(input)
-                    .map(|(next, _)| (next, PipelineStop::Internal))
+                .map(|(next, _)| (next, PipelineStop::Internal))
             }
 
             pub fn return_pipeline_stop(input: &str) -> Res<&str, PipelineStop> {
@@ -1682,7 +2634,7 @@ pub mod config {
                     pipeline_stop,
                     multispace0,
                 ))(input)
-                    .map(|(next, (_, step, _, stop, _))| (next, PipelineSegment { step, stop }))
+                .map(|(next, (_, step, _, stop, _))| (next, PipelineSegment { step, stop }))
             }
 
             pub fn pipeline(input: &str) -> Res<&str, Pipeline> {
@@ -1710,18 +2662,27 @@ pub mod config {
             }
 
             pub fn entity_selector(input: &str) -> Res<&str, Selector<EntityPattern>> {
-                tuple((entity_pattern, multispace0, pipeline, tag(";")))(input)
-                    .map(|(next, (pattern, _, pipeline, _))| (next, Selector::new(pattern, pipeline)))
+                tuple((entity_pattern, multispace0, pipeline, tag(";")))(input).map(
+                    |(next, (pattern, _, pipeline, _))| (next, Selector::new(pattern, pipeline)),
+                )
             }
 
             pub fn msg_selector(input: &str) -> Res<&str, Selector<MsgPattern>> {
-                tuple((msg_pattern_scoped, multispace0, pipeline, tag(";")))(input)
-                    .map(|(next, (pattern, _, pipeline, _))| (next, Selector::new(pattern, pipeline)))
+                tuple((msg_pattern_scoped, multispace0, pipeline, tag(";")))(input).map(
+                    |(next, (pattern, _, pipeline, _))| (next, Selector::new(pattern, pipeline)),
+                )
             }
 
             pub fn http_selector(input: &str) -> Res<&str, Selector<HttpPattern>> {
-                tuple((http_pattern_scoped, multispace0, pipeline, tag(";")))(input)
-                    .map(|(next, (pattern, _, pipeline, _))| (next, Selector::new(pattern, pipeline)))
+                tuple((http_pattern_scoped, multispace0, pipeline, tag(";")))(input).map(
+                    |(next, (pattern, _, pipeline, _))| (next, Selector::new(pattern, pipeline)),
+                )
+            }
+
+            pub fn rc_selector(input: &str) -> Res<&str, Selector<RcPattern>> {
+                tuple((rc_pattern_scoped, multispace0, pipeline, tag(";")))(input).map(
+                    |(next, (pattern, _, pipeline, _))| (next, Selector::new(pattern, pipeline)),
+                )
             }
 
             pub fn consume_selector(input: &str) -> Res<&str, Selector<EntityPattern>> {
@@ -1733,7 +2694,9 @@ pub mod config {
 
 pub mod entity {
 
-    #[derive(Debug, Clone)]
+    use serde::{Deserialize, Serialize};
+
+    #[derive(Debug, Clone, Serialize, Deserialize)]
     pub enum EntityType {
         Rc,
         Msg,
@@ -2174,7 +3137,6 @@ pub mod generic {
         use crate::version::v0_0_1::generic;
         use crate::version::v0_0_1::generic::resource::Archetype;
         use crate::version::v0_0_1::id::Address;
-        use crate::version::v0_0_1::ArtifactRef;
 
         #[derive(Debug, Clone, Serialize, Deserialize)]
         pub struct Info<KIND> {
@@ -3212,6 +4174,7 @@ pub mod generic {
             use serde::{Deserialize, Serialize};
 
             use crate::error::Error;
+            use crate::version::v0_0_1::artifact::ArtifactRequest;
             use crate::version::v0_0_1::command::Command;
             use crate::version::v0_0_1::fail;
             use crate::version::v0_0_1::frame::{CloseReason, PrimitiveFrame};
@@ -3224,7 +4187,6 @@ pub mod generic {
             use crate::version::v0_0_1::messaging::ExchangeId;
             use crate::version::v0_0_1::resource::{Status, StatusUpdate};
             use crate::version::v0_0_1::util::{unique_id, ConvertFrom};
-            use crate::version::v0_0_1::artifact::ArtifactRequest;
 
             #[derive(Debug, Clone, Serialize, Deserialize)]
             pub struct Request<ReqEntity> {
@@ -3289,37 +4251,25 @@ pub mod generic {
                 Log(Log),
                 Request(Request<ReqEntity>),
                 Response(Response<Payload>),
-                Artifact(ArtifactRequest),  // portal inlet will cache and return artifact
-                Config(ArtifactRequest),    // portal inlet will cache, parse and return artifact config
+                Artifact(ArtifactRequest), // portal inlet will cache and return artifact
+                Config(ArtifactRequest), // portal inlet will cache, parse and return artifact config
                 Status(StatusUpdate),
                 Close(CloseReason),
             }
 
-            impl <ReqEntity, Payload> Frame<ReqEntity, Payload> {
+            impl<ReqEntity, Payload> Frame<ReqEntity, Payload> {
                 pub fn from(&self) -> Option<Address> {
                     match self {
-                        Frame::Log(_) => {
-                            Option::None
-                        }
-                        Frame::Request(request) => {
-                            request.from.clone()
-                        }
+                        Frame::Log(_) => Option::None,
+                        Frame::Request(request) => Option::Some(request.from.clone()),
                         Frame::Response(response) => {
                             // Response will need a from field for it to work within Ports
                             Option::None
                         }
-                        Frame::Artifact(artifact) => {
-                            artifact.from.clone()
-                        }
-                        Frame::Config(config) => {
-                            config.from.clone()
-                        }
-                        Frame::Status(status) => {
-                            status.from.clone()
-                        }
-                        Frame::Close(_) => {
-                            Option::None
-                        }
+                        Frame::Artifact(artifact) => Option::Some(artifact.from.clone()),
+                        Frame::Config(config) => Option::Some(config.from.clone()),
+                        Frame::Status(status) => Option::Some(status.from.clone()),
+                        Frame::Close(_) => Option::None,
                     }
                 }
             }
@@ -3362,10 +4312,10 @@ pub mod generic {
             use serde::{Deserialize, Serialize};
 
             use crate::error::Error;
-            use crate::version::latest::bin::Bin;
-            use crate::version::latest::Artifact;
             use crate::version::v0_0_1::artifact::{Artifact, ArtifactResponse};
+            use crate::version::v0_0_1::bin::Bin;
             use crate::version::v0_0_1::command::CommandEvent;
+            use crate::version::v0_0_1::config::{Assign, Config, ConfigBody};
             use crate::version::v0_0_1::fail;
             use crate::version::v0_0_1::frame::{CloseReason, PrimitiveFrame};
             use crate::version::v0_0_1::generic;
@@ -3379,7 +4329,6 @@ pub mod generic {
             use crate::version::v0_0_1::id::{Address, Kind, ResourceType};
             use crate::version::v0_0_1::messaging::{Exchange, ExchangeId};
             use crate::version::v0_0_1::util::{unique_id, ConvertFrom};
-            use crate::version::v0_0_1::config::{Config, Assign, ConfigBody};
 
             #[derive(Debug, Clone, Serialize, Deserialize)]
             pub struct Request<ReqEntity> {
@@ -3485,28 +4434,15 @@ pub mod generic {
                 Close(CloseReason),
             }
 
-
-            impl <KIND, PAYLOAD, ReqEntity> Frame<KIND, PAYLOAD, ReqEntity> {
+            impl<KIND, PAYLOAD, ReqEntity> Frame<KIND, PAYLOAD, ReqEntity> {
                 pub fn to(&self) -> Option<Address> {
                     match self {
-                        Frame::Assign(assign) => {
-                            Option::Some(assign.stub.address.clone())
-                        }
-                        Frame::Request(request) => {
-                            Option::Some(request.to.clone())
-                        }
-                        Frame::Response(response) => {
-                            Option::Some(response.to.clone())
-                        }
-                        Frame::Artifact(artifact) => {
-                            Option::Some(artifact.to.clone())
-                        }
-                        Frame::Config(config) => {
-                            Option::Some(config.to.clone())
-                        }
-                        Frame::Close(_) => {
-                            Option::None
-                        }
+                        Frame::Assign(assign) => Option::Some(assign.stub.address.clone()),
+                        Frame::Request(request) => Option::Some(request.to.clone()),
+                        Frame::Response(response) => Option::Some(response.to.clone()),
+                        Frame::Artifact(artifact) => Option::Some(artifact.to.clone()),
+                        Frame::Config(config) => Option::Some(config.to.clone()),
+                        Frame::Close(_) => Option::None,
                     }
                 }
             }
@@ -5081,7 +6017,7 @@ pub mod util {
         }
     }
 
-    #[derive(Debug, Eq, PartialEq)]
+    #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
     pub struct StringMatcher {
         pub pattern: String,
     }
@@ -5888,5 +6824,3 @@ pub mod parse {
         recognize(parse_version)(input)
     }
 }
-
-

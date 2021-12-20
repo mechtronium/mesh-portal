@@ -41,6 +41,7 @@ pub mod generic {
         fn try_into(self) -> Result<portal::outlet::Request, Self::Error> {
             Ok(portal::outlet::Request {
                 from: self.from,
+                to: self.to,
                 //entity: ConvertFrom::convert_from(self.entity)?,
                 entity: self.entity,
                 exchange: self.exchange,

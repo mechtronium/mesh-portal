@@ -32,7 +32,6 @@ mod tests {
     use mesh_portal_api_client::{client, InletApi, ResourceCtrl, PortalSkel };
     use mesh_portal_api_server::{MuxCall, Portal, PortalMuxer, Router};
     use mesh_portal_serde::mesh;
-    use mesh_portal_serde::version::latest::config::{Info, PortalKind};
     use mesh_portal_serde::version::latest::entity::request::{Msg, Rc, ReqEntity};
     use mesh_portal_serde::version::latest::entity::response;
     use mesh_portal_serde::version::latest::id::{Address, Kind};
@@ -182,6 +181,7 @@ mod tests {
             Ok(username)
         }
 
+        /*
         async fn info(&self, user: String) -> Result<Info, anyhow::Error> {
             let index = self.atomic.fetch_add(1, Ordering::Relaxed);
             let key = format!("({})", index);
@@ -202,6 +202,7 @@ mod tests {
 
             Ok(info)
         }
+         */
 
         fn logger(&self) -> fn(&str) {
             test_logger

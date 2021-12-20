@@ -145,63 +145,6 @@ pub fn mechtron_address(input: &str) -> Res<&str, Address> {
 }
 
 
-pub fn call_with_config(input: &str) -> Res<&str, CallWithConfig> {
-    tuple( (call, opt(preceded(tag("+"), Address::parse ))) )(input).map( |(next, (call,config)) |{
-
-        (next,
-         CallWithConfig {
-            call,
-            config
-        })
-    } )
-}
-
-pub fn rc_command(input: &str) -> Res<&str, RcCommandType> {
-    parse_from_str(alpha1).parse(input)
-}
-
-pub fn rc_call_kind(input: &str) -> Res<&str, CallKind> {
-     delimited( tag("Rc<"), rc_command, tag(">"))(input).map( |(next,rc_command)| {
-         (next,CallKind::Rc(rc_command))
-     })
-}
-
-pub fn msg_call(input: &str) -> Res<&str, CallKind> {
-    tuple( (delimited( tag("Msg<"), alphanumeric1, tag(">") ),opt(recognize(path))))(input).map( |(next,(action,path))| {
-        let path = match path{
-            None => "/",
-            Some(path) => path
-        };
-        (next,CallKind::Msg(MsgCall::new(action.to_string(), path.to_string())))
-    })
-}
-
-pub fn http_call(input: &str) -> Res<&str, CallKind> {
-    tuple( (delimited( tag("Http<"), parse_from_str(alphanumeric1), tag(">") ),path))(input).map( |(next,(method,path))| {
-        (next,CallKind::Http(HttpCall::new(method, path.to_string())))
-    })
-}
-
-
-pub fn call_kind( input: &str ) -> Res<&str,CallKind> {
-    alt( (rc_call_kind, msg_call, http_call))(input)
-}
-
-
-
-pub fn call(input: &str) -> Res<&str, Call> {
-    tuple( ( mechtron_address, preceded(tag("^"), call_kind )) )(input).map( |(next,(address,kind))| {
-        (next,Call{
-            address,
-            kind
-        })
-    } )
-}
-
-pub fn consume_call(input: &str) -> Res<&str, Call> {
-    all_consuming( call )(input)
-}
-
 fn payload_type_empty(input: &str ) -> Res<&str, PayloadTypeDef> {
     alt((tag("Empty"), multispace0 )) (input).map( |(next,_)| {
         (next,PayloadTypeDef::Empty)

@@ -19,13 +19,11 @@ use std::prelude::rust_2021::TryFrom;
 use std::ops::Deref;
 use std::collections::HashMap;
 use tokio::sync::watch::Receiver;
-use client::{Request,RequestContext};
 use mesh_portal_serde::std_logger;
 use mesh_portal_serde::version::latest::http::{HttpRequest, HttpResponse};
 use mesh_portal_serde::version::latest::portal::{inlet, outlet};
 use mesh_portal_serde::version::latest::resource::Status;
 use mesh_portal_serde::version::latest::messaging::{ExchangeId, Exchange};
-use mesh_portal_serde::version::latest::config::{Info, Config};
 use mesh_portal_serde::version::latest::log::Log;
 use mesh_portal_serde::version::latest::{portal, entity};
 use mesh_portal_serde::version::v0_0_1::util::ConvertFrom;
@@ -39,10 +37,14 @@ use mesh_portal_serde::version::v0_0_1::generic::entity::request::ReqEntity;
 use mesh_portal_serde::version::v0_0_1::generic::payload::Payload;
 
 
-struct ResourceSkel {
+pub struct ResourceSkel {
   portal: PortalSkel,
   stub: ResourceStub,
   config: Config<ResourceConfigBody>
+}
+
+pub trait ResourceCtrlFactory: Sync+Send {
+    fn create(&self, skel: ResourceSkel ) -> Result<Arc<dyn ResourceCtrl>, Error>;
 }
 
 #[async_trait]
@@ -92,19 +94,17 @@ pub struct PortalSkel {
     pub logger: fn(message: &str),
     pub exchanges: Exchanges,
     pub tx: mpsc::Sender<outlet::Frame>,
-    pub ctrl_factory: Box<dyn Fn(ResourceSkel) ->Result<Box<dyn ResourceCtrl>,Error>>,
 }
 
 impl PortalSkel {
-    pub fn status(&self) -> Status {
-        (*self.status.read().expect("expected status read lock")).status.clone()
-    }
 
     pub fn api(&self) -> InletApi {
         InletApi::new( self.config.clone(), self.inlet.clone(), self.exchanges.clone(), std_logger )
     }
 
 }
+
+
 
 
 pub struct Portal {
@@ -115,7 +115,7 @@ impl Portal {
     pub async fn new(
         config: PortalConfig,
         inlet: Box<dyn Inlet>,
-        ctrl_factory: Box<dyn Fn(ResourceSkel) ->Result<Box<dyn ResourceCtrl>,Error>>,
+        ctrl_factory: Box<dyn ResourceCtrlFactory>,
         logger: fn(message: &str)
     ) -> Result<Arc<Portal>, Error> {
 
@@ -128,7 +128,6 @@ impl Portal {
             logger,
             exchanges,
             tx,
-            ctrl_factory
         };
 
         {
@@ -139,11 +138,11 @@ impl Portal {
                     if let Frame::Close(_) = frame {
                         break;
                     } else {
-                        process(&skel, &mut resources, frame).await;
+                        process(&ctrl_factory, &skel, &mut resources, frame).await;
                     }
                 }
 
-                async fn process( skel: &PortalSkel, resources:& mut HashMap<Address,Arc<dyn ResourceCtrl>>, frame: outlet::Frame ) -> Result<(),Error> {
+                async fn process( ctrl_factory: &Box<dyn ResourceCtrlFactory>,skel: &PortalSkel, resources:& mut HashMap<Address,Arc<dyn ResourceCtrl>>, frame: outlet::Frame ) -> Result<(),Error> {
 
                     if let Frame::Assign(assign) = &frame {
                         let resource_skel = ResourceSkel {
@@ -151,8 +150,8 @@ impl Portal {
                             stub: assign.stub.clone(),
                             config: assign.config.clone()
                         };
-                        let resource = (skel.ctrl_factory)(resource_skel)?;
-                        resources.insert(*assign.stub.address, Arc::new(*resource));
+                        let resource = ctrl_factory.create(resource_skel)?;
+                        resources.insert(assign.stub.address.clone(), resource);
                         return Ok(());
                     }
 
@@ -163,8 +162,8 @@ impl Portal {
                         }
                     }
 
-                    let to = frame.to().ok_or("expected frame to have a to".into())?;
-                    let resource = resources.get(&to).ok_or("expected to find resource for address".into())?;
+                    let to = frame.to().ok_or::<Error>(anyhow!("expected frame to have a to"))?;
+                    let resource = resources.get(&to).ok_or(anyhow!("expected to find resource for address"))?;
                     if let Option::Some(response) = resource.outlet_frame(frame).await? {
                         skel.inlet.inlet_frame(inlet::Frame::Response(response));
                     }
@@ -189,7 +188,7 @@ impl Portal {
 #[async_trait]
 impl Outlet for Portal {
     fn receive(&mut self, frame: outlet::Frame) {
-        self.skel.resources.get()
+        self.skel.tx.send( frame );
     }
 }
 
@@ -244,7 +243,6 @@ pub mod client {
     use anyhow::Error;
     use mesh_portal_serde::version::latest::portal::outlet;
     use mesh_portal_serde::version::latest::id::{Address};
-    use mesh_portal_serde::version::latest::config::Info;
     use mesh_portal_serde::version::latest::http::HttpRequest;
 
     /*
@@ -287,7 +285,7 @@ pub mod example {
     use anyhow::Error;
 
 
-    use crate::{InletApi, ResourceCtrl, PortalSkel, Request, inlet};
+    use crate::{InletApi, ResourceCtrl, PortalSkel, inlet};
     use std::collections::HashMap;
     use mesh_portal_serde::version::latest::payload::{Payload, Primitive};
     use mesh_portal_serde::version::latest::entity;

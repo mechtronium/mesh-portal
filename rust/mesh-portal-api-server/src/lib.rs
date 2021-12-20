@@ -17,7 +17,6 @@ use uuid::Uuid;
 use mesh_portal_api::message;
 use mesh_portal_serde::mesh;
 use mesh_portal_serde::version::latest;
-use mesh_portal_serde::version::latest::config::Info;
 use mesh_portal_serde::version::latest::entity::response;
 use mesh_portal_serde::version::latest::fail;
 use mesh_portal_serde::version::latest::frame::CloseReason;
@@ -27,6 +26,7 @@ use mesh_portal_serde::version::latest::messaging::{Exchange, ExchangeId};
 use mesh_portal_serde::version::latest::portal::{inlet, outlet};
 use mesh_portal_serde::version::latest::resource::Status;
 use mesh_portal_serde::version::v0_0_1::util::ConvertFrom;
+use mesh_portal_serde::version::v0_0_1::config::PortalConfig;
 
 #[derive(Clone, Eq, PartialEq, Hash)]
 pub enum PortalStatus {
@@ -67,15 +67,10 @@ enum PortalCall {
 }
 
 pub struct Portal {
-    pub info: Info,
+    config: PortalConfig,
     outlet_tx: mpsc::Sender<outlet::Frame>,
     mux_tx: mpsc::Sender<MuxCall>,
     pub log: fn(log: Log),
-    status_tx: tokio::sync::broadcast::Sender<Status>,
-
-    #[allow(dead_code)]
-    status_rx: tokio::sync::broadcast::Receiver<Status>,
-
     call_tx: mpsc::Sender<PortalCall>,
     status: PortalStatus,
     pub mux_rx: mpsc::Receiver<MuxCall>,
@@ -87,11 +82,12 @@ impl Portal {
     }
 
     pub fn new(
-        info: Info,
         outlet_tx: mpsc::Sender<outlet::Frame>,
         inlet_rx: mpsc::Receiver<inlet::Frame>,
         logger: fn(log: Log),
     ) -> Self {
+        unimplemented!();
+        /*
         let (mux_tx, mux_rx) = tokio::sync::mpsc::channel(1024);
         let (status_tx, status_rx) = tokio::sync::broadcast::channel(8);
         let (call_tx, mut call_rx) = tokio::sync::mpsc::channel(1024);
@@ -118,8 +114,6 @@ impl Portal {
                 HashMap::new();
             let mux_tx = mux_tx.clone();
             let outlet_tx = outlet_tx.clone();
-            let info = info.clone();
-            let status_tx = status_tx.clone();
             tokio::spawn(async move {
                 match outlet_tx.send(outlet::Frame::Assign(info.clone())).await {
                     Result::Ok(_) => {}
@@ -263,24 +257,23 @@ impl Portal {
             });
         }
 
+
         Self {
-            info,
             call_tx,
             outlet_tx,
-            status_tx,
-            status_rx,
             status: PortalStatus::None,
             log: logger,
             mux_tx,
             mux_rx,
         }
+         */
     }
 
     pub async fn send(&self, frame: outlet::Frame) -> Result<(), Error> {
         self.outlet_tx
             .send_timeout(
                 frame,
-                Duration::from_secs(self.info.config.frame_timeout.clone()),
+                Duration::from_secs(self.config.frame_timeout.clone()),
             )
             .await?;
         Ok(())
@@ -298,7 +291,7 @@ impl Portal {
         self.call_tx
             .send_timeout(
                 PortalCall::Exchange(exchange),
-                Duration::from_secs(self.info.config.frame_timeout.clone()),
+                Duration::from_secs(self.config.frame_timeout.clone()),
             )
             .await?;
 
@@ -312,6 +305,8 @@ impl Portal {
     }
 
     pub async fn init(&mut self) -> Result<(), Error> {
+        unimplemented!();
+        /*
         if self.status != PortalStatus::None {
             let message = format!(
                 "{} has already received the init signal.",
@@ -428,16 +423,15 @@ impl Portal {
                 Err(anyhow!(err))
             }
         }
+
+         */
     }
 }
 
 pub enum MuxCall {
     Add(Portal),
     Remove(Address),
-    Select {
-        selector: fn(info: &Info) -> bool,
-        tx: oneshot::Sender<Vec<Info>>,
-    },
+    Select(Address),
     MessageIn(message::Message),
     MessageOut(message::Message),
 }
@@ -462,6 +456,8 @@ impl PortalMuxer {
         mux_rx: mpsc::Receiver<MuxCall>,
         router: Box<dyn Router>,
     ) {
+        unimplemented!()
+        /*
         let mut muxer = Self {
             portals: HashMap::new(),
             router,
@@ -529,7 +525,7 @@ impl PortalMuxer {
                             },
                             None => {}
                         },
-                        MuxCall::Select { selector, tx } => {
+/*                        MuxCall::Select { selector, tx } => {
                             let mut rtn = vec![];
                             for portal in muxer.portals.values() {
                                 if selector(&portal.info) {
@@ -537,6 +533,11 @@ impl PortalMuxer {
                                 }
                             }
                             tx.send(rtn).unwrap_or_default();
+                        }
+
+ */
+                        MuxCall::Select(_) => {
+                            unimplemented!()
                         }
                     }
                     Ok(())
@@ -560,6 +561,8 @@ impl PortalMuxer {
                 }
             }
         });
+
+         */
     }
     fn get_portal(&self, address: &Address) -> Option<&Portal> {
         self.portals.get(address)

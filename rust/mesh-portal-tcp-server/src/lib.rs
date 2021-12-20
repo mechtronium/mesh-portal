@@ -22,7 +22,6 @@ use tokio::sync::{broadcast, mpsc, Mutex, oneshot};
 use tokio::sync::mpsc::error::SendTimeoutError;
 
 use mesh_portal_api_server::{MuxCall, Portal, PortalMuxer, Router};
-use mesh_portal_serde::version::latest::config::Info;
 use mesh_portal_serde::version::latest::frame::CloseReason;
 use mesh_portal_serde::version::latest::log::Log;
 use mesh_portal_serde::version::latest::portal::{inlet, outlet};
@@ -37,7 +36,6 @@ pub enum Event {
     ClientConnected,
     FlavorNegotiation(EventResult<String>),
     Authorization(EventResult<String>),
-    Info(EventResult<Info>),
     Shutdown,
 }
 
@@ -165,6 +163,8 @@ impl PortalTcpServer {
     }
 
     async fn handle( &self, stream: TcpStream ) -> Result<(),Error> {
+        unimplemented!()
+        /*
         let (reader, writer) = stream.into_split();
         let mut reader = PrimitiveFrameReader::new(reader);
         let mut writer = PrimitiveFrameWriter::new(writer);
@@ -211,7 +211,7 @@ impl PortalTcpServer {
                             println!("{}", log.to_string() );
                         }
 
-                        let portal = Portal::new(info.clone(), outlet_tx, inlet_rx, logger );
+                        let portal = Portal::new(outlet_tx, inlet_rx, logger );
 
                         let mut reader = reader;
                         {
@@ -266,6 +266,8 @@ impl PortalTcpServer {
             }
         }
         Ok(())
+
+         */
     }
 }
 
@@ -280,6 +282,5 @@ pub trait PortalServer: Sync+Send {
     async fn auth(&self, reader: &mut PrimitiveFrameReader, writer: &mut PrimitiveFrameWriter) -> Result<String,Error>;
     fn router_factory(&self, mux_tx: tokio::sync::mpsc::Sender<MuxCall> ) -> Box<dyn Router>;
     fn logger(&self) -> fn(message: &str);
-    async fn info(&self, user: String ) -> Result<Info,Error>;
 }
 
