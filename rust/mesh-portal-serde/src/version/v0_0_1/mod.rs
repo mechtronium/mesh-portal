@@ -54,10 +54,12 @@ pub mod id {
     use crate::error::Error;
     use crate::version::v0_0_1::generic;
     use crate::version::v0_0_1::parse::{address, consume_address, Res};
+    use crate::version::v0_0_1::pattern::{SpecificPattern, VersionReq};
+    use crate::version::latest::generic::pattern::Pattern;
 
     pub type ResourceType = String;
     pub type Kind = generic::id::KindParts<ResourceType>;
-    pub type AddressAndKind = generic::id::AddressAndKind<Kind>;
+    pub type AddressAndKind = generic::id::AddressAndKind<ResourceType,Kind>;
     pub type AddressAndType = generic::id::AddressAndType<ResourceType>;
     pub type Meta = HashMap<String, String>;
     pub type PayloadClaim = String;
@@ -175,6 +177,19 @@ pub mod id {
 
         fn from_str(s: &str) -> Result<Self, Self::Err> {
             todo!()
+        }
+    }
+
+    impl TryInto<SpecificPattern> for Specific {
+        type Error = Error;
+
+        fn try_into(self) -> Result<SpecificPattern,Self::Error> {
+            Ok(SpecificPattern{
+                vendor: Pattern::Exact(self.vendor),
+                product: Pattern::Exact(self.product),
+                variant: Pattern::Exact(self.variant),
+                version: VersionReq::from_str( self.version.to_string().as_str() )?
+            })
         }
     }
 
@@ -2957,17 +2972,39 @@ pub mod generic {
 
         use crate::error::Error;
         use crate::version::v0_0_1::generic;
-        use crate::version::v0_0_1::generic::id::parse::specific;
+        use crate::version::v0_0_1::generic::id::parse::{specific, address_and_kind};
         use crate::version::v0_0_1::id::{Address, Specific, Tks};
         use crate::version::v0_0_1::parse::camel_case;
         use crate::version::v0_0_1::pattern::parse::{consume_kind, resource_type};
         use crate::version::v0_0_1::util::Convert;
+        use std::marker::PhantomData;
+        use crate::version::latest::generic::resource::command::create::{Template, KindTemplate};
+        use crate::version::v0_0_1::generic::resource::command::create::{AddressTemplate, AddressSegmentTemplate};
 
         #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
         pub struct KindParts<ResourceType> {
             pub resource_type: ResourceType,
             pub kind: Option<String>,
             pub specific: Option<Specific>,
+        }
+
+        impl<ResourceType> TryInto<KindTemplate> for KindParts<ResourceType> where ResourceType: ToString{
+
+            type Error = Error;
+
+            fn try_into(self) -> Result<KindTemplate, Self::Error> {
+                Ok(KindTemplate {
+                    resource_type: self.resource_type.to_string(),
+                    kind: match self.kind {
+                        None => None,
+                        Some(kind) => Some(kind)
+                    },
+                    specific: match self.specific{
+                        None => None,
+                        Some(specific) => Some(specific.try_into()?)
+                    }
+                })
+            }
         }
 
         impl<ResourceType> ToString for KindParts<ResourceType>
@@ -3080,14 +3117,47 @@ pub mod generic {
         }
 
         #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
-        pub struct AddressAndKind<KIND> {
+        pub struct AddressAndKind<ResourceType,KIND> {
             pub address: Address,
             pub kind: KIND,
+            phantom: PhantomData<ResourceType>
         }
 
-        impl<KIND> AddressAndKind<KIND> {
+        impl<ResourceType,Kind> TryInto<Template> for AddressAndKind<ResourceType,Kind> where Kind: TryInto<KindTemplate,Error=Error>{
+            type Error = Error;
+
+            fn try_into(self) -> Result<Template, Self::Error> {
+                let parent = self.address.parent().ok_or::<Error>("expected address to have a parent".into())?;
+                let child_segment = self.address.last_segment().ok_or::<Error>("expected address to have a last segment".into())?;
+                let address_template = AddressTemplate {
+                    parent,
+                    child_segment_template: AddressSegmentTemplate::Exact(child_segment.to_string())
+                };
+                let kind_template = self.kind.try_into()?;
+                Ok(Template {
+                    address: address_template,
+                    kind: kind_template
+                })
+            }
+        }
+
+        impl<ResourceType,KIND> AddressAndKind<ResourceType,KIND> {
             pub fn new(address: Address, kind: KIND) -> Self {
-                Self { address, kind }
+                Self { address, kind ,phantom: Default::default() }
+            }
+        }
+
+        impl <ResourceType,Kind> FromStr for AddressAndKind<ResourceType,Kind> where ResourceType: FromStr, Kind: FromStr {
+            type Err = Error;
+
+            fn from_str(s: &str) -> Result<Self, Self::Err> {
+                let address_and_kind = match all_consuming(address_and_kind::<ResourceType,Kind>)(s) {
+                    Ok((_,address_and_kind)) => address_and_kind,
+                    Err(err) => {
+                        return Err("could not parse AddressAndKind".into());
+                    }
+                };
+                Ok(address_and_kind)
             }
         }
 
@@ -3104,7 +3174,21 @@ pub mod generic {
             use nom_supreme::{parse_from_str, ParserExt};
 
             use crate::version::v0_0_1::id::{Specific, Version};
-            use crate::version::v0_0_1::parse::{domain_chars, skewer_chars, version_chars, Res};
+            use crate::version::v0_0_1::generic::id::{AddressAndKind};
+            use crate::version::v0_0_1::parse::{domain_chars, skewer_chars, version_chars, Res, address};
+            use crate::version::v0_0_1::pattern::parse::kind;
+            use std::str::FromStr;
+
+            pub fn address_and_kind<ResourceType,Kind>(input: &str) -> Res<&str, AddressAndKind<ResourceType,Kind>> where ResourceType: FromStr, Kind: FromStr {
+                tuple((address,kind::<ResourceType,Kind>))(input).map( |(next,(address,kind))| {
+                    (next,AddressAndKind {
+                        address,
+                        kind,
+                        phantom: Default::default()
+                    })
+                } )
+            }
+
 
             pub fn version(input: &str) -> Res<&str, Version> {
                 parse_from_str(version_chars).parse(input)

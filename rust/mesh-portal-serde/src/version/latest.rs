@@ -20,7 +20,7 @@ pub mod id {
     pub type Kind = id::Kind;
     pub type Version = id::Version;
     pub type Specific = id::Specific;
-    pub type AddressAndKind = generic::id::AddressAndKind<Kind>;
+    pub type AddressAndKind = generic::id::AddressAndKind<ResourceType,Kind>;
     pub type AddressAndType = generic::id::AddressAndType<ResourceType>;
     pub type AddressSegment= id::AddressSegment;
     pub type Meta=id::Meta;
@@ -250,7 +250,7 @@ pub mod generic {
         use crate::version::v0_0_1::generic;
 
 
-        pub type AddressAndKind<KIND> = generic::id::AddressAndKind<KIND>;
+        pub type AddressAndKind<ResourceType,KIND> = generic::id::AddressAndKind<ResourceType,KIND>;
         pub type AddressAndType<RESOURCE_TYPE> = generic::id::AddressAndType<RESOURCE_TYPE>;
         pub type KindParts<RESOURCE_TYPE> = generic::id::KindParts<RESOURCE_TYPE>;
     }
