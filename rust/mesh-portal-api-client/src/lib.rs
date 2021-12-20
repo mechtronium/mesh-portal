@@ -37,10 +37,11 @@ use mesh_portal_serde::version::v0_0_1::generic::entity::request::ReqEntity;
 use mesh_portal_serde::version::v0_0_1::generic::payload::Payload;
 
 
+#[derive(Clone)]
 pub struct ResourceSkel {
-  portal: PortalSkel,
-  stub: ResourceStub,
-  config: Config<ResourceConfigBody>
+  pub portal: PortalSkel,
+  pub stub: ResourceStub,
+  pub config: Config<ResourceConfigBody>
 }
 
 pub trait ResourceCtrlFactory: Sync+Send {

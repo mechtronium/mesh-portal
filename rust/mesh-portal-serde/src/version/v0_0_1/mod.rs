@@ -3044,6 +3044,14 @@ pub mod generic {
                     specific,
                 }
             }
+
+            fn convert<ToResourceType>(self) -> Result<KindParts<ToResourceType>,Error> where ResourceType: TryInto<ToResourceType,Error=Error> {
+                Ok(KindParts {
+                    resource_type: self.resource_type.try_into()?,
+                    kind: self.kind,
+                    specific: self.specific
+                })
+            }
         }
 
         impl<ResourceType> Tks<ResourceType> for KindParts<ResourceType>
@@ -3067,6 +3075,8 @@ pub mod generic {
                     && self.kind == tks.kind_to_string()
                     && self.specific == tks.specific()
             }
+
+
         }
 
         #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
