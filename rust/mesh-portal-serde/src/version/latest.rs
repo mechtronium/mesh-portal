@@ -415,7 +415,7 @@ pub mod generic {
 
             pub type Request<ENTITY> =  outlet::Request<ENTITY>;
             pub type Response<PAYLOAD> =  outlet::Response<PAYLOAD>;
-            pub type Frame<KIND,PAYLOAD,ReqEntity> =  outlet::Frame<KIND,PAYLOAD,ReqEntity>;
+            pub type Frame<PAYLOAD,ReqEntity> =  outlet::Frame<PAYLOAD,ReqEntity>;
         }
     }
 

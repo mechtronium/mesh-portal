@@ -1,6 +1,9 @@
 #[macro_use]
 extern crate anyhow;
 
+#[macro_use]
+extern crate async_trait;
+
 use std::collections::HashMap;
 use std::future::Future;
 use std::prelude::rust_2021::TryInto;
@@ -26,7 +29,13 @@ use mesh_portal_serde::version::latest::messaging::{Exchange, ExchangeId};
 use mesh_portal_serde::version::latest::portal::{inlet, outlet};
 use mesh_portal_serde::version::latest::resource::Status;
 use mesh_portal_serde::version::v0_0_1::util::ConvertFrom;
-use mesh_portal_serde::version::v0_0_1::config::PortalConfig;
+use mesh_portal_serde::version::v0_0_1::config::{PortalConfig, Assign, Config, ConfigBody};
+use mesh_portal_serde::version::v0_0_1::generic::portal::Exchanger;
+use mesh_portal_serde::version::v0_0_1::generic::portal::inlet::{Frame, AssignRequest};
+use mesh_portal_serde::version::v0_0_1::generic::id::KindParts;
+use mesh_portal_serde::version::v0_0_1::generic::entity::request::ReqEntity;
+use mesh_portal_serde::version::v0_0_1::generic::payload::Payload;
+use mesh_portal_serde::version::v0_0_1::artifact::{ArtifactRequest, ArtifactResponse, Artifact};
 
 #[derive(Clone, Eq, PartialEq, Hash)]
 pub enum PortalStatus {
@@ -67,29 +76,27 @@ enum PortalCall {
 }
 
 pub struct Portal {
+    key: u64,
     config: PortalConfig,
+    request_handler: Arc<dyn PortalRequestHandler>,
     outlet_tx: mpsc::Sender<outlet::Frame>,
     mux_tx: mpsc::Sender<MuxCall>,
     pub log: fn(log: Log),
     call_tx: mpsc::Sender<PortalCall>,
-    status: PortalStatus,
     pub mux_rx: mpsc::Receiver<MuxCall>,
 }
 
 impl Portal {
-    pub fn status(&self) -> PortalStatus {
-        self.status.clone()
-    }
 
     pub fn new(
+        key: u64,
+        config: PortalConfig,
+        request_handler: Arc<dyn PortalRequestHandler>,
         outlet_tx: mpsc::Sender<outlet::Frame>,
         inlet_rx: mpsc::Receiver<inlet::Frame>,
         logger: fn(log: Log),
     ) -> Self {
-        unimplemented!();
-        /*
         let (mux_tx, mux_rx) = tokio::sync::mpsc::channel(1024);
-        let (status_tx, status_rx) = tokio::sync::broadcast::channel(8);
         let (call_tx, mut call_rx) = tokio::sync::mpsc::channel(1024);
         {
             let command_tx = call_tx.clone();
@@ -114,17 +121,9 @@ impl Portal {
                 HashMap::new();
             let mux_tx = mux_tx.clone();
             let outlet_tx = outlet_tx.clone();
+            let request_handler = request_handler.clone();
+            let config = config.clone();
             tokio::spawn(async move {
-                match outlet_tx.send(outlet::Frame::Assign(info.clone())).await {
-                    Result::Ok(_) => {}
-                    Result::Err(err) => {
-                        logger(Log::Fatal("FATAL: could not send Frame::Init".to_string()));
-                        mux_tx
-                            .try_send(MuxCall::Remove(info.address.clone()))
-                            .unwrap_or_default();
-                        return;
-                    }
-                }
                 while let Option::Some(command) = call_rx.recv().await {
                     match command {
                         PortalCall::FrameIn(frame) => {
@@ -132,14 +131,12 @@ impl Portal {
                                 inlet::Frame::Log(log) => {
                                     (logger)(log);
                                 }
-                                inlet::Frame::Command(_) => {}
                                 inlet::Frame::Request(request) => {
                                     match &request.exchange {
                                         Exchange::Notification => {
                                             for to in &request.to {
                                                 let request = mesh::Request::from(
                                                     request.clone().into(),
-                                                    info.address.clone(),
                                                     to.clone(),
                                                     Exchange::Notification,
                                                 );
@@ -149,7 +146,7 @@ impl Portal {
                                                             message::Message::Request(request),
                                                         ),
                                                         Duration::from_secs(
-                                                            info.config.frame_timeout.clone(),
+                                                            config.frame_timeout.clone(),
                                                         ),
                                                     )
                                                     .await;
@@ -163,27 +160,7 @@ impl Portal {
                                         }
                                         Exchange::RequestResponse(exchange_id) => {
                                             if request.to.len() != 1 {
-                                                // the response comes FROM the same portal since it cannot get past determining WHO to send it to
-                                                let response = outlet::Response::new(
-                                                    info.address.clone(),
-                                                    info.address.clone(),
-                                                    response::RespEntity::Fail(fail::Fail::Resource(fail::resource::Fail::Messaging(fail::Messaging::RequestReplyExchangesRequireOneAndOnlyOneRecipient))),
-                                                    exchange_id.clone(),
-                                                );
-                                                let result = outlet_tx
-                                                    .send_timeout(
-                                                        outlet::Frame::Response(response),
-                                                        Duration::from_secs(
-                                                            info.config.frame_timeout.clone(),
-                                                        ),
-                                                    )
-                                                    .await;
-                                                if let Result::Err(_err) = result {
-                                                    logger(Log::Fatal(
-                                                        "FATAL: frame timeout error exit_tx"
-                                                            .to_string(),
-                                                    ));
-                                                }
+                                                (logger)(Log::Error("exchange requests cannot have more than one recipient".to_string()))
                                             } else {
                                                 let to = request
                                                     .to
@@ -192,7 +169,6 @@ impl Portal {
                                                     .clone();
                                                 let request = mesh::Request::from(
                                                     request.clone().into(),
-                                                    info.address.clone(),
                                                     to,
                                                     Exchange::RequestResponse(exchange_id.clone()),
                                                 );
@@ -202,7 +178,7 @@ impl Portal {
                                                             message::Message::Request(request),
                                                         ),
                                                         Duration::from_secs(
-                                                            info.config.frame_timeout.clone(),
+                                                            config.frame_timeout.clone(),
                                                         ),
                                                     )
                                                     .await;
@@ -231,8 +207,32 @@ impl Portal {
                                     }
                                 }
                                 inlet::Frame::Status(status) => {
-                                    status_tx.send(status).unwrap_or_default();
                                 }
+                                inlet::Frame::AssignRequest(assign) => {
+                                    let request_handler = request_handler.clone();
+                                    let outlet_tx = outlet_tx.clone();
+                                    tokio::spawn(async move {
+                                        async fn process( assign: Exchanger<AssignRequest>, request_handler: &Arc<dyn PortalRequestHandler>, outlet_tx: &mpsc::Sender<outlet::Frame>) -> Result<(),Error> {
+                                            let id = assign.id;
+                                            let assign = assign.item;
+                                            let assign = request_handler.handle_assign_request(assign).await?;
+                                            let assign = Exchanger {
+                                                id,
+                                                item: assign
+                                            };
+                                            outlet_tx.send(outlet::Frame::Assign(assign)).await?;
+                                            Ok(())
+                                        }
+                                        match process(assign, &request_handler,&outlet_tx).await {
+                                            Ok(_) => {}
+                                            Err(err) => {
+                                            }
+                                        }
+                                    });
+                                }
+                                inlet::Frame::Artifact(_) => {
+                                }
+                                inlet::Frame::Config(_) => {}
                                 inlet::Frame::Close(_) => {}
                             }
                         }
@@ -241,7 +241,7 @@ impl Portal {
                         }
                         PortalCall::FrameOut(frame) => {
                             match outlet_tx
-                                .send_timeout(frame, Duration::from_secs(info.config.frame_timeout))
+                                .send_timeout(frame, Duration::from_secs(config.frame_timeout))
                                 .await
                             {
                                 Ok(_) => {}
@@ -259,14 +259,15 @@ impl Portal {
 
 
         Self {
+            key,
+            config,
+            request_handler,
             call_tx,
             outlet_tx,
-            status: PortalStatus::None,
             log: logger,
             mux_tx,
             mux_rx,
         }
-         */
     }
 
     pub async fn send(&self, frame: outlet::Frame) -> Result<(), Error> {
@@ -304,134 +305,36 @@ impl Portal {
             .unwrap_or(());
     }
 
-    pub async fn init(&mut self) -> Result<(), Error> {
-        unimplemented!();
-        /*
-        if self.status != PortalStatus::None {
-            let message = format!(
-                "{} has already received the init signal.",
-                self.info.kind.to_string()
-            );
-            return Err(anyhow!(message));
-        }
+}
 
-        self.status = PortalStatus::Initializing;
+#[async_trait]
+pub trait PortalRequestHandler : Send+Sync {
+    async fn handle_assign_request( &self, request: AssignRequest ) -> Result<Assign,Error>;
+    async fn handle_artifact_request( &self, request: ArtifactRequest ) -> Result<ArtifactResponse<Artifact>,Error>;
+    async fn handle_config_request( &self,request: ArtifactRequest ) -> Result<ArtifactResponse<Config<ConfigBody>>,Error>;
+}
 
-        self.outlet_tx
-            .try_send(outlet::Frame::Assign(self.info.clone()))?;
-        let mut status_rx = self.status_tx.subscribe();
-        let (tx, rx) = tokio::sync::oneshot::channel();
-        let config = self.info.config.clone();
-        let kind = self.info.kind.clone();
-        tokio::spawn(async move {
-            loop {
-                let _status = if config.init_timeout > 0 {
-                    match tokio::time::timeout(
-                        Duration::from_secs(config.init_timeout.clone()),
-                        status_rx.recv(),
-                    )
-                    .await
-                    {
-                        Ok(Ok(status)) => status,
-                        Ok(Result::Err(err)) => {
-                            tx.send(Result::Err(format!(
-                                "ERROR: when waiting for {} status: 'Ready' message: '{}'",
-                                kind.to_string(),
-                                err.to_string()
-                            )))
-                            .expect("ability to send error");
-                            break;
-                        }
-                        Err(_err) => {
-                            tx.send(Result::Err(
-                                format!(
-                                    "PANIC: {} init timeout after '{}' seconds",
-                                    kind.to_string(),
-                                    config.init_timeout.clone()
-                                )
-                                .into(),
-                            ))
-                            .expect("ability to send error");
-                            break;
-                        }
-                    }
-                } else {
-                    match status_rx.recv().await {
-                        Ok(status) => status,
-                        Err(err) => {
-                            tx.send(Result::Err(format!(
-                                "ERROR: when waiting for {} status: 'Ready' message: '{}'",
-                                kind.to_string(),
-                                err.to_string()
-                            )))
-                            .expect("ability to send error");
-                            break;
-                        }
-                    }
-                };
+pub struct DefaultPortalRequestHandler { }
 
-                match status_rx.recv().await {
-                    Ok(status) => {
-                        match status {
-                            Status::Ready => {
-                                tx.send(Result::Ok(())).expect("ability to send ok");
-                                break;
-                            }
-                            Status::Panic(message) => {
-                                tx.send(Result::Err(
-                                    format!(
-                                        "PANIC: {} panic on init message: '{}'",
-                                        kind.to_string(),
-                                        message
-                                    )
-                                    .into(),
-                                ))
-                                .expect("ability to send error");
-                                break;
-                            }
-                            _ => {
-                                // ignore this status
-                            }
-                        }
-                    }
-                    Err(err) => {
-                        tx.send(Result::Err(
-                            format!(
-                                "ERROR: when waiting for {} status: 'Ready' message: '{}'",
-                                kind.to_string(),
-                                err.to_string()
-                            )
-                            .into(),
-                        ))
-                        .expect("ability to send error");
-                        break;
-                    }
-                }
-            }
-        });
+#[async_trait]
+impl PortalRequestHandler for DefaultPortalRequestHandler {
+    async fn handle_assign_request(&self, request: AssignRequest) -> Result<Assign, Error> {
+        Err(anyhow!("request handler does not assign"))
+    }
 
-        match rx.await {
-            Ok(Ok(_)) => Ok(()),
-            Ok(Err(err)) => {
-                self.status = PortalStatus::Panic(err.clone());
-                self.shutdown();
-                Err(anyhow!(err))
-            }
-            Err(err) => {
-                self.status = PortalStatus::Panic(err.to_string());
-                self.shutdown();
-                Err(anyhow!(err))
-            }
-        }
+    async fn handle_artifact_request(&self, request: ArtifactRequest) -> Result<ArtifactResponse<Artifact>, Error> {
+        Err(anyhow!("request handler does not handle artifacts"))
+    }
 
-         */
+    async fn handle_config_request(&self, request: ArtifactRequest) -> Result<ArtifactResponse<Config<ConfigBody>>, Error> {
+        Err(anyhow!("request handler does not handle configs"))
     }
 }
 
 pub enum MuxCall {
-    Add(Portal),
+    Add{assign:Exchanger<Assign>, portal:Portal},
+    Assign { assign: Exchanger<Assign>, portal: u64 },
     Remove(Address),
-    Select(Address),
     MessageIn(message::Message),
     MessageOut(message::Message),
 }
@@ -444,7 +347,8 @@ pub trait Router: Send + Sync {
 }
 
 pub struct PortalMuxer {
-    portals: HashMap<Address, Portal>,
+    portals: HashMap<u64,Portal>,
+    address_to_portal: HashMap<Address,u64>,
     router: Box<dyn Router>,
     mux_tx: mpsc::Sender<MuxCall>,
     mux_rx: mpsc::Receiver<MuxCall>,
@@ -456,10 +360,9 @@ impl PortalMuxer {
         mux_rx: mpsc::Receiver<MuxCall>,
         router: Box<dyn Router>,
     ) {
-        unimplemented!()
-        /*
         let mut muxer = Self {
             portals: HashMap::new(),
+            address_to_portal: HashMap::new(),
             router,
             mux_tx,
             mux_rx,
@@ -479,66 +382,63 @@ impl PortalMuxer {
 
                 let (call, future_index, _) = select_all(futures).await;
 
-                fn handle(call: MuxCall, muxer: &mut PortalMuxer) -> Result<(), Error> {
+                async fn handle(call: MuxCall, muxer: &mut PortalMuxer) -> Result<(), Error> {
                     match call {
-                        MuxCall::Add(portal) => {
-                            let kind = portal.info.kind.clone();
-                            let address = portal.info.address.clone();
-                            muxer.portals.insert(portal.info.address.clone(), portal);
+                        MuxCall::Add{assign,portal} => {
+                            muxer.address_to_portal.insert(assign.stub.address.clone(), portal.key.clone() );
+                            portal.send( outlet::Frame::Assign(assign.clone())).await?;
+                            muxer.portals.insert(portal.key.clone(), portal);
                             muxer.router.logger(
                                 format!(
-                                    "INFO: {} add to portal muxer at address {}",
-                                    kind.to_string(),
-                                    address.to_string()
+                                    "INFO: added portal to muxer at address {}",
+                                    assign.stub.address.to_string()
                                 )
-                                .as_str(),
+                                    .as_str(),
+                            );
+                        }
+                        MuxCall::Assign { assign, portal } => {
+                            muxer.address_to_portal.insert(assign.stub.address.clone(), portal);
+                            let portal = muxer.portals.get(&portal ).ok_or(anyhow!("expected portal"))?;
+                            portal.send( outlet::Frame::Assign(assign.clone())).await?;
+                            muxer.router.logger(
+                                format!(
+                                    "INFO: added portal to muxer at address {}",
+                                    assign.stub.address.to_string()
+                                )
+                                    .as_str(),
                             );
                         }
                         MuxCall::Remove(address) => {
-                            if let Option::Some(mut portal) = muxer.portals.remove(&address) {
+                            if let Option::Some(mut portal) = muxer.address_to_portal.remove(&address) {
                                 muxer.router.logger(
                                     format!(
-                                        "INFO: {} removed from portal muxer at address {}",
-                                        portal.info.kind.to_string(),
-                                        portal.info.address.to_string()
+                                        "INFO: removed address {} from portal muxer",
+                                        address.to_string()
                                     )
-                                    .as_str(),
+                                        .as_str(),
                                 );
-                                portal.shutdown();
                             }
                         }
                         MuxCall::MessageIn(message) => {
                             muxer.router.route(message);
                         }
-                        MuxCall::MessageOut(message) => match muxer.get_portal(&message.to()) {
-                            Some(portal) => match message {
-                                message::Message::Request(request) => {
-                                    portal.call_tx.try_send(PortalCall::FrameOut(
-                                        outlet::Frame::Request(request.try_into()?),
-                                    ));
-                                }
-                                message::Message::Response(response) => {
-                                    portal.call_tx.try_send(PortalCall::FrameOut(
-                                        outlet::Frame::Response(response.into()),
-                                    ));
-                                }
-                            },
-                            None => {}
-                        },
-/*                        MuxCall::Select { selector, tx } => {
-                            let mut rtn = vec![];
-                            for portal in muxer.portals.values() {
-                                if selector(&portal.info) {
-                                    rtn.push(portal.info.clone());
-                                }
+                        MuxCall::MessageOut(message) => {
+                            match muxer.portals.get(muxer.address_to_portal.get(&message.to()).ok_or(anyhow!("expected address"))?) {
+                                Some(portal) => match message {
+                                    message::Message::Request(request) => {
+                                        portal.call_tx.try_send(PortalCall::FrameOut(
+                                            outlet::Frame::Request(request.try_into()?),
+                                        ));
+                                    }
+                                    message::Message::Response(response) => {
+                                        portal.call_tx.try_send(PortalCall::FrameOut(
+                                            outlet::Frame::Response(response.into()),
+                                        ));
+                                    }
+                                },
+                                None => {}
                             }
-                            tx.send(rtn).unwrap_or_default();
-                        }
-
- */
-                        MuxCall::Select(_) => {
-                            unimplemented!()
-                        }
+                        },
                     }
                     Ok(())
                 }
@@ -556,15 +456,13 @@ impl PortalMuxer {
                         }
                     }
                     Some(call) => {
-                        handle(call, &mut muxer);
+                        handle(call, &mut muxer).await;
                     }
                 }
             }
         });
 
-         */
     }
-    fn get_portal(&self, address: &Address) -> Option<&Portal> {
-        self.portals.get(address)
-    }
+
+
 }

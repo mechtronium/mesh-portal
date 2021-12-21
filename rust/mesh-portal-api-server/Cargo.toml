@@ -11,6 +11,7 @@ description = "A server library for the Resource Mesh Portal API."
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+async-trait = "0.1.48"
 mesh-portal-serde = { path = "../mesh-portal-serde", version= "0.0.1"}
 mesh-portal-api = { path = "../mesh-portal-api", version= "0.0.1"}
 tokio = { version = "1.4.0", features = ["full"] }

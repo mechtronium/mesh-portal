@@ -2225,6 +2225,7 @@ pub mod config {
     use crate::version::v0_0_1::config::subportal::SubPortalConfig;
     use crate::version::v0_0_1::generic;
     use crate::version::v0_0_1::id::{Address, Kind};
+    use crate::version::v0_0_1::resource;
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub enum PortalKind {
@@ -2263,9 +2264,9 @@ pub mod config {
     }
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
-    pub struct Assign<Kind> {
+    pub struct Assign {
         pub config: Config<ResourceConfigBody>,
-        pub stub: ResourceStub<Kind>,
+        pub stub: resource::ResourceStub,
     }
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -2936,9 +2937,9 @@ pub mod portal {
 
         pub type Request = generic::portal::outlet::Request<ReqEntity>;
         pub type Response = generic::portal::outlet::Response<Payload>;
-        pub type Frame = generic::portal::outlet::Frame<Kind, Payload, ReqEntity>;
+        pub type Frame = generic::portal::outlet::Frame<Payload, ReqEntity>;
 
-        impl TryFrom<PrimitiveFrame> for generic::portal::outlet::Frame<Kind, Payload, ReqEntity> {
+        impl TryFrom<PrimitiveFrame> for generic::portal::outlet::Frame<Payload, ReqEntity> {
             type Error = Error;
 
             fn try_from(value: PrimitiveFrame) -> Result<Self, Self::Error> {
@@ -4258,6 +4259,25 @@ pub mod generic {
     }
 
     pub mod portal {
+
+        use serde::{Serialize,Deserialize};
+        use std::ops::Deref;
+
+
+        #[derive(Debug, Clone, Serialize, Deserialize)]
+        pub struct Exchanger<T>{
+            pub id: String,
+            pub item: T
+        }
+
+        impl <T> Deref for Exchanger<T> {
+            type Target = T;
+
+            fn deref(&self) -> &Self::Target {
+                &self.item
+            }
+        }
+
         pub mod inlet {
             use std::convert::TryFrom;
             use std::convert::TryInto;
@@ -4281,6 +4301,8 @@ pub mod generic {
             use crate::version::v0_0_1::messaging::ExchangeId;
             use crate::version::v0_0_1::resource::{Status, StatusUpdate};
             use crate::version::v0_0_1::util::{unique_id, ConvertFrom};
+            use crate::version::latest::generic::resource::command::create::KindTemplate;
+            use crate::version::v0_0_1::generic::portal::Exchanger;
 
             #[derive(Debug, Clone, Serialize, Deserialize)]
             pub struct Request<ReqEntity> {
@@ -4343,10 +4365,11 @@ pub mod generic {
             #[derive(Debug, Clone, Serialize, Deserialize, strum_macros::Display)]
             pub enum Frame<ReqEntity, Payload> {
                 Log(Log),
+                AssignRequest(Exchanger<AssignRequest>),
                 Request(Request<ReqEntity>),
                 Response(Response<Payload>),
-                Artifact(ArtifactRequest), // portal inlet will cache and return artifact
-                Config(ArtifactRequest), // portal inlet will cache, parse and return artifact config
+                Artifact(Exchanger<ArtifactRequest>), // portal inlet will cache and return artifact
+                Config(Exchanger<ArtifactRequest>), // portal inlet will cache, parse and return artifact config
                 Status(StatusUpdate),
                 Close(CloseReason),
             }
@@ -4364,8 +4387,14 @@ pub mod generic {
                         Frame::Config(config) => Option::Some(config.from.clone()),
                         Frame::Status(status) => Option::Some(status.from.clone()),
                         Frame::Close(_) => Option::None,
+                        Frame::AssignRequest(_) => Option::None
                     }
                 }
+            }
+
+            #[derive(Debug, Clone, Serialize, Deserialize, strum_macros::Display, strum_macros::EnumString)]
+            pub enum AssignRequest {
+               Control
             }
 
             /*
@@ -4418,7 +4447,7 @@ pub mod generic {
             use crate::version::v0_0_1::generic::entity::response;
             use crate::version::v0_0_1::generic::entity::response::RespEntity;
             use crate::version::v0_0_1::generic::payload::Primitive;
-            use crate::version::v0_0_1::generic::portal::inlet;
+            use crate::version::v0_0_1::generic::portal::{inlet, Exchanger};
             use crate::version::v0_0_1::generic::resource::ResourceStub;
             use crate::version::v0_0_1::id::{Address, Kind, ResourceType};
             use crate::version::v0_0_1::messaging::{Exchange, ExchangeId};
@@ -4519,16 +4548,16 @@ pub mod generic {
             }
 
             #[derive(Debug, Clone, Serialize, Deserialize, strum_macros::Display)]
-            pub enum Frame<KIND, PAYLOAD, ReqEntity> {
-                Assign(Assign<KIND>),
+            pub enum Frame<PAYLOAD, ReqEntity> {
+                Assign(Exchanger<Assign>),
                 Request(Request<ReqEntity>),
                 Response(Response<PAYLOAD>),
-                Artifact(ArtifactResponse<Artifact>),
-                Config(ArtifactResponse<Config<ConfigBody>>),
+                Artifact(Exchanger<ArtifactResponse<Artifact>>),
+                Config(Exchanger<ArtifactResponse<Config<ConfigBody>>>),
                 Close(CloseReason),
             }
 
-            impl<KIND, PAYLOAD, ReqEntity> Frame<KIND, PAYLOAD, ReqEntity> {
+            impl<PAYLOAD, ReqEntity> Frame<PAYLOAD, ReqEntity> {
                 pub fn to(&self) -> Option<Address> {
                     match self {
                         Frame::Assign(assign) => Option::Some(assign.stub.address.clone()),
@@ -4566,8 +4595,8 @@ pub mod generic {
             }
              */
 
-            impl<KIND: Serialize, PAYLOAD: Serialize, ReqEntity: Serialize> TryInto<PrimitiveFrame>
-                for Frame<KIND, PAYLOAD, ReqEntity>
+            impl<PAYLOAD: Serialize, ReqEntity: Serialize> TryInto<PrimitiveFrame>
+                for Frame<PAYLOAD, ReqEntity>
             {
                 type Error = Error;
 
