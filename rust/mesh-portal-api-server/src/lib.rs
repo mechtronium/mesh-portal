@@ -36,6 +36,7 @@ use mesh_portal_serde::version::v0_0_1::generic::id::KindParts;
 use mesh_portal_serde::version::v0_0_1::generic::entity::request::ReqEntity;
 use mesh_portal_serde::version::v0_0_1::generic::payload::Payload;
 use mesh_portal_serde::version::v0_0_1::artifact::{ArtifactRequest, ArtifactResponse, Artifact};
+use std::fmt::Debug;
 
 #[derive(Clone, Eq, PartialEq, Hash)]
 pub enum PortalStatus {
@@ -75,6 +76,7 @@ enum PortalCall {
     Exchange(ExchangePair),
 }
 
+#[derive(Debug)]
 pub struct Portal {
     key: u64,
     config: PortalConfig,
@@ -308,16 +310,28 @@ impl Portal {
 }
 
 #[async_trait]
-pub trait PortalRequestHandler : Send+Sync {
+pub trait PortalRequestHandler : Send+Sync+Debug {
+    async fn default_assign( &self ) -> Result<Assign,Error>;
     async fn handle_assign_request( &self, request: AssignRequest ) -> Result<Assign,Error>;
     async fn handle_artifact_request( &self, request: ArtifactRequest ) -> Result<ArtifactResponse<Artifact>,Error>;
     async fn handle_config_request( &self,request: ArtifactRequest ) -> Result<ArtifactResponse<Config<ConfigBody>>,Error>;
 }
 
+#[derive(Debug)]
 pub struct DefaultPortalRequestHandler { }
+
+impl Default for DefaultPortalRequestHandler {
+    fn default() -> Self {
+        Self {}
+    }
+}
 
 #[async_trait]
 impl PortalRequestHandler for DefaultPortalRequestHandler {
+    async fn default_assign(&self) -> Result<Assign, Error> {
+        Err(anyhow!("request handler does not have a default assign"))
+    }
+
     async fn handle_assign_request(&self, request: AssignRequest) -> Result<Assign, Error> {
         Err(anyhow!("request handler does not assign"))
     }
@@ -331,8 +345,9 @@ impl PortalRequestHandler for DefaultPortalRequestHandler {
     }
 }
 
+#[derive(Debug)]
 pub enum MuxCall {
-    Add{assign:Exchanger<Assign>, portal:Portal},
+    Add(Portal),
     Assign { assign: Exchanger<Assign>, portal: u64 },
     Remove(Address),
     MessageIn(message::Message),
@@ -384,17 +399,8 @@ impl PortalMuxer {
 
                 async fn handle(call: MuxCall, muxer: &mut PortalMuxer) -> Result<(), Error> {
                     match call {
-                        MuxCall::Add{assign,portal} => {
-                            muxer.address_to_portal.insert(assign.stub.address.clone(), portal.key.clone() );
-                            portal.send( outlet::Frame::Assign(assign.clone())).await?;
+                        MuxCall::Add(portal) => {
                             muxer.portals.insert(portal.key.clone(), portal);
-                            muxer.router.logger(
-                                format!(
-                                    "INFO: added portal to muxer at address {}",
-                                    assign.stub.address.to_string()
-                                )
-                                    .as_str(),
-                            );
                         }
                         MuxCall::Assign { assign, portal } => {
                             muxer.address_to_portal.insert(assign.stub.address.clone(), portal);

@@ -41,11 +41,13 @@ use mesh_portal_serde::version::v0_0_1::generic::payload::Payload;
 pub struct ResourceSkel {
   pub portal: PortalSkel,
   pub stub: ResourceStub,
-  pub config: Config<ResourceConfigBody>
+  pub config: Config<ResourceConfigBody>,
+  pub logger: fn(message: &str),
 }
 
 pub trait ResourceCtrlFactory: Sync+Send {
-    fn create(&self, skel: ResourceSkel ) -> Result<Arc<dyn ResourceCtrl>, Error>;
+    fn matches(&self,config:Config<ResourceConfigBody>) -> bool;
+    fn create(&self, skel: ResourceSkel) -> Result<Arc<dyn ResourceCtrl>, Error>;
 }
 
 #[async_trait]
@@ -116,7 +118,7 @@ impl Portal {
     pub async fn new(
         config: PortalConfig,
         inlet: Box<dyn Inlet>,
-        ctrl_factory: Box<dyn ResourceCtrlFactory>,
+        ctrl_factory: Arc<dyn ResourceCtrlFactory>,
         logger: fn(message: &str)
     ) -> Result<Arc<Portal>, Error> {
 
@@ -143,13 +145,14 @@ impl Portal {
                     }
                 }
 
-                async fn process( ctrl_factory: &Box<dyn ResourceCtrlFactory>,skel: &PortalSkel, resources:& mut HashMap<Address,Arc<dyn ResourceCtrl>>, frame: outlet::Frame ) -> Result<(),Error> {
+                async fn process( ctrl_factory: &Arc<dyn ResourceCtrlFactory>,skel: &PortalSkel, resources:& mut HashMap<Address,Arc<dyn ResourceCtrl>>, frame: outlet::Frame ) -> Result<(),Error> {
 
                     if let Frame::Assign(assign) = &frame {
                         let resource_skel = ResourceSkel {
                             portal: skel.clone(),
                             stub: assign.stub.clone(),
-                            config: assign.config.clone()
+                            config: assign.config.clone(),
+                            logger: skel.logger,
                         };
                         let resource = ctrl_factory.create(resource_skel)?;
                         resources.insert(assign.stub.address.clone(), resource);

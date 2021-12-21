@@ -8,7 +8,7 @@ extern crate anyhow;
 
 use mesh_portal_tcp_common::{PrimitiveFrameReader, PrimitiveFrameWriter, FrameWriter, FrameReader};
 use anyhow::Error;
-use mesh_portal_api_client::{Portal, ResourceCtrl, PortalSkel, InletApi, Inlet };
+use mesh_portal_api_client::{Portal, ResourceCtrl, PortalSkel, InletApi, Inlet, ResourceCtrlFactory};
 use std::sync::Arc;
 use tokio::net::TcpStream;
 use tokio::sync::mpsc;
@@ -29,9 +29,6 @@ pub struct PortalTcpClient {
 impl PortalTcpClient {
 
     pub async fn new( host: String, client: Box<dyn PortalClient> ) -> Result<Self,Error> {
-        unimplemented!();
-        /*
-
         let stream = TcpStream::connect(host.clone()).await?;
 
         let (reader,writer) = stream.into_split();
@@ -81,45 +78,32 @@ impl PortalTcpClient {
             });
         }
 
-
         let inlet = Box::new(TcpInlet{
           sender: inlet_tx,
            logger: client.logger()
         });
 
-
-        if let outlet::Frame::Assign(assign) = reader.read( ).await?  {
-
-            let portal = Portal::new(info, inlet, client.portal_ctrl_factory(), client.logger()).await?;
-
-
-            {
-                let logger = client.logger();
-                tokio::spawn(async move {
-                    while let Result::Ok(frame) = reader.read().await {
-                        match outlet_tx.try_send( frame ) {
-                            Result::Ok(_) => {}
-                            Result::Err(err) => {
-                                (logger)("FATAL: reader disconnected");
-                                break;
-                            }
+        let portal = Portal::new(Default::default(), inlet, client.resource_ctrl_factory(), client.logger()).await?;
+        {
+            let logger = client.logger();
+            tokio::spawn(async move {
+                while let Result::Ok(frame) = reader.read().await {
+                    match outlet_tx.send( frame ).await {
+                        Result::Ok(_) => {}
+                        Result::Err(err) => {
+                            (logger)("FATAL: reader disconnected");
+                            break;
                         }
                     }
-                });
-            }
-
-
-            return Ok(Self {
-                host,
-                portal
+                }
             });
-        } else {
-            let message = "expected portal info.".to_string();
-            (client.logger())(message.as_str());
-            return Err(anyhow!(message));
         }
 
-         */
+        return Ok(Self {
+            host,
+            portal
+        });
+
     }
 }
 
@@ -127,7 +111,7 @@ impl PortalTcpClient {
 pub trait PortalClient: Send+Sync {
     fn flavor(&self) -> String;
     async fn auth( &self, reader: & mut PrimitiveFrameReader, writer: & mut PrimitiveFrameWriter ) -> Result<(),Error>;
-    fn portal_ctrl_factory(&self)->Box<dyn Fn(PortalSkel)->Result<Box<dyn ResourceCtrl>,Error>>;
+    fn resource_ctrl_factory(&self) ->Arc<dyn ResourceCtrlFactory>;
     fn logger(&self) -> fn(message: &str);
 }
 

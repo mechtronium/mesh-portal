@@ -502,6 +502,7 @@ pub mod pattern {
     use nom_supreme::{parse_from_str, ParserExt};
     use std::collections::HashMap;
     use nom_supreme::parser_ext::FromStrParser;
+    use crate::version::latest::id::Version;
 
     pub type TksPattern = generic::pattern::TksPattern<ResourceType, Kind>;
     pub type KindPattern = generic::pattern::KindPattern<Kind>;
@@ -589,6 +590,7 @@ pub mod pattern {
         Any,       // *
         Recursive, // **
         Exact(ExactSegment),
+        Version(VersionReq),
     }
 
     impl SegmentPattern {
@@ -605,7 +607,23 @@ pub mod pattern {
                 SegmentPattern::Recursive => true,
                 SegmentPattern::Exact(exact) => match exact {
                     ExactSegment::Address(pattern) => *pattern == *segment,
+                    ExactSegment::Version(a) => {
+                        if let AddressSegment::Version(b) = segment {
+                            *a == *b
+                        } else
+                        {
+                            false
+                        }
+                    }
                 },
+                SegmentPattern::Version(req) => {
+                    if let AddressSegment::Version(b) = segment {
+                        req.matches(b)
+                    } else
+                    {
+                        false
+                    }
+                }
             }
         }
 
@@ -614,6 +632,7 @@ pub mod pattern {
                 SegmentPattern::Any => false,
                 SegmentPattern::Recursive => true,
                 SegmentPattern::Exact(_) => false,
+                SegmentPattern::Version(_) => false,
             }
         }
     }
@@ -623,12 +642,20 @@ pub mod pattern {
     #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
     pub enum ExactSegment {
         Address(AddressSegment),
+        Version(Version),
     }
 
     impl ExactSegment {
         pub fn matches(&self, segment: &AddressSegment) -> bool {
             match self {
                 ExactSegment::Address(s) => *s == *segment,
+                ExactSegment::Version(a) => {
+                    if let AddressSegment::Version(b) = segment {
+                        *a == *b
+                    } else {
+                        false
+                    }
+                }
             }
         }
     }
@@ -710,7 +737,7 @@ pub mod pattern {
         use nom::character::complete::{alpha1, digit1};
         use nom::combinator::{all_consuming, opt, recognize};
         use nom::error::{ParseError, VerboseError};
-        use nom::multi::many1;
+        use nom::multi::{many1, many0};
         use nom::sequence::{delimited, terminated, tuple};
         use nom::Parser;
         use nom::{Err, IResult};
@@ -722,9 +749,7 @@ pub mod pattern {
             EmptyPattern, Hop, KindPattern, Pattern, ResourceTypePattern, TksPattern,
         };
         use crate::version::v0_0_1::id::AddressSegment;
-        use crate::version::v0_0_1::parse::{
-            address_segment_chars, camel_case, domain_chars, skewer_chars, version_req_chars, Res,
-        };
+        use crate::version::v0_0_1::parse::{address_segment_chars, camel_case, domain_chars, skewer_chars, version_req_chars, Res, version_address_segment, version_chars};
         use crate::version::v0_0_1::pattern::specific::{
             ProductPattern, VariantPattern, VendorPattern,
         };
@@ -733,6 +758,8 @@ pub mod pattern {
         };
         use crate::version::v0_0_1::util::ValuePattern;
         use nom_supreme::{parse_from_str,ParserExt};
+        use crate::version::latest::generic::pattern::AddressKindPattern;
+        use crate::version::latest::id::Version;
 
         fn any_segment(input: &str) -> Res<&str, SegmentPattern> {
             tag("*")(input).map(|(next, _)| (next, SegmentPattern::Any))
@@ -775,6 +802,21 @@ pub mod pattern {
             })
         }
 
+        fn exact_version_segment(input: &str) -> Res<&str, SegmentPattern> {
+
+            let (next, version): (&str,Version)  = parse_from_str(version_chars).parse(input)?;
+
+            Ok((next, SegmentPattern::Exact(ExactSegment::Version(version))))
+        }
+
+        fn version_req_segment(input: &str) -> Res<&str, SegmentPattern> {
+            delimited( tag("("), version_req, tag(")"))(input).map( |(next,version_req)| {
+                (next, SegmentPattern::Version(version_req) )
+            } )
+        }
+
+
+
         fn space_segment(input: &str) -> Res<&str, SegmentPattern> {
             alt((recursive_segment, any_segment, exact_space_segment))(input)
         }
@@ -786,6 +828,11 @@ pub mod pattern {
         fn file_segment(input: &str) -> Res<&str, SegmentPattern> {
             alt((recursive_segment, any_segment, exact_file_segment))(input)
         }
+
+        fn version_segment(input: &str) -> Res<&str, SegmentPattern> {
+            alt((recursive_segment, any_segment, exact_version_segment, version_req_segment))(input)
+        }
+
 
         pub fn pattern<'r, O, E: ParseError<&'r str>, V>(
             mut value: V,
@@ -1024,6 +1071,44 @@ pub mod pattern {
                 (next, Hop { segment, tks })
             })
         }
+
+        fn version_hop<ResourceType: FromStr, Kind: FromStr>(
+            input: &str,
+        ) -> Res<&str, Hop<ResourceType, Kind>> {
+            tuple((version_segment, opt(tks)))(input).map(|(next, (segment, tks))| {
+                let tks = match tks {
+                    None => TksPattern::any(),
+                    Some(tks) => tks,
+                };
+                (next, Hop { segment, tks })
+            })
+        }
+
+
+        pub fn address_kind_pattern<ResourceType: FromStr, Kind: FromStr>(
+            input: &str,
+        ) -> Res<&str, AddressKindPattern<ResourceType, Kind>> {
+            tuple( (space_hop,many0(base_hop),opt(version_hop),many0(file_hop)))(input).map( |(next, (space_hop, base_hops, version_hop, file_hops) )| {
+                let mut hops = vec![];
+                hops.push(space_hop);
+                for base_hop in base_hops {
+                    hops.push(base_hop);
+                }
+                if let Option::Some(version_hop) = version_hop {
+                    hops.push( version_hop );
+                }
+                for file_hop in file_hops {
+                    hops.push(file_hop);
+                }
+
+                let rtn = AddressKindPattern {
+                    hops
+                };
+
+                (next,rtn)
+            } )
+        }
+
 
         #[cfg(test)]
         pub mod test {
@@ -2222,7 +2307,6 @@ pub mod config {
     use crate::version::latest::generic::resource::ResourceStub;
     use crate::version::v0_0_1::config::bind::BindConfig;
     use crate::version::v0_0_1::config::mechtron::MechtronConfig;
-    use crate::version::v0_0_1::config::subportal::SubPortalConfig;
     use crate::version::v0_0_1::generic;
     use crate::version::v0_0_1::id::{Address, Kind};
     use crate::version::v0_0_1::resource;
@@ -2283,7 +2367,7 @@ pub mod config {
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub enum ResourceConfigBody {
-        SubPortal(SubPortalConfig),
+        Control,
         Mechtron(MechtronConfig),
     }
 
@@ -2294,16 +2378,6 @@ pub mod config {
         #[derive(Debug, Clone, Serialize, Deserialize)]
         pub struct MechtronConfig {
             pub wasm: Address,
-            pub kind: String,
-        }
-    }
-
-    pub mod subportal {
-        use crate::version::v0_0_1::id::Address;
-        use serde::{Deserialize, Serialize};
-
-        #[derive(Debug, Clone, Serialize, Deserialize)]
-        pub struct SubPortalConfig {
             pub kind: String,
         }
     }
@@ -4262,12 +4336,29 @@ pub mod generic {
 
         use serde::{Serialize,Deserialize};
         use std::ops::Deref;
+        use crate::version::v0_0_1::util::unique_id;
 
 
         #[derive(Debug, Clone, Serialize, Deserialize)]
         pub struct Exchanger<T>{
             pub id: String,
             pub item: T
+        }
+
+        impl <T> Exchanger<T> {
+            pub fn new( item: T ) -> Self {
+                Exchanger{
+                    id: unique_id(),
+                    item
+                }
+            }
+
+            pub fn with<X>(self, item: X ) -> Exchanger<X>{
+                Exchanger{
+                    id: self.id,
+                    item
+                }
+            }
         }
 
         impl <T> Deref for Exchanger<T> {
@@ -5566,10 +5657,20 @@ pub mod generic {
         use crate::version::v0_0_1::parse::{address_kind_path, consume_address_kind_path};
         use crate::version::v0_0_1::pattern::{ExactSegment, SegmentPattern, SpecificPattern};
         use crate::version::v0_0_1::util::{ValueMatcher, ValuePattern};
+        use crate::version::v0_0_1::pattern::parse::address_kind_pattern;
 
         #[derive(Debug, Clone, Serialize, Deserialize)]
         pub struct AddressKindPattern<ResourceType, Kind> {
             pub hops: Vec<Hop<ResourceType, Kind>>,
+        }
+
+        impl <ResourceType, Kind>FromStr for AddressKindPattern<ResourceType, Kind> where ResourceType: FromStr, Kind: FromStr {
+            type Err = Error;
+
+            fn from_str(s: &str) -> Result<Self, Self::Err> {
+                let (_,rtn) = all_consuming(address_kind_pattern)(s)?;
+                Ok(rtn)
+            }
         }
 
         impl<ResourceType, Kind> AddressKindPattern<ResourceType, Kind> {
@@ -5598,6 +5699,9 @@ pub mod generic {
                         match exact {
                             ExactSegment::Address(seg) => {
                                 segments.push(seg.clone());
+                            }
+                            ExactSegment::Version(version) => {
+                                segments.push(AddressSegment::Version(version.clone()));
                             }
                         }
                     } else {

@@ -56,7 +56,7 @@ pub mod message {
         use mesh_portal_serde::mesh::generic::{Request, Response};
         use mesh_portal_serde::version::latest::id::Address;
 
-        #[derive(Clone,Serialize,Deserialize)]
+        #[derive(Debug,Clone,Serialize,Deserialize)]
         pub enum Message {
             Request(Request),
             Response(Response)

@@ -29,8 +29,8 @@ mod tests {
     use tokio::sync::oneshot::error::RecvError;
     use tokio::time::Duration;
 
-    use mesh_portal_api_client::{client, InletApi, ResourceCtrl, PortalSkel };
-    use mesh_portal_api_server::{MuxCall, Portal, PortalMuxer, Router};
+    use mesh_portal_api_client::{client, InletApi, ResourceCtrl, PortalSkel, ResourceCtrlFactory, ResourceSkel};
+    use mesh_portal_api_server::{MuxCall, Portal, PortalMuxer, Router, PortalRequestHandler, DefaultPortalRequestHandler};
     use mesh_portal_serde::mesh;
     use mesh_portal_serde::version::latest::entity::request::{Msg, Rc, ReqEntity};
     use mesh_portal_serde::version::latest::entity::response;
@@ -48,6 +48,10 @@ mod tests {
     use mesh_portal_serde::version::v0_0_1::generic::payload::PayloadDelivery;
     use mesh_portal_api::message;
     use mesh_portal_serde::version::latest::generic::payload::RcCommand;
+    use mesh_portal_serde::version::v0_0_1::config::{Config, ResourceConfigBody};
+    use mesh_portal_serde::version::latest::resource::command::select::Select;
+    use mesh_portal_serde::version::latest::pattern::AddressKindPattern;
+    use mesh_portal_serde::version::latest::generic::resource::command::select::{SelectIntoPayload, SelectionKind};
 
     lazy_static! {
     static ref GLOBAL_TX : tokio::sync::broadcast::Sender<GlobalEvent> = {
@@ -211,6 +215,10 @@ mod tests {
         fn router_factory(&self, mux_tx: Sender<MuxCall>) -> Box<dyn Router> {
             Box::new(InYourFaceRouter { mux_tx })
         }
+
+        fn portal_request_handler(&self) -> Arc<dyn PortalRequestHandler> {
+            Arc::new(DefaultPortalRequestHandler::default())
+        }
     }
 
     pub struct InYourFaceRouter {
@@ -330,8 +338,8 @@ mod tests {
         }
 
 
-        fn portal_ctrl_factory(&self)->Box<dyn Fn(PortalSkel)->Result<Box<dyn ResourceCtrl>,Error>> {
-            Box::new(friendly_portal_ctrl_factory)
+        fn resource_ctrl_factory(&self) ->Arc<dyn ResourceCtrlFactory> {
+            Arc::new(FriendlyResourceCtrlFactory{})
         }
 
         fn logger(&self) -> fn(m: &str) {
@@ -342,67 +350,83 @@ mod tests {
         }
     }
 
-    fn friendly_portal_ctrl_factory(skel: PortalSkel) -> Result<Box<dyn ResourceCtrl>,Error> {
-        Ok(Box::new(FriendlyPortalCtrl { skel }))
+    pub struct FriendlyResourceCtrlFactory {}
+
+    impl ResourceCtrlFactory for FriendlyResourceCtrlFactory {
+        fn matches(&self, config: Config<ResourceConfigBody>) -> bool {
+            true
+        }
+
+        fn create(&self, skel: ResourceSkel) -> Result<Arc<dyn ResourceCtrl>, Error> {
+            Ok(Arc::new(FriendlyResourceCtrl{
+                skel
+            }))
+        }
     }
 
-    pub struct FriendlyPortalCtrl {
-        pub skel: PortalSkel
+    pub struct FriendlyResourceCtrl {
+        pub skel: ResourceSkel
     }
 
     #[async_trait]
-    impl ResourceCtrl for FriendlyPortalCtrl {
+    impl ResourceCtrl for FriendlyResourceCtrl {
         async fn init(&mut self) -> Result<(), Error> {
             println!("FriendlyPortalCtrl.init()");
             // wait just a bit to make sure everyone got chance to be in the muxer
             tokio::time::sleep(Duration::from_millis(50)).await;
 
-            /*
             let mut request = inlet::Request::new(ReqEntity::Rc(Rc {
-                command: RcCommand::Select,
-                payload: PayloadDelivery::Payload(Payload::Primitive(Primitive::Text("".to_string())))
-            }));
-            request.to.push(self.skel.info.parent.clone());
+                command: RcCommand::Select(Select{
+                    pattern: AddressKindPattern::from_str("**")?,
+                    properties: Default::default(),
+                    into_payload: SelectIntoPayload::Stubs,
+                    kind: SelectionKind::Initial
+                }),
 
-             */
+                payload: Payload::Empty
+            }),
+            self.skel.stub.address.clone());
+            request.to.push(self.skel.stub.address.parent().expect("expected a parent"));
+
 
 println!("FriendlyPortalCtrl::exchange...");
-            /*
-            match self.skel.api().exchange(request).await {
+            match self.skel.portal.api().exchange(request).await {
                 Ok(response) => match response.entity {
-                    response::RespEntity::Ok(PayloadDelivery::Payload(Payload::List(resources))) => {
+                    response::RespEntity::Ok(Payload::List(resources)) => {
 println!("FriendlyPortalCtrl::Ok");
                         for resource in resources.iter() {
                             if let Primitive::Stub(resource) = resource {
-                                if resource.key != self.skel.info.key {
-                                    (self.skel.logger)(format!(
+                                if resource.address != self.skel.stub.address {
+                                    (self.skel.portal.logger)(format!(
                                         "INFO: found resource: {}",
                                         resource.address.to_string()
                                     ).as_str());
                                     let mut request = inlet::Request::new(ReqEntity::Msg(
                                         Msg {
                                             action: "Greet".to_string(),
-                                            payload: PayloadDelivery::Payload(Payload::Primitive(Primitive::Text(format!(
-                                                "Hello, my name is '{}' and I live at '{}'",
-                                                self.skel.info.owner, self.skel.info.address.to_string()
-                                            )))),
-                                            path: "/".to_string()
-                                        }));
-                                    let result = self.skel.api().exchange(request).await;
+                                            path: "/".to_string(),
+                                            payload: Payload::Primitive(Primitive::Text(format!(
+                                                "Hello, my name is '{}'",
+                                                self.skel.stub.address.to_string()
+                                            ))),
+                                        }),
+                                        self.skel.stub.address.clone()
+                                    );
+                                    let result = self.skel.portal.api().exchange(request).await;
                                     match result {
                                         Ok(response) => {
                                             match &response.entity {
-                                                response::RespEntity::Ok(PayloadDelivery::Payload(Payload::Primitive(Primitive::Text(response)))) => {
+                                                response::RespEntity::Ok(Payload::Primitive(Primitive::Text(response))) => {
                                                     println!("got response: {}", response);
-                                                    GLOBAL_TX.send(GlobalEvent::Finished(self.skel.info.owner.clone()));
+                                                    GLOBAL_TX.send(GlobalEvent::Finished(self.skel.stub.address.to_string()));
                                                 }
                                                 _ => {
-                                                    GLOBAL_TX.send(GlobalEvent::Fail(self.skel.info.owner.clone()));
+                                                    GLOBAL_TX.send(GlobalEvent::Fail(self.skel.stub.address.to_string()));
                                                 }
                                             }
                                         }
                                         Err(_) => {
-                                            GLOBAL_TX.send(GlobalEvent::Fail(self.skel.info.owner.clone()));
+                                            GLOBAL_TX.send(GlobalEvent::Fail(self.skel.stub.address.to_string()));
                                         }
                                     }
                                 }
@@ -413,8 +437,6 @@ println!("FriendlyPortalCtrl::Ok");
                 },
                 Err(_) => {}
             }
-
-             */
 
             Ok(())
         }

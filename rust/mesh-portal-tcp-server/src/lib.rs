@@ -21,7 +21,7 @@ use tokio::runtime::Runtime;
 use tokio::sync::{broadcast, mpsc, Mutex, oneshot};
 use tokio::sync::mpsc::error::SendTimeoutError;
 
-use mesh_portal_api_server::{MuxCall, Portal, PortalMuxer, Router};
+use mesh_portal_api_server::{MuxCall, Portal, PortalMuxer, Router, PortalRequestHandler};
 use mesh_portal_serde::version::latest::frame::CloseReason;
 use mesh_portal_serde::version::latest::log::Log;
 use mesh_portal_serde::version::latest::portal::{inlet, outlet};
@@ -29,6 +29,10 @@ use mesh_portal_serde::version::latest::resource::Status;
 use mesh_portal_serde::version::latest::resource::Code;
 use mesh_portal_tcp_common::{FrameReader, FrameWriter, PrimitiveFrameReader, PrimitiveFrameWriter};
 use mesh_portal_api::message::Message;
+use mesh_portal_serde::version::v0_0_1::config::{PortalConfig, Assign};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::future::Future;
+use mesh_portal_serde::version::v0_0_1::generic::portal::Exchanger;
 
 #[derive(Clone,strum_macros::Display)]
 pub enum Event {
@@ -64,12 +68,15 @@ impl Alive {
 }
 
 pub struct PortalTcpServer {
+    portal_config: PortalConfig,
     port: usize,
     server: Arc<dyn PortalServer>,
     broadcaster_tx: broadcast::Sender<Event>,
     call_tx: mpsc::Sender<Call>,
     mux_tx: mpsc::Sender<MuxCall>,
-    alive: Arc<Mutex<Alive>>
+    alive: Arc<Mutex<Alive>>,
+    key_seq: AtomicU64,
+    request_handler: Arc<dyn PortalRequestHandler>
 }
 
 impl PortalTcpServer {
@@ -85,6 +92,9 @@ impl PortalTcpServer {
         PortalMuxer::new(mux_tx.clone(),mux_rx,router);
 
         let server = Self {
+            request_handler: server.portal_request_handler(),
+            key_seq: AtomicU64::new(0),
+            portal_config: Default::default(),
             port,
             server,
             broadcaster_tx,
@@ -163,8 +173,6 @@ impl PortalTcpServer {
     }
 
     async fn handle( &self, stream: TcpStream ) -> Result<(),Error> {
-        unimplemented!()
-        /*
         let (reader, writer) = stream.into_split();
         let mut reader = PrimitiveFrameReader::new(reader);
         let mut writer = PrimitiveFrameWriter::new(writer);
@@ -198,10 +206,8 @@ impl PortalTcpServer {
                 let mut reader : FrameReader<inlet::Frame> = FrameReader::new(reader );
                 let mut writer : FrameWriter<outlet::Frame>  = FrameWriter::new(writer );
 
-                match self.server.info(user.clone() ).await {
-                    Ok(info) => {
 
-                        self.broadcaster_tx.send( Event::Info(EventResult::Ok(info.clone()))).unwrap_or_default();
+//                        self.broadcaster_tx.send( Event::Info(EventResult::Ok(info.clone()))).unwrap_or_default();
                         tokio::time::sleep(Duration::from_secs(0)).await;
 
                         let (outlet_tx,mut outlet_rx) = mpsc::channel(128);
@@ -211,7 +217,9 @@ impl PortalTcpServer {
                             println!("{}", log.to_string() );
                         }
 
-                        let portal = Portal::new(outlet_tx, inlet_rx, logger );
+                        let key = self.key_seq.fetch_add(1, Ordering::Relaxed );
+
+                        let portal = Portal::new(key,self.portal_config.clone(), self.request_handler.clone(), outlet_tx, inlet_rx, logger );
 
                         let mut reader = reader;
                         {
@@ -241,23 +249,24 @@ impl PortalTcpServer {
                             });
                         }
 
-                        match self.mux_tx.send_timeout(MuxCall::Add(portal),Duration::from_secs(info.config.frame_timeout.clone()), ).await {
+                        match self.mux_tx.send(MuxCall::Add(portal)).await {
                             Err(err) => {
                                 let message = err.to_string();
                                 (self.server.logger())(message.as_str());
-                                self.broadcaster_tx.send( Event::Info(EventResult::Err(message.clone()))).unwrap_or_default();
+//                                self.broadcaster_tx.send( Event::Info(EventResult::Err(message.clone()))).unwrap_or_default();
                             }
-                            _ => {}
+                            Ok(_) => {
+                                match self.request_handler.default_assign().await {
+                                    Ok(assign) => {
+                                        let assign = Exchanger::new(assign);
+                                        self.mux_tx.send(MuxCall::Assign {assign, portal:key }).await?;
+                                    }
+                                    Err(_) => {}
+                                }
+                            }
                         }
-                    }
-                    Err(err) => {
-                        let message = format!("ERROR: portal creation error: {}", err.to_string());
-                        (self.server.logger())(message.as_str());
-                        self.broadcaster_tx.send( Event::Info(EventResult::Err(message.clone()))).unwrap_or_default();
-                        writer.close( CloseReason::Error(message) ).await;
-                    }
+
                 }
-            }
             Err(err) => {
                 let message = format!("ERROR: authorization failed: {}", err.to_string());
                 (self.server.logger())(message.as_str());
@@ -267,7 +276,6 @@ impl PortalTcpServer {
         }
         Ok(())
 
-         */
     }
 }
 
@@ -282,5 +290,6 @@ pub trait PortalServer: Sync+Send {
     async fn auth(&self, reader: &mut PrimitiveFrameReader, writer: &mut PrimitiveFrameWriter) -> Result<String,Error>;
     fn router_factory(&self, mux_tx: tokio::sync::mpsc::Sender<MuxCall> ) -> Box<dyn Router>;
     fn logger(&self) -> fn(message: &str);
+    fn portal_request_handler(&self) -> Arc<dyn PortalRequestHandler>;
 }
 

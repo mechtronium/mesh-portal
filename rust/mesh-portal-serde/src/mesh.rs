@@ -21,7 +21,7 @@ pub mod generic {
     use crate::version::latest::{fail, generic};
     use crate::version::v0_0_1::util::{unique_id, Convert, ConvertFrom};
 
-    #[derive(Clone, Serialize, Deserialize)]
+    #[derive(Debug,Clone, Serialize, Deserialize)]
     pub struct Request {
         pub id: String,
         pub to: Address,
@@ -92,7 +92,7 @@ pub mod generic {
 
      */
 
-    #[derive(Clone, Serialize, Deserialize)]
+    #[derive(Debug,Clone, Serialize, Deserialize)]
     pub struct Response{
         pub id: String,
         pub to: Address,
