@@ -1,3 +1,4 @@
+
 #[macro_use]
 extern crate async_trait;
 
@@ -15,7 +16,7 @@ mod tests {
     use std::io::Write;
     use std::str::FromStr;
     use std::sync::Arc;
-    use std::sync::atomic::{AtomicU32, Ordering};
+    use std::sync::atomic::{AtomicU32, Ordering, AtomicUsize};
     use std::thread;
 
     use anyhow::Error;
@@ -36,22 +37,26 @@ mod tests {
     use mesh_portal_serde::version::latest::entity::response;
     use mesh_portal_serde::version::latest::id::{Address, Kind};
     use mesh_portal_serde::version::latest::messaging::Exchange;
-    use mesh_portal_serde::version::latest::payload::{Payload, Primitive};
+    use mesh_portal_serde::version::latest::payload::{Payload, Primitive, PrimitiveType};
     use mesh_portal_serde::version::latest::portal::{inlet, outlet};
-    use mesh_portal_serde::version::latest::resource::{ResourceStub, Status};
+    use mesh_portal_serde::version::latest::resource::Status;
+    use mesh_portal_serde::version::latest::resource::ResourceStub;
+    use mesh_portal_serde::version::latest::payload::{RcCommand, PrimitiveList};
     use mesh_portal_serde::version::latest::resource::Archetype;
     use mesh_portal_tcp_client::{PortalClient, PortalTcpClient};
     use mesh_portal_tcp_common::{
         FrameReader, FrameWriter, PrimitiveFrameReader, PrimitiveFrameWriter,
     };
     use mesh_portal_tcp_server::{Call, Event, PortalServer, PortalTcpServer};
-    use mesh_portal_serde::version::v0_0_1::generic::payload::PayloadDelivery;
     use mesh_portal_api::message;
-    use mesh_portal_serde::version::latest::generic::payload::RcCommand;
-    use mesh_portal_serde::version::v0_0_1::config::{Config, ResourceConfigBody};
+    use mesh_portal_serde::version::v0_0_1::config::{Config, ResourceConfigBody, Assign, ConfigBody};
     use mesh_portal_serde::version::latest::resource::command::select::Select;
     use mesh_portal_serde::version::latest::pattern::AddressKindPattern;
+    use mesh_portal_serde::version::v0_0_1::artifact::{ArtifactRequest, ArtifactResponse, Artifact};
+    use mesh_portal_serde::version::latest::util::unique_id;
+    use mesh_portal_serde::version::latest::entity::response::RespEntity;
     use mesh_portal_serde::version::latest::generic::resource::command::select::{SelectIntoPayload, SelectionKind};
+    use mesh_portal_serde::version::latest::generic::id::KindParts;
 
     lazy_static! {
     static ref GLOBAL_TX : tokio::sync::broadcast::Sender<GlobalEvent> = {
@@ -155,12 +160,14 @@ mod tests {
 
     pub struct TestPortalServer {
         pub atomic: AtomicU32,
+        pub request_handler: Arc<dyn PortalRequestHandler>
     }
 
     impl TestPortalServer {
         pub fn new() -> Self {
             Self {
                 atomic: AtomicU32::new(0),
+                request_handler: Arc::new(TestPortalRequestHandler::new() )
             }
         }
     }
@@ -221,6 +228,42 @@ mod tests {
         }
     }
 
+    #[derive(Debug)]
+    pub struct TestPortalRequestHandler {
+       seq: AtomicUsize
+    }
+
+    impl TestPortalRequestHandler {
+        pub fn new()-> Self {
+            TestPortalRequestHandler{
+                seq: AtomicUsize::new(0)
+            }
+        }
+    }
+
+    #[async_trait]
+    impl PortalRequestHandler for TestPortalRequestHandler {
+        async fn default_assign(&self) -> Result<Assign, Error> {
+            let index = self.seq.fetch_add(1, Ordering::Relaxed );
+            let address = Address::from_str( format!("space:resource-{}",index).as_str() )?;
+            let config = Config{
+                address: Address::from_str("space:resource:config:/friendly.config")?,
+                body: ResourceConfigBody::Control
+            };
+            let stub = ResourceStub {
+                address,
+                kind: KindParts::from_str("Control")?,
+                properties: Default::default(),
+                status: Status::Unknown
+            };
+            let assign = Assign {
+                config,
+                stub
+            };
+            Ok(assign)
+        }
+    }
+
     pub struct InYourFaceRouter {
         mux_tx: Sender<MuxCall>,
     }
@@ -228,78 +271,54 @@ mod tests {
         fn route(&self, message: message::Message) {
             let mux_tx = self.mux_tx.clone();
             tokio::spawn(async move {
-                unimplemented!()
-                /*
-                match message {
+               match message.clone() {
                     message::Message::Request(request) => {
-                        match &request.operation {
-                            Operation::Rc(operation) => {
-                                match operation {
-                                    ResourceOperation::Select(selector) => {
-                                        if let Exchange::RequestResponse(exchange_id) =
-                                            &request.kind
-                                        {
-                                            let (tx, rx) = oneshot::channel();
+                        match &request.entity{
+                            ReqEntity::Rc(rc) => {
+                                match &rc.command{
+                                    RcCommand::Select(select) => {
+                                        let (tx,mut rx) = oneshot::channel();
+                                        mux_tx.send(MuxCall::SelectAll(tx)).await;
+                                        match rx.await {
+                                            Ok(stubs) => {
 
-                                            // this is clearly not an implementation of the Selector
-                                            // in this case it will always select everything from the Muxer
-                                            fn selector(info: &Info) -> bool {
-                                                true
-                                            }
-                                            let selector = MuxCall::Select { selector, tx };
-                                            mux_tx.try_send(selector);
-                                            let infos = rx.await.expect("expected infos");
-                                            let resources: Vec<ResourceStub> = infos
-                                                .iter()
-                                                .map(|i| ResourceStub {
-                                                    id: Identifier::Address(i.address.clone()),
-                                                    key: i.key.clone(),
-                                                    address: i.address.clone(),
-                                                    archetype: i.archetype.clone(),
-                                                })
-                                                .collect();
-                                            let signal = ResponseEntity::Ok(Entity::Resource(
-                                                ResourceEntity::Stubs(resources),
-                                            ));
-                                            let response =
-                                                mesh::outlet::Response {
+                                                let stubs = stubs.into_iter().map(|stub| Primitive::Stub(stub)).collect();
+
+                                                let list = PrimitiveList{
+                                                    primitive_type: PrimitiveType::Stub,
+                                                    list: stubs
+                                                };
+
+                                                let exchange_id = match request.exchange {
+                                                    Exchange::Notification => {
+                                                        unique_id()
+                                                    }
+                                                    Exchange::RequestResponse(exchange_id) => exchange_id
+                                                };
+
+                                                let response = outlet::Response{
+                                                    id: unique_id(),
                                                     to: request.from.clone(),
                                                     from: request.to.clone(),
-                                                    exchange_id: exchange_id.clone(),
-                                                    signal,
+                                                    entity: RespEntity::Ok(Payload::List(list)),
+                                                    exchange: exchange_id
                                                 };
-                                            mux_tx
-                                                .try_send(MuxCall::MessageOut(message::Message::Response(
-                                                    response,
-                                                )))
-                                                .unwrap_or_default();
+                                            },
+                                            Err(err) => {
+                                                GLOBAL_TX.send( GlobalEvent::Fail(err.to_string()));
+                                            }
                                         }
                                     }
-                                    _ => match &request.kind {
-                                        Exchange::RequestResponse(exchange_id) => {
-                                            let response = mesh::outlet::Response {
-                                                to: request.from.clone(),
-                                                from: request.to.clone(),
-                                                exchange_id: exchange_id.clone(),
-                                                signal: ResponseEntity::Error("this is a primitive router that cannot handle resource commands other than Select".to_string())
-                                            };
-                                            mux_tx.try_send(MuxCall::MessageOut(
-                                                message::Message::Response(response),
-                                            ));
-                                        }
-                                        _ => {}
-                                    },
+                                    _ => {
+                                        GLOBAL_TX.send( GlobalEvent::Fail("Primitive router cannot handle Rc commands other than Select".into()));
+                                    }
                                 }
                             }
-                            Operation::Msg(_) => {
-                                // since we are not connected to a mesh all inbound messages are just sent back to the outbound
-                                unimplemented!();
-/*                                mux_tx.try_send(MuxCall::MessageOut(message::Message::Request(
-//                                    request.try_into().unwrap(),
-                                )));
 
- */
+                            ReqEntity::Msg(_) => {
+                                mux_tx.send( MuxCall::MessageIn(message.clone()) ).await;
                             }
+                            ReqEntity::Http(_) => {}
                         }
                     }
                     message::Message::Response(response) => {
@@ -308,7 +327,6 @@ mod tests {
                     }
                 }
 
-                 */
             });
         }
     }

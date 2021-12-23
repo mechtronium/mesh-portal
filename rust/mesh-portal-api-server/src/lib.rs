@@ -37,6 +37,8 @@ use mesh_portal_serde::version::v0_0_1::generic::entity::request::ReqEntity;
 use mesh_portal_serde::version::v0_0_1::generic::payload::Payload;
 use mesh_portal_serde::version::v0_0_1::artifact::{ArtifactRequest, ArtifactResponse, Artifact};
 use std::fmt::Debug;
+use mesh_portal_serde::version::latest::pattern::AddressKindPattern;
+use mesh_portal_serde::version::latest::resource::ResourceStub;
 
 #[derive(Clone, Eq, PartialEq, Hash)]
 pub enum PortalStatus {
@@ -311,23 +313,6 @@ impl Portal {
 
 #[async_trait]
 pub trait PortalRequestHandler : Send+Sync+Debug {
-    async fn default_assign( &self ) -> Result<Assign,Error>;
-    async fn handle_assign_request( &self, request: AssignRequest ) -> Result<Assign,Error>;
-    async fn handle_artifact_request( &self, request: ArtifactRequest ) -> Result<ArtifactResponse<Artifact>,Error>;
-    async fn handle_config_request( &self,request: ArtifactRequest ) -> Result<ArtifactResponse<Config<ConfigBody>>,Error>;
-}
-
-#[derive(Debug)]
-pub struct DefaultPortalRequestHandler { }
-
-impl Default for DefaultPortalRequestHandler {
-    fn default() -> Self {
-        Self {}
-    }
-}
-
-#[async_trait]
-impl PortalRequestHandler for DefaultPortalRequestHandler {
     async fn default_assign(&self) -> Result<Assign, Error> {
         Err(anyhow!("request handler does not have a default assign"))
     }
@@ -346,12 +331,27 @@ impl PortalRequestHandler for DefaultPortalRequestHandler {
 }
 
 #[derive(Debug)]
+pub struct DefaultPortalRequestHandler { }
+
+impl Default for DefaultPortalRequestHandler {
+    fn default() -> Self {
+        Self {}
+    }
+}
+
+#[async_trait]
+impl PortalRequestHandler for DefaultPortalRequestHandler {
+
+}
+
+#[derive(Debug)]
 pub enum MuxCall {
     Add(Portal),
     Assign { assign: Exchanger<Assign>, portal: u64 },
     Remove(Address),
     MessageIn(message::Message),
     MessageOut(message::Message),
+    SelectAll(oneshot::Sender<Vec<ResourceStub>>) // for testing only
 }
 
 pub trait Router: Send + Sync {
@@ -364,6 +364,7 @@ pub trait Router: Send + Sync {
 pub struct PortalMuxer {
     portals: HashMap<u64,Portal>,
     address_to_portal: HashMap<Address,u64>,
+    address_to_assign: HashMap<Address,Assign>,
     router: Box<dyn Router>,
     mux_tx: mpsc::Sender<MuxCall>,
     mux_rx: mpsc::Receiver<MuxCall>,
@@ -378,6 +379,7 @@ impl PortalMuxer {
         let mut muxer = Self {
             portals: HashMap::new(),
             address_to_portal: HashMap::new(),
+            address_to_assign: HashMap::new(),
             router,
             mux_tx,
             mux_rx,
@@ -403,6 +405,7 @@ impl PortalMuxer {
                             muxer.portals.insert(portal.key.clone(), portal);
                         }
                         MuxCall::Assign { assign, portal } => {
+                            muxer.address_to_assign.insert(assign.stub.address.clone(), assign.item.clone() );
                             muxer.address_to_portal.insert(assign.stub.address.clone(), portal);
                             let portal = muxer.portals.get(&portal ).ok_or(anyhow!("expected portal"))?;
                             portal.send( outlet::Frame::Assign(assign.clone())).await?;
@@ -415,6 +418,7 @@ impl PortalMuxer {
                             );
                         }
                         MuxCall::Remove(address) => {
+                            muxer.address_to_assign.remove(&address );
                             if let Option::Some(mut portal) = muxer.address_to_portal.remove(&address) {
                                 muxer.router.logger(
                                     format!(
@@ -445,6 +449,13 @@ impl PortalMuxer {
                                 None => {}
                             }
                         },
+                        MuxCall::SelectAll(tx) => {
+                            let mut rtn = vec![];
+                            for (_,assign) in &muxer.address_to_assign {
+                                rtn.push( assign.stub.clone() );
+                            }
+                            tx.send(rtn);
+                        }
                     }
                     Ok(())
                 }
