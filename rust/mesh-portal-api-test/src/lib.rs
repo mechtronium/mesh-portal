@@ -24,7 +24,7 @@ mod tests {
     use tokio::io::AsyncWriteExt;
     use tokio::net::TcpStream;
     use tokio::runtime::{Builder, Runtime};
-    use tokio::sync::{mpsc, oneshot};
+    use tokio::sync::{mpsc, oneshot, broadcast};
     use tokio::sync::broadcast::Receiver;
     use tokio::sync::mpsc::Sender;
     use tokio::sync::oneshot::error::RecvError;
@@ -66,6 +66,7 @@ mod tests {
 
     #[derive(Clone)]
     pub enum GlobalEvent {
+        Progress(String),
         Finished(String),
         Fail(String),
         Shutdown
@@ -93,6 +94,9 @@ mod tests {
                         GlobalEvent::Shutdown => {
                             server.send( Call::Shutdown ).await.unwrap_or_default();
                             return;
+                        }
+                        GlobalEvent::Progress(progress) => {
+                            println!("Progress: {}",progress );
                         }
                     }
                     if finished_count >= 2 {
@@ -224,7 +228,7 @@ mod tests {
         }
 
         fn portal_request_handler(&self) -> Arc<dyn PortalRequestHandler> {
-            Arc::new(DefaultPortalRequestHandler::default())
+            self.request_handler.clone()
         }
     }
 
@@ -244,6 +248,7 @@ mod tests {
     #[async_trait]
     impl PortalRequestHandler for TestPortalRequestHandler {
         async fn default_assign(&self) -> Result<Assign, Error> {
+println!("Calling DEFAUTL ASSIGN");
             let index = self.seq.fetch_add(1, Ordering::Relaxed );
             let address = Address::from_str( format!("space:resource-{}",index).as_str() )?;
             let config = Config{
@@ -336,7 +341,7 @@ mod tests {
 
     impl TestPortalClient {
         pub fn new(user: String) -> Self {
-            Self { user }
+            Self { user}
         }
     }
 
@@ -376,6 +381,8 @@ mod tests {
         }
 
         fn create(&self, skel: ResourceSkel) -> Result<Arc<dyn ResourceCtrl>, Error> {
+            GLOBAL_TX.send(GlobalEvent::Progress("creating FriendlyResourceCtrl".to_string()));
+
             Ok(Arc::new(FriendlyResourceCtrl{
                 skel
             }))

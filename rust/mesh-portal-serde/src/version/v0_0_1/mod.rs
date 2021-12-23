@@ -220,6 +220,7 @@ pub mod id {
     pub enum AddressSegment {
         Space(String),
         Base(String),
+        RootDir,
         Dir(String),
         File(String),
         Version(Version),
@@ -233,6 +234,7 @@ pub mod id {
                 AddressSegment::Dir(_) => "/",
                 AddressSegment::File(_) => "",
                 AddressSegment::Version(_) => ":",
+                AddressSegment::RootDir => "/"
             }
         }
 
@@ -243,6 +245,7 @@ pub mod id {
                 AddressSegment::Dir(_) => true,
                 AddressSegment::File(_) => true,
                 AddressSegment::Version(_) => false,
+                AddressSegment::RootDir => true,
             }
         }
     }
@@ -255,6 +258,7 @@ pub mod id {
                 AddressSegment::Dir(dir) => dir.clone(),
                 AddressSegment::File(file) => file.clone(),
                 AddressSegment::Version(version) => version.to_string(),
+                AddressSegment::RootDir => "".to_string()
             }
         }
     }
@@ -1110,106 +1114,7 @@ pub mod pattern {
         }
 
 
-        #[cfg(test)]
-        pub mod test {
-            use std::str::FromStr;
 
-            use nom::combinator::all_consuming;
-
-            use crate::error::Error;
-            use crate::version::latest::util::ValuePattern;
-            use crate::version::v0_0_1::generic::pattern::{Pattern, TksPattern};
-            use crate::version::v0_0_1::id::AddressSegment;
-            use crate::version::v0_0_1::pattern::parse::{
-                hop, segment, space_hop, specific_pattern, tks,
-            };
-            use crate::version::v0_0_1::pattern::{
-                ExactSegment, Pattern, SegmentPattern, SpecificPattern, VersionReq,
-            };
-
-            #[test]
-            pub fn test_segs() -> Result<(), Error> {
-                assert!(segment("*")? == ("", SegmentPattern::Any));
-                assert!(segment("**")? == ("", SegmentPattern::Recursive));
-                assert!(
-                    segment("hello")?
-                        == (
-                            "",
-                            SegmentPattern::Exact(ExactSegment::Address(AddressSegment::Base(
-                                "hello".to_string()
-                            )))
-                        )
-                );
-                Ok(())
-            }
-
-            #[test]
-            pub fn test_specific() -> Result<(), Error> {
-                let (_, x) = specific_pattern("mysql.org:mysql:innodb:(7.0.1)'")?;
-                println!("specific: '{}'", x.to_string());
-                let (_, x) = specific_pattern("mysql.org:mysql:innodb:(>=7.0.1, <8.0.0)")?;
-                println!("specific: '{}'", x.to_string());
-                let (_, x) = specific_pattern("mysql.org:*:innodb:(>=7.0.1, <8.0.0)")?;
-                println!("specific: '{}'", x.to_string());
-
-                Ok(())
-            }
-
-            #[test]
-            pub fn test_tks() -> Result<(), Error> {
-                let tks_pattern = TksPattern {
-                    resource_type: Pattern::Exact(CamelCase::new("App")),
-                    kind: Pattern::Any,
-                    specific: ValuePattern::Any,
-                };
-
-                assert!(tks("<App>")? == ("", tks_pattern));
-
-                let tks_pattern = TksPattern {
-                    resource_type: Pattern::Exact(CamelCase::new("Database")),
-                    kind: Pattern::Exact(CamelCase::new("Relational")),
-                    specific: ValuePattern::Any,
-                };
-
-                assert!(tks("<Database<Relational>>")? == ("", tks_pattern));
-
-                let tks_pattern = TksPattern {
-                    resource_type: Pattern::Exact(CamelCase::new("Database")),
-                    kind: Pattern::Exact(CamelCase::new("Relational")),
-                    specific: ValuePattern::Pattern(SpecificPattern {
-                        vendor: Pattern::Exact(DomainCase::new("mysql.org")),
-                        product: Pattern::Exact(SkewerCase::new("mysql")),
-                        variant: Pattern::Exact(SkewerCase::new("innodb")),
-                        version: VersionReq::from_str("^7.0.1")?,
-                    }),
-                };
-
-                assert!(
-                    tks("<Database<Relational<mysql.org:mysql:innodb:(^7.0.1)>>>")?
-                        == ("", tks_pattern)
-                );
-
-                Ok(())
-            }
-
-            #[test]
-            pub fn test_hop() -> Result<(), Error> {
-                space_hop("*<Database<Relational<mysql.org:mysql:innodb:(^7.0.1)>>>")?;
-                space_hop("**<Database<Relational<mysql.org:mysql:innodb:(^7.0.1)>>>")?;
-                space_hop("space.org:<Database<Relational<mysql.org:mysql:innodb:(^7.0.1)>>>")?;
-                space_hop(
-                    "space.org:something<Database<Relational<mysql.org:mysql:innodb:(^7.0.1)>>>",
-                )?;
-                space_hop("space.org:no-type")?;
-                space_hop("space.org:no-type:**")?;
-                space_hop("space.org:app:users:*:tenant:**")?;
-                space_hop("space.org:app:users:*:tenant:**<Mechtron>")?;
-                space_hop("space.org:something:**<*<*<mysql.org:mysql:innodb:(^7.0.1)>>>")?;
-                space_hop("space.org:something<*>")?;
-
-                Ok(())
-            }
-        }
     }
 
     fn skewer<T>(i: T) -> Res<T, T>
@@ -6483,9 +6388,9 @@ pub mod parse {
     use nom::branch::alt;
     use nom::bytes::complete::tag;
     use nom::bytes::complete::{is_a, is_not};
-    use nom::character::complete::{alpha0, alphanumeric1, digit1};
+    use nom::character::complete::{alpha0, alphanumeric1, digit1, alpha1};
     use nom::combinator::{all_consuming, not, opt, recognize};
-    use nom::error::{context, ErrorKind, VerboseError};
+    use nom::error::{context, ErrorKind, VerboseError, ParseError};
     use nom::multi::{many0, separated_list1};
     use nom::sequence::{delimited, preceded, terminated, tuple};
     use nom::{AsChar, IResult, InputTakeAtPosition};
@@ -6497,6 +6402,7 @@ pub mod parse {
     use crate::version::v0_0_1::generic::id::parse::version;
     use crate::version::v0_0_1::id::{Address, AddressSegment, RouteSegment, Version};
     use crate::version::v0_0_1::pattern::parse::{delim_kind, kind};
+    use nom::bytes::complete::take;
 
     pub struct Parser {}
 
@@ -6572,7 +6478,7 @@ pub mod parse {
             .map(|(next, tag)| (next, RouteSegment::Tag(tag.to_string())))
     }
 
-    pub fn hub_segment(input: &str) -> Res<&str, RouteSegment> {
+    pub fn route_segment(input: &str) -> Res<&str, RouteSegment> {
         alt((
             tag_route_segment,
             domain_route_segment,
@@ -6586,43 +6492,59 @@ pub mod parse {
     }
 
     pub fn base_address_segment(input: &str) -> Res<&str, AddressSegment> {
-        skewer_chars(input).map(|(next, base)| (next, AddressSegment::Base(base.to_string())))
+        preceded(tag(":"),rec_skewer)(input).map(|(next, base)| (next, AddressSegment::Base(base.to_string())))
     }
+
 
     pub fn filepath_address_segment(input: &str) -> Res<&str, AddressSegment> {
         alt((file_address_segment, dir_address_segment))(input)
     }
     pub fn dir_address_segment(input: &str) -> Res<&str, AddressSegment> {
         terminated(filepath_chars, tag("/"))(input)
-            .map(|(next, name)| (next, AddressSegment::Dir(name.to_string())))
+            .map(|(next, dir)| (next, AddressSegment::Dir(dir.to_string())))
     }
 
+    pub fn root_dir_address_segment(input: &str) -> Res<&str, AddressSegment> {
+        tag(":/")(input).map( |(next,_)| {
+            (next,AddressSegment::RootDir)
+        })
+    }
+
+
     pub fn file_address_segment(input: &str) -> Res<&str, AddressSegment> {
-        file_chars(input).map(|(next, filename)| (next, AddressSegment::File(filename.to_string())))
+        filepath_chars(input).map(|(next, filename)| (next, AddressSegment::File(filename.to_string())))
     }
 
     pub fn version_address_segment(input: &str) -> Res<&str, AddressSegment> {
-        version(input).map(|(next, version)| (next, AddressSegment::Version(version)))
+        preceded( tag(":"),version)(input).map(|(next, version)| (next, AddressSegment::Version(version)))
     }
 
     pub fn address(input: &str) -> Res<&str, Address> {
         tuple((
-            tuple((hub_segment, space_address_segment)),
+            tuple((route_segment, space_address_segment)),
             many0(base_address_segment),
             opt(version_address_segment),
+            opt( root_dir_address_segment ),
             many0(filepath_address_segment),
         ))(input)
-        .map(|(next, ((hub, space), mut bases, version, mut files))| {
+        .map(|(next, ((hub, space), mut bases, version, root, mut files))| {
             let mut segments = vec![];
             segments.push(space);
             segments.append(&mut bases);
             match version {
                 None => {}
                 Some(version) => {
+println!("VERSION: {} ",version.to_string() );
+
                     segments.push(version);
                 }
             }
-            segments.append(&mut files);
+
+            if let Option::Some(root) = root {
+                segments.push(root);
+                segments.append(&mut files);
+            }
+
 
             let address = Address {
                 route: hub,
@@ -6769,7 +6691,7 @@ pub mod parse {
     {
         tuple((
             tuple((
-                hub_segment,
+                route_segment,
                 space_address_kind_segment::<ResourceType, Kind>,
             )),
             many0(base_address_kind_segment::<ResourceType, Kind>),
@@ -6881,21 +6803,24 @@ pub mod parse {
         )
     }
 
+
     pub fn version_chars<T>(i: T) -> Res<T, T>
-    where
-        T: InputTakeAtPosition,
-        <T as InputTakeAtPosition>::Item: AsChar,
+        where
+            T: InputTakeAtPosition,
+            <T as InputTakeAtPosition>::Item: AsChar,
     {
         i.split_at_position1_complete(
             |item| {
                 let char_item = item.as_char();
-                !(char_item == '-')
-                    && !((char_item.is_alpha() && char_item.is_lowercase())
-                        || char_item.is_dec_digit())
+                char_item != '.' &&
+                char_item != '-' &&
+                    !char_item.is_digit(10) &&
+                    !(char_item.is_alpha() && char_item.is_lowercase())
             },
             ErrorKind::AlphaNumeric,
         )
     }
+
 
     pub fn version_req_chars<T>(i: T) -> Res<T, T>
     where
@@ -6917,6 +6842,29 @@ pub mod parse {
         )
     }
 
+
+
+    pub fn lowercase1<T>(i: T) -> Res<T, T>
+        where
+            T: InputTakeAtPosition,
+            <T as InputTakeAtPosition>::Item: AsChar,
+    {
+        i.split_at_position1_complete(
+            |item| {
+                let char_item = item.as_char();
+                    !(char_item.is_alpha() && char_item.is_lowercase())
+            },
+            ErrorKind::AlphaNumeric,
+        )
+    }
+
+    pub fn rec_skewer(input: &str)->Res<&str,&str> {
+            recognize(tuple((
+                lowercase1,
+                opt(skewer_chars),
+            )))(input)
+    }
+
     pub fn skewer_chars<T>(i: T) -> Res<T, T>
     where
         T: InputTakeAtPosition,
@@ -6925,9 +6873,9 @@ pub mod parse {
         i.split_at_position1_complete(
             |item| {
                 let char_item = item.as_char();
-                !(char_item == '-')
-                    && !((char_item.is_alpha() && char_item.is_lowercase())
-                        || char_item.is_dec_digit())
+                char_item != '-' &&
+                    !char_item.is_digit(10) &&
+                    !(char_item.is_alpha() && char_item.is_lowercase())
             },
             ErrorKind::AlphaNumeric,
         )
@@ -7050,4 +6998,62 @@ pub mod parse {
     pub fn rec_version(input: &str) -> Res<&str, &str> {
         recognize(parse_version)(input)
     }
+}
+
+
+#[cfg(test)]
+pub mod test {
+    use std::str::FromStr;
+
+    use nom::combinator::all_consuming;
+
+    use crate::error::Error;
+    use crate::version::latest::util::ValuePattern;
+    use crate::version::v0_0_1::generic::pattern::{Pattern, TksPattern};
+    use crate::version::v0_0_1::id::{AddressSegment, RouteSegment};
+    use crate::version::v0_0_1::parse::{address, camel_case, route_segment, version_address_segment, skewer_chars, base_address_segment, rec_skewer};
+    use crate::version::latest::id::Version;
+    use crate::version::v0_0_1::generic::id::parse::version;
+    use nom::Err;
+    use nom::error::VerboseError;
+
+    #[test]
+    pub fn test_skewer_chars() -> Result<(),Error> {
+        match all_consuming(rec_skewer)("317"){
+            Ok(ok) => {
+                return Err("should not have parsed 317".into());
+            }
+            Err(_) => {}
+        }
+        assert_eq!( rec_skewer("hello1"), Ok(("","hello1")) );
+        assert_eq!( all_consuming(rec_skewer)("hello-kitty"), Ok(("","hello-kitty")) );
+        assert_eq!( all_consuming(rec_skewer)("hello-kitty123"), Ok(("","hello-kitty123")) );
+        assert_eq!( rec_skewer("hello-kitty.1.2.3"), Ok((".1.2.3","hello-kitty")) );
+        assert_eq!( rec_skewer("skewer-takes-no-Caps"), Ok(("Caps","skewer-takes-no-")) );
+        Ok(())
+    }
+
+
+        #[test]
+    pub fn test_address () -> Result<(),Error> {
+        assert_eq!(("",RouteSegment::Resource),all_consuming(route_segment)("")?);
+
+         all_consuming(address)("hello:kitty")?;
+         all_consuming(address)("hello.com:kitty")?;
+         all_consuming(address)("hello:kitty:/file.txt")?;
+         all_consuming(address)("hello.com:kitty:/file.txt")?;
+         all_consuming(address)("hello.com:kitty:/")?;
+         all_consuming(address)("hello.com:kitty:/greater-glory/file.txt")?;
+
+        all_consuming(version)("1.0.0")?;
+        let (next,version) = all_consuming(version_address_segment)(":1.2.3")?;
+        println!("next: '{}' segment: '{}'", next, version.to_string() );
+        all_consuming(address)("hello.com:bundle:1.2.3")?;
+        let (next, addy) = all_consuming(address)("hello.com:bundle:1.2.3:/")?;
+        let (next, addy) = all_consuming(address)("hello.com:bundle:1.2.3:/file.txt")?;
+        all_consuming(address)("hello.com:bundle:1.2.3:/greater-glory/file.txt")?;
+
+        Ok(())
+    }
+
 }
