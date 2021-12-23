@@ -248,7 +248,6 @@ mod tests {
     #[async_trait]
     impl PortalRequestHandler for TestPortalRequestHandler {
         async fn default_assign(&self) -> Result<Assign, Error> {
-println!("Calling DEFAUTL ASSIGN");
             let index = self.seq.fetch_add(1, Ordering::Relaxed );
             let address = Address::from_str( format!("space:resource-{}",index).as_str() )?;
             let config = Config{
@@ -395,8 +394,8 @@ println!("Calling DEFAUTL ASSIGN");
 
     #[async_trait]
     impl ResourceCtrl for FriendlyResourceCtrl {
-        async fn init(&mut self) -> Result<(), Error> {
-            println!("FriendlyPortalCtrl.init()");
+        async fn init(&self) -> Result<(), Error> {
+            GLOBAL_TX.send(GlobalEvent::Progress("FriendlyResourceCtrl.init()".to_string()));
             // wait just a bit to make sure everyone got chance to be in the muxer
             tokio::time::sleep(Duration::from_millis(50)).await;
 

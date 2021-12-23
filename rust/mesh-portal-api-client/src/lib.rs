@@ -52,7 +52,7 @@ pub trait ResourceCtrlFactory: Sync+Send {
 
 #[async_trait]
 pub trait ResourceCtrl: Sync+Send {
-    async fn init(&mut self) -> Result<(), Error>
+    async fn init(&self) -> Result<(), Error>
     {
         Ok(())
     }
@@ -118,26 +118,27 @@ impl Portal {
     pub async fn new(
         config: PortalConfig,
         inlet: Box<dyn Inlet>,
+        outlet_tx: mpsc::Sender<outlet::Frame>,
+        mut outlet_rx: mpsc::Receiver<outlet::Frame>,
         ctrl_factory: Arc<dyn ResourceCtrlFactory>,
         logger: fn(message: &str)
     ) -> Result<Arc<Portal>, Error> {
 
         let inlet :Arc<dyn Inlet>= inlet.into();
         let exchanges = Arc::new(DashMap::new());
-        let (tx,mut rx) = mpsc::channel(1024);
         let skel =  PortalSkel {
             config,
             inlet,
             logger,
             exchanges,
-            tx,
+            tx: outlet_tx,
         };
 
         {
             let skel = skel.clone();
             tokio::spawn(async move {
                 let mut resources = HashMap::new();
-                while let Option::Some(frame) = rx.recv().await {
+                while let Option::Some(frame) = outlet_rx.recv().await {
                     if let Frame::Close(_) = frame {
                         break;
                     } else {
@@ -155,7 +156,8 @@ impl Portal {
                             logger: skel.logger,
                         };
                         let resource = ctrl_factory.create(resource_skel)?;
-                        resources.insert(assign.stub.address.clone(), resource);
+                        resources.insert(assign.stub.address.clone(), resource.clone() );
+                        resource.init().await;
                         return Ok(());
                     }
 
@@ -311,7 +313,7 @@ pub mod example {
     #[async_trait]
     impl ResourceCtrl for HelloCtrl {
 
-        async fn init(&mut self) -> Result<(), Error> {
+        async fn init(&self) -> Result<(), Error> {
             unimplemented!();
             /*
             let mut request =

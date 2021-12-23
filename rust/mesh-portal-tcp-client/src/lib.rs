@@ -39,7 +39,6 @@ impl PortalTcpClient {
 
         let result = reader.read_string().await?;
 
-
         if result != "Ok" {
             let message = format!("FLAVOR MATCH FAILED: {}",result);
             (client.logger())(message.as_str());
@@ -58,7 +57,6 @@ impl PortalTcpClient {
 
         let mut reader : FrameReader<outlet::Frame> = FrameReader::new(reader );
         let mut writer : FrameWriter<inlet::Frame>  = FrameWriter::new(writer );
-
 
         let (inlet_tx, mut inlet_rx) = mpsc::channel(1024 );
         let (outlet_tx, mut outlet_rx) = mpsc::channel(1024 );
@@ -83,7 +81,7 @@ impl PortalTcpClient {
            logger: client.logger()
         });
 
-        let portal = Portal::new(Default::default(), inlet, client.resource_ctrl_factory(), client.logger()).await?;
+        let portal = Portal::new(Default::default(), inlet, outlet_tx.clone(), outlet_rx, client.resource_ctrl_factory(), client.logger()).await?;
         {
             let logger = client.logger();
             tokio::spawn(async move {

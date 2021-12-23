@@ -259,15 +259,12 @@ impl PortalTcpServer {
                             Ok(_) => {
                                 match self.request_handler.default_assign().await {
                                     Ok(assign) => {
-println!("DEFAULT ASSIGN");
                                         let assign = Exchanger::new(assign);
 
                                         self.broadcaster_tx.send( Event::ResourceCtrl(EventResult::Ok(user.clone()))).unwrap_or_default();
                                         self.mux_tx.send(MuxCall::Assign {assign, portal:key }).await?;
                                     }
                                     Err(err) => {
-
-println!("NO DEFAULT ASSIGN {} ", err.to_string());
                                     }
                                 }
                             }

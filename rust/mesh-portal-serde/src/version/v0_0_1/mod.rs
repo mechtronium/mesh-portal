@@ -227,6 +227,40 @@ pub mod id {
     }
 
     impl AddressSegment {
+
+        pub fn is_version(&self) -> bool {
+            match self {
+                AddressSegment::Version(_) => true,
+                _ => false
+            }
+        }
+
+        pub fn is_filepath(&self) -> bool {
+            match self {
+                AddressSegment::Dir(_) => true,
+                AddressSegment::RootDir => true,
+                AddressSegment::File(_) => true,
+                _ => false
+            }
+        }
+
+        pub fn is_file(&self) -> bool {
+            match self {
+                AddressSegment::File(_) => true,
+                _ => false
+            }
+        }
+
+        pub fn is_dir(&self) -> bool {
+            match self {
+                AddressSegment::Dir(_) => true,
+                AddressSegment::RootDir => true,
+                _ => false
+            }
+        }
+
+
+
         pub fn terminating_delim(&self) -> &str {
             match self {
                 AddressSegment::Space(_) => ":",
@@ -270,6 +304,38 @@ pub mod id {
     }
 
     impl Address {
+
+        pub fn is_artifact_bundle_part(&self) -> bool {
+            for segment in &self.segments {
+                if segment.is_version() {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        pub fn is_artifact(&self) -> bool {
+            if let Option::Some(segment) =  self.last_segment() {
+                if self.is_artifact_bundle_part() && segment.is_file() {
+                    true
+                } else {
+                    false
+                }
+            } else {
+                false
+            }
+        }
+
+        pub fn is_artifact_bundle(&self) -> bool {
+            if let Option::Some(segment) =  self.last_segment() {
+                segment.is_version()
+            } else {
+                false
+            }
+        }
+
+
+
         pub fn push(&self, segment: String) -> Result<Self, Error> {
             Self::from_str(format!("{}:{}", self.to_string(), segment).as_str())
         }
@@ -344,7 +410,7 @@ pub mod id {
                 return Option::None;
             }
             let mut segments = self.segments.clone();
-            segments.remove(segments.len());
+            segments.remove(segments.len()-1);
             Option::Some(Self {
                 route: self.route.clone(),
                 segments,
