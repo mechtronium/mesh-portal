@@ -4369,17 +4369,17 @@ pub mod generic {
             #[derive(Debug, Clone, Serialize, Deserialize)]
             pub struct Request<ReqEntity> {
                 pub id: String,
-                pub to: Vec<Address>,
+                pub to: Address,
                 pub from: Address,
                 pub entity: ReqEntity,
                 pub exchange: Exchange,
             }
 
             impl<ReqEntity> Request<ReqEntity> {
-                pub fn new(entity: ReqEntity, from: Address) -> Self {
+                pub fn new(entity: ReqEntity, from: Address, to: Address) -> Self {
                     Self {
                         id: unique_id(),
-                        to: vec![],
+                        to,
                         from,
                         entity,
                         exchange: Exchange::Notification,

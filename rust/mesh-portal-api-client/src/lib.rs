@@ -173,7 +173,7 @@ println!(":::>>> Client listening for frames....");
                             }
 
                             if let Frame::Response(response)= &frame {
-                                println!("%%% mesh-portal-api-client received response!");
+                                println!("%%% mesh-portal-api-client received response from {} to {}", response.from.to_string(), response.to.to_string() );
                                 if let Option::Some((id,tx)) = skel.exchanges.remove(&response.exchange) {
                                     tx.send(response.clone());
                                     return Ok(())
@@ -185,6 +185,7 @@ println!(":::>>> Client listening for frames....");
                             let to = frame.to().ok_or::<Error>(anyhow!("expected frame to have a to"))?;
                             let resource = resources.get(&to).ok_or(anyhow!("expected to find resource for address"))?;
 
+                            println!("SSS SEnding to outlet_frame....");
                             if let Option::Some(response) = resource.outlet_frame(frame).await? {
                                 println!("GGG GOT a response !");
                                 skel.inlet.inlet_frame(inlet::Frame::Response(response));
@@ -256,6 +257,7 @@ impl InletApi {
         let request = request.exchange(Exchange::RequestResponse(exchange_id.clone()));
         let (tx,rx) = oneshot::channel();
         self.exchanges.insert(exchange_id, tx);
+println!("Sent REQUEST exchange from: {}  to: {}",request.from.to_string(), request.to.to_string() );
         self.inlet.inlet_frame(inlet::Frame::Request(request));
 
         let result = tokio::time::timeout(Duration::from_secs(self.config.response_timeout.clone()),rx).await;

@@ -11,7 +11,7 @@ extern crate lazy_static;
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashMap;
+    use std::collections::{HashMap, HashSet};
     use std::convert::TryInto;
     use std::io::Write;
     use std::str::FromStr;
@@ -55,9 +55,9 @@ mod tests {
     use mesh_portal_serde::version::v0_0_1::artifact::{ArtifactRequest, ArtifactResponse, Artifact};
     use mesh_portal_serde::version::latest::util::unique_id;
     use mesh_portal_serde::version::latest::entity::response::RespEntity;
-    use mesh_portal_serde::version::latest::generic::resource::command::select::{SelectIntoPayload, SelectionKind};
-    use mesh_portal_serde::version::latest::generic::id::KindParts;
     use mesh_portal_serde::mesh::Response;
+    use mesh_portal_serde::version::latest::generic::id::KindParts;
+    use mesh_portal_serde::version::latest::generic::resource::command::select::{SelectIntoPayload, SelectionKind};
 
     lazy_static! {
     static ref GLOBAL_TX : tokio::sync::broadcast::Sender<GlobalEvent> = {
@@ -67,10 +67,11 @@ mod tests {
 
     #[derive(Clone)]
     pub enum GlobalEvent {
+        Start(String),
         Progress(String),
-        Finished(String),
+        Ok(String),
         Fail(String),
-        Shutdown
+        Timeout
     }
 
     #[test]
@@ -82,32 +83,38 @@ mod tests {
     async fn server_up() -> Result<(), Error> {
         let port = 32355;
         let server = PortalTcpServer::new(port, Box::new(TestPortalServer::new()));
-        let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel();
+        let (final_tx,mut final_rx) = oneshot::channel();
 
         {
             let server = server.clone();
             tokio::spawn(async move {
-                let mut finished_count = 0;
                 let mut GLOBAL_RX = GLOBAL_TX.subscribe();
+                let mut status = HashSet::new();
                 while let Result::Ok(event) = GLOBAL_RX.recv().await {
                     match event {
-                        GlobalEvent::Finished(_) => {
-                            finished_count = finished_count+1;
+                        GlobalEvent::Start(start) => {
+                            println!("Starting: {}",start);
+                            status.insert( start );
                         }
-                        GlobalEvent::Fail(_) => {
-                            finished_count = finished_count+1;
+                        GlobalEvent::Ok(ok) => {
+                            println!("Ok: {}",ok);
+                            status.remove( &ok);
+                            if status.is_empty() {
+                                final_tx.send(Result::Ok(()));
+                                return;
+                            }
                         }
-                        GlobalEvent::Shutdown => {
-                            server.send( Call::Shutdown ).await.unwrap_or_default();
+                        GlobalEvent::Fail(message) => {
+                            final_tx.send(Result::Err(anyhow!("Fail")));
                             return;
                         }
                         GlobalEvent::Progress(progress) => {
                             println!("Progress: {}",progress );
                         }
-                    }
-                    if finished_count >= 2 {
-                       server.send( Call::Shutdown ).await.unwrap_or_default();
-                       return;
+                        GlobalEvent::Timeout => {
+                            final_tx.send(Result::Err(anyhow!("timeout")));
+                            return;
+                        }
                     }
                 }
             });
@@ -128,16 +135,17 @@ mod tests {
                     match event {
                         // fix this: it should not be Unknown (but Done isn't working)
                         Event::Status(Status::Unknown) => {
-                            shutdown_tx.send(());
-                            return;
                         }
                         Event::Status(Status::Panic(error)) => {
                             eprintln!("PANIC: {}", error);
-                            shutdown_tx.send(());
-                            return;
                         }
 
-                        _ => {}
+                        Event::ClientConnected => {}
+                        Event::FlavorNegotiation(_) => {}
+                        Event::Authorization(_) => {}
+                        Event::ResourceCtrl(_) => {}
+                        Event::Shutdown => {}
+                        Event::Status(_) => {}
                     }
                 }
             });
@@ -150,14 +158,12 @@ mod tests {
         let client2 = PortalTcpClient::new(format!("localhost:{}", port), client2).await?;
 
         tokio::spawn( async move {
-            tokio::time::sleep( Duration::from_secs( 2 ) ).await;
-            GLOBAL_TX.send( GlobalEvent::Shutdown ).unwrap_or_default();
+            tokio::time::sleep( Duration::from_secs( 5 ) ).await;
+            GLOBAL_TX.send( GlobalEvent::Timeout).unwrap_or_default();
         });
-
-        shutdown_rx.await;
-
-        println!("got to the end...");
-        Ok(())
+        let result  = final_rx.await?;
+        server.send( Call::Shutdown ).await.unwrap_or_default();
+        result
     }
 
     pub struct TestRouter {}
@@ -350,6 +356,7 @@ println!("InYourFace: message.to: {}",message.to().to_string());
 
     impl TestPortalClient {
         pub fn new(user: String) -> Self {
+            GLOBAL_TX.send(GlobalEvent::Start(user.clone()));
             Self { user}
         }
     }
@@ -371,7 +378,7 @@ println!("InYourFace: message.to: {}",message.to().to_string());
 
 
         fn resource_ctrl_factory(&self) ->Arc<dyn ResourceCtrlFactory> {
-            Arc::new(FriendlyResourceCtrlFactory{})
+            Arc::new(FriendlyResourceCtrlFactory{name: self.user.clone()})
         }
 
         fn logger(&self) -> fn(m: &str) {
@@ -382,7 +389,9 @@ println!("InYourFace: message.to: {}",message.to().to_string());
         }
     }
 
-    pub struct FriendlyResourceCtrlFactory {}
+    pub struct FriendlyResourceCtrlFactory {
+        pub name: String
+    }
 
     impl ResourceCtrlFactory for FriendlyResourceCtrlFactory {
         fn matches(&self, config: Config<ResourceConfigBody>) -> bool {
@@ -393,12 +402,14 @@ println!("InYourFace: message.to: {}",message.to().to_string());
             GLOBAL_TX.send(GlobalEvent::Progress("creating FriendlyResourceCtrl".to_string()));
 
             Ok(Arc::new(FriendlyResourceCtrl{
+                name: self.name.clone(),
                 skel
             }))
         }
     }
 
     pub struct FriendlyResourceCtrl {
+        pub name: String,
         pub skel: ResourceSkel
     }
 
@@ -417,10 +428,11 @@ println!("InYourFace: message.to: {}",message.to().to_string());
                     kind: SelectionKind::Initial
                 }),
 
-                payload: Payload::Empty
+                payload: Payload::Empty,
             }),
-            self.skel.stub.address.clone());
-            request.to.push(self.skel.stub.address.parent().expect("expected a parent"));
+               self.skel.stub.address.clone(),
+               self.skel.stub.address.parent().expect("expected a parent")
+            );
 
 
 println!("FriendlyPortalCtrl::exchange... from: {} to: {}", self.skel.stub.address.to_string(), self.skel.stub.address.parent().expect("expected a parent").to_string() );
@@ -444,7 +456,8 @@ println!("FriendlyPortalCtrl::Ok");
                                                 self.skel.stub.address.to_string()
                                             ))),
                                         }),
-                                        self.skel.stub.address.clone()
+                                        self.skel.stub.address.clone(),
+                                             resource.address.clone()
                                     );
                                     let result = self.skel.portal.api().exchange(request).await;
                                     match result {
@@ -452,10 +465,10 @@ println!("FriendlyPortalCtrl::Ok");
                                             match &response.entity {
                                                 response::RespEntity::Ok(Payload::Primitive(Primitive::Text(response))) => {
                                                     println!("got response: {}", response);
-                                                    GLOBAL_TX.send(GlobalEvent::Finished(self.skel.stub.address.to_string()));
+                                                    GLOBAL_TX.send(GlobalEvent::Ok(self.name.clone()));
                                                 }
                                                 _ => {
-                                                    GLOBAL_TX.send(GlobalEvent::Fail(self.skel.stub.address.to_string()));
+                                                    GLOBAL_TX.send(GlobalEvent::Fail(self.name.clone()));
                                                 }
                                             }
                                         }
@@ -475,6 +488,23 @@ println!("FriendlyPortalCtrl::Ok");
             Ok(())
         }
 
+        async fn outlet_frame(&self, frame: outlet::Frame ) -> Result<Option<inlet::Response>,Error> {
+            if let outlet::Frame::Request( request ) = frame {
+                let response = inlet::Response{
+                    id: unique_id(),
+                    to: request.from,
+                    exchange: match request.exchange {
+                        Exchange::Notification => {unique_id()}
+                        Exchange::RequestResponse(exchange_id) => {exchange_id}
+                    },
+                    entity: RespEntity::Ok(Payload::Primitive(Primitive::Text("Hello".to_string())))
+                };
+                GLOBAL_TX.send(GlobalEvent::Progress("Responding to hello message".to_string()));
+                return Ok( Option::Some(response) )
+            }
+
+            Ok(Option::None)
+        }
         /*
         fn ports(&self) -> HashMap<String,Box<dyn PortCtrl>> {
 

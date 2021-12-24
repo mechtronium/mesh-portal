@@ -123,10 +123,8 @@ println!("Portal: >> Recv Frame: {}", frame.to_string() );
 println!("Portal: Received Request from: {}", request.from.to_string());
                                         match &request.exchange {
                                             Exchange::Notification => {
-                                                for to in &request.to {
                                                     let request = mesh::Request::from(
                                                         request.clone().into(),
-                                                        to.clone(),
                                                         Exchange::Notification,
                                                     );
                                                     let result = mux_tx
@@ -140,22 +138,13 @@ println!("Portal: Received Request from: {}", request.from.to_string());
                                                                 .to_string(),
                                                         ))
                                                     }
-                                                }
                                             }
                                             Exchange::RequestResponse(exchange_id) => {
         println!("Portal: Sending Exchange Request");
-                                                if request.to.len() != 1 {
-                                                    (logger)(Log::Error("exchange requests cannot have more than one recipient".to_string()))
-                                                } else {
-                                                    let to = request
-                                                        .to
-                                                        .first()
-                                                        .expect("expected to identifier")
-                                                        .clone();
+
                                                     let request = mesh::Request::from(
                                                         request.clone().into(),
-                                                        to,
-                                                        Exchange::RequestResponse(exchange_id.clone()),
+                                                        Exchange::RequestResponse(exchange_id.clone())
                                                     );
                                                     let result = mux_tx
                                                         .send(MuxCall::MessageIn(
@@ -168,7 +157,7 @@ println!("Portal: Received Request from: {}", request.from.to_string());
                                                                 .to_string(),
                                                         ));
                                                     }
-                                                }
+
                                             }
                                         }
                                     }

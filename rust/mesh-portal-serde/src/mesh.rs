@@ -64,12 +64,11 @@ pub mod generic {
     impl Request {
         pub fn from(
             request: inlet::Request,
-            to: Address,
             exchange: Exchange,
         ) -> Self {
             Self {
                 id: request.id,
-                to,
+                to: request.to,
                 from:request.from,
                 entity: request.entity,
                 exchange,
