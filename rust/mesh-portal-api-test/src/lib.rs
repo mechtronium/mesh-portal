@@ -150,7 +150,7 @@ mod tests {
         let client2 = PortalTcpClient::new(format!("localhost:{}", port), client2).await?;
 
         tokio::spawn( async move {
-            tokio::time::sleep( Duration::from_secs( 5 ) ).await;
+            tokio::time::sleep( Duration::from_secs( 2 ) ).await;
             GLOBAL_TX.send( GlobalEvent::Shutdown ).unwrap_or_default();
         });
 
@@ -297,7 +297,6 @@ println!("InYourFace: message.to: {}",message.to().to_string());
                                                 println!("Stub count: {}", stubs.len());
                                                 let stubs = stubs.into_iter().map(|stub| Primitive::Stub(stub)).collect();
 
-
                                                 let list = PrimitiveList{
                                                     primitive_type: PrimitiveType::Stub,
                                                     list: stubs
@@ -331,15 +330,14 @@ println!("InYourFace: message.to: {}",message.to().to_string());
                                 }
                             }
 
-                            ReqEntity::Msg(_) => {
+                            _ => {
                                 mux_tx.send( MuxCall::MessageIn(message.clone()) ).await;
                             }
-                            ReqEntity::Http(_) => {}
                         }
                     }
                     message::Message::Response(response) => {
                         // since we are not connected to a mesh all inbound messages are just sent back to the outbound
-                        mux_tx.try_send(MuxCall::MessageOut(message::Message::Response(response)));
+                        mux_tx.send(MuxCall::MessageOut(message::Message::Response(response))).await;
                     }
                 }
 

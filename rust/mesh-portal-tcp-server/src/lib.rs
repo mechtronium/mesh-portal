@@ -255,6 +255,7 @@ tokio::spawn(async move {
                             let logger = self.server.logger();
                             tokio::spawn(async move {
                                 while let Option::Some(frame) = outlet_rx.recv().await {
+println!("Tcp Server Receive Outlet Call: {}",frame.to_string());
                                     let result = writer.write(frame).await;
 tokio::time::sleep(Duration::from_millis(0));
                                     if result.is_err() {

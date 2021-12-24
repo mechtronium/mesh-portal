@@ -109,114 +109,117 @@ impl Portal {
             let outlet_tx = outlet_tx.clone();
             let request_handler = request_handler.clone();
             tokio::spawn(async move {
-                tokio::time::sleep(Duration::from_millis(1));
 println!("!!! Started call_rx recv...." );
                 while let Option::Some(command) = call_rx.recv().await {
-println!(">>> REcv PortalCall" );
+println!("Portal: >>> Recv PortalCall" );
                     match command {
-                        PortalCall::FrameIn(frame) => match frame {
-                            inlet::Frame::Log(log) => {
-                                (logger)(log);
-                            }
-                            inlet::Frame::Request(request) => {
-println!("Received Request from: {}", request.from.to_string());
-                                match &request.exchange {
-                                    Exchange::Notification => {
-                                        for to in &request.to {
-                                            let request = mesh::Request::from(
-                                                request.clone().into(),
-                                                to.clone(),
-                                                Exchange::Notification,
-                                            );
-                                            let result = mux_tx
-                                                .send(MuxCall::MessageIn(
-                                                    message::Message::Request(request),
-                                                ))
-                                                .await;
-                                            if let Result::Err(_err) = result {
-                                                logger(Log::Fatal(
-                                                    "FATAL: send timeout error request_tx"
-                                                        .to_string(),
-                                                ))
+                            PortalCall::FrameIn(frame) => {
+println!("Portal: >> Recv Frame: {}", frame.to_string() );
+                               match frame {
+                                    inlet::Frame::Log(log) => {
+                                        (logger)(log);
+                                    }
+                                    inlet::Frame::Request(request) => {
+println!("Portal: Received Request from: {}", request.from.to_string());
+                                        match &request.exchange {
+                                            Exchange::Notification => {
+                                                for to in &request.to {
+                                                    let request = mesh::Request::from(
+                                                        request.clone().into(),
+                                                        to.clone(),
+                                                        Exchange::Notification,
+                                                    );
+                                                    let result = mux_tx
+                                                        .send(MuxCall::MessageIn(
+                                                            message::Message::Request(request),
+                                                        ))
+                                                        .await;
+                                                    if let Result::Err(_err) = result {
+                                                        logger(Log::Fatal(
+                                                            "FATAL: send timeout error request_tx"
+                                                                .to_string(),
+                                                        ))
+                                                    }
+                                                }
+                                            }
+                                            Exchange::RequestResponse(exchange_id) => {
+        println!("Portal: Sending Exchange Request");
+                                                if request.to.len() != 1 {
+                                                    (logger)(Log::Error("exchange requests cannot have more than one recipient".to_string()))
+                                                } else {
+                                                    let to = request
+                                                        .to
+                                                        .first()
+                                                        .expect("expected to identifier")
+                                                        .clone();
+                                                    let request = mesh::Request::from(
+                                                        request.clone().into(),
+                                                        to,
+                                                        Exchange::RequestResponse(exchange_id.clone()),
+                                                    );
+                                                    let result = mux_tx
+                                                        .send(MuxCall::MessageIn(
+                                                            message::Message::Request(request),
+                                                        ))
+                                                        .await;
+                                                    if let Result::Err(_err) = result {
+                                                        logger(Log::Fatal(
+                                                            "FATAL: frame timeout error request_tx"
+                                                                .to_string(),
+                                                        ));
+                                                    }
+                                                }
                                             }
                                         }
                                     }
-                                    Exchange::RequestResponse(exchange_id) => {
-println!("Portal: Sending Exchange Request");
-                                        if request.to.len() != 1 {
-                                            (logger)(Log::Error("exchange requests cannot have more than one recipient".to_string()))
-                                        } else {
-                                            let to = request
-                                                .to
-                                                .first()
-                                                .expect("expected to identifier")
-                                                .clone();
-                                            let request = mesh::Request::from(
-                                                request.clone().into(),
-                                                to,
-                                                Exchange::RequestResponse(exchange_id.clone()),
-                                            );
-                                            let result = mux_tx
-                                                .send(MuxCall::MessageIn(
-                                                    message::Message::Request(request),
-                                                ))
-                                                .await;
-                                            if let Result::Err(_err) = result {
-                                                logger(Log::Fatal(
-                                                    "FATAL: frame timeout error request_tx"
-                                                        .to_string(),
-                                                ));
+                                    inlet::Frame::Response(response) => {
+                                        match exchanges.remove(&response.exchange) {
+                                            None => {
+                                                logger(Log::Fatal(format!(
+                                                    "FATAL: missing request/response exchange id '{}'",
+                                                    response.exchange
+                                                )));
+                                            }
+                                            Some(tx) => {
+                                                let tx = tx;
+                                                tx.send(response).expect("ability to send response");
                                             }
                                         }
                                     }
-                                }
-                            }
-                            inlet::Frame::Response(response) => {
-                                match exchanges.remove(&response.exchange) {
-                                    None => {
-                                        logger(Log::Fatal(format!(
-                                            "FATAL: missing request/response exchange id '{}'",
-                                            response.exchange
-                                        )));
+                                    inlet::Frame::Status(status) => {}
+                                    inlet::Frame::AssignRequest(assign) => {
+                                        let request_handler = request_handler.clone();
+                                        let outlet_tx = outlet_tx.clone();
+                                        tokio::spawn(async move {
+                                            async fn process(
+                                                assign: Exchanger<AssignRequest>,
+                                                request_handler: &Arc<dyn PortalRequestHandler>,
+                                                outlet_tx: &mpsc::Sender<outlet::Frame>,
+                                            ) -> Result<(), Error> {
+                                                let id = assign.id;
+                                                let assign = assign.item;
+                                                let assign =
+                                                    request_handler.handle_assign_request(assign).await?;
+                                                let assign = Exchanger { id, item: assign };
+                                                outlet_tx.send(outlet::Frame::Assign(assign)).await?;
+                                                Ok(())
+                                            }
+                                            match process(assign, &request_handler, &outlet_tx).await {
+                                                Ok(_) => {}
+                                                Err(err) => {}
+                                            }
+                                        });
                                     }
-                                    Some(tx) => {
-                                        let tx = tx;
-                                        tx.send(response).expect("ability to send response");
-                                    }
-                                }
-                            }
-                            inlet::Frame::Status(status) => {}
-                            inlet::Frame::AssignRequest(assign) => {
-                                let request_handler = request_handler.clone();
-                                let outlet_tx = outlet_tx.clone();
-                                tokio::spawn(async move {
-                                    async fn process(
-                                        assign: Exchanger<AssignRequest>,
-                                        request_handler: &Arc<dyn PortalRequestHandler>,
-                                        outlet_tx: &mpsc::Sender<outlet::Frame>,
-                                    ) -> Result<(), Error> {
-                                        let id = assign.id;
-                                        let assign = assign.item;
-                                        let assign =
-                                            request_handler.handle_assign_request(assign).await?;
-                                        let assign = Exchanger { id, item: assign };
-                                        outlet_tx.send(outlet::Frame::Assign(assign)).await?;
-                                        Ok(())
-                                    }
-                                    match process(assign, &request_handler, &outlet_tx).await {
-                                        Ok(_) => {}
-                                        Err(err) => {}
-                                    }
-                                });
-                            }
-                            inlet::Frame::Artifact(_) => {}
-                            inlet::Frame::Config(_) => {}
-                            inlet::Frame::Close(_) => {}
+                                    inlet::Frame::Artifact(_) => {}
+                                    inlet::Frame::Config(_) => {}
+                                    inlet::Frame::Close(_) => {}
+                               }
                         },
                         PortalCall::Exchange(exchange) => {
                             exchanges.insert(exchange.id, exchange.tx);
                         }
                         PortalCall::FrameOut(frame) => {
+println!("Portal: >> Recv outlet::Frame: {}", frame.to_string() );
                             match outlet_tx
                                 .send(frame)
                                 .await

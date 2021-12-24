@@ -97,7 +97,9 @@ pub struct PortalSkel {
     pub logger: fn(message: &str),
     pub exchanges: Exchanges,
     pub tx: mpsc::Sender<outlet::Frame>,
+    pub ctrl_factory: Arc<dyn ResourceCtrlFactory>,
 }
+
 
 impl PortalSkel {
 
@@ -108,6 +110,11 @@ impl PortalSkel {
 }
 
 
+pub enum ResourceCommand {
+    Add{address: Address, resource: Arc<dyn ResourceCtrl> },
+    Remove(Address),
+    None
+}
 
 
 pub struct Portal {
@@ -132,49 +139,65 @@ impl Portal {
             logger,
             exchanges,
             tx: outlet_tx,
+            ctrl_factory,
         };
 
         {
             let skel = skel.clone();
             tokio::spawn(async move {
+println!(":::>>> Client listening for frames....");
                 let mut resources = HashMap::new();
                 while let Option::Some(frame) = outlet_rx.recv().await {
                     if let Frame::Close(_) = frame {
+                        println!("XXX>>> Client exiting outlet_rx loop");
                         break;
-                    } else {
-                        process(&ctrl_factory, &skel, &mut resources, frame).await;
                     }
-                }
+                    process(&skel, &mut resources, frame).await;
 
-                async fn process( ctrl_factory: &Arc<dyn ResourceCtrlFactory>,skel: &PortalSkel, resources:& mut HashMap<Address,Arc<dyn ResourceCtrl>>, frame: outlet::Frame ) -> Result<(),Error> {
+                        async fn process( skel: &PortalSkel,  resources: &mut HashMap<Address,Arc<dyn ResourceCtrl>>, frame: outlet::Frame ) -> Result<(),Error> {
+                            println!("processing Client received frame: {} ",frame.to_string() );
+                            if let Frame::Assign(assign) = &frame {
+                                let resource_skel = ResourceSkel {
+                                    portal: skel.clone(),
+                                    stub: assign.stub.clone(),
+                                    config: assign.config.clone(),
+                                    logger: skel.logger,
+                                };
+                                let resource = skel.ctrl_factory.create(resource_skel)?;
+                                resources.insert( assign.stub.address.clone(), resource.clone() );
+                                tokio::spawn( async move {
+                                    resource.init().await
+                                });
 
-                    if let Frame::Assign(assign) = &frame {
-                        let resource_skel = ResourceSkel {
-                            portal: skel.clone(),
-                            stub: assign.stub.clone(),
-                            config: assign.config.clone(),
-                            logger: skel.logger,
-                        };
-                        let resource = ctrl_factory.create(resource_skel)?;
-                        resources.insert(assign.stub.address.clone(), resource.clone() );
-                        resource.init().await;
-                        return Ok(());
-                    }
+                                return Ok(());
+                            }
 
-                    if let Frame::Response(response)= &frame  {
-                        if let Option::Some((id,tx)) = skel.exchanges.remove(&response.exchange)  {
-                            tx.send(response.clone());
-                            return Ok(());
+                            if let Frame::Response(response)= &frame {
+                                println!("%%% mesh-portal-api-client received response!");
+                                if let Option::Some((id,tx)) = skel.exchanges.remove(&response.exchange) {
+                                    tx.send(response.clone());
+                                    return Ok(())
+                                }
+                            } else {
+                                eprintln!("could not find exchange for response: ")
+                            }
+
+                            let to = frame.to().ok_or::<Error>(anyhow!("expected frame to have a to"))?;
+                            let resource = resources.get(&to).ok_or(anyhow!("expected to find resource for address"))?;
+
+                            if let Option::Some(response) = resource.outlet_frame(frame).await? {
+                                println!("GGG GOT a response !");
+                                skel.inlet.inlet_frame(inlet::Frame::Response(response));
+                            }
+
+                            Ok(())
                         }
-                    }
 
-                    let to = frame.to().ok_or::<Error>(anyhow!("expected frame to have a to"))?;
-                    let resource = resources.get(&to).ok_or(anyhow!("expected to find resource for address"))?;
-                    if let Option::Some(response) = resource.outlet_frame(frame).await? {
-                        skel.inlet.inlet_frame(inlet::Frame::Response(response));
-                    }
-                    Ok(())
+
                 }
+
+
+
             });
         }
 
