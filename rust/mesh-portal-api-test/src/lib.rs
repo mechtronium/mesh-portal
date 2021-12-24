@@ -287,7 +287,6 @@ mod tests {
     impl Router for InYourFaceRouter {
         fn route(&self, message: message::Message) {
 
-println!("InYourFace: message.to: {}",message.to().to_string());
             let mux_tx = self.mux_tx.clone();
             tokio::spawn(async move {
                match message.clone() {
@@ -301,7 +300,6 @@ println!("InYourFace: message.to: {}",message.to().to_string());
                                         match rx.await {
                                             Ok(stubs) => {
 
-                                                println!("Stub count: {}", stubs.len());
                                                 let stubs = stubs.into_iter().map(|stub| Primitive::Stub(stub)).collect();
 
                                                 let list = PrimitiveList{
@@ -444,10 +442,7 @@ println!("FriendlyPortalCtrl::Ok");
                         for resource in resources.iter() {
                             if let Primitive::Stub(resource) = resource {
                                 if resource.address != self.skel.stub.address {
-                                    (self.skel.portal.logger)(format!(
-                                        "INFO: found resource: {}",
-                                        resource.address.to_string()
-                                    ).as_str());
+
                                     let mut request = inlet::Request::new(ReqEntity::Msg(
                                         Msg {
                                             action: "Greet".to_string(),

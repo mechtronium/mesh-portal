@@ -109,16 +109,13 @@ impl Portal {
                     match inlet_rx.recv().await {
                         Some(frame) => {
                             let frame:inlet::Frame = frame;
-                            println!("Portal>>>> handling frame: {}",frame.to_string());
                             handle(&mux_tx, frame ).await;
                             continue;
                         }
                         None => {
-println!("Portal> Breaking");
                             break;
                         }
                     }
-println!("Portal> Cycle");
                     async fn handle( mux_tx: &mpsc::Sender<MuxCall>, frame: inlet::Frame ) {
                         match frame {
                             inlet::Frame::Log(log) => {
@@ -128,7 +125,6 @@ println!("Portal> Cycle");
                                 // we aren't doing this yet
                             }
                             inlet::Frame::Request(request) => {
-println!("Portal> Request from: {}, to: {}", request.from.to_string(), request.to.to_string() );
                                 let request = Request{
                                     id: request.id,
                                     to: request.to,
@@ -140,7 +136,6 @@ println!("Portal> Request from: {}, to: {}", request.from.to_string(), request.t
 
                             }
                             inlet::Frame::Response(response) => {
-println!("Portal> Response from: {}, to: {}", response.from.to_string(), response.to.to_string() );
                                 let response = Response{
                                     id: response.id,
                                     to: response.to,
@@ -236,7 +231,6 @@ impl PortalRequestHandler for DefaultPortalRequestHandler {}
 
 #[derive(Debug)]
 pub enum MuxCall {
-    Spacer,
     Add(Portal),
     Assign {
         assign: Exchanger<Assign>,
@@ -296,11 +290,9 @@ impl PortalMuxer {
                 async fn handle(call: MuxCall, muxer: &mut PortalMuxer) -> Result<(), Error> {
                     match call {
                         MuxCall::Add(portal) => {
-println!("MuxCall::Add()");
                             muxer.portals.insert(portal.key.clone(), portal);
                         }
                         MuxCall::Assign { assign, portal } => {
-println!("MuxCall::Assign()");
                             muxer
                                 .address_to_assign
                                 .insert(assign.stub.address.clone(), assign.item.clone());
@@ -335,11 +327,9 @@ println!("MuxCall::Assign()");
                             }
                         }
                         MuxCall::MessageIn(message) => {
-println!("MuxCall::MessageIn(message) to: {}",message.to().to_string());
                             muxer.router.route(message);
                         }
                         MuxCall::MessageOut(message) => {
-println!("MuxCall::MessageOut(message) to: {}",message.to().to_string());
                             match muxer.portals.get(
                                 muxer
                                     .address_to_portal
@@ -366,7 +356,6 @@ println!("MuxCall::MessageOut(message) to: {}",message.to().to_string());
                             }
                             tx.send(rtn);
                         }
-                        MuxCall::Spacer => {}
                     }
                     Ok(())
                 }

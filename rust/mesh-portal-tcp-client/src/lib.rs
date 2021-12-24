@@ -86,11 +86,9 @@ impl PortalTcpClient {
             let logger = client.logger();
             tokio::spawn(async move {
                 while let Result::Ok(frame) = reader.read().await {
-println!("TCP client reader outlet::Frame: {}",frame.to_string() );
                     match outlet_tx.send( frame ).await {
                         Result::Ok(_) => {
 
-println!("... TCP client SENT");
                         }
                         Result::Err(err) => {
                             (logger)("FATAL: reader disconnected");

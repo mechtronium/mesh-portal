@@ -145,7 +145,6 @@ impl Portal {
         {
             let skel = skel.clone();
             tokio::spawn(async move {
-println!(":::>>> Client listening for frames....");
                 let mut resources = HashMap::new();
                 while let Option::Some(frame) = outlet_rx.recv().await {
                     if let Frame::Close(_) = frame {
@@ -155,7 +154,6 @@ println!(":::>>> Client listening for frames....");
                     process(&skel, &mut resources, frame).await;
 
                         async fn process( skel: &PortalSkel,  resources: &mut HashMap<Address,Arc<dyn ResourceCtrl>>, frame: outlet::Frame ) -> Result<(),Error> {
-                            println!("processing Client received frame: {} ",frame.to_string() );
                             if let Frame::Assign(assign) = &frame {
                                 let resource_skel = ResourceSkel {
                                     portal: skel.clone(),
@@ -173,7 +171,6 @@ println!(":::>>> Client listening for frames....");
                             }
 
                             if let Frame::Response(response)= &frame {
-                                println!("%%% mesh-portal-api-client received response from {} to {}", response.from.to_string(), response.to.to_string() );
                                 if let Option::Some((id,tx)) = skel.exchanges.remove(&response.exchange) {
                                     tx.send(response.clone());
                                     return Ok(())
@@ -257,7 +254,6 @@ impl InletApi {
         let request = request.exchange(Exchange::RequestResponse(exchange_id.clone()));
         let (tx,rx) = oneshot::channel();
         self.exchanges.insert(exchange_id, tx);
-println!("Sent REQUEST exchange from: {}  to: {}",request.from.to_string(), request.to.to_string() );
         self.inlet.inlet_frame(inlet::Frame::Request(request));
 
         let result = tokio::time::timeout(Duration::from_secs(self.config.response_timeout.clone()),rx).await;

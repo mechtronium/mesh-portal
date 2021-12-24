@@ -222,8 +222,6 @@ impl PortalTcpServer {
 
                         let portal = Portal::new(key,self.portal_config.clone(), self.request_handler.clone(), outlet_tx, logger );
                         let inlet_tx = portal.inlet_tx.clone();
-                        let mux_tx = portal.mux_tx.clone();
-println!("TCP Server adding portal ");
                         match self.mux_tx.send(MuxCall::Add(portal)).await {
                             Err(err) => {
                                 let message = err.to_string();
@@ -236,7 +234,6 @@ println!("TCP Server adding portal ");
                                         let assign = Exchanger::new(assign);
 
                                         self.broadcaster_tx.send( Event::ResourceCtrl(EventResult::Ok(user.clone()))).unwrap_or_default();
-println!("TCP Server performing default Assign '{}'", user);
                                         self.mux_tx.send(MuxCall::Assign {assign, portal:key }).await?;
                                     }
                                     Err(_) => {
@@ -245,25 +242,17 @@ println!("TCP Server performing default Assign '{}'", user);
                             }
                         }
 
-                inlet_tx.send( inlet::Frame::Log(Log::Warn("sending first reader log...".to_string()))).await;
                 {
                             let logger = self.server.logger();
                                 tokio::spawn(async move {
                                     loop {
-                                        println!("TCP reader Start loop...");
-                                        tokio::time::sleep(Duration::from_millis(0));
                                         if let Result::Ok(frame) = reader.read().await {
-                                            tokio::time::sleep(Duration::from_millis(0));
-println!("TCP READER sending SECOND log....");
-                                            println!("TCP reader sending frame: {}", frame.to_string());
                                             let result = inlet_tx.send(frame).await;
                                             yield_now().await;
-                                            println!("TCP reader inlet frame SENT...{}", result.is_ok());
                                             if result.is_err() {
                                                 (logger)("FATAL: cannot send frame to portal inlet_tx");
                                                 return;
                                             }
-                                            println!("TCP reader next loop....");
                                         }else {
                                             println!("TCP Reader end...");
                                             break;
@@ -276,9 +265,8 @@ println!("TCP READER sending SECOND log....");
                         let logger = self.server.logger();
                         tokio::spawn(async move {
                             while let Option::Some(frame) = outlet_rx.recv().await {
-println!("Tcp Server Writer Outlet Call: {}",frame.to_string());
-                                let result = writer.write(frame).await;
-tokio::time::sleep(Duration::from_millis(0));
+                                writer.write(frame).await;
+                                yield_now().await;
                            }
                         });
                     }
