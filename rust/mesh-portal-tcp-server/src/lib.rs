@@ -17,11 +17,10 @@ use anyhow::Error;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
-use tokio::runtime::Runtime;
 use tokio::sync::{broadcast, mpsc, Mutex, oneshot};
 use tokio::sync::mpsc::error::SendTimeoutError;
 
-use mesh_portal_api_server::{MuxCall, Portal, PortalMuxer, Router, PortalRequestHandler};
+use mesh_portal_api_server::{MuxCall, Portal, PortalMuxer, Router, PortalRequestHandler, PortalCall};
 use mesh_portal_serde::version::latest::frame::CloseReason;
 use mesh_portal_serde::version::latest::log::Log;
 use mesh_portal_serde::version::latest::portal::{inlet, outlet};
@@ -104,40 +103,35 @@ impl PortalTcpServer {
             alive: Arc::new(Mutex::new(Alive::new()))
         };
 
-
-        thread::spawn( || {
-            let rt = Runtime::new().unwrap();
-            rt.block_on(async {
-
-                server.broadcaster_tx.send( Event::Status(Status::Unknown) ).unwrap_or_default();
-                {
-                    let port = server.port.clone();
-                    let broadcaster_tx = server.broadcaster_tx.clone();
-                    let alive = server.alive.clone();
-                    tokio::spawn(async move {
-                        tokio::time::sleep(Duration::from_secs(0)).await;
-                        while let Option::Some(call) = call_rx.recv().await {
-                            match call {
-                                Call::InjectMessage(_) => {}
-                                Call::ListenEvents(tx) => {
-                                    tx.send( broadcaster_tx.subscribe() );
-                                },
-                                Call::Shutdown  => {
-                                    broadcaster_tx.send(Event::Shutdown).unwrap_or_default();
-                                    alive.lock().await.alive = false;
-                                    match std::net::TcpStream::connect(format!("localhost:{}", port)) {
-                                        Ok(_) => {}
-                                        Err(_) => {}
-                                    }
-                                    return;
+        tokio::spawn( async move {
+            server.broadcaster_tx.send(Event::Status(Status::Unknown)).unwrap_or_default();
+            {
+                let port = server.port.clone();
+                let broadcaster_tx = server.broadcaster_tx.clone();
+                let alive = server.alive.clone();
+                tokio::spawn(async move {
+                    tokio::time::sleep(Duration::from_secs(0)).await;
+                    while let Option::Some(call) = call_rx.recv().await {
+                        match call {
+                            Call::InjectMessage(_) => {}
+                            Call::ListenEvents(tx) => {
+                                tx.send(broadcaster_tx.subscribe());
+                            },
+                            Call::Shutdown => {
+                                broadcaster_tx.send(Event::Shutdown).unwrap_or_default();
+                                alive.lock().await.alive = false;
+                                match std::net::TcpStream::connect(format!("localhost:{}", port)) {
+                                    Ok(_) => {}
+                                    Err(_) => {}
                                 }
+                                return;
                             }
                         }
-                    });
-                }
+                    }
+                });
+            }
 
-                server.start().await;
-            });
+            server.start().await;
         });
 
         call_tx
@@ -211,8 +205,7 @@ impl PortalTcpServer {
 //                        self.broadcaster_tx.send( Event::Info(EventResult::Ok(info.clone()))).unwrap_or_default();
                         tokio::time::sleep(Duration::from_secs(0)).await;
 
-                        let (outlet_tx,mut outlet_rx) = mpsc::channel(128);
-                        let (inlet_tx,inlet_rx) = mpsc::channel(128);
+                        let (outlet_tx,mut outlet_rx) = mpsc::channel(1024);
 
                         fn logger( log: Log ) {
                             println!("{}", log.to_string() );
@@ -220,28 +213,50 @@ impl PortalTcpServer {
 
                         let key = self.key_seq.fetch_add(1, Ordering::Relaxed );
 
-                        let portal = Portal::new(key,self.portal_config.clone(), self.request_handler.clone(), outlet_tx, inlet_rx, logger );
+                        let portal = Portal::new(key,self.portal_config.clone(), self.request_handler.clone(), outlet_tx, logger );
+
+/// for some reason without hack_tx & hack_rx, reader calls will not reach portal
+/// I would really like to remove this -- Scott
+let (hack_tx,mut hack_rx) = mpsc::channel(1024);
 
                         let mut reader = reader;
                         {
                             let logger = self.server.logger();
-                            tokio::spawn(async move {
+                            let portal_call_tx = portal.call_tx.clone();
+                                tokio::spawn(async move {
                                 while let Result::Ok(frame) = reader.read().await {
-                                    let result = inlet_tx.try_send(frame);
+println!("Reading a server inlet frame: {}",frame.to_string());
+
+                                    let result = portal_call_tx.send(PortalCall::FrameIn(frame)).await;
+println!("server inlet frame SENT...{}",result.is_ok());
                                     if result.is_err() {
                                         (logger)("FATAL: cannot send frame to portal inlet_tx");
                                         return;
                                     }
+                                    tokio::time::sleep(Duration::from_millis(1));
+
+println!("....>>>> Sending to dumb_tx!!");
+                                    hack_tx.send("Hello").await;
+println!("next loop....");
                                 }
                             });
                         }
 
-                        let mut writer= writer;
+
+tokio::spawn(async move {
+   while let Option::Some(text) = hack_rx.recv().await {
+     //  println!("... >>> REceived {}",text );
+   }
+});
+
+
+                let mut writer= writer;
                         {
                             let logger = self.server.logger();
                             tokio::spawn(async move {
                                 while let Option::Some(frame) = outlet_rx.recv().await {
                                     let result = writer.write(frame).await;
+tokio::time::sleep(Duration::from_millis(0));
                                     if result.is_err() {
                                         (logger)("FATAL: cannot write to frame writer");
                                         return;

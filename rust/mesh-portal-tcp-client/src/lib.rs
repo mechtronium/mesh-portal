@@ -120,13 +120,17 @@ struct TcpInlet {
 
 impl Inlet for TcpInlet {
     fn inlet_frame(&self, frame: inlet::Frame) {
-        match self.sender.try_send(frame)
-        {
-            Ok(_) => {}
-            Err(err) => {
-                (self.logger)(format!("ERROR: frame failed to send to client inlet").as_str())
+        let sender = self.sender.clone();
+        let logger = self.logger;
+        tokio::spawn(async move {
+            match sender.send(frame).await
+            {
+                Ok(_) => {}
+                Err(err) => {
+                    (logger)(format!("ERROR: frame failed to send to client inlet").as_str())
+                }
             }
-        }
+        });
     }
 }
 

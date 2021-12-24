@@ -57,6 +57,7 @@ mod tests {
     use mesh_portal_serde::version::latest::entity::response::RespEntity;
     use mesh_portal_serde::version::latest::generic::resource::command::select::{SelectIntoPayload, SelectionKind};
     use mesh_portal_serde::version::latest::generic::id::KindParts;
+    use mesh_portal_serde::mesh::Response;
 
     lazy_static! {
     static ref GLOBAL_TX : tokio::sync::broadcast::Sender<GlobalEvent> = {
@@ -72,7 +73,12 @@ mod tests {
         Shutdown
     }
 
-    #[tokio::test]
+    #[test]
+    fn test() -> Result<(), Error> {
+        let runtime = Builder::new_multi_thread().enable_all().max_blocking_threads(4).build()?;
+        runtime.block_on( async { server_up().await } )
+    }
+
     async fn server_up() -> Result<(), Error> {
         let port = 32355;
         let server = PortalTcpServer::new(port, Box::new(TestPortalServer::new()));
@@ -273,6 +279,8 @@ mod tests {
     }
     impl Router for InYourFaceRouter {
         fn route(&self, message: message::Message) {
+
+println!("InYourFace: message.to: {}",message.to().to_string());
             let mux_tx = self.mux_tx.clone();
             tokio::spawn(async move {
                match message.clone() {
@@ -286,7 +294,9 @@ mod tests {
                                         match rx.await {
                                             Ok(stubs) => {
 
+                                                println!("Stub count: {}", stubs.len());
                                                 let stubs = stubs.into_iter().map(|stub| Primitive::Stub(stub)).collect();
+
 
                                                 let list = PrimitiveList{
                                                     primitive_type: PrimitiveType::Stub,
@@ -300,13 +310,15 @@ mod tests {
                                                     Exchange::RequestResponse(exchange_id) => exchange_id
                                                 };
 
-                                                let response = outlet::Response{
+                                                let response = Response{
                                                     id: unique_id(),
                                                     to: request.from.clone(),
                                                     from: request.to.clone(),
                                                     entity: RespEntity::Ok(Payload::List(list)),
                                                     exchange: exchange_id
                                                 };
+
+                                                mux_tx.send( MuxCall::MessageOut(message::Message::Response(response))).await;
                                             },
                                             Err(err) => {
                                                 GLOBAL_TX.send( GlobalEvent::Fail(err.to_string()));
@@ -413,7 +425,7 @@ mod tests {
             request.to.push(self.skel.stub.address.parent().expect("expected a parent"));
 
 
-println!("FriendlyPortalCtrl::exchange...");
+println!("FriendlyPortalCtrl::exchange... from: {} to: {}", self.skel.stub.address.to_string(), self.skel.stub.address.parent().expect("expected a parent").to_string() );
             match self.skel.portal.api().exchange(request).await {
                 Ok(response) => match response.entity {
                     response::RespEntity::Ok(Payload::List(resources)) => {

@@ -11,5 +11,6 @@ mesh-portal-api= { path = "../mesh-portal-api", version= "0.0.1"}
 mesh-portal-tcp-common = { path = "../mesh-portal-tcp-common", version= "0.0.1"}
 mesh-portal-api-client = { path = "../mesh-portal-api-client", version= "0.0.1"}
 anyhow = "1.0.44"
-tokio = { version = "1.4.0", features = ["full"] }
+tokio = { version = "1.15.0", features = ["full"] }
+
 async-trait = "0.1.48"
