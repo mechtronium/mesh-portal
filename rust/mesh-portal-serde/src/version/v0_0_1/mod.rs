@@ -3576,7 +3576,7 @@ pub mod generic {
             use crate::version::v0_0_1::generic::payload::Primitive;
             use crate::version::v0_0_1::util::ConvertFrom;
 
-            #[derive(Debug, Clone, Serialize, Deserialize)]
+            #[derive(Debug, Clone, Serialize, Deserialize, strum_macros::Display)]
             pub enum RespEntity<PAYLOAD> {
                 Ok(PAYLOAD),
                 Fail(fail::Fail),
@@ -4402,6 +4402,7 @@ pub mod generic {
             #[derive(Debug, Clone, Serialize, Deserialize)]
             pub struct Response<Payload> {
                 pub id: String,
+                pub from: Address,
                 pub to: Address,
                 pub exchange: ExchangeId,
                 pub entity: response::RespEntity<Payload>,
@@ -4417,7 +4418,8 @@ pub mod generic {
                 {
                     Ok(Response {
                         id: a.id,
-                        to: a.to.try_into()?,
+                        from: a.from,
+                        to: a.to,
                         entity: ConvertFrom::convert_from(a.entity)?,
                         exchange: a.exchange,
                     })
@@ -4550,6 +4552,7 @@ pub mod generic {
                     Ok(inlet::Response {
                         id: unique_id(),
                         to: self.from,
+                        from: self.to,
                         exchange: self.exchange.try_into()?,
                         entity: RespEntity::Ok(payload),
                     })
@@ -4561,6 +4564,7 @@ pub mod generic {
                 ) -> Result<inlet::Response<PAYLOAD>, Error> {
                     Ok(inlet::Response {
                         id: unique_id(),
+                        from: self.to,
                         to: self.from,
                         exchange: self.exchange.try_into()?,
                         entity: RespEntity::Fail(fail),

@@ -151,13 +151,14 @@ mod tests {
             });
         }
 
-        let client1 = Box::new(TestPortalClient::new("scott".to_string()));
-        let client2 = Box::new(TestPortalClient::new("fred".to_string()));
-
-        let client1 = PortalTcpClient::new(format!("localhost:{}", port), client1).await?;
-        let client2 = PortalTcpClient::new(format!("localhost:{}", port), client2).await?;
-
         tokio::spawn( async move {
+
+            let client1 = Box::new(TestPortalClient::new("scott".to_string()));
+            let client2 = Box::new(TestPortalClient::new("fred".to_string()));
+
+            let client1 = PortalTcpClient::new(format!("localhost:{}", port), client1).await.unwrap();
+            let client2 = PortalTcpClient::new(format!("localhost:{}", port), client2).await.unwrap();
+
             tokio::time::sleep( Duration::from_secs( 5 ) ).await;
             GLOBAL_TX.send( GlobalEvent::Timeout).unwrap_or_default();
         });
@@ -337,7 +338,7 @@ println!("InYourFace: message.to: {}",message.to().to_string());
                             }
 
                             _ => {
-                                mux_tx.send( MuxCall::MessageIn(message.clone()) ).await;
+                                mux_tx.send( MuxCall::MessageOut(message.clone()) ).await;
                             }
                         }
                     }
@@ -492,6 +493,7 @@ println!("FriendlyPortalCtrl::Ok");
             if let outlet::Frame::Request( request ) = frame {
                 let response = inlet::Response{
                     id: unique_id(),
+                    from: self.skel.stub.address.clone(),
                     to: request.from,
                     exchange: match request.exchange {
                         Exchange::Notification => {unique_id()}

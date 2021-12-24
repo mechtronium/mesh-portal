@@ -1,3 +1,4 @@
+
 #[macro_use]
 extern crate async_trait;
 
@@ -6,7 +7,6 @@ extern crate anyhow;
 
 #[macro_use]
 extern crate strum_macros;
-
 
 use std::convert::{TryFrom, TryInto};
 use std::sync::Arc;
@@ -31,7 +31,14 @@ use mesh_portal_api::message::Message;
 use mesh_portal_serde::version::v0_0_1::config::{PortalConfig, Assign};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::future::Future;
+use tokio::task::yield_now;
+use mesh_portal_api::message;
+use mesh_portal_serde::mesh::{Request, Response};
 use mesh_portal_serde::version::v0_0_1::generic::portal::Exchanger;
+use mesh_portal_serde::version::v0_0_1::generic::portal::inlet::Frame;
+use mesh_portal_serde::version::v0_0_1::generic::id::KindParts;
+use mesh_portal_serde::version::v0_0_1::generic::entity::request::ReqEntity;
+use mesh_portal_serde::version::v0_0_1::generic::payload::Payload;
 
 #[derive(Clone,strum_macros::Display)]
 pub enum Event {
@@ -214,63 +221,14 @@ impl PortalTcpServer {
                         let key = self.key_seq.fetch_add(1, Ordering::Relaxed );
 
                         let portal = Portal::new(key,self.portal_config.clone(), self.request_handler.clone(), outlet_tx, logger );
-
-/// for some reason without hack_tx & hack_rx, reader calls will not reach portal
-/// I would really like to remove this -- Scott
-let (hack_tx,mut hack_rx) = mpsc::channel(1024);
-
-                        let mut reader = reader;
-                        {
-                            let logger = self.server.logger();
-                            let portal_call_tx = portal.call_tx.clone();
-                                tokio::spawn(async move {
-                                while let Result::Ok(frame) = reader.read().await {
-println!("Reading a server inlet frame: {}",frame.to_string());
-
-                                    let result = portal_call_tx.send(PortalCall::FrameIn(frame)).await;
-println!("server inlet frame SENT...{}",result.is_ok());
-                                    if result.is_err() {
-                                        (logger)("FATAL: cannot send frame to portal inlet_tx");
-                                        return;
-                                    }
-                                    tokio::time::sleep(Duration::from_millis(1));
-
-println!("....>>>> Sending to dumb_tx!!");
-                                    hack_tx.send("Hello").await;
-println!("next loop....");
-                                }
-                            });
-                        }
-
-
-tokio::spawn(async move {
-   while let Option::Some(text) = hack_rx.recv().await {
-     //  println!("... >>> REceived {}",text );
-   }
-});
-
-
-                let mut writer= writer;
-                        {
-                            let logger = self.server.logger();
-                            tokio::spawn(async move {
-                                while let Option::Some(frame) = outlet_rx.recv().await {
-println!("Tcp Server Receive Outlet Call: {}",frame.to_string());
-                                    let result = writer.write(frame).await;
-tokio::time::sleep(Duration::from_millis(0));
-                                    if result.is_err() {
-                                        (logger)("FATAL: cannot write to frame writer");
-                                        return;
-                                    }
-                                }
-                            });
-                        }
-
+                        let inlet_tx = portal.inlet_tx.clone();
+                        let mux_tx = portal.mux_tx.clone();
+println!("TCP Server adding portal ");
                         match self.mux_tx.send(MuxCall::Add(portal)).await {
                             Err(err) => {
                                 let message = err.to_string();
                                 (self.server.logger())(message.as_str());
-//                                self.broadcaster_tx.send( Event::Info(EventResult::Err(message.clone()))).unwrap_or_default();
+        //                                self.broadcaster_tx.send( Event::Info(EventResult::Err(message.clone()))).unwrap_or_default();
                             }
                             Ok(_) => {
                                 match self.request_handler.default_assign().await {
@@ -278,14 +236,52 @@ tokio::time::sleep(Duration::from_millis(0));
                                         let assign = Exchanger::new(assign);
 
                                         self.broadcaster_tx.send( Event::ResourceCtrl(EventResult::Ok(user.clone()))).unwrap_or_default();
+println!("TCP Server performing default Assign '{}'", user);
                                         self.mux_tx.send(MuxCall::Assign {assign, portal:key }).await?;
                                     }
-                                    Err(err) => {
+                                    Err(_) => {
                                     }
                                 }
                             }
                         }
 
+                inlet_tx.send( inlet::Frame::Log(Log::Warn("sending first reader log...".to_string()))).await;
+                {
+                            let logger = self.server.logger();
+                                tokio::spawn(async move {
+                                    loop {
+                                        println!("TCP reader Start loop...");
+                                        tokio::time::sleep(Duration::from_millis(0));
+                                        if let Result::Ok(frame) = reader.read().await {
+                                            tokio::time::sleep(Duration::from_millis(0));
+println!("TCP READER sending SECOND log....");
+                                            println!("TCP reader sending frame: {}", frame.to_string());
+                                            let result = inlet_tx.send(frame).await;
+                                            yield_now().await;
+                                            println!("TCP reader inlet frame SENT...{}", result.is_ok());
+                                            if result.is_err() {
+                                                (logger)("FATAL: cannot send frame to portal inlet_tx");
+                                                return;
+                                            }
+                                            println!("TCP reader next loop....");
+                                        }else {
+                                            println!("TCP Reader end...");
+                                            break;
+                                        }
+                                    }
+                            });
+                        }
+
+                    {
+                        let logger = self.server.logger();
+                        tokio::spawn(async move {
+                            while let Option::Some(frame) = outlet_rx.recv().await {
+println!("Tcp Server Writer Outlet Call: {}",frame.to_string());
+                                let result = writer.write(frame).await;
+tokio::time::sleep(Duration::from_millis(0));
+                           }
+                        });
+                    }
                 }
             Err(err) => {
                 let message = format!("ERROR: authorization failed: {}", err.to_string());
