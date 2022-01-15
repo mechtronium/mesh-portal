@@ -303,7 +303,6 @@ pub mod pattern {
     pub mod specific {
         use std::ops::Deref;
         use std::str::FromStr;
-        use crate::pattern::Pattern;
         use crate::error::Error;
         use crate::parse::SkewerCase;
         use crate::version::v0_0_1::pattern::Pattern;
