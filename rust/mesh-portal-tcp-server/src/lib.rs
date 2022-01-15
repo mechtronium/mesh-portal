@@ -1,3 +1,4 @@
+
 #[macro_use]
 extern crate async_trait;
 
@@ -6,7 +7,6 @@ extern crate anyhow;
 
 #[macro_use]
 extern crate strum_macros;
-
 
 use std::convert::{TryFrom, TryInto};
 use std::sync::Arc;
@@ -17,18 +17,28 @@ use anyhow::Error;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
-use tokio::runtime::Runtime;
 use tokio::sync::{broadcast, mpsc, Mutex, oneshot};
 use tokio::sync::mpsc::error::SendTimeoutError;
 
-use mesh_portal_api_server::{MuxCall, Portal, PortalMuxer, Router};
-use mesh_portal_serde::version::latest::config::Info;
+use mesh_portal_api_server::{MuxCall, Portal, PortalMuxer, Router, PortalRequestHandler, PortalCall};
 use mesh_portal_serde::version::latest::frame::CloseReason;
 use mesh_portal_serde::version::latest::log::Log;
 use mesh_portal_serde::version::latest::portal::{inlet, outlet};
 use mesh_portal_serde::version::latest::resource::Status;
+use mesh_portal_serde::version::latest::resource::Code;
 use mesh_portal_tcp_common::{FrameReader, FrameWriter, PrimitiveFrameReader, PrimitiveFrameWriter};
 use mesh_portal_api::message::Message;
+use mesh_portal_serde::version::v0_0_1::config::{PortalConfig, Assign};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::future::Future;
+use tokio::task::yield_now;
+use mesh_portal_api::message;
+use mesh_portal_serde::mesh::{Request, Response};
+use mesh_portal_serde::version::v0_0_1::generic::portal::Exchanger;
+use mesh_portal_serde::version::v0_0_1::generic::portal::inlet::Frame;
+use mesh_portal_serde::version::v0_0_1::generic::id::KindParts;
+use mesh_portal_serde::version::v0_0_1::generic::entity::request::ReqEntity;
+use mesh_portal_serde::version::v0_0_1::generic::payload::Payload;
 
 #[derive(Clone,strum_macros::Display)]
 pub enum Event {
@@ -36,7 +46,7 @@ pub enum Event {
     ClientConnected,
     FlavorNegotiation(EventResult<String>),
     Authorization(EventResult<String>),
-    Info(EventResult<Info>),
+    ResourceCtrl(EventResult<String>),
     Shutdown,
 }
 
@@ -65,12 +75,15 @@ impl Alive {
 }
 
 pub struct PortalTcpServer {
+    portal_config: PortalConfig,
     port: usize,
     server: Arc<dyn PortalServer>,
     broadcaster_tx: broadcast::Sender<Event>,
     call_tx: mpsc::Sender<Call>,
     mux_tx: mpsc::Sender<MuxCall>,
-    alive: Arc<Mutex<Alive>>
+    alive: Arc<Mutex<Alive>>,
+    key_seq: AtomicU64,
+    request_handler: Arc<dyn PortalRequestHandler>
 }
 
 impl PortalTcpServer {
@@ -86,6 +99,9 @@ impl PortalTcpServer {
         PortalMuxer::new(mux_tx.clone(),mux_rx,router);
 
         let server = Self {
+            request_handler: server.portal_request_handler(),
+            key_seq: AtomicU64::new(0),
+            portal_config: Default::default(),
             port,
             server,
             broadcaster_tx,
@@ -94,40 +110,35 @@ impl PortalTcpServer {
             alive: Arc::new(Mutex::new(Alive::new()))
         };
 
-
-        thread::spawn( || {
-            let rt = Runtime::new().unwrap();
-            rt.block_on(async {
-
-                server.broadcaster_tx.send( Event::Status(Status::Unknown) ).unwrap_or_default();
-                {
-                    let port = server.port.clone();
-                    let broadcaster_tx = server.broadcaster_tx.clone();
-                    let alive = server.alive.clone();
-                    tokio::spawn(async move {
-                        tokio::time::sleep(Duration::from_secs(0)).await;
-                        while let Option::Some(call) = call_rx.recv().await {
-                            match call {
-                                Call::InjectMessage(_) => {}
-                                Call::ListenEvents(tx) => {
-                                    tx.send( broadcaster_tx.subscribe() );
-                                },
-                                Call::Shutdown  => {
-                                    broadcaster_tx.send(Event::Shutdown).unwrap_or_default();
-                                    alive.lock().await.alive = false;
-                                    match std::net::TcpStream::connect(format!("localhost:{}", port)) {
-                                        Ok(_) => {}
-                                        Err(_) => {}
-                                    }
-                                    return;
+        tokio::spawn( async move {
+            server.broadcaster_tx.send(Event::Status(Status::Unknown)).unwrap_or_default();
+            {
+                let port = server.port.clone();
+                let broadcaster_tx = server.broadcaster_tx.clone();
+                let alive = server.alive.clone();
+                tokio::spawn(async move {
+                    tokio::time::sleep(Duration::from_secs(0)).await;
+                    while let Option::Some(call) = call_rx.recv().await {
+                        match call {
+                            Call::InjectMessage(_) => {}
+                            Call::ListenEvents(tx) => {
+                                tx.send(broadcaster_tx.subscribe());
+                            },
+                            Call::Shutdown => {
+                                broadcaster_tx.send(Event::Shutdown).unwrap_or_default();
+                                alive.lock().await.alive = false;
+                                match std::net::TcpStream::connect(format!("localhost:{}", port)) {
+                                    Ok(_) => {}
+                                    Err(_) => {}
                                 }
+                                return;
                             }
                         }
-                    });
-                }
+                    }
+                });
+            }
 
-                server.start().await;
-            });
+            server.start().await;
         });
 
         call_tx
@@ -152,7 +163,7 @@ impl PortalTcpServer {
                         self.broadcaster_tx.send( Event::ClientConnected ).unwrap_or_default();
                         (&self).handle(stream).await;
                     }
-                    self.broadcaster_tx.send( Event::Status(Status::Done("done".to_string())) ).unwrap_or_default();
+                    self.broadcaster_tx.send( Event::Status(Status::Done(Code::Ok)) ).unwrap_or_default();
                 }
                 Err(error) => {
                     let message = format!("FATAL: could not setup TcpListener {}", error);
@@ -197,66 +208,69 @@ impl PortalTcpServer {
                 let mut reader : FrameReader<inlet::Frame> = FrameReader::new(reader );
                 let mut writer : FrameWriter<outlet::Frame>  = FrameWriter::new(writer );
 
-                match self.server.info(user.clone() ).await {
-                    Ok(info) => {
 
-                        self.broadcaster_tx.send( Event::Info(EventResult::Ok(info.clone()))).unwrap_or_default();
+//                        self.broadcaster_tx.send( Event::Info(EventResult::Ok(info.clone()))).unwrap_or_default();
                         tokio::time::sleep(Duration::from_secs(0)).await;
 
-                        let (outlet_tx,mut outlet_rx) = mpsc::channel(128);
-                        let (inlet_tx,inlet_rx) = mpsc::channel(128);
+                        let (outlet_tx,mut outlet_rx) = mpsc::channel(1024);
 
                         fn logger( log: Log ) {
                             println!("{}", log.to_string() );
                         }
 
-                        let portal = Portal::new(info.clone(), outlet_tx, inlet_rx, logger );
+                        let key = self.key_seq.fetch_add(1, Ordering::Relaxed );
 
-                        let mut reader = reader;
-                        {
-                            let logger = self.server.logger();
-                            tokio::spawn(async move {
-                                while let Result::Ok(frame) = reader.read().await {
-                                    let result = inlet_tx.try_send(frame);
-                                    if result.is_err() {
-                                        (logger)("FATAL: cannot send frame to portal inlet_tx");
-                                        return;
-                                    }
-                                }
-                            });
-                        }
-
-                        let mut writer= writer;
-                        {
-                            let logger = self.server.logger();
-                            tokio::spawn(async move {
-                                while let Option::Some(frame) = outlet_rx.recv().await {
-                                    let result = writer.write(frame).await;
-                                    if result.is_err() {
-                                        (logger)("FATAL: cannot write to frame writer");
-                                        return;
-                                    }
-                                }
-                            });
-                        }
-
-                        match self.mux_tx.send_timeout(MuxCall::Add(portal),Duration::from_secs(info.config.frame_timeout.clone()), ).await {
+                        let portal = Portal::new(key,self.portal_config.clone(), self.request_handler.clone(), outlet_tx, logger );
+                        let inlet_tx = portal.inlet_tx.clone();
+                        match self.mux_tx.send(MuxCall::Add(portal)).await {
                             Err(err) => {
                                 let message = err.to_string();
                                 (self.server.logger())(message.as_str());
-                                self.broadcaster_tx.send( Event::Info(EventResult::Err(message.clone()))).unwrap_or_default();
+        //                                self.broadcaster_tx.send( Event::Info(EventResult::Err(message.clone()))).unwrap_or_default();
                             }
-                            _ => {}
+                            Ok(_) => {
+                                match self.request_handler.default_assign().await {
+                                    Ok(assign) => {
+                                        let assign = Exchanger::new(assign);
+
+                                        self.broadcaster_tx.send( Event::ResourceCtrl(EventResult::Ok(user.clone()))).unwrap_or_default();
+                                        self.mux_tx.send(MuxCall::Assign {assign, portal:key }).await?;
+                                    }
+                                    Err(_) => {
+                                    }
+                                }
+                            }
                         }
-                    }
-                    Err(err) => {
-                        let message = format!("ERROR: portal creation error: {}", err.to_string());
-                        (self.server.logger())(message.as_str());
-                        self.broadcaster_tx.send( Event::Info(EventResult::Err(message.clone()))).unwrap_or_default();
-                        writer.close( CloseReason::Error(message) ).await;
+
+                {
+                            let logger = self.server.logger();
+                                tokio::spawn(async move {
+                                    loop {
+                                        if let Result::Ok(frame) = reader.read().await {
+                                            let result = inlet_tx.send(frame).await;
+                                            yield_now().await;
+                                            if result.is_err() {
+                                                (logger)("FATAL: cannot send frame to portal inlet_tx");
+                                                return;
+                                            }
+                                        }else {
+                                            println!("TCP Reader end...");
+                                            break;
+                                        }
+                                    }
+                            });
+                        }
+
+                    {
+                        let logger = self.server.logger();
+                        tokio::spawn(async move {
+                            while let Option::Some(frame) = outlet_rx.recv().await {
+                                writer.write(frame).await;
+                                yield_now().await;
+                           }
+                        });
                     }
                 }
-            }
             Err(err) => {
                 let message = format!("ERROR: authorization failed: {}", err.to_string());
                 (self.server.logger())(message.as_str());
@@ -265,6 +279,7 @@ impl PortalTcpServer {
             }
         }
         Ok(())
+
     }
 }
 
@@ -279,6 +294,6 @@ pub trait PortalServer: Sync+Send {
     async fn auth(&self, reader: &mut PrimitiveFrameReader, writer: &mut PrimitiveFrameWriter) -> Result<String,Error>;
     fn router_factory(&self, mux_tx: tokio::sync::mpsc::Sender<MuxCall> ) -> Box<dyn Router>;
     fn logger(&self) -> fn(message: &str);
-    async fn info(&self, user: String ) -> Result<Info,Error>;
+    fn portal_request_handler(&self) -> Arc<dyn PortalRequestHandler>;
 }
 

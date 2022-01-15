@@ -8,7 +8,7 @@ extern crate anyhow;
 
 use mesh_portal_tcp_common::{PrimitiveFrameReader, PrimitiveFrameWriter, FrameWriter, FrameReader};
 use anyhow::Error;
-use mesh_portal_api_client::{Portal, PortalCtrl, PortalSkel, InletApi, Inlet };
+use mesh_portal_api_client::{Portal, ResourceCtrl, PortalSkel, InletApi, Inlet, ResourceCtrlFactory};
 use std::sync::Arc;
 use tokio::net::TcpStream;
 use tokio::sync::mpsc;
@@ -29,7 +29,6 @@ pub struct PortalTcpClient {
 impl PortalTcpClient {
 
     pub async fn new( host: String, client: Box<dyn PortalClient> ) -> Result<Self,Error> {
-
         let stream = TcpStream::connect(host.clone()).await?;
 
         let (reader,writer) = stream.into_split();
@@ -39,7 +38,6 @@ impl PortalTcpClient {
         writer.write_string(client.flavor()).await?;
 
         let result = reader.read_string().await?;
-
 
         if result != "Ok" {
             let message = format!("FLAVOR MATCH FAILED: {}",result);
@@ -60,7 +58,6 @@ impl PortalTcpClient {
         let mut reader : FrameReader<outlet::Frame> = FrameReader::new(reader );
         let mut writer : FrameWriter<inlet::Frame>  = FrameWriter::new(writer );
 
-
         let (inlet_tx, mut inlet_rx) = mpsc::channel(1024 );
         let (outlet_tx, mut outlet_rx) = mpsc::channel(1024 );
 
@@ -79,43 +76,35 @@ impl PortalTcpClient {
             });
         }
 
-
         let inlet = Box::new(TcpInlet{
           sender: inlet_tx,
            logger: client.logger()
         });
 
+        let portal = Portal::new(Default::default(), inlet, outlet_tx.clone(), outlet_rx, client.resource_ctrl_factory(), client.logger()).await?;
+        {
+            let logger = client.logger();
+            tokio::spawn(async move {
+                while let Result::Ok(frame) = reader.read().await {
+                    match outlet_tx.send( frame ).await {
+                        Result::Ok(_) => {
 
-        if let outlet::Frame::Create(info) = reader.read( ).await?  {
-
-            let portal = Portal::new(info, inlet, client.portal_ctrl_factory(), client.logger()).await?;
-
-
-            {
-                let logger = client.logger();
-                tokio::spawn(async move {
-                    while let Result::Ok(frame) = reader.read().await {
-                        match outlet_tx.try_send( frame ) {
-                            Result::Ok(_) => {}
-                            Result::Err(err) => {
-                                (logger)("FATAL: reader disconnected");
-                                break;
-                            }
+                        }
+                        Result::Err(err) => {
+                            (logger)("FATAL: reader disconnected");
+                            break;
                         }
                     }
-                });
-            }
-
-
-            return Ok(Self {
-                host,
-                portal
+                }
             });
-        } else {
-            let message = "expected portal info.".to_string();
-            (client.logger())(message.as_str());
-            return Err(anyhow!(message));
+
         }
+
+        return Ok(Self {
+            host,
+            portal
+        });
+
     }
 }
 
@@ -123,7 +112,7 @@ impl PortalTcpClient {
 pub trait PortalClient: Send+Sync {
     fn flavor(&self) -> String;
     async fn auth( &self, reader: & mut PrimitiveFrameReader, writer: & mut PrimitiveFrameWriter ) -> Result<(),Error>;
-    fn portal_ctrl_factory(&self)->Box<dyn Fn(PortalSkel)->Result<Box<dyn PortalCtrl>,Error>>;
+    fn resource_ctrl_factory(&self) ->Arc<dyn ResourceCtrlFactory>;
     fn logger(&self) -> fn(message: &str);
 }
 
@@ -133,14 +122,18 @@ struct TcpInlet {
 }
 
 impl Inlet for TcpInlet {
-    fn send_frame(&self, frame: inlet::Frame) {
-        match self.sender.try_send(frame)
-        {
-            Ok(_) => {}
-            Err(err) => {
-                (self.logger)(format!("ERROR: frame failed to send to client inlet").as_str())
+    fn inlet_frame(&self, frame: inlet::Frame) {
+        let sender = self.sender.clone();
+        let logger = self.logger;
+        tokio::spawn(async move {
+            match sender.send(frame).await
+            {
+                Ok(_) => {}
+                Err(err) => {
+                    (logger)(format!("ERROR: frame failed to send to client inlet").as_str())
+                }
             }
-        }
+        });
     }
 }
 

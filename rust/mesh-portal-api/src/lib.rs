@@ -46,22 +46,24 @@ pub fn converter<From,To>(handle_error:fn (error:Error) ) -> (mpsc::Sender<From>
 
 pub mod message {
     use mesh_portal_serde::version::latest::entity::request::ReqEntity;
+    use mesh_portal_serde::version::latest::entity::response::RespEntity;
     use mesh_portal_serde::version::latest::id::Address;
 
-    pub type Message = generic::Message<ReqEntity,Address>;
+    pub type Message = generic::Message;
 
     pub mod generic {
         use serde::{Serialize,Deserialize};
         use mesh_portal_serde::mesh::generic::{Request, Response};
+        use mesh_portal_serde::version::latest::id::Address;
 
-        #[derive(Clone,Serialize,Deserialize)]
-        pub enum Message<ReqEntity,ID> {
-            Request(Request<ReqEntity,ID>),
-            Response(Response<ID>)
+        #[derive(Debug,Clone,Serialize,Deserialize)]
+        pub enum Message {
+            Request(Request),
+            Response(Response)
         }
 
-        impl<ReqEntity,ID> Message<ReqEntity,ID> where ID: Clone {
-            pub fn to(&self) -> ID {
+        impl Message{
+            pub fn to(&self) -> Address {
                 match self {
                     Message::Request(request) => {
                         request.to.clone()
@@ -73,18 +75,27 @@ pub mod message {
             }
         }
 
-        impl<ReqEntity,ID> From<Request<ReqEntity,ID>> for Message<ReqEntity,ID> {
-            fn from(request: Request<ReqEntity, ID>) -> Self {
+        impl From<Request> for Message {
+            fn from(request: Request) -> Self {
                 Self::Request(request)
             }
         }
 
-        impl<ReqEntity,ID> From<Response<ID>> for Message<ReqEntity,ID> {
-            fn from(response: Response<ID>) -> Self {
+        impl From<Response> for Message {
+            fn from(response: Response) -> Self {
                 Self::Response(response)
             }
         }
 
     }
 
+}
+
+
+#[cfg(test)]
+pub mod test {
+    #[test]
+    pub fn test(){
+
+    }
 }

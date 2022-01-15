@@ -26,7 +26,8 @@ use mesh_portal_serde::version::latest::payload::MapPattern;
 use std::iter::Map;
 use std::collections::HashMap;
 use mesh_portal_serde::version::v0_0_1::generic::payload::{MsgCall, HttpCall};
-use mesh_portal_serde::version::v0_0_1::parse::{Res, filepath_chars, parse_version, rec_version, path};
+use mesh_portal_serde::version::v0_0_1::parse::{Res, filepath_chars, parse_version, rec_version, path, address_segment_chars, domain_chars, skewer_chars, in_double_quotes};
+use mesh_portal_serde::version::v0_0_1::generic::resource::command::RcCommandType;
 
 
 pub enum BindSection {
@@ -68,7 +69,7 @@ pub fn parse_address_segments(input: &str) -> Res<&str, Vec<String>> {
         "address",
         separated_list1(
             nom::character::complete::char(':'),
-            alt((domain, skewer, filepath_chars, recognize(parse_version)))
+            alt((domain_chars, skewer_chars, filepath_chars, recognize(parse_version)))
         ),
     )(input).map( |(next,segments)|{
         let segments = segments.iter().map(|s|s.to_string()).collect();
@@ -81,7 +82,7 @@ pub fn parse_mechtron_segments(input: &str) -> Res<&str, Vec<String>> {
         "mechtron",
         separated_list1(
             nom::character::complete::char(':'),
-            alt((domain,skewer))
+            alt((domain_chars,skewer_chars))
         ),
     )(input).map( |(next,segments)|{
         let segments = segments.iter().map(|s|s.to_string()).collect();
@@ -90,11 +91,11 @@ pub fn parse_mechtron_segments(input: &str) -> Res<&str, Vec<String>> {
 }
 
 pub fn rec_address(input: &str) -> Res<&str, &str> {
-    recognize(tuple( (domain,many0(preceded(tag(":"), alt((skewer, rec_version, filepath_chars)) )))))(input)
+    recognize(tuple( (domain_chars,many0(preceded(tag(":"), alt((skewer_chars, rec_version, filepath_chars)) )))))(input)
 }
 
 pub fn rec_address_segment(input: &str) -> Res<&str, &str> {
-    recognize(alt((rec_version, skewer, filepath_chars)) )(input)
+    recognize(alt((rec_version, skewer_chars, filepath_chars)) )(input)
 }
 
 
@@ -104,11 +105,11 @@ pub fn consume_address(input: &str) -> Res<&str, &str> {
 }
 
 pub fn rec_artifact(input: &str) -> Res<&str, &str> {
-    recognize(tuple( (domain,many0(preceded(tag(":"), skewer)),preceded(tag(":"), rec_version),preceded(tag(":"), filepath_chars))))(input)
+    recognize(tuple( (domain_chars,many0(preceded(tag(":"), skewer_chars)),preceded(tag(":"), rec_version),preceded(tag(":"), filepath_chars))))(input)
 }
 
 pub fn rec_mechtron(input: &str) -> Res<&str, &str> {
-    recognize(tuple( (domain,many0(preceded(tag(":"), skewer)))))(input)
+    recognize(tuple( (domain_chars,many0(preceded(tag(":"), skewer_chars)))))(input)
 }
 
 pub fn consume_artifact(input: &str) -> Res<&str, &str> {
@@ -127,14 +128,14 @@ pub fn consume_address_segments(input: &str) -> Res<&str, Vec<String>> {
 pub fn address_path(input: &str) -> Res<&str, &str> {
     recognize(separated_list1(
         nom::character::complete::char(':'),
-        any_resource_path_segment
+       address_segment_chars
     ))(input)
 }
 
 pub fn mechtron_path(input: &str) -> Res<&str, &str> {
     recognize(separated_list1(
         nom::character::complete::char(':'),
-        any_resource_path_segment
+       address_segment_chars
     ))(input)
 }
 
@@ -143,63 +144,6 @@ pub fn mechtron_address(input: &str) -> Res<&str, Address> {
     parse_from_str( mechtron_path ).parse(input)
 }
 
-
-pub fn call_with_config(input: &str) -> Res<&str, CallWithConfig> {
-    tuple( (call, opt(preceded(tag("+"), Address::parse ))) )(input).map( |(next, (call,config)) |{
-
-        (next,
-         CallWithConfig {
-            call,
-            config
-        })
-    } )
-}
-
-pub fn rc_command(input: &str) -> Res<&str, RcCommand> {
-    parse_from_str(alpha1).parse(input)
-}
-
-pub fn rc_call_kind(input: &str) -> Res<&str, CallKind> {
-     delimited( tag("Rc<"), rc_command, tag(">"))(input).map( |(next,rc_command)| {
-         (next,CallKind::Rc(rc_command))
-     })
-}
-
-pub fn msg_call(input: &str) -> Res<&str, CallKind> {
-    tuple( (delimited( tag("Msg<"), alphanumeric1, tag(">") ),opt(recognize(path))))(input).map( |(next,(action,path))| {
-        let path = match path{
-            None => "/",
-            Some(path) => path
-        };
-        (next,CallKind::Msg(MsgCall::new(action.to_string(), path.to_string())))
-    })
-}
-
-pub fn http_call(input: &str) -> Res<&str, CallKind> {
-    tuple( (delimited( tag("Http<"), parse_from_str(alphanumeric1), tag(">") ),path))(input).map( |(next,(method,path))| {
-        (next,CallKind::Http(HttpCall::new(method, path.to_string())))
-    })
-}
-
-
-pub fn call_kind( input: &str ) -> Res<&str,CallKind> {
-    alt( (rc_call_kind, msg_call, http_call))(input)
-}
-
-
-
-pub fn call(input: &str) -> Res<&str, Call> {
-    tuple( ( mechtron_address, preceded(tag("^"), call_kind )) )(input).map( |(next,(address,kind))| {
-        (next,Call{
-            address,
-            kind
-        })
-    } )
-}
-
-pub fn consume_call(input: &str) -> Res<&str, Call> {
-    all_consuming( call )(input)
-}
 
 fn payload_type_empty(input: &str ) -> Res<&str, PayloadTypeDef> {
     alt((tag("Empty"), multispace0 )) (input).map( |(next,_)| {
@@ -294,7 +238,7 @@ pub fn opt_tagged_payload_type_def(input: &str ) -> Res<&str, PayloadTypeDef> {
 
 
 pub fn labeled_payload_def(input: &str ) -> Res<&str, PayloadDef> {
-    (tuple( (skewer, tagged_payload_type_def))) (input).map( |(next,(label,type_def))| {
+    (tuple( (skewer_chars, tagged_payload_type_def))) (input).map( |(next,(label,type_def))| {
 
         (next,
          PayloadDef{
@@ -532,11 +476,5 @@ pub enum PipeSegEntry {
 
 
 
-#[derive(Debug,Clone,Eq,PartialEq)]
-pub enum PipelineStop {
-   Internal,
-   Call(Call),
-   Return
-}
 
 

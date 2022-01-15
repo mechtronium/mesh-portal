@@ -11,7 +11,7 @@ use std::time::Duration;
 
 use anyhow::Error;
 use dashmap::DashMap;
-use tokio::sync::oneshot;
+use tokio::sync::{oneshot, mpsc};
 use uuid::Uuid;
 
 
@@ -19,31 +19,45 @@ use std::prelude::rust_2021::TryFrom;
 use std::ops::Deref;
 use std::collections::HashMap;
 use tokio::sync::watch::Receiver;
-use client::{Request,RequestContext};
 use mesh_portal_serde::std_logger;
 use mesh_portal_serde::version::latest::http::{HttpRequest, HttpResponse};
 use mesh_portal_serde::version::latest::portal::{inlet, outlet};
 use mesh_portal_serde::version::latest::resource::Status;
 use mesh_portal_serde::version::latest::messaging::{ExchangeId, Exchange};
-use mesh_portal_serde::version::latest::config::Info;
 use mesh_portal_serde::version::latest::log::Log;
 use mesh_portal_serde::version::latest::{portal, entity};
 use mesh_portal_serde::version::v0_0_1::util::ConvertFrom;
 use std::convert::TryInto;
+use mesh_portal_serde::version::v0_0_1::config::{PortalConfig, ResourceConfigBody, Config};
+use mesh_portal_serde::version::latest::resource::ResourceStub;
+use mesh_portal_serde::version::latest::id::Address;
+use mesh_portal_serde::version::v0_0_1::generic::portal::outlet::Frame;
+use mesh_portal_serde::version::v0_0_1::generic::id::KindParts;
+use mesh_portal_serde::version::v0_0_1::generic::entity::request::ReqEntity;
+use mesh_portal_serde::version::v0_0_1::generic::payload::Payload;
 
 
-struct EmptySkel {
+#[derive(Clone)]
+pub struct ResourceSkel {
+  pub portal: PortalSkel,
+  pub stub: ResourceStub,
+  pub config: Config<ResourceConfigBody>,
+  pub logger: fn(message: &str),
+}
 
+pub trait ResourceCtrlFactory: Sync+Send {
+    fn matches(&self,config:Config<ResourceConfigBody>) -> bool;
+    fn create(&self, skel: ResourceSkel) -> Result<Arc<dyn ResourceCtrl>, Error>;
 }
 
 #[async_trait]
-pub trait PortalCtrl: Sync+Send {
-    async fn init(&mut self) -> Result<(), Error>
+pub trait ResourceCtrl: Sync+Send {
+    async fn init(&self) -> Result<(), Error>
     {
         Ok(())
     }
 
-    async fn handle( &self, request: outlet::Request ) -> Result<Option<inlet::Response>,Error> {
+    async fn outlet_frame(&self, frame: outlet::Frame ) -> Result<Option<inlet::Response>,Error> {
         Ok(Option::None)
     }
 }
@@ -53,7 +67,7 @@ pub fn log(message: &str) {
 }
 
 pub trait Inlet: Sync+Send {
-    fn send_frame(&self, frame: inlet::Frame);
+    fn inlet_frame(&self, frame: inlet::Frame);
 }
 
 pub trait Outlet: Sync+Send {
@@ -73,75 +87,127 @@ impl StatusChamber{
 }
 
 pub type Exchanges = Arc<DashMap<ExchangeId, oneshot::Sender<outlet::Response>>>;
-pub type PortalStatus = Arc<RwLock<StatusChamber>>;
+
 
 
 #[derive(Clone)]
 pub struct PortalSkel {
-    pub info: Info,
+    pub config: PortalConfig,
     pub inlet: Arc<dyn Inlet>,
     pub logger: fn(message: &str),
     pub exchanges: Exchanges,
-    pub status: PortalStatus
+    pub tx: mpsc::Sender<outlet::Frame>,
+    pub ctrl_factory: Arc<dyn ResourceCtrlFactory>,
 }
 
-impl PortalSkel {
-    pub fn status(&self) -> Status {
-        (*self.status.read().expect("expected status read lock")).status.clone()
-    }
 
-    pub fn set_status(&mut self, status: Status) {
-        {
-            self.status.write().expect("expected to get status write lock").status = status.clone();
-        }
-        self.inlet.send_frame(inlet::Frame::Status(status));
-    }
+impl PortalSkel {
 
     pub fn api(&self) -> InletApi {
-        InletApi::new( self.info.clone(), self.inlet.clone(), self.exchanges.clone(), std_logger )
+        InletApi::new( self.config.clone(), self.inlet.clone(), self.exchanges.clone(), std_logger )
     }
 
+}
+
+
+pub enum ResourceCommand {
+    Add{address: Address, resource: Arc<dyn ResourceCtrl> },
+    Remove(Address),
+    None
 }
 
 
 pub struct Portal {
     pub skel: PortalSkel,
-    pub ctrl: Arc<dyn PortalCtrl>,
 }
 
 impl Portal {
     pub async fn new(
-        info: Info,
+        config: PortalConfig,
         inlet: Box<dyn Inlet>,
-        ctrl_factory: Box<dyn Fn(PortalSkel) ->Result<Box<dyn PortalCtrl>,Error>>,
+        outlet_tx: mpsc::Sender<outlet::Frame>,
+        mut outlet_rx: mpsc::Receiver<outlet::Frame>,
+        ctrl_factory: Arc<dyn ResourceCtrlFactory>,
         logger: fn(message: &str)
     ) -> Result<Arc<Portal>, Error> {
 
         let inlet :Arc<dyn Inlet>= inlet.into();
-        let status = Arc::new(RwLock::new(StatusChamber::new( Status::Unknown )));
-        inlet.send_frame(inlet::Frame::Status(Status::Unknown ));
         let exchanges = Arc::new(DashMap::new());
         let skel =  PortalSkel {
-            info: info.clone(),
+            config,
             inlet,
             logger,
             exchanges,
-            status
+            tx: outlet_tx,
+            ctrl_factory,
         };
 
-        let mut ctrl = ctrl_factory(skel.clone())?;
-        ctrl.init().await?;
-        let ctrl = ctrl.into();
+        {
+            let skel = skel.clone();
+            tokio::spawn(async move {
+                let mut resources = HashMap::new();
+                while let Option::Some(frame) = outlet_rx.recv().await {
+                    if let Frame::Close(_) = frame {
+                        println!("XXX>>> Client exiting outlet_rx loop");
+                        break;
+                    }
+                    process(&skel, &mut resources, frame).await;
+
+                        async fn process( skel: &PortalSkel,  resources: &mut HashMap<Address,Arc<dyn ResourceCtrl>>, frame: outlet::Frame ) -> Result<(),Error> {
+                            if let Frame::Assign(assign) = &frame {
+                                let resource_skel = ResourceSkel {
+                                    portal: skel.clone(),
+                                    stub: assign.stub.clone(),
+                                    config: assign.config.clone(),
+                                    logger: skel.logger,
+                                };
+                                let resource = skel.ctrl_factory.create(resource_skel)?;
+                                resources.insert( assign.stub.address.clone(), resource.clone() );
+                                tokio::spawn( async move {
+                                    resource.init().await
+                                });
+
+                                return Ok(());
+                            }
+
+                            if let Frame::Response(response)= &frame {
+                                if let Option::Some((id,tx)) = skel.exchanges.remove(&response.exchange) {
+                                    tx.send(response.clone());
+                                    return Ok(())
+                                }
+                            } else {
+                                eprintln!("could not find exchange for response: ")
+                            }
+
+                            let to = frame.to().ok_or::<Error>(anyhow!("expected frame to have a to"))?;
+                            let resource = resources.get(&to).ok_or(anyhow!("expected to find resource for address"))?;
+
+                            println!("SSS SEnding to outlet_frame....");
+                            if let Option::Some(response) = resource.outlet_frame(frame).await? {
+                                println!("GGG GOT a response !");
+                                skel.inlet.inlet_frame(inlet::Frame::Response(response));
+                            }
+
+                            Ok(())
+                        }
+
+
+                }
+
+
+
+            });
+        }
+
         let portal = Self {
             skel: skel.clone(),
-            ctrl,
         };
 
         Ok(Arc::new(portal))
     }
 
     pub fn log( &self, log: Log ) {
-        self.skel.inlet.send_frame(inlet::Frame::Log(log));
+        self.skel.inlet.inlet_frame(inlet::Frame::Log(log));
     }
 
 }
@@ -149,74 +215,22 @@ impl Portal {
 #[async_trait]
 impl Outlet for Portal {
     fn receive(&mut self, frame: outlet::Frame) {
-        match self.skel.status() {
-            Status::Ready => match frame {
-                outlet::Frame::CommandEvent(_) => {}
-                outlet::Frame::Request(request) => {
-                    let ctrl = self.ctrl.clone();
-                    let inlet_api = self.skel.api();
-                    let ctx = RequestContext::new(self.skel.info.clone(), self.skel.logger );
-
-                    tokio::spawn( async move {
-
-                        async fn handle( ctrl: Arc<dyn PortalCtrl>, inlet_api: InletApi, request: outlet::Request ) -> Result<(),Error> {
-                            let exchange = request.exchange.clone();
-                            let response = ctrl.handle(request).await?;
-
-                            if exchange.requires_response() {
-                                if let Some(mut response) = response {
-                                    let exchange_id = exchange.try_into()?;
-                                    response.exchange = exchange_id;
-                                    inlet_api.respond(response);
-                                } else {
-                                    return Err(anyhow!("response expected"));
-                                }
-                            }
-
-                            Ok(())
-                        }
-
-                        match handle( ctrl, inlet_api, request ).await {
-                            Ok(_) => {}
-                            Err(err) => {
-                                (ctx.logger)(err.to_string().as_str());
-                            }
-                        }
-                    });
-                }
-                outlet::Frame::Response(response) => {
-                    if let Option::Some((_,tx)) =
-                        self.skel.exchanges.remove(&response.exchange)
-                    {
-                        tx.send(response).unwrap_or(());
-                    } else {
-                        (self.skel.logger)("SEVERE: do not have a matching exchange_id for response");
-                    }
-                }
-                outlet::Frame::Close(_) => {}
-                _ => {
-                    (self.skel.logger)(format!("SEVERE: frame ignored because status: '{}' does not allow handling of frame '{}'",self.skel.status().to_string(),frame.to_string()).as_str());
-                }
-            },
-            _ => {
-                (self.skel.logger)(format!("SEVERE: frame ignored because status: '{}' does not allow handling of frame '{}'",self.skel.status().to_string(),frame.to_string()).as_str());
-            }
-        }
+        self.skel.tx.send( frame );
     }
 }
 
 
 pub struct InletApi {
-    info: Info,
+    config: PortalConfig,
     inlet: Arc<dyn Inlet>,
     exchanges: Exchanges,
     logger: fn( log: Log )
 }
 
 impl InletApi {
-    pub fn new(info: Info, inlet: Arc<dyn Inlet>, exchanges: Exchanges, logger: fn( log: Log ) ) -> Self {
+    pub fn new(config: PortalConfig, inlet: Arc<dyn Inlet>, exchanges: Exchanges, logger: fn( log: Log ) ) -> Self {
         Self {
-            info,
+            config,
             inlet,
             exchanges,
             logger
@@ -227,7 +241,7 @@ impl InletApi {
     pub fn notify(&self, request: inlet::Request) {
         let request = request.exchange(Exchange::Notification);
 
-        self.inlet.send_frame(inlet::Frame::Request(request));
+        self.inlet.inlet_frame(inlet::Frame::Request(request));
     }
 
     pub async fn exchange(
@@ -240,14 +254,14 @@ impl InletApi {
         let request = request.exchange(Exchange::RequestResponse(exchange_id.clone()));
         let (tx,rx) = oneshot::channel();
         self.exchanges.insert(exchange_id, tx);
-        self.inlet.send_frame(inlet::Frame::Request(request));
+        self.inlet.inlet_frame(inlet::Frame::Request(request));
 
-        let result = tokio::time::timeout(Duration::from_secs(self.info.config.response_timeout.clone()),rx).await;
+        let result = tokio::time::timeout(Duration::from_secs(self.config.response_timeout.clone()),rx).await;
         Ok(result??)
     }
 
     pub fn respond( &self, response: inlet::Response ) {
-        self.inlet.send_frame( inlet::Frame::Response(response) );
+        self.inlet.inlet_frame( inlet::Frame::Response(response) );
     }
 }
 
@@ -256,9 +270,9 @@ pub mod client {
     use anyhow::Error;
     use mesh_portal_serde::version::latest::portal::outlet;
     use mesh_portal_serde::version::latest::id::{Address};
-    use mesh_portal_serde::version::latest::config::Info;
     use mesh_portal_serde::version::latest::http::HttpRequest;
 
+    /*
     #[derive(Clone)]
     pub struct RequestContext {
         pub portal_info: Info,
@@ -287,6 +301,8 @@ pub mod client {
             &self.request
         }
     }
+
+     */
 }
 
 
@@ -296,7 +312,7 @@ pub mod example {
     use anyhow::Error;
 
 
-    use crate::{InletApi, PortalCtrl, PortalSkel, Request, inlet};
+    use crate::{InletApi, ResourceCtrl, PortalSkel, inlet};
     use std::collections::HashMap;
     use mesh_portal_serde::version::latest::payload::{Payload, Primitive};
     use mesh_portal_serde::version::latest::entity;
@@ -316,13 +332,16 @@ pub mod example {
     }
 
     #[async_trait]
-    impl PortalCtrl for HelloCtrl {
+    impl ResourceCtrl for HelloCtrl {
 
-        async fn init(&mut self) -> Result<(), Error> {
+        async fn init(&self) -> Result<(), Error> {
+            unimplemented!();
+            /*
             let mut request =
                 inlet::Request::new(entity::request::ReqEntity::Msg( Msg {
                     action: "HelloWorld".to_string(),
                     payload: Payload::Empty,
+
                     path: "/".to_string()
                 }));
 
@@ -336,6 +355,8 @@ pub mod example {
                 return Err(anyhow!("unexpected signal"));
             }
 
+
+             */
             Ok(())
         }
 
