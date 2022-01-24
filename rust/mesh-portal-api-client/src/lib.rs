@@ -28,6 +28,7 @@ use mesh_portal_serde::version::latest::log::Log;
 use mesh_portal_serde::version::latest::{portal, entity};
 use mesh_portal_serde::version::v0_0_1::util::ConvertFrom;
 use std::convert::TryInto;
+use tokio::task::yield_now;
 use mesh_portal_serde::version::v0_0_1::config::{PortalConfig, ResourceConfigBody, Config};
 use mesh_portal_serde::version::latest::resource::ResourceStub;
 use mesh_portal_serde::version::latest::id::Address;
@@ -164,21 +165,23 @@ impl Portal {
                                 let resource = skel.ctrl_factory.create(resource_skel)?;
                                 resources.insert( assign.stub.address.clone(), resource.clone() );
                                 tokio::spawn( async move {
-                                    resource.init().await
+                                    resource.init().await;
                                 });
 
                                 return Ok(());
                             }
 
                             if let Frame::Response(response)= &frame {
+println!("RECEIVE RESPONSE");
                                 if let Option::Some((id,tx)) = skel.exchanges.remove(&response.exchange) {
+println!("... EXchange Id {}", id);
                                     tx.send(response.clone());
                                     return Ok(())
                                 }
                             } else {
                                 eprintln!("could not find exchange for response: ")
                             }
-
+println!("Client outlet::Frame{}",frame.to_string());
                             let to = frame.to().ok_or::<Error>(anyhow!("expected frame to have a to"))?;
                             let resource = resources.get(&to).ok_or(anyhow!("expected to find resource for address"))?;
 
@@ -253,6 +256,7 @@ impl InletApi {
         let exchange_id: ExchangeId = Uuid::new_v4().to_string();
         let request = request.exchange(Exchange::RequestResponse(exchange_id.clone()));
         let (tx,rx) = oneshot::channel();
+println!("Inserting Exchange: {} ", exchange_id);
         self.exchanges.insert(exchange_id, tx);
         self.inlet.inlet_frame(inlet::Frame::Request(request));
 
@@ -260,7 +264,7 @@ impl InletApi {
         Ok(result??)
     }
 
-    pub fn respond( &self, response: inlet::Response ) {
+    pub fn send_response(&self, response: inlet::Response ) {
         self.inlet.inlet_frame( inlet::Frame::Response(response) );
     }
 }

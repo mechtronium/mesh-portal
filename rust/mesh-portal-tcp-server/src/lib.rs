@@ -210,7 +210,6 @@ impl PortalTcpServer {
 
 
 //                        self.broadcaster_tx.send( Event::Info(EventResult::Ok(info.clone()))).unwrap_or_default();
-                        tokio::time::sleep(Duration::from_secs(0)).await;
 
                         let (outlet_tx,mut outlet_rx) = mpsc::channel(1024);
 
@@ -222,7 +221,9 @@ impl PortalTcpServer {
 
                         let portal = Portal::new(key,self.portal_config.clone(), self.request_handler.clone(), outlet_tx, logger );
                         let inlet_tx = portal.inlet_tx.clone();
-                        match self.mux_tx.send(MuxCall::Add(portal)).await {
+                        let result = self.mux_tx.send(MuxCall::Add(portal)).await;
+                        yield_now().await;
+                        match result {
                             Err(err) => {
                                 let message = err.to_string();
                                 (self.server.logger())(message.as_str());
@@ -235,6 +236,7 @@ impl PortalTcpServer {
 
                                         self.broadcaster_tx.send( Event::ResourceCtrl(EventResult::Ok(user.clone()))).unwrap_or_default();
                                         self.mux_tx.send(MuxCall::Assign {assign, portal:key }).await?;
+                                        yield_now().await;
                                     }
                                     Err(_) => {
                                     }
@@ -247,6 +249,7 @@ impl PortalTcpServer {
                                 tokio::spawn(async move {
                                     loop {
                                         if let Result::Ok(frame) = reader.read().await {
+println!("TCP READ FRAME: {}",frame.to_string());
                                             let result = inlet_tx.send(frame).await;
                                             yield_now().await;
                                             if result.is_err() {

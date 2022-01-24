@@ -109,6 +109,7 @@ impl Portal {
                     match inlet_rx.recv().await {
                         Some(frame) => {
                             let frame:inlet::Frame = frame;
+println!("Server Portal Frame > {}",frame.to_string() );
                             handle(&mux_tx, frame ).await;
                             continue;
                         }
@@ -229,7 +230,7 @@ impl Default for DefaultPortalRequestHandler {
 #[async_trait]
 impl PortalRequestHandler for DefaultPortalRequestHandler {}
 
-#[derive(Debug)]
+#[derive(Debug,strum_macros::Display)]
 pub enum MuxCall {
     Add(Portal),
     Assign {
@@ -288,6 +289,7 @@ impl PortalMuxer {
                 let (call, future_index, _) = select_all(futures).await;
 
                 async fn handle(call: MuxCall, muxer: &mut PortalMuxer) -> Result<(), Error> {
+println!("MuxCall: {}",call.to_string());
                     match call {
                         MuxCall::Add(portal) => {
                             muxer.portals.insert(portal.key.clone(), portal);

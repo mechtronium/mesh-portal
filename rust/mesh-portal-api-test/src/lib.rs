@@ -412,10 +412,22 @@ mod tests {
         pub skel: ResourceSkel
     }
 
+    impl FriendlyResourceCtrl {
+        pub fn log_str( &self, message: &str) {
+            self.log(message.to_string());
+        }
+
+        pub fn log( &self, message: String) {
+            println!("{} => {}", self.name, message );
+        }
+
+    }
+
     #[async_trait]
     impl ResourceCtrl for FriendlyResourceCtrl {
         async fn init(&self) -> Result<(), Error> {
             GLOBAL_TX.send(GlobalEvent::Progress("FriendlyResourceCtrl.init()".to_string()));
+            self.log_str("Init");
             // wait just a bit to make sure everyone got chance to be in the muxer
             tokio::time::sleep(Duration::from_millis(50)).await;
 
@@ -434,14 +446,15 @@ mod tests {
             );
 
 
-println!("FriendlyPortalCtrl::exchange... from: {} to: {}", self.skel.stub.address.to_string(), self.skel.stub.address.parent().expect("expected a parent").to_string() );
+self.log(format!("Select... from: {} to: {}", self.skel.stub.address.to_string(), self.skel.stub.address.parent().expect("expected a parent").to_string() ));
             match self.skel.portal.api().exchange(request).await {
                 Ok(response) => match response.entity {
                     response::RespEntity::Ok(Payload::List(resources)) => {
-println!("FriendlyPortalCtrl::Ok");
+self.log(format!("Ok({} Stubs)",resources.list.len()));
                         for resource in resources.iter() {
                             if let Primitive::Stub(resource) = resource {
                                 if resource.address != self.skel.stub.address {
+self.log(format!("Sending to '{}'",resource.address.to_string()));
 
                                     let mut request = inlet::Request::new(ReqEntity::Msg(
                                         Msg {
@@ -455,11 +468,17 @@ println!("FriendlyPortalCtrl::Ok");
                                         self.skel.stub.address.clone(),
                                              resource.address.clone()
                                     );
+
+self.log(format!("Sending Request<Msg<Greet>>"));
+
                                     let result = self.skel.portal.api().exchange(request).await;
+self.log(format!("Received Response<Msg<Greet>>"));
                                     match result {
                                         Ok(response) => {
+self.log(format!("Extracted RespEntity"));
                                             match &response.entity {
                                                 response::RespEntity::Ok(Payload::Primitive(Primitive::Text(response))) => {
+self.log(format!("Got Ok Response!"));
                                                     println!("got response: {}", response);
                                                     GLOBAL_TX.send(GlobalEvent::Ok(self.name.clone()));
                                                 }
@@ -486,6 +505,8 @@ println!("FriendlyPortalCtrl::Ok");
 
         async fn outlet_frame(&self, frame: outlet::Frame ) -> Result<Option<inlet::Response>,Error> {
             if let outlet::Frame::Request( request ) = frame {
+
+self.log(format!("Received Request<Msg<Greet>>"));
                 let response = inlet::Response{
                     id: unique_id(),
                     from: self.skel.stub.address.clone(),
@@ -497,6 +518,7 @@ println!("FriendlyPortalCtrl::Ok");
                     entity: RespEntity::Ok(Payload::Primitive(Primitive::Text("Hello".to_string())))
                 };
                 GLOBAL_TX.send(GlobalEvent::Progress("Responding to hello message".to_string()));
+self.log_str("Sending To Response<Msg<Greet>>");
                 return Ok( Option::Some(response) )
             }
 
