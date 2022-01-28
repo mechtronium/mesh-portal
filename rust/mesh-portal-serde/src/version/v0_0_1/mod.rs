@@ -903,7 +903,6 @@ pub mod pattern {
             alt((recursive_segment, any_segment, exact_version_segment, version_req_segment))(input)
         }
 
-
         pub fn pattern<'r, O, E: ParseError<&'r str>, V>(
             mut value: V,
         ) -> impl FnMut(&'r str) -> IResult<&str, Pattern<O>, E>
