@@ -117,7 +117,7 @@ impl PortalTcpServer {
                 let broadcaster_tx = server.broadcaster_tx.clone();
                 let alive = server.alive.clone();
                 tokio::spawn(async move {
-                    tokio::time::sleep(Duration::from_secs(0)).await;
+                    yield_now().await;
                     while let Option::Some(call) = call_rx.recv().await {
                         match call {
                             Call::InjectMessage(_) => {}
@@ -196,7 +196,7 @@ impl PortalTcpServer {
 
 
         writer.write_string( "Ok".to_string() ).await?;
-        tokio::time::sleep(Duration::from_secs(0)).await;
+        yield_now().await;
 
         match self.server.auth(&mut reader, &mut writer).await
         {
@@ -207,7 +207,6 @@ impl PortalTcpServer {
 
                 let mut reader : FrameReader<inlet::Frame> = FrameReader::new(reader );
                 let mut writer : FrameWriter<outlet::Frame>  = FrameWriter::new(writer );
-
 
 //                        self.broadcaster_tx.send( Event::Info(EventResult::Ok(info.clone()))).unwrap_or_default();
 
@@ -249,7 +248,7 @@ impl PortalTcpServer {
                                 tokio::spawn(async move {
                                     loop {
                                         if let Result::Ok(frame) = reader.read().await {
-println!("TCP READ FRAME: {}",frame.to_string());
+println!("server TCP READ FRAME: {}",frame.to_string());
                                             let result = inlet_tx.send(frame).await;
                                             yield_now().await;
                                             if result.is_err() {
@@ -266,12 +265,16 @@ println!("TCP READ FRAME: {}",frame.to_string());
 
                     {
                         let logger = self.server.logger();
-                        tokio::spawn(async move {
-                            while let Option::Some(frame) = outlet_rx.recv().await {
-                                writer.write(frame).await;
-                                yield_now().await;
-                           }
+                        let task = tokio::task::spawn_blocking(move || {
+                            tokio::spawn(async move {
+                                while let Option::Some(frame) = outlet_rx.recv().await {
+                                    println!("server... SENDING from outlet_rx frame :==:> {}", frame.to_string());
+                                    writer.write(frame).await;
+                                }
+                            });
+println!("server: outlet_rx complete.");
                         });
+                        task.await?;
                     }
                 }
             Err(err) => {

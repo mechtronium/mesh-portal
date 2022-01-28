@@ -28,6 +28,7 @@ mod tests {
     use tokio::sync::broadcast::Receiver;
     use tokio::sync::mpsc::Sender;
     use tokio::sync::oneshot::error::RecvError;
+    use tokio::task::yield_now;
     use tokio::time::Duration;
 
     use mesh_portal_api_client::{client, InletApi, ResourceCtrl, PortalSkel, ResourceCtrlFactory, ResourceSkel};
@@ -91,6 +92,7 @@ mod tests {
                 let mut GLOBAL_RX = GLOBAL_TX.subscribe();
                 let mut status = HashSet::new();
                 while let Result::Ok(event) = GLOBAL_RX.recv().await {
+                    yield_now().await;
                     match event {
                         GlobalEvent::Start(start) => {
                             println!("Starting: {}",start);
@@ -127,7 +129,9 @@ mod tests {
                 server.send(Call::ListenEvents(listen_tx)).await;
                 let mut broadcast_rx = listen_rx.await.unwrap();
                 while let Result::Ok(event) = broadcast_rx.recv().await {
-                    if let Event::Status(status) = &event {
+
+                yield_now().await;
+                if let Event::Status(status) = &event {
                         println!("event: Status({})", status.to_string());
                     } else {
                         println!("event: {}", event.to_string());
@@ -147,19 +151,25 @@ mod tests {
                         Event::Shutdown => {}
                         Event::Status(_) => {}
                     }
+                    yield_now().await;
                 }
             });
         }
 
         tokio::spawn( async move {
-
             let client1 = Box::new(TestPortalClient::new("scott".to_string()));
+println!("created client: scott");
             let client2 = Box::new(TestPortalClient::new("fred".to_string()));
+println!("created client: fred");
 
             let client1 = PortalTcpClient::new(format!("localhost:{}", port), client1).await.unwrap();
+println!("created client: scott TCP client");
+
             let client2 = PortalTcpClient::new(format!("localhost:{}", port), client2).await.unwrap();
+println!("created client: fred TCP client");
 
             tokio::time::sleep( Duration::from_secs( 5 ) ).await;
+
             GLOBAL_TX.send( GlobalEvent::Timeout).unwrap_or_default();
         });
         let result  = final_rx.await?;
@@ -349,6 +359,7 @@ mod tests {
             });
         }
     }
+
     pub struct TestPortalClient {
         pub user: String,
     }

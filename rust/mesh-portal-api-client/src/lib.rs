@@ -144,10 +144,13 @@ impl Portal {
         };
 
         {
+println!("NEW PORTAL!" );
             let skel = skel.clone();
             tokio::spawn(async move {
                 let mut resources = HashMap::new();
+println!("portal listening...");
                 while let Option::Some(frame) = outlet_rx.recv().await {
+println!("Portal received frame: {}", frame.to_string());
                     if let Frame::Close(_) = frame {
                         println!("XXX>>> Client exiting outlet_rx loop");
                         break;
@@ -155,6 +158,7 @@ impl Portal {
                     process(&skel, &mut resources, frame).await;
 
                         async fn process( skel: &PortalSkel,  resources: &mut HashMap<Address,Arc<dyn ResourceCtrl>>, frame: outlet::Frame ) -> Result<(),Error> {
+println!("CLIENT PROCESS");
                             if let Frame::Assign(assign) = &frame {
                                 let resource_skel = ResourceSkel {
                                     portal: skel.clone(),
@@ -165,9 +169,12 @@ impl Portal {
                                 let resource = skel.ctrl_factory.create(resource_skel)?;
                                 resources.insert( assign.stub.address.clone(), resource.clone() );
                                 tokio::spawn( async move {
+println!("CLIENT INIT");
                                     resource.init().await;
+println!("CLIENT INIT COMPLETE");
                                 });
 
+println!("CLIENT RTN OK");
                                 return Ok(());
                             }
 

@@ -39,6 +39,7 @@ use mesh_portal_serde::version::v0_0_1::generic::portal::inlet::{AssignRequest, 
 use mesh_portal_serde::version::v0_0_1::generic::portal::Exchanger;
 use mesh_portal_serde::version::v0_0_1::util::ConvertFrom;
 use std::fmt::Debug;
+use tokio::task::yield_now;
 use mesh_portal_serde::mesh::{Request, Response};
 
 #[derive(Clone, Eq, PartialEq, Hash)]
@@ -178,11 +179,13 @@ println!("Server Portal Frame > {}",frame.to_string() );
     }
 
     pub async fn send(&self, frame: outlet::Frame) -> Result<(), Error> {
-        self.outlet_tx
-            .send(
-                frame
-            )
-            .await?;
+println!("SENDING OUTLET FRAME: {}", frame.to_string());
+        match self.outlet_tx.send( frame ).await {
+            Ok(_) => {
+println!("OUTLET FRAME SENT");
+            }
+            Err(err) => {println!("SendError");}
+        }
         Ok(())
     }
 

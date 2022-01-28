@@ -62,7 +62,6 @@ impl PortalTcpClient {
             let logger = client.logger();
             tokio::spawn(async move {
                 while let Option::Some(frame) = inlet_rx.recv().await {
-                    yield_now().await;
                     match writer.write(frame).await {
                         Ok(_) => {}
                         Err(err) => {
@@ -70,6 +69,7 @@ impl PortalTcpClient {
                             break;
                         }
                     }
+                    yield_now().await;
                 }
             });
         }
@@ -84,7 +84,7 @@ impl PortalTcpClient {
             let logger = client.logger();
             tokio::spawn(async move {
                 while let Result::Ok(frame) = reader.read().await {
-                    yield_now().await;
+println!("reading frame: {}",frame.to_string());
                     match outlet_tx.send( frame ).await {
                         Result::Ok(_) => {
 
@@ -94,6 +94,7 @@ impl PortalTcpClient {
                             break;
                         }
                     }
+                    yield_now().await;
                 }
             });
         }
@@ -124,7 +125,7 @@ impl Inlet for TcpInlet {
         let sender = self.sender.clone();
         let logger = self.logger;
         tokio::spawn(async move {
-println!("Sending FRAME via inlet api...");
+println!("Sending FRAME via inlet api...{}", frame.to_string());
             match sender.send(frame).await
             {
                 Ok(_) => {
