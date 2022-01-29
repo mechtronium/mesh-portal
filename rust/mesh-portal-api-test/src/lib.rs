@@ -77,7 +77,7 @@ mod tests {
 
     #[test]
     fn test() -> Result<(), Error> {
-        let runtime = Builder::new_multi_thread().enable_all().max_blocking_threads(4).build()?;
+        let runtime = Builder::new_multi_thread().enable_all().build()?;
         runtime.block_on( async { server_up().await } )
     }
 
@@ -206,7 +206,7 @@ println!("created client: fred TCP client");
     #[async_trait]
     impl PortalServer for TestPortalServer {
         fn flavor(&self) -> String {
-            "starlane".to_string()
+            "test".to_string()
         }
 
         async fn auth(

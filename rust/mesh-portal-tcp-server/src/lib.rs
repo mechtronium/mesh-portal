@@ -89,58 +89,62 @@ pub struct PortalTcpServer {
 impl PortalTcpServer {
 
     pub fn new(port: usize, server: Box<dyn PortalServer>) -> mpsc::Sender<Call> {
-        let server:Arc<dyn PortalServer> = server.into();
-        let (broadcaster_tx,_) = broadcast::channel(32);
         let (call_tx,mut call_rx) = mpsc::channel(1024 );
+        {
+            let call_tx = call_tx.clone();
+            tokio::task::spawn_blocking(move || {
+                let server: Arc<dyn PortalServer> = server.into();
+                let (broadcaster_tx, _) = broadcast::channel(32);
 
-        let (mux_tx, mux_rx) = mpsc::channel(1024 );
-        let router = server.router_factory(mux_tx.clone());
+                let (mux_tx, mux_rx) = mpsc::channel(1024);
+                let router = server.router_factory(mux_tx.clone());
 
-        PortalMuxer::new(mux_tx.clone(),mux_rx,router);
+                PortalMuxer::new(mux_tx.clone(), mux_rx, router);
 
-        let server = Self {
-            request_handler: server.portal_request_handler(),
-            key_seq: AtomicU64::new(0),
-            portal_config: Default::default(),
-            port,
-            server,
-            broadcaster_tx,
-            call_tx: call_tx.clone(),
-            mux_tx: mux_tx.clone(),
-            alive: Arc::new(Mutex::new(Alive::new()))
-        };
+                let server = Self {
+                    request_handler: server.portal_request_handler(),
+                    key_seq: AtomicU64::new(0),
+                    portal_config: Default::default(),
+                    port,
+                    server,
+                    broadcaster_tx,
+                    call_tx: call_tx.clone(),
+                    mux_tx: mux_tx.clone(),
+                    alive: Arc::new(Mutex::new(Alive::new()))
+                };
 
-        tokio::spawn( async move {
-            server.broadcaster_tx.send(Event::Status(Status::Unknown)).unwrap_or_default();
-            {
-                let port = server.port.clone();
-                let broadcaster_tx = server.broadcaster_tx.clone();
-                let alive = server.alive.clone();
                 tokio::spawn(async move {
-                    yield_now().await;
-                    while let Option::Some(call) = call_rx.recv().await {
-                        match call {
-                            Call::InjectMessage(_) => {}
-                            Call::ListenEvents(tx) => {
-                                tx.send(broadcaster_tx.subscribe());
-                            },
-                            Call::Shutdown => {
-                                broadcaster_tx.send(Event::Shutdown).unwrap_or_default();
-                                alive.lock().await.alive = false;
-                                match std::net::TcpStream::connect(format!("localhost:{}", port)) {
-                                    Ok(_) => {}
-                                    Err(_) => {}
+                    server.broadcaster_tx.send(Event::Status(Status::Unknown)).unwrap_or_default();
+                    {
+                        let port = server.port.clone();
+                        let broadcaster_tx = server.broadcaster_tx.clone();
+                        let alive = server.alive.clone();
+                        tokio::spawn(async move {
+                            yield_now().await;
+                            while let Option::Some(call) = call_rx.recv().await {
+                                match call {
+                                    Call::InjectMessage(_) => {}
+                                    Call::ListenEvents(tx) => {
+                                        tx.send(broadcaster_tx.subscribe());
+                                    },
+                                    Call::Shutdown => {
+                                        broadcaster_tx.send(Event::Shutdown).unwrap_or_default();
+                                        alive.lock().await.alive = false;
+                                        match std::net::TcpStream::connect(format!("localhost:{}", port)) {
+                                            Ok(_) => {}
+                                            Err(_) => {}
+                                        }
+                                        return;
+                                    }
                                 }
-                                return;
                             }
-                        }
+                        });
                     }
+
+                    server.start().await;
                 });
-            }
-
-            server.start().await;
-        });
-
+            });
+        }
         call_tx
     }
 
