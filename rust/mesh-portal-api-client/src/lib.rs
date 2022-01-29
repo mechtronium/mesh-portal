@@ -22,20 +22,15 @@ use tokio::sync::watch::Receiver;
 use mesh_portal_serde::std_logger;
 use mesh_portal_serde::version::latest::http::{HttpRequest, HttpResponse};
 use mesh_portal_serde::version::latest::portal::{inlet, outlet};
-use mesh_portal_serde::version::latest::resource::Status;
-use mesh_portal_serde::version::latest::messaging::{ExchangeId, Exchange};
+use mesh_portal_serde::version::latest::resource::{ResourceStub, Status};
 use mesh_portal_serde::version::latest::log::Log;
 use mesh_portal_serde::version::latest::{portal, entity};
-use mesh_portal_serde::version::v1::util::ConvertFrom;
 use std::convert::TryInto;
 use tokio::task::yield_now;
-use mesh_portal_serde::version::v1::config::{PortalConfig, ResourceConfigBody, Config};
-use mesh_portal_serde::version::latest::resource::ResourceStub;
+use mesh_portal_serde::version::latest::config::{Config, PortalConfig, ResourceConfigBody};
 use mesh_portal_serde::version::latest::id::Address;
-use mesh_portal_serde::version::v1::generic::portal::outlet::Frame;
-use mesh_portal_serde::version::v1::generic::id::KindParts;
-use mesh_portal_serde::version::v1::generic::entity::request::ReqEntity;
-use mesh_portal_serde::version::v1::generic::payload::Payload;
+use mesh_portal_serde::version::latest::messaging::{Exchange, ExchangeId, Request, Response};
+use mesh_portal_serde::version::latest::portal::outlet::Frame;
 
 
 #[derive(Clone)]
@@ -58,7 +53,7 @@ pub trait ResourceCtrl: Sync+Send {
         Ok(())
     }
 
-    async fn outlet_frame(&self, frame: outlet::Frame ) -> Result<Option<inlet::Response>,Error> {
+    async fn outlet_frame(&self, frame: outlet::Frame ) -> Result<Option<Response>,Error> {
         Ok(Option::None)
     }
 }
@@ -87,7 +82,7 @@ impl StatusChamber{
     }
 }
 
-pub type Exchanges = Arc<DashMap<ExchangeId, oneshot::Sender<outlet::Response>>>;
+pub type Exchanges = Arc<DashMap<ExchangeId, oneshot::Sender<Response>>>;
 
 
 
@@ -180,7 +175,7 @@ println!("CLIENT RTN OK");
 
                             if let Frame::Response(response)= &frame {
 println!("RECEIVE RESPONSE");
-                                if let Option::Some((id,tx)) = skel.exchanges.remove(&response.exchange) {
+                                if let Option::Some((id,tx)) = skel.exchanges.remove(&response.response_to) {
 println!("... EXchange Id {}", id);
                                     tx.send(response.clone());
                                     return Ok(())
@@ -248,30 +243,24 @@ impl InletApi {
     }
 
 
-    pub fn notify(&self, request: inlet::Request) {
-        let request = request.exchange(Exchange::Notification);
-
+    pub fn notify(&self, request: Request) {
         self.inlet.inlet_frame(inlet::Frame::Request(request));
     }
 
     pub async fn exchange(
         &mut self,
-        request: inlet::Request
-    ) -> Result<outlet::Response, Error> {
+        request: Request
+    ) -> Result<Response, Error> {
 
-        let mut request = request;
-        let exchange_id: ExchangeId = Uuid::new_v4().to_string();
-        let request = request.exchange(Exchange::RequestResponse(exchange_id.clone()));
         let (tx,rx) = oneshot::channel();
-println!("Inserting Exchange: {} ", exchange_id);
-        self.exchanges.insert(exchange_id, tx);
+        self.exchanges.insert(request.id.clone(), tx);
         self.inlet.inlet_frame(inlet::Frame::Request(request));
 
         let result = tokio::time::timeout(Duration::from_secs(self.config.response_timeout.clone()),rx).await;
         Ok(result??)
     }
 
-    pub fn send_response(&self, response: inlet::Response ) {
+    pub fn send_response(&self, response: Response ) {
         self.inlet.inlet_frame( inlet::Frame::Response(response) );
     }
 }
@@ -328,7 +317,6 @@ pub mod example {
     use mesh_portal_serde::version::latest::payload::{Payload, Primitive};
     use mesh_portal_serde::version::latest::entity;
     use mesh_portal_serde::version::latest::entity::request::Msg;
-    use mesh_portal_serde::version::v1::generic::payload::PayloadDelivery;
 
     pub struct HelloCtrl {
         pub skel: Arc<PortalSkel>,

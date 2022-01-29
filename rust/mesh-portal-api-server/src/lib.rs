@@ -17,30 +17,22 @@ use tokio::sync::mpsc::error::{SendError, SendTimeoutError, TryRecvError};
 use tokio::sync::{mpsc, oneshot};
 use uuid::Uuid;
 
-use mesh_portal_api::message;
-use mesh_portal_serde::mesh;
 use mesh_portal_serde::version::latest;
 use mesh_portal_serde::version::latest::entity::response;
 use mesh_portal_serde::version::latest::fail;
 use mesh_portal_serde::version::latest::frame::CloseReason;
 use mesh_portal_serde::version::latest::id::Address;
 use mesh_portal_serde::version::latest::log::Log;
-use mesh_portal_serde::version::latest::messaging::{Exchange, ExchangeId};
+use mesh_portal_serde::version::latest::messaging::{Exchange, ExchangeId, Message, Response};
 use mesh_portal_serde::version::latest::pattern::AddressKindPattern;
-use mesh_portal_serde::version::latest::portal::{inlet, outlet};
+use mesh_portal_serde::version::latest::portal::{Exchanger, inlet, outlet};
 use mesh_portal_serde::version::latest::resource::ResourceStub;
 use mesh_portal_serde::version::latest::resource::Status;
-use mesh_portal_serde::version::v1::artifact::{Artifact, ArtifactRequest, ArtifactResponse};
-use mesh_portal_serde::version::v1::config::{Assign, Config, ConfigBody, PortalConfig};
-use mesh_portal_serde::version::v1::generic::entity::request::ReqEntity;
-use mesh_portal_serde::version::v1::generic::id::KindParts;
-use mesh_portal_serde::version::v1::generic::payload::Payload;
-use mesh_portal_serde::version::v1::generic::portal::inlet::{AssignRequest, Frame};
-use mesh_portal_serde::version::v1::generic::portal::Exchanger;
-use mesh_portal_serde::version::v1::util::ConvertFrom;
 use std::fmt::Debug;
 use tokio::task::yield_now;
-use mesh_portal_serde::mesh::{Request, Response};
+use mesh_portal_serde::version::latest::artifact::{Artifact, ArtifactRequest, ArtifactResponse};
+use mesh_portal_serde::version::latest::config::{Assign, Config, ConfigBody, PortalConfig};
+use mesh_portal_serde::version::latest::portal::inlet::AssignRequest;
 
 #[derive(Clone, Eq, PartialEq, Hash)]
 pub enum PortalStatus {
@@ -70,7 +62,7 @@ pub fn log(log: Log) {
 #[derive(Debug)]
 pub struct ExchangePair {
     pub id: ExchangeId,
-    pub tx: tokio::sync::oneshot::Sender<inlet::Response>,
+    pub tx: tokio::sync::oneshot::Sender<Response>,
 }
 
 #[derive(Debug)]
@@ -127,25 +119,11 @@ println!("Server Portal Frame > {}",frame.to_string() );
                                 // we aren't doing this yet
                             }
                             inlet::Frame::Request(request) => {
-                                let request = Request{
-                                    id: request.id,
-                                    to: request.to,
-                                    from: request.from,
-                                    entity: request.entity,
-                                    exchange: request.exchange
-                                };
-                                mux_tx.send(MuxCall::MessageIn( message::Message::Request(request))).await;
+                               mux_tx.send(MuxCall::MessageIn( Message::Request(request))).await;
 
                             }
                             inlet::Frame::Response(response) => {
-                                let response = Response{
-                                    id: response.id,
-                                    to: response.to,
-                                    from: response.from,
-                                    entity: response.entity,
-                                    exchange: response.exchange
-                                };
-                                mux_tx.send(MuxCall::MessageIn( message::Message::Response(response))).await;
+                               mux_tx.send(MuxCall::MessageIn( Message::Response(response))).await;
                             }
                             inlet::Frame::Artifact(_) => {
                                 // not implemented
@@ -241,13 +219,13 @@ pub enum MuxCall {
         portal: u64,
     },
     Remove(Address),
-    MessageIn(message::Message),
-    MessageOut(message::Message),
+    MessageIn(Message),
+    MessageOut(Message),
     SelectAll(oneshot::Sender<Vec<ResourceStub>>), // for testing only
 }
 
 pub trait Router: Send + Sync {
-    fn route(&self, message: message::Message);
+    fn route(&self, message: Message);
     fn logger(&self, message: &str) {
         println!("{}", message);
     }
@@ -342,12 +320,12 @@ println!("MuxCall: {}",call.to_string());
                                     .ok_or(anyhow!("expected address"))?,
                             ) {
                                 Some(portal) => match message {
-                                    message::Message::Request(request) => {
+                                    Message::Request(request) => {
                                         portal.outlet_tx.try_send(
                                             outlet::Frame::Request(request.try_into()?),
                                         );
                                     }
-                                    message::Message::Response(response) => {
+                                    Message::Response(response) => {
                                         portal.outlet_tx.try_send( outlet::Frame::Response(response.into()), );
                                     }
                                 },

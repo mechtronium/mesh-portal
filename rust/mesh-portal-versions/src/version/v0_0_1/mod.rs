@@ -8,8 +8,6 @@ use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 
 use crate::error::Error;
-use crate::version::latest::entity::EntityType;
-use crate::version::latest::generic::entity::request::ReqEntity;
 use crate::version::v0_0_1::bin::Bin;
 
 pub type State = HashMap<String, Bin>;
@@ -55,16 +53,12 @@ pub mod id {
     use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 
     use crate::error::Error;
-    use crate::version::v0_0_1::generic;
     use crate::version::v0_0_1::parse::{address, camel_case, consume_address, Res};
-    use crate::version::v0_0_1::pattern::{Pattern, SpecificPattern, VersionReq};
-    use crate::version::latest::generic::pattern::Pattern;
-    use crate::version::v0_0_1::generic::id::parse::address_and_kind;
-    use crate::version::v0_0_1::generic::pattern::Pattern;
     use crate::version::v0_0_1::pattern::parse::{address_and_kind, resource_type, specific};
+    use crate::version::v0_0_1::pattern::{Pattern, SpecificPattern, VersionReq};
 
     pub type ResourceType = String;
-    pub type Kind = generic::id::KindParts;
+    pub type Kind = KindParts;
 
     #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
     pub struct AddressAndKind {
@@ -685,17 +679,7 @@ pub mod pattern {
     use serde::{de, Deserializer, Serializer};
 
     use crate::error::Error;
-    use crate::version::latest::generic::payload::{Call, Primitive};
-    use crate::version::v0_0_1::generic;
-    use crate::version::v0_0_1::generic::entity::request::ReqEntity;
-    use crate::version::v0_0_1::generic::entity::request::{Http, Msg};
-    use crate::version::v0_0_1::generic::pattern::{AddressKindPath, Hop, Pattern, ResourceTypePattern};
-    use crate::version::v0_0_1::generic::payload::HttpMethod;
-    use crate::version::v0_0_1::generic::payload::{
-        CallKind, CallWithConfig, HttpCall, MapPattern, MsgCall, PayloadFormat, PayloadTypePattern,
-        Range,
-    };
-    use crate::version::v0_0_1::generic::resource::command::RcCommandType;
+
     use crate::version::v0_0_1::id::{Address, AddressSegment, Kind, ResourceType, RouteSegment, Specific, Tks, Version};
     use crate::version::v0_0_1::parse::{address, camel_case_to_string, consume_address_kind_path, path, path_regex, Res};
     use crate::version::v0_0_1::pattern::parse::{address_kind_pattern, pattern};
@@ -716,7 +700,6 @@ pub mod pattern {
     use nom_supreme::{parse_from_str, ParserExt};
     use std::collections::HashMap;
     use nom_supreme::parser_ext::FromStrParser;
-    use crate::version::latest::id::Version;
     use crate::version::v0_0_1::entity::request::{Http, Msg, RcCommandType, ReqEntity};
 
 
@@ -1067,7 +1050,6 @@ pub mod pattern {
         use std::str::FromStr;
 
         use crate::error::Error;
-        use crate::version::v0_0_1::generic::pattern::Pattern;
         use crate::version::v0_0_1::pattern::Pattern;
 
         pub struct VersionReq {
@@ -1113,11 +1095,6 @@ pub mod pattern {
         use nom::{Err, IResult};
 
         use crate::error::Error;
-        use crate::version::latest::generic::id::KindParts;
-        use crate::version::v0_0_1::generic::id::parse::specific;
-        use crate::version::v0_0_1::generic::pattern::{
-            EmptyPattern, Hop, KindPattern, Pattern, ResourceTypePattern, TksPattern,
-        };
         use crate::version::v0_0_1::id::{AddressAndKind, AddressSegment, Kind, KindParts, ResourceType, Specific, Version};
         use crate::version::v0_0_1::parse::{address_segment_chars, camel_case, domain_chars, skewer_chars, version_req_chars, Res, version_address_segment, version_chars, address};
         use crate::version::v0_0_1::pattern::specific::{
@@ -1126,9 +1103,6 @@ pub mod pattern {
         use crate::version::v0_0_1::pattern::{AddressKindPattern, ExactSegment, Hop, KindPattern, Pattern, ResourceTypePattern, SegmentPattern, SpecificPattern, TksPattern, VersionReq};
         use crate::version::v0_0_1::util::ValuePattern;
         use nom_supreme::{parse_from_str,ParserExt};
-        use crate::version::latest::generic::pattern::AddressKindPattern;
-        use crate::version::latest::id::Version;
-        use crate::version::v0_0_1::generic::id::KindParts;
 
         fn any_segment(input: &str) -> Res<&str, SegmentPattern> {
             tag("*")(input).map(|(next, _)| (next, SegmentPattern::Any))
@@ -2590,6 +2564,7 @@ pub mod messaging {
     use crate::version::v0_0_1::entity::request::ReqEntity;
     use crate::version::v0_0_1::entity::response::RespEntity;
     use crate::version::v0_0_1::id::Address;
+    use crate::version::v0_0_1::util::unique_id;
 
     pub type ExchangeId = String;
 
@@ -2637,7 +2612,7 @@ pub mod messaging {
         }
     }
 
-    #[derive(Clone)]
+    #[derive(Debug,Clone,Serialize,Deserialize)]
     pub struct Request {
         pub id: String,
         pub from: Address,
@@ -2646,18 +2621,36 @@ pub mod messaging {
     }
 
     impl Request {
+        pub fn new( entity: ReqEntity, from: Address, to: Address ) -> Self {
+            Self {
+                id: unique_id(),
+                from,
+                to,
+                entity
+            }
+        }
+
         pub fn respond( self, entity: RespEntity ) -> ProtoResponse {
             ProtoResponse::new( self.from, entity, self.id)
         }
     }
 
-    #[derive(Clone)]
+    #[derive(Debug,Clone)]
     pub struct ProtoRequest {
+        pub id: String,
         pub to: Option<Address>,
         pub entity: Option<ReqEntity>
     }
 
     impl ProtoRequest {
+        pub fn new() -> Self {
+            Self {
+                id: unique_id(),
+                to: Option::None,
+                entity: Option::None
+            }
+        }
+
         pub fn to( &mut self, to: Address ) {
             self.to = Option::Some(to);
         }
@@ -2665,9 +2658,10 @@ pub mod messaging {
         pub fn entity( &mut self, entity: ReqEntity ) {
             self.entity = Option::Some(entity);
         }
+
     }
 
-    #[derive(Clone)]
+    #[derive(Debug,Clone,Serialize,Deserialize)]
     pub struct Response {
         pub id: String,
         pub from: Address,
@@ -2676,7 +2670,7 @@ pub mod messaging {
         pub response_to: String
     }
 
-    #[derive(Clone)]
+    #[derive(Debug,Clone)]
     pub struct ProtoResponse {
         pub to: Address,
         pub entity: RespEntity,
@@ -2690,6 +2684,36 @@ pub mod messaging {
                 entity,
                 response_to
             }
+        }
+    }
+    #[derive(Debug,Clone,Serialize,Deserialize)]
+    pub enum Message {
+        Request(Request),
+        Response(Response)
+    }
+
+    impl Message{
+        pub fn to(&self) -> Address {
+            match self {
+                Message::Request(request) => {
+                    request.to.clone()
+                }
+                Message::Response(response) => {
+                    response.to.clone()
+                }
+            }
+        }
+    }
+
+    impl From<Request> for Message {
+        fn from(request: Request) -> Self {
+            Self::Request(request)
+        }
+    }
+
+    impl From<Response> for Message {
+        fn from(response: Response) -> Self {
+            Self::Response(response)
         }
     }
 
@@ -2783,12 +2807,10 @@ pub mod payload {
 
     use crate::error::Error;
     use crate::version::v0_0_1::bin::Bin;
-    use crate::version::v0_0_1::generic;
     use crate::version::v0_0_1::id::{Address, Kind, Meta, PayloadClaim, ResourceType};
     use crate::version::v0_0_1::pattern::TksPattern;
     use std::str::FromStr;
     use crate::version::v0_0_1::entity::request::RcCommandType;
-    use crate::version::v0_0_1::generic::resource::Resource;
     use crate::version::v0_0_1::resource::{Resource, ResourceStub, Status};
     use crate::version::v0_0_1::util::{ValueMatcher, ValuePattern};
 
@@ -3267,7 +3289,7 @@ pub mod payload {
     impl PrimitiveType {
         pub fn is_match(
             &self,
-            primitive: &generic::payload::Primitive,
+            primitive: &Primitive,
         ) -> Result<(), Error>
         {
             match primitive {
@@ -3569,8 +3591,6 @@ pub mod command {
         use serde::{Deserialize, Serialize};
 
         use crate::error::Error;
-        use crate::version::latest::generic::payload::Payload;
-        use crate::version::v0_0_1::generic::payload::PayloadMap;
         use crate::version::v0_0_1::payload::{Payload, PayloadMap};
 
         #[derive(Debug, Clone, Serialize, Deserialize, strum_macros::Display)]
@@ -3656,11 +3676,8 @@ pub mod config {
 
     use serde::{Deserialize, Serialize};
 
-    use crate::version::latest::generic::resource::ResourceStub;
     use crate::version::v0_0_1::config::bind::BindConfig;
     use crate::version::v0_0_1::config::mechtron::MechtronConfig;
-    use crate::version::v0_0_1::generic;
-    use crate::version::v0_0_1::generic::resource::ResourceStub;
     use crate::version::v0_0_1::id::{Address, Kind};
     use crate::version::v0_0_1::resource;
     use crate::version::v0_0_1::resource::ResourceStub;
@@ -3743,7 +3760,6 @@ pub mod config {
     pub mod bind {
         use crate::error::Error;
         use crate::version::v0_0_1::entity::EntityType;
-        use crate::version::v0_0_1::generic::entity::request::ReqEntity;
         use crate::version::v0_0_1::pattern::{Block, HttpPattern, MsgPattern, RcPattern};
         use crate::version::v0_0_1::payload::Call;
         use crate::version::v0_0_1::payload::{Payload, PayloadPattern};
@@ -4160,12 +4176,11 @@ pub mod entity {
         use crate::version::v0_0_1::entity::request::update::Update;
         use crate::version::v0_0_1::entity::response::RespEntity;
         use crate::version::v0_0_1::fail::Fail;
-        use crate::version::v0_0_1::generic;
-        use crate::version::v0_0_1::generic::payload::HttpMethod;
         use crate::version::v0_0_1::id::{Address, Kind, Meta, PayloadClaim, ResourceType};
         use crate::version::v0_0_1::pattern::TksPattern;
         use crate::version::v0_0_1::payload::{HttpMethod, Payload};
         use crate::version::v0_0_1::util::ValueMatcher;
+        use serde::{Serialize,Deserialize};
 
 
         #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -4307,12 +4322,7 @@ pub mod entity {
             use serde::{Deserialize, Serialize};
 
             use crate::error::Error;
-            use crate::version::latest::generic::payload::Payload;
             use crate::version::v0_0_1::command::common::{SetProperties, SetRegistry, StateSrc};
-            use crate::version::v0_0_1::generic::payload::PayloadMap;
-            use crate::version::v0_0_1::generic::resource::command::common::{
-                SetProperties, SetRegistry, StateSrc,
-            };
             use crate::version::v0_0_1::id::{Address, HostKey};
             use crate::version::v0_0_1::pattern::SpecificPattern;
             use crate::version::v0_0_1::util::ConvertFrom;
@@ -4386,15 +4396,7 @@ pub mod entity {
             use serde::{Deserialize, Serialize};
 
             use crate::error::Error;
-            use crate::version::latest::fail;
-            use crate::version::latest::generic::pattern::{AddressKindPath, Hop};
-            use crate::version::latest::id::Address;
             use crate::version::v0_0_1::fail::{BadCoercion, Fail};
-            use crate::version::v0_0_1::generic::pattern::{AddressKindPath, AddressKindPattern, Hop};
-            use crate::version::v0_0_1::generic::payload::Payload;
-            use crate::version::v0_0_1::generic::payload::Primitive;
-            use crate::version::v0_0_1::generic::payload::{MapPattern, PrimitiveList};
-            use crate::version::v0_0_1::generic::resource::ResourceStub;
             use crate::version::v0_0_1::id::Address;
             use crate::version::v0_0_1::pattern::{AddressKindPath, AddressKindPattern, Hop};
             use crate::version::v0_0_1::payload::{MapPattern, Primitive, PrimitiveList, PrimitiveType};
@@ -4525,8 +4527,6 @@ pub mod entity {
 
             use crate::error::Error;
             use crate::version::v0_0_1::command::common::SetProperties;
-            use crate::version::v0_0_1::generic::payload::PayloadMap;
-            use crate::version::v0_0_1::generic::resource::command::common::SetProperties;
             use crate::version::v0_0_1::id::Address;
 
             #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -4543,10 +4543,7 @@ pub mod entity {
             use serde::{Deserialize, Serialize};
 
             use crate::error::Error;
-            use crate::version::latest::generic::pattern::AddressKindPath;
-            use crate::version::latest::generic::payload::RcCommand;
             use crate::version::v0_0_1::entity::request::RcCommand;
-            use crate::version::v0_0_1::generic::pattern::AddressKindPath;
             use crate::version::v0_0_1::pattern::AddressKindPath;
 
             #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -4598,9 +4595,10 @@ pub mod entity {
 
     pub mod response {
         use crate::error::Error;
+        use crate::version::v0_0_1::fail;
         use crate::version::v0_0_1::id::{Address, Kind};
         use crate::version::v0_0_1::payload::Payload;
-        use crate::version::v0_0_1::{fail, generic};
+        use serde::{Serialize,Deserialize};
 
         #[derive(Debug, Clone, Serialize, Deserialize, strum_macros::Display)]
         pub enum RespEntity {
@@ -4633,8 +4631,6 @@ pub mod resource {
     use serde::{Deserialize, Serialize};
 
     use crate::error::Error;
-    use crate::mesh;
-    use crate::version::v0_0_1::generic;
     use crate::version::v0_0_1::id::{Address, Kind, ResourceType};
     use crate::version::v0_0_1::parse::{address, Res};
     use crate::version::v0_0_1::payload::{Payload, PayloadMap};
@@ -4804,6 +4800,7 @@ pub mod resource {
 pub mod portal {
     use std::ops::Deref;
     use crate::version::v0_0_1::util::unique_id;
+    use serde::{Serialize,Deserialize};
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct Exchanger<T>{
@@ -4842,17 +4839,16 @@ pub mod portal {
         use crate::error::Error;
         use crate::version::v0_0_1::artifact::ArtifactRequest;
         use crate::version::v0_0_1::frame::{CloseReason, PrimitiveFrame};
-        use crate::version::v0_0_1::generic;
-        use crate::version::v0_0_1::generic::portal::Exchanger;
         use crate::version::v0_0_1::id::{Address, Kind, ResourceType};
         use crate::version::v0_0_1::log::Log;
         use crate::version::v0_0_1::messaging::{Request, Response};
         use crate::version::v0_0_1::pattern::TksPattern;
         use crate::version::v0_0_1::payload::Payload;
+        use crate::version::v0_0_1::portal;
         use crate::version::v0_0_1::portal::Exchanger;
-        use crate::version::v0_0_1::portal::outlet::Response;
         use crate::version::v0_0_1::resource::StatusUpdate;
         use crate::version::v0_0_1::util::unique_id;
+        use serde::{Serialize,Deserialize};
 
 
         #[derive(Debug, Clone, Serialize, Deserialize, strum_macros::Display)]
@@ -4902,7 +4898,7 @@ pub mod portal {
             }
         }
 
-        impl TryFrom<PrimitiveFrame> for generic::portal::inlet::Frame {
+        impl TryFrom<PrimitiveFrame> for portal::inlet::Frame {
             type Error = Error;
 
             fn try_from(value: PrimitiveFrame) -> Result<Self, Self::Error> {
@@ -4918,11 +4914,11 @@ pub mod portal {
         use crate::version::v0_0_1::artifact::{Artifact, ArtifactResponse};
         use crate::version::v0_0_1::config::{Assign, Config, ConfigBody};
         use crate::version::v0_0_1::frame::{CloseReason, PrimitiveFrame};
-        use crate::version::v0_0_1::generic::portal::Exchanger;
         use crate::version::v0_0_1::id::{Address, Kind, ResourceType};
         use crate::version::v0_0_1::messaging::{Request, Response};
         use crate::version::v0_0_1::payload::Payload;
         use crate::version::v0_0_1::portal::Exchanger;
+        use serde::{Serialize,Deserialize};
 
         #[derive(Debug, Clone, Serialize, Deserialize, strum_macros::Display)]
         pub enum Frame {
@@ -5302,13 +5298,9 @@ pub mod parse {
     use nom_supreme::parse_from_str;
 
     use crate::error::Error;
-    use crate::version::latest::generic::pattern::{AddressKindPath, AddressKindSegment};
-    use crate::version::latest::util::StringMatcher;
-    use crate::version::v0_0_1::generic::id::parse::version;
     use crate::version::v0_0_1::id::{Address, AddressSegment, RouteSegment, Version};
     use crate::version::v0_0_1::pattern::parse::{delim_kind, kind, version};
     use nom::bytes::complete::take;
-    use crate::version::v0_0_1::generic::pattern::{AddressKindPath, AddressKindSegment};
     use crate::version::v0_0_1::pattern::{AddressKindPath, AddressKindSegment};
     use crate::version::v0_0_1::util::StringMatcher;
 
@@ -5892,12 +5884,8 @@ pub mod test {
     use nom::combinator::all_consuming;
 
     use crate::error::Error;
-    use crate::version::latest::util::ValuePattern;
-    use crate::version::v0_0_1::generic::pattern::{Pattern, TksPattern};
     use crate::version::v0_0_1::id::{AddressSegment, RouteSegment};
     use crate::version::v0_0_1::parse::{address, camel_case, route_segment, version_address_segment, skewer_chars, base_address_segment, rec_skewer};
-    use crate::version::latest::id::Version;
-    use crate::version::v0_0_1::generic::id::parse::version;
     use nom::Err;
     use nom::error::VerboseError;
     use crate::version::v0_0_1::pattern::parse::version;

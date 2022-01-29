@@ -23,22 +23,15 @@ use tokio::sync::mpsc::error::SendTimeoutError;
 use mesh_portal_api_server::{MuxCall, Portal, PortalMuxer, Router, PortalRequestHandler, PortalCall};
 use mesh_portal_serde::version::latest::frame::CloseReason;
 use mesh_portal_serde::version::latest::log::Log;
-use mesh_portal_serde::version::latest::portal::{inlet, outlet};
+use mesh_portal_serde::version::latest::portal::{Exchanger, inlet, outlet};
 use mesh_portal_serde::version::latest::resource::Status;
 use mesh_portal_serde::version::latest::resource::Code;
 use mesh_portal_tcp_common::{FrameReader, FrameWriter, PrimitiveFrameReader, PrimitiveFrameWriter};
-use mesh_portal_api::message::Message;
-use mesh_portal_serde::version::v1::config::{PortalConfig, Assign};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::future::Future;
 use tokio::task::yield_now;
-use mesh_portal_api::message;
-use mesh_portal_serde::mesh::{Request, Response};
-use mesh_portal_serde::version::v1::generic::portal::Exchanger;
-use mesh_portal_serde::version::v1::generic::portal::inlet::Frame;
-use mesh_portal_serde::version::v1::generic::id::KindParts;
-use mesh_portal_serde::version::v1::generic::entity::request::ReqEntity;
-use mesh_portal_serde::version::v1::generic::payload::Payload;
+use mesh_portal_serde::version::latest::config::PortalConfig;
+use mesh_portal_serde::version::latest::messaging::Message;
 
 #[derive(Clone,strum_macros::Display)]
 pub enum Event {

@@ -11,7 +11,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
-use crate::version::latest::log::Log;
+use crate::version::v0_0_1::log::Log;
 
 pub mod version;
 pub mod error;

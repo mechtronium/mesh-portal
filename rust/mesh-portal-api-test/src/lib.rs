@@ -34,31 +34,25 @@ mod tests {
     use mesh_portal_api_client::{client, InletApi, ResourceCtrl, PortalSkel, ResourceCtrlFactory, ResourceSkel};
     use mesh_portal_api_server::{MuxCall, Portal, PortalMuxer, Router, PortalRequestHandler, DefaultPortalRequestHandler};
     use mesh_portal_serde::mesh;
-    use mesh_portal_serde::version::latest::entity::request::{Msg, Rc, ReqEntity};
+    use mesh_portal_serde::version::latest::entity::request::{Msg, Rc, RcCommand, ReqEntity};
     use mesh_portal_serde::version::latest::entity::response;
-    use mesh_portal_serde::version::latest::id::{Address, Kind};
-    use mesh_portal_serde::version::latest::messaging::Exchange;
-    use mesh_portal_serde::version::latest::payload::{Payload, Primitive, PrimitiveType};
+    use mesh_portal_serde::version::latest::id::{Address, Kind, KindParts};
+    use mesh_portal_serde::version::latest::messaging::{Exchange, Message, Request, Response};
+    use mesh_portal_serde::version::latest::payload::{Payload, Primitive, PrimitiveList, PrimitiveType};
     use mesh_portal_serde::version::latest::portal::{inlet, outlet};
     use mesh_portal_serde::version::latest::resource::Status;
     use mesh_portal_serde::version::latest::resource::ResourceStub;
-    use mesh_portal_serde::version::latest::payload::{RcCommand, PrimitiveList};
     use mesh_portal_serde::version::latest::resource::Archetype;
     use mesh_portal_tcp_client::{PortalClient, PortalTcpClient};
     use mesh_portal_tcp_common::{
         FrameReader, FrameWriter, PrimitiveFrameReader, PrimitiveFrameWriter,
     };
     use mesh_portal_tcp_server::{Call, Event, PortalServer, PortalTcpServer};
-    use mesh_portal_api::message;
-    use mesh_portal_serde::version::v1::config::{Config, ResourceConfigBody, Assign, ConfigBody};
-    use mesh_portal_serde::version::latest::resource::command::select::Select;
     use mesh_portal_serde::version::latest::pattern::AddressKindPattern;
-    use mesh_portal_serde::version::v1::artifact::{ArtifactRequest, ArtifactResponse, Artifact};
     use mesh_portal_serde::version::latest::util::unique_id;
+    use mesh_portal_serde::version::latest::config::{Assign, Config, ResourceConfigBody};
+    use mesh_portal_serde::version::latest::entity::request::select::{Select, SelectIntoPayload, SelectionKind};
     use mesh_portal_serde::version::latest::entity::response::RespEntity;
-    use mesh_portal_serde::mesh::Response;
-    use mesh_portal_serde::version::latest::generic::id::KindParts;
-    use mesh_portal_serde::version::latest::generic::resource::command::select::{SelectIntoPayload, SelectionKind};
 
     lazy_static! {
     static ref GLOBAL_TX : tokio::sync::broadcast::Sender<GlobalEvent> = {
@@ -180,7 +174,7 @@ println!("created client: fred TCP client");
     pub struct TestRouter {}
 
     impl Router for TestRouter {
-        fn route(&self, message: message::Message) {
+        fn route(&self, message: Message) {
             todo!()
         }
     }
@@ -295,12 +289,12 @@ println!("created client: fred TCP client");
         mux_tx: Sender<MuxCall>,
     }
     impl Router for InYourFaceRouter {
-        fn route(&self, message: message::Message) {
+        fn route(&self, message: Message) {
 
             let mux_tx = self.mux_tx.clone();
             tokio::spawn(async move {
                match message.clone() {
-                    message::Message::Request(request) => {
+                    Message::Request(request) => {
                         match &request.entity{
                             ReqEntity::Rc(rc) => {
                                 match &rc.command{
@@ -317,22 +311,15 @@ println!("created client: fred TCP client");
                                                     list: stubs
                                                 };
 
-                                                let exchange_id = match request.exchange {
-                                                    Exchange::Notification => {
-                                                        unique_id()
-                                                    }
-                                                    Exchange::RequestResponse(exchange_id) => exchange_id
-                                                };
-
                                                 let response = Response{
                                                     id: unique_id(),
                                                     to: request.from.clone(),
                                                     from: request.to.clone(),
                                                     entity: RespEntity::Ok(Payload::List(list)),
-                                                    exchange: exchange_id
+                                                    response_to: request.id.clone()
                                                 };
 
-                                                mux_tx.send( MuxCall::MessageOut(message::Message::Response(response))).await;
+                                                mux_tx.send( MuxCall::MessageOut(Message::Response(response))).await;
                                             },
                                             Err(err) => {
                                                 GLOBAL_TX.send( GlobalEvent::Fail(err.to_string()));
@@ -350,9 +337,9 @@ println!("created client: fred TCP client");
                             }
                         }
                     }
-                    message::Message::Response(response) => {
+                    Message::Response(response) => {
                         // since we are not connected to a mesh all inbound messages are just sent back to the outbound
-                        mux_tx.send(MuxCall::MessageOut(message::Message::Response(response))).await;
+                        mux_tx.send(MuxCall::MessageOut(Message::Response(response))).await;
                     }
                 }
 
@@ -442,7 +429,7 @@ println!("created client: fred TCP client");
             // wait just a bit to make sure everyone got chance to be in the muxer
             tokio::time::sleep(Duration::from_millis(50)).await;
 
-            let mut request = inlet::Request::new(ReqEntity::Rc(Rc {
+            let mut request = Request::new(ReqEntity::Rc(Rc {
                 command: RcCommand::Select(Select{
                     pattern: AddressKindPattern::from_str("**")?,
                     properties: Default::default(),
@@ -460,14 +447,14 @@ println!("created client: fred TCP client");
 self.log(format!("Select... from: {} to: {}", self.skel.stub.address.to_string(), self.skel.stub.address.parent().expect("expected a parent").to_string() ));
             match self.skel.portal.api().exchange(request).await {
                 Ok(response) => match response.entity {
-                    response::RespEntity::Ok(Payload::List(resources)) => {
+                    RespEntity::Ok(Payload::List(resources)) => {
 self.log(format!("Ok({} Stubs)",resources.list.len()));
                         for resource in resources.iter() {
                             if let Primitive::Stub(resource) = resource {
                                 if resource.address != self.skel.stub.address {
 self.log(format!("Sending to '{}'",resource.address.to_string()));
 
-                                    let mut request = inlet::Request::new(ReqEntity::Msg(
+                                    let mut request = Request::new(ReqEntity::Msg(
                                         Msg {
                                             action: "Greet".to_string(),
                                             path: "/".to_string(),
@@ -514,18 +501,15 @@ self.log(format!("Got Ok Response!"));
             Ok(())
         }
 
-        async fn outlet_frame(&self, frame: outlet::Frame ) -> Result<Option<inlet::Response>,Error> {
+        async fn outlet_frame(&self, frame: outlet::Frame ) -> Result<Option<Response>,Error> {
             if let outlet::Frame::Request( request ) = frame {
 
 self.log(format!("Received Request<Msg<Greet>>"));
-                let response = inlet::Response{
+                let response = Response{
                     id: unique_id(),
                     from: self.skel.stub.address.clone(),
                     to: request.from,
-                    exchange: match request.exchange {
-                        Exchange::Notification => {unique_id()}
-                        Exchange::RequestResponse(exchange_id) => {exchange_id}
-                    },
+                    response_to: request.id,
                     entity: RespEntity::Ok(Payload::Primitive(Primitive::Text("Hello".to_string())))
                 };
                 GLOBAL_TX.send(GlobalEvent::Progress("Responding to hello message".to_string()));

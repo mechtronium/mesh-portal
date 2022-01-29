@@ -31,7 +31,7 @@ pub mod id {
     pub type PayloadClaim = current::id::PayloadClaim;
     pub type HostKey = current::id::HostKey;
     pub type Version = current::id::Version;
-    pub type Tks = current::id::Tks;
+    pub type Tks = dyn current::id::Tks;
     pub type Specific = current::id::Specific;
     pub type RouteSegment = current::id::RouteSegment;
     pub type AddressSegment = current::id::AddressSegment;
@@ -55,7 +55,6 @@ pub mod pattern {
     pub type KeySegment = current::pattern::KeySegment;
     pub type ExactSegment = current::pattern::ExactSegment;
     pub type SpecificPattern = current::pattern::SpecificPattern;
-    pub type ValueMatcher<V> = current::pattern::ValueMatcher<V>;
     pub type LabeledPrimitiveTypeDef = current::pattern::LabeledPrimitiveTypeDef;
     pub type PrimitiveTypeDef = current::pattern::PrimitiveTypeDef;
     pub type Format = current::pattern::Format;
@@ -96,6 +95,7 @@ pub mod messaging {
     pub type ExchangeId = current::messaging::ExchangeId;
     pub type ExchangeType = current::messaging::ExchangeType;
     pub type Exchange = current::messaging::Exchange;
+    pub type Message = current::messaging::Message;
 }
 
 pub mod log {
@@ -133,7 +133,6 @@ pub mod payload {
     pub type CallWithConfig = current::payload::CallWithConfig;
     pub type Call = current::payload::Call;
     pub type CallKind = current::payload::CallKind;
-    pub type RcCall = current::payload::RcCall;
     pub type MsgCall = current::payload::MsgCall;
     pub type HttpCall = current::payload::HttpCall;
     pub type HttpMethod = current::payload::HttpMethod;
@@ -171,7 +170,7 @@ pub mod config {
 
     pub type PortalKind = current::config::PortalKind;
     pub type Info = current::config::Info;
-    pub type PortalConfig = current::config::Info;
+    pub type PortalConfig = current::config::PortalConfig;
     pub type Assign = current::config::Assign;
     pub type Config<BODY> = current::config::Config<BODY>;
     pub type ConfigBody = current::config::ConfigBody;
@@ -262,7 +261,7 @@ pub mod entity {
     pub mod response {
         use mesh_portal_versions::version::v0_0_1 as current;
 
-        pub type Get = current::entity::response::RespEntity;
+        pub type RespEntity = current::entity::response::RespEntity;
     }
 }
 
@@ -303,11 +302,11 @@ pub mod util {
     use mesh_portal_versions::version::v0_0_1 as current;
 
     pub type ValuePattern<T> = current::util::ValuePattern<T>;
-    pub type ValueMatcher<T> = current::util::ValueMatcher<T>;
+    pub type ValueMatcher<T> = dyn current::util::ValueMatcher<T>;
     pub type RegexMatcher = current::util::RegexMatcher;
     pub type StringMatcher = current::util::StringMatcher;
-    pub type Convert<A>= current::util::Convert<A>;
-    pub type ConvertFrom<A>= current::util::ConvertFrom<A>;
+    pub type Convert<A>= dyn current::util::Convert<A>;
+    pub type ConvertFrom<A>= dyn current::util::ConvertFrom<A>;
 
     pub fn unique_id() -> String {
         current::util::unique_id()
