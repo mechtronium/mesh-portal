@@ -3986,7 +3986,7 @@ pub mod generic {
                     Create,
                     CreateOrUpdate,
                     Ensure,
-                    AlreadyHosted
+                    HostedBy(HostKey)
                 }
 
                 #[derive(Debug, Clone, Serialize, Deserialize)]

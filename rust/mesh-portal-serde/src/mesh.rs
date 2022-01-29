@@ -43,7 +43,6 @@ pub mod generic {
             Ok(portal::outlet::Request {
                 from: self.from,
                 to: self.to,
-                //entity: ConvertFrom::convert_from(self.entity)?,
                 entity: self.entity,
                 exchange: self.exchange,
             })
