@@ -315,185 +315,52 @@ pub mod util {
 }
 
 pub mod fail {
-    use serde::{Deserialize, Serialize};
-
-    use crate::error::Error;
-    use crate::version::v0_0_1::id::Specific;
+    use mesh_portal_versions::version::v0_0_1 as current;
 
     pub mod mesh {
-        use serde::{Deserialize, Serialize};
+        use mesh_portal_versions::version::v0_0_1 as current;
 
-        #[derive(Debug, Clone, Serialize, Deserialize)]
-        pub enum Fail {
-            Error(String),
-        }
+        pub type Fail = current::fail::Fail;
     }
 
     pub mod portal {
-        use serde::{Deserialize, Serialize};
+        use mesh_portal_versions::version::v0_0_1 as current;
 
-        use crate::version::v0_0_1::fail::{http, msg, resource};
-
-        #[derive(Debug, Clone, Serialize, Deserialize)]
-        pub enum Fail {
-            Error(String),
-            Resource(resource::Fail),
-            Msg(msg::Fail),
-            Http(http::Error),
-        }
+        pub type Fail = current::fail::portal::Fail;
     }
 
     pub mod resource {
-        use serde::{Deserialize, Serialize};
+        use mesh_portal_versions::version::v0_0_1 as current;
 
-        use crate::version::v0_0_1::fail::{
-            Bad, BadCoercion, BadRequest, Conditional, Messaging, NotFound,
-        };
-        use crate::version::v0_0_1::id::Address;
-
-        #[derive(Debug, Clone, Serialize, Deserialize)]
-        pub enum Fail {
-            Create(Create),
-            Update(Update),
-            Select(Select),
-            BadRequest(BadRequest),
-            Conditional(Conditional),
-            Messaging(Messaging),
-        }
-
-        #[derive(Debug, Clone, Serialize, Deserialize)]
-        pub enum Create {
-            AddressAlreadyInUse(String),
-            WrongParentResourceType { expected: String, found: String },
-            CannotUpdateArchetype,
-            InvalidProperty { expected: String, found: String },
-        }
-
-        #[derive(Debug, Clone, Serialize, Deserialize)]
-        pub enum Update {
-            Immutable,
-        }
-
-        #[derive(Debug, Clone, Serialize, Deserialize)]
-        pub enum Select {
-            WrongAddress { required: Address, found: Address },
-            BadSelectRouting { required: String, found: String },
-            BadCoercion(BadCoercion),
-        }
+        pub type Fail = current::fail::resource::Fail;
+        pub type Create = current::fail::resource::Create;
+        pub type Update = current::fail::resource::Update;
+        pub type Select = current::fail::resource::Select;
     }
 
     pub mod msg {
-        use serde::{Deserialize, Serialize};
+        use mesh_portal_versions::version::v0_0_1 as current;
 
-        use crate::version::v0_0_1::fail::{BadRequest, Conditional};
-
-        #[derive(Debug, Clone, Serialize, Deserialize)]
-        pub enum Fail {
-            Error(String),
-            BadRequest(BadRequest),
-            Conditional(Conditional),
-        }
+        pub type Fail = current::fail::msg::Fail;
     }
 
     pub mod http {
-        use serde::{Deserialize, Serialize};
+        use mesh_portal_versions::version::v0_0_1 as current;
 
-        #[derive(Debug, Clone, Serialize, Deserialize)]
-        pub struct Error {
-            pub code: u32,
-            pub message: String,
-        }
+        pub type Fail = current::fail::http::Error;
     }
 
-    #[derive(Debug, Clone, Serialize, Deserialize)]
-    pub enum BadRequest {
-        NotFound(NotFound),
-        Bad(Bad),
-        Illegal(Illegal),
-        Wrong(Wrong),
-    }
-
-    #[derive(Debug, Clone, Serialize, Deserialize)]
-    pub struct BadCoercion {
-        pub from: String,
-        pub into: String,
-    }
-
-    #[derive(Debug, Clone, Serialize, Deserialize)]
-    pub enum Conditional {
-        Timeout(Timeout),
-    }
-
-    #[derive(Debug, Clone, Serialize, Deserialize)]
-    pub struct Timeout {
-        pub waited: i32,
-        pub message: String,
-    }
-
-    #[derive(Debug, Clone, Serialize, Deserialize)]
-    pub enum NotFound {
-        ResourceType(String),
-        Kind(String),
-        Specific(String),
-        Address(String),
-        Key(String),
-    }
-
-    #[derive(Debug, Clone, Serialize, Deserialize)]
-    pub enum Bad {
-        ResourceType(String),
-        Kind(String),
-        Specific(String),
-        Address(String),
-        Key(String),
-    }
-
-    #[derive(Debug, Clone, Serialize, Deserialize)]
-    pub enum Identifier {
-        ResourceType,
-        Kind,
-        Specific,
-        Address,
-        Key,
-    }
-
-    #[derive(Debug, Clone, Serialize, Deserialize)]
-    pub enum Illegal {
-        Immutable,
-        EmptyToFieldOnMessage,
-    }
-
-    #[derive(Debug, Clone, Serialize, Deserialize)]
-    pub struct Wrong {
-        pub received: String,
-        pub expected: String,
-    }
-
-    #[derive(Debug, Clone, Serialize, Deserialize)]
-    pub enum Messaging {
-        RequestReplyExchangesRequireOneAndOnlyOneRecipient,
-    }
-
-    #[derive(Debug, Clone, Serialize, Deserialize)]
-    pub enum Fail {
-        Mesh(mesh::Fail),
-        Resource(resource::Fail),
-        Portal(portal::Fail),
-    }
-
-    impl ToString for Fail {
-        fn to_string(&self) -> String {
-            "Fail".to_string()
-        }
-    }
-
-    impl Into<Error> for Fail {
-        fn into(self) -> Error {
-            Error {
-                message: "Fail".to_string(),
-            }
-        }
-    }
+    pub type BadRequest = current::fail::BadRequest;
+    pub type BadCoercion= current::fail::BadCoercion;
+    pub type Conditional = current::fail::Conditional;
+    pub type Timeout = current::fail::Timeout;
+    pub type NotFound = current::fail::NotFound;
+    pub type Bad = current::fail::Bad;
+    pub type Identifier = current::fail::Identifier;
+    pub type Illegal = current::fail::Illegal;
+    pub type Wrong = current::fail::Wrong;
+    pub type Messaging= current::fail::Messaging;
+    pub type Fail = current::fail::Fail;
 }
 
 
