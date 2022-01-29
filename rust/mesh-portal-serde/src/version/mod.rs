@@ -5,5 +5,4 @@ use nom::character::complete::digit1;
 use nom::bytes::complete::tag;
 use nom::IResult;
 
-pub mod v0_0_1;
 pub mod latest;

@@ -7,507 +7,493 @@ use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 
-use crate::version::v1::bin::Bin;
+use mesh_portal_versions::version::v0_0_1 as current;
 
-pub type State=crate::version::v1::State;
 
-pub mod id {
-    use crate::version::v1::id;
-    use crate::version::latest::generic;
-
-    pub type Address = id::Address;
-    pub type ResourceType = id::ResourceType;
-    pub type Kind = id::Kind;
-    pub type Version = id::Version;
-    pub type Specific = id::Specific;
-    pub type AddressAndKind = generic::id::AddressAndKind<ResourceType,Kind>;
-    pub type AddressAndType = generic::id::AddressAndType<ResourceType>;
-    pub type AddressSegment= id::AddressSegment;
-    pub type Meta=id::Meta;
-    pub type HostKey=id::HostKey;
-}
+pub type State = current::State;
+pub type Port = current::Port;
 
 pub mod artifact {
-    use crate::version::v1::artifact;
-    pub type Artifact = artifact::Artifact;
+    use mesh_portal_versions::version::v0_0_1 as current;
+    pub type Artifact = current::artifact::Artifact;
+    pub type ArtifactRequest = current::artifact::ArtifactRequest;
+    pub type ArtifactResponse<B> = current::artifact::ArtifactResponse<B>;
+}
+
+
+pub mod id {
+    use mesh_portal_versions::version::v0_0_1 as current;
+    pub type ResourceType = current::id::ResourceType;
+    pub type Kind = current::id::Kind;
+    pub type AddressAndKind = current::id::AddressAndKind;
+    pub type AddressAndType = current::id::AddressAndType;
+    pub type Meta = current::id::Meta;
+    pub type PayloadClaim = current::id::PayloadClaim;
+    pub type HostKey = current::id::HostKey;
+    pub type Version = current::id::Version;
+    pub type Tks = current::id::Tks;
+    pub type Specific = current::id::Specific;
+    pub type RouteSegment = current::id::RouteSegment;
+    pub type AddressSegment = current::id::AddressSegment;
+    pub type Address = current::id::Address;
+    pub type KindParts = current::id::KindParts;
+}
+
+pub mod path {
+    use mesh_portal_versions::version::v0_0_1 as current;
+    pub type Path=current::path::Path;
 }
 
 pub mod pattern {
-    use crate::version::latest::id;
-    pub type Kind= id::Kind;
-    pub type ResourceType = id::ResourceType;
-    use crate::version::v1::pattern;
-    pub type TksPattern=pattern::TksPattern;
-    pub type KindPattern = pattern::KindPattern;
-    pub type AddressKindPattern = pattern::AddressKindPattern;
+    use mesh_portal_versions::version::v0_0_1 as current;
+
+    pub type TksPattern = current::pattern::TksPattern;
+    pub type KindPattern = current::pattern::KindPattern;
+    pub type AddressKindPattern = current::pattern::AddressKindPattern;
+    pub type VersionReq = current::pattern::VersionReq;
+    pub type SegmentPattern = current::pattern::SegmentPattern;
+    pub type KeySegment = current::pattern::KeySegment;
+    pub type ExactSegment = current::pattern::ExactSegment;
+    pub type SpecificPattern = current::pattern::SpecificPattern;
+    pub type ValueMatcher<V> = current::pattern::ValueMatcher<V>;
+    pub type LabeledPrimitiveTypeDef = current::pattern::LabeledPrimitiveTypeDef;
+    pub type PrimitiveTypeDef = current::pattern::PrimitiveTypeDef;
+    pub type Format = current::pattern::Format;
+    pub type EntityPattern = current::pattern::EntityPattern;
+    pub type RcPattern = current::pattern::RcPattern;
+    pub type MsgPattern = current::pattern::MsgPattern;
+    pub type HttpPattern = current::pattern::HttpPattern;
+    pub type Block = current::pattern::Block;
+    pub type UploadBlock = current::pattern::UploadBlock;
+    pub type CreateBlock = current::pattern::CreateBlock;
+    pub type PatternBlock = current::pattern::PatternBlock;
+    pub type MapEntryPattern= current::pattern::MapEntryPattern;
+    pub type Hop = current::pattern::Hop;
+    pub type Pattern<P> = current::pattern::Pattern<P>;
+    pub type EmptyPattern<P> = current::pattern::EmptyPattern<P>;
+    pub type ResourceTypePattern  = current::pattern::ResourceTypePattern;
+    pub type AddressKindPath = current::pattern::AddressKindPath;
+    pub type AddressKindSegment = current::pattern::AddressKindSegment;
+
+    pub mod specific {
+        use mesh_portal_versions::version::v0_0_1 as current;
+
+        pub type VersionReq = current::pattern::specific::VersionReq;
+        pub type VendorPattern = current::pattern::specific::VendorPattern;
+        pub type ProductPattern = current::pattern::specific::ProductPattern;
+        pub type VariantPattern = current::pattern::specific::VariantPattern;
+        pub type VersionPattern = current::pattern::specific::VersionPattern;
+   }
 }
 
 pub mod messaging {
-    use crate::version::v1::messaging;
+    use mesh_portal_versions::version::v0_0_1 as current;
 
-    pub type ExchangeId = messaging::ExchangeId;
-    pub type Exchange = messaging::Exchange;
-    pub type ExchangeType = messaging::ExchangeType;
+    pub type Request = current::messaging::Request;
+    pub type Response= current::messaging::Response;
+    pub type ProtoRequest= current::messaging::ProtoRequest;
+    pub type ProtoResponse= current::messaging::ProtoResponse;
+    pub type ExchangeId = current::messaging::ExchangeId;
+    pub type ExchangeType = current::messaging::ExchangeType;
+    pub type Exchange = current::messaging::Exchange;
 }
 
-
 pub mod log {
-    use crate::version::v1::log;
-    pub type Log = log::Log;
+    use mesh_portal_versions::version::v0_0_1 as current;
+
+    pub type Log = current::log::Log;
 }
 
 pub mod frame {
-    use crate::version::v1::frame;
-    pub type PrimitiveFrame = frame::PrimitiveFrame;
-    pub type CloseReason = frame::CloseReason;
+    use mesh_portal_versions::version::v0_0_1 as current;
+
+    pub type PrimitiveFrame = current::frame::PrimitiveFrame;
+    pub type CloseReason = current::frame::CloseReason;
 }
 
 pub mod bin {
-    use crate::version::v1::bin;
-    pub type Bin = bin::Bin;
+    use mesh_portal_versions::version::v0_0_1 as current;
+
+    pub type Bin = current::bin::Bin;
 }
 
 pub mod payload {
-    use crate::version::latest::generic;
-    use crate::version::latest::bin::Bin;
-    use crate::version::latest::id::{Address, Kind,ResourceType,};
-    use crate::version::v1::payload;
-    use crate::version::latest::pattern::TksPattern;
+    use mesh_portal_versions::version::v0_0_1 as current;
 
-    pub type Primitive = generic::payload::Primitive<Kind>;
-    pub type Payload = generic::payload::Payload<Kind>;
-    pub type PrimitiveList= generic::payload::PrimitiveList<Kind>;
-    pub type PayloadType = payload::PayloadType;
-    pub type PrimitiveType= payload::PrimitiveType;
-    pub type PayloadRef = payload::PayloadRef;
-    pub type PayloadDelivery = generic::payload::PayloadDelivery<Payload,PayloadRef>;
-    pub type Call = payload::Call;
-    pub type CallKind = generic::payload::CallKind;
-    pub type CallWithConfig = payload::CallWithConfig;
-    pub type MapPattern = generic::payload::MapPattern;
-    pub type PayloadTypePattern = generic::payload::PayloadTypePattern;
-    pub type PayloadPattern = generic::payload::PayloadPattern;
-    pub type ListPattern = generic::payload::ListPattern;
-    pub type PayloadMap = generic::payload::PayloadMap<Kind>;
-    pub type PayloadFormat= generic::payload::PayloadFormat;
-    pub type Range = generic::payload::Range;
-    pub type RcCommand = payload::RcCommand;
-
+    pub type Payload = current::payload::Payload;
+    pub type PayloadMap = current::payload::PayloadMap;
+    pub type Primitive = current::payload::Primitive;
+    pub type PrimitiveList = current::payload::PrimitiveList;
+    pub type PrimitiveType = current::payload::PrimitiveType;
+    pub type PayloadType = current::payload::PayloadType;
+    pub type ListPattern = current::payload::ListPattern;
+    pub type Range = current::payload::Range;
+    pub type PayloadTypePattern = current::payload::PayloadTypePattern;
+    pub type PayloadPattern = current::payload::PayloadPattern;
+    pub type CallWithConfig = current::payload::CallWithConfig;
+    pub type Call = current::payload::Call;
+    pub type CallKind = current::payload::CallKind;
+    pub type RcCall = current::payload::RcCall;
+    pub type MsgCall = current::payload::MsgCall;
+    pub type HttpCall = current::payload::HttpCall;
+    pub type HttpMethod = current::payload::HttpMethod;
+    pub type PayloadFormat = current::payload::PayloadFormat;
+    pub type MapPattern = current::payload::MapPattern;
 }
 
 pub mod command {
-    use crate::version::v1::command;
+    use mesh_portal_versions::version::v0_0_1 as current;
 
-    pub type Command = command::Command;
-    pub type CommandStatus = command::CommandStatus;
-    pub type CommandEvent = command::CommandEvent;
+    pub type Command = current::command::Command;
+    pub type CommandStatus = current::command::CommandStatus;
+    pub type CommandEvent = current::command::CommandEvent;
+    pub type CliId = current::command::CliId;
+
+    pub mod common {
+        use mesh_portal_versions::version::v0_0_1 as current;
+
+        pub type StateSrc = current::command::common::StateSrc;
+        pub type SetLabel = current::command::common::SetLabel;
+        pub type SetProperties = current::command::common::SetProperties;
+        pub type SetRegistry = current::command::common::SetRegistry;
+    }
 }
 
 pub mod http {
-    use crate::version::v1::http;
-    use crate::version::latest::Bin;
+    use mesh_portal_versions::version::v0_0_1 as current;
 
-    pub type HttpRequest = http::HttpRequest;
-    pub type HttpResponse = http::HttpResponse;
+    pub type HttpRequest = current::http::HttpRequest;
+    pub type HttpResponse = current::http::HttpResponse;
 }
 
-
 pub mod config {
-    use crate::version::latest::generic;
-    use crate::version::latest::id::{Address, Kind};
-    use crate::version::v1::config;
+    use mesh_portal_versions::version::v0_0_1 as current;
 
+    pub type PortalKind = current::config::PortalKind;
+    pub type Info = current::config::Info;
+    pub type PortalConfig = current::config::Info;
+    pub type Assign = current::config::Assign;
+    pub type Config<BODY> = current::config::Config<BODY>;
+    pub type ConfigBody = current::config::ConfigBody;
+    pub type ResourceConfigBody = current::config::ResourceConfigBody;
 
+    pub mod mechtron {
+        use mesh_portal_versions::version::v0_0_1 as current;
+
+        pub type MechtronConfig = current::config::mechtron::MechtronConfig;
+    }
+
+    pub mod bind {
+        use mesh_portal_versions::version::v0_0_1 as current;
+
+        pub type ProtoBind = current::config::bind::ProtoBind;
+        pub type BindConfig = current::config::bind::BindConfig;
+        pub type Scope<T,E>= current::config::bind::Scope<T,E>;
+        pub type Pipeline=current::config::bind::Pipeline;
+        pub type PipelineStep=current::config::bind::PipelineStep;
+        pub type PipelineStop=current::config::bind::PipelineStop;
+        pub type PatternBlock =current::config::bind::PatternBlock;
+        pub type Selector<P> =current::config::bind::Selector<P>;
+        pub type Whitelist =current::config::bind::Whitelist;
+        pub type CallPattern =current::config::bind::CallPattern;
+        pub type PipelineSegment =current::config::bind::PipelineSegment;
+        pub type StepKind =current::config::bind::StepKind;
+        pub type Section =current::config::bind::Section;
+        pub type ScopeType =current::config::bind::ScopeType;
+    }
 }
 
 pub mod entity {
+    use mesh_portal_versions::version::v0_0_1 as current;
 
-    use crate::version::v1::entity;
-    pub type EntityType= entity::EntityType;
+    pub type EntityType = current::entity::EntityType;
 
     pub mod request {
-        use crate::version::v1::generic;
-        use crate::version::latest::id::{Address, Kind, ResourceType};
-        use crate::version::latest::bin::Bin;
-        use crate::version::latest::payload::Payload;
-        use crate::version::latest::pattern::TksPattern;
+        use mesh_portal_versions::version::v0_0_1 as current;
 
-        pub type ReqEntity = generic::entity::request::ReqEntity<ResourceType,Kind>;
-        pub type Rc = generic::entity::request::Rc<ResourceType,Kind>;
-        pub type Msg = generic::entity::request::Msg<Kind>;
-        pub type Http = generic::entity::request::Http<Kind>;
+        pub type ReqEntity = current::entity::request::ReqEntity;
+        pub type RcCommand = current::entity::request::RcCommand;
+        pub type RcCommandType = current::entity::request::RcCommandType;
+        pub type Rc = current::entity::request::Rc;
+        pub type Msg = current::entity::request::Msg;
+        pub type Http = current::entity::request::Http;
+
+        pub mod create {
+            use mesh_portal_versions::version::v0_0_1 as current;
+
+            pub type Template = current::entity::request::create::Template;
+            pub type KindTemplate = current::entity::request::create::KindTemplate;
+            pub type Create = current::entity::request::create::Create;
+            pub type Strategy = current::entity::request::create::Strategy;
+            pub type AddressTemplate = current::entity::request::create::AddressTemplate;
+            pub type AddressSegmentTemplate = current::entity::request::create::AddressSegmentTemplate;
+        }
+
+        pub mod select {
+            use mesh_portal_versions::version::v0_0_1 as current;
+
+            pub type SelectIntoPayload = current::entity::request::select::SelectIntoPayload;
+            pub type Select = current::entity::request::select::Select;
+            pub type SelectionKind = current::entity::request::select::SelectionKind;
+            pub type SubSelector = current::entity::request::select::SubSelector;
+            pub type PropertiesPattern = current::entity::request::select::PropertiesPattern;
+        }
+
+        pub mod update {
+            use mesh_portal_versions::version::v0_0_1 as current;
+
+            pub type Update = current::entity::request::update::Update;
+        }
+
+        pub mod query {
+            use mesh_portal_versions::version::v0_0_1 as current;
+
+            pub type Query= current::entity::request::query::Query;
+            pub type QueryResult = current::entity::request::query::QueryResult;
+        }
+
+        pub mod get {
+            use mesh_portal_versions::version::v0_0_1 as current;
+
+            pub type Get = current::entity::request::get::Get;
+        }
     }
 
-    pub mod response{
-        use crate::version::v1::{fail, generic};
-        use crate::version::latest::id::{Address, Kind};
-        use crate::version::latest::payload::Payload;
+    pub mod response {
+        use mesh_portal_versions::version::v0_0_1 as current;
 
-        pub type RespEntity = generic::entity::response::RespEntity<Payload>;
+        pub type Get = current::entity::response::RespEntity;
     }
-
 }
 
 pub mod resource {
-    use serde::{Deserialize, Serialize};
+    use mesh_portal_versions::version::v0_0_1 as current;
 
-    use crate::version::v1::resource;
-    use crate::version::latest::generic;
-    use crate::version::latest::id::{Address, Kind, ResourceType};
-
-    pub type Status = resource::Status;
-    pub type Code = resource::Code;
-    pub type Progress= resource::Progress;
-
-    pub type Archetype= generic::resource::Archetype<Kind>;
-    pub type ResourceStub = generic::resource::ResourceStub<Kind>;
-    pub type Properties = generic::resource::Properties<Kind>;
-
-    pub mod command {
-
-        pub mod common {
-            use crate::version::v1::generic;
-            use crate::version::latest::id::{Address, Kind, ResourceType};
-
-            pub type StateSrc=generic::resource::command::common::StateSrc<Kind>;
-        }
-
-        pub mod create {
-            use crate::version::v1::generic;
-            use crate::version::latest::id::{Address, Kind, ResourceType};
-
-            pub type Create=generic::resource::command::create::Create<Kind>;
-        }
-
-        pub mod select{
-            use crate::version::v1::generic;
-            use crate::version::latest::id::{Address, Kind, ResourceType};
-
-            pub type Select=generic::resource::command::select::Select<ResourceType,Kind>;
-        }
-
-        pub mod update{
-            use crate::version::v1::generic;
-            use crate::version::latest::id::{Address, Kind, ResourceType};
-
-            pub type Select=generic::resource::command::update::Update<Kind>;
-        }
-
-        pub mod query{
-            use crate::version::v1::generic;
-            use crate::version::latest::id::{Address, Kind, ResourceType};
-
-            pub type Select=generic::resource::command::query::Query;
-        }
-
-
-    }
+    pub type StatusUpdate = current::resource::StatusUpdate;
+    pub type Status = current::resource::Status;
+    pub type Code = current::resource::Code;
+    pub type Progress = current::resource::Progress;
+    pub type Properties = current::resource::Properties;
+    pub type Archetype = current::resource::Archetype;
+    pub type ResourceStub = current::resource::ResourceStub;
+    pub type Resource = current::resource::Resource;
 }
 
 pub mod portal {
+    use mesh_portal_versions::version::v0_0_1 as current;
+
+    pub type Exchanger<T> = current::portal::Exchanger<T>;
 
     pub mod inlet {
-        use crate::version::latest::generic;
-        use crate::version::latest::id::{Address, Kind, ResourceType};
-        use crate::version::latest::frame::PrimitiveFrame;
-        use crate::error::Error;
-        use crate::version::latest::payload::Payload;
-        use crate::version::latest::pattern::TksPattern;
+        use mesh_portal_versions::version::v0_0_1 as current;
 
-        pub type ReqEntity=generic::entity::request::ReqEntity<ResourceType,Kind>;
-        pub type Request=generic::portal::inlet::Request<ReqEntity>;
-        pub type Response=generic::portal::inlet::Response<Payload>;
-        pub type Frame=generic::portal::inlet::Frame<ReqEntity,Payload>;
-
-        pub mod exchange {
-            use crate::version::latest::id::{Address, Kind, ResourceType};
-            use crate::version::latest::generic;
-            use crate::version::latest::payload::Payload;
-        }
+        pub type Frame = current::portal::inlet::Frame;
+        pub type AssignRequest = current::portal::inlet::AssignRequest;
     }
 
     pub mod outlet {
-        use crate::version::latest::generic;
-        use crate::version::v1::portal;
-        use crate::version::latest::id::{Address, Kind, ResourceType};
-        use crate::version::latest::frame::PrimitiveFrame;
-        use crate::error::Error;
-        use crate::version::latest::payload::Payload;
+        use mesh_portal_versions::version::v0_0_1 as current;
 
-        pub type Request=portal::outlet::Request;
-        pub type Response=portal::outlet::Response;
-        pub type Frame=portal::outlet::Frame;
+        pub type Frame = current::portal::outlet::Frame;
     }
 }
 
-pub mod generic {
 
-    pub mod id {
-        use std::fmt::Debug;
-        use std::hash::Hash;
-        use std::str::FromStr;
-        use serde::{Deserialize, Serialize};
+pub mod util {
+    use mesh_portal_versions::version::v0_0_1 as current;
 
-        use crate::version::v1::generic;
+    pub type ValuePattern<T> = current::util::ValuePattern<T>;
+    pub type ValueMatcher<T> = current::util::ValueMatcher<T>;
+    pub type RegexMatcher = current::util::RegexMatcher;
+    pub type StringMatcher = current::util::StringMatcher;
+    pub type Convert<A>= current::util::Convert<A>;
+    pub type ConvertFrom<A>= current::util::ConvertFrom<A>;
 
-
-        pub type AddressAndKind<ResourceType,KIND> = generic::id::AddressAndKind<ResourceType,KIND>;
-        pub type AddressAndType<RESOURCE_TYPE> = generic::id::AddressAndType<RESOURCE_TYPE>;
-        pub type KindParts<RESOURCE_TYPE> = generic::id::KindParts<RESOURCE_TYPE>;
+    pub fn unique_id() -> String {
+        current::util::unique_id()
     }
-
-    pub mod pattern {
-        use crate::version::v1::generic;
-        use crate::version::v1::pattern;
-        use crate::version::v1::util;
-        pub type TksPattern<ResourceType, Kind> = generic::pattern::TksPattern<ResourceType, Kind>;
-        pub type AddressKindPattern<ResourceType, Kind> = generic::pattern::AddressKindPattern<ResourceType, Kind>;
-        pub type AddressKindPath<ResourceType,Kind> = generic::pattern::AddressKindPath<ResourceType,Kind>;
-        pub type AddressKindSegment<Kind> = generic::pattern::AddressKindSegment<Kind>;
-        pub type KindPattern<Kind> = generic::pattern::KindPattern<Kind>;
-        pub type Hop<ResourceType, Kind> = generic::pattern::Hop<ResourceType, Kind>;
-        pub type SegmentPattern = pattern::SegmentPattern;
-        pub type ExactSegment = pattern::ExactSegment;
-        pub type Pattern<P> = generic::pattern::Pattern<P>;
-    }
-
-    pub mod config {
-        use std::fmt::Debug;
-        use std::hash::Hash;
-        use std::str::FromStr;
-
-        use serde::{Deserialize, Serialize};
-
-        use crate::version::v1::config::{Config, PortalKind};
-        use crate::version::latest::generic::resource::Archetype;
-        use crate::version::v1::generic;
-
-        pub type Info<KIND>=generic::config::Info<KIND>;
-    }
-
-    pub mod entity {
-        pub mod request {
-            use std::hash::Hash;
-            use std::str::FromStr;
-
-            use serde::{Deserialize, Serialize};
-            use serde::__private::fmt::Debug;
-
-            use crate::version::latest::{http, State};
-            use crate::version::latest::bin::Bin;
-            use crate::version::v1::generic;
-            use crate::version::latest::generic::payload::Primitive;
-            use crate::version::latest::generic::payload::Payload;
-
-            pub type ReqEntity<ResourceType,Kind> = generic::entity::request::ReqEntity<ResourceType,Kind>;
-            pub type Rc<ResourceType,Kind> = generic::entity::request::Rc<ResourceType,Kind>;
-            pub type Msg<Kind> = generic::entity::request::Msg<Kind>;
-            pub type Http<Kind> = generic::entity::request::Http<Kind>;
-        }
-
-        pub mod response {
-            use std::fmt::Debug;
-            use std::hash::Hash;
-            use std::str::FromStr;
-
-            use crate::version::latest::bin::Bin;
-            use crate::version::v1::generic;
-
-            use serde::{Deserialize, Serialize};
-
-            pub type RespEntity<PAYLOAD> = generic::entity::response::RespEntity<PAYLOAD>;
-        }
-    }
-
-
-    pub mod resource {
-        use std::collections::{HashMap, HashSet};
-        use std::fmt::Debug;
-        use std::hash::Hash;
-        use std::str::FromStr;
-
-        use serde::{Deserialize, Serialize};
-
-        use crate::error::Error;
-        use crate::version::v1::generic;
-        use crate::version::v1::generic::id::{AddressAndKind};
-        use crate::version::v1::State;
-
-        pub type Archetype<KIND>=generic::resource::Archetype<KIND>;
-        pub type ResourceStub<KIND> = generic::resource::ResourceStub<KIND>;
-        pub type Properties<KIND> = generic::resource::Properties<KIND>;
-        pub type Resource<KIND> = generic::resource::Resource<KIND>;
-
-        pub mod command {
-            use crate::version::v1::generic;
-            use crate::version::v1::util::ValueMatcher;
-            use serde::{Deserialize, Serialize};
-
-            pub type RcCommand<ResourceType, Kind> = generic::resource::command::RcCommand<ResourceType,Kind>;
-            pub type RcCommandType = generic::resource::command::RcCommandType;
-
-            pub mod common {
-                use crate::version::v1::generic;
-                pub type StateSrc<Kind> = generic::resource::command::common::StateSrc<Kind>;
-                pub type SetProperties<Kind> = generic::resource::command::common::SetProperties<Kind>;
-                pub type SetLabel = generic::resource::command::common::SetLabel;
-                pub type SetRegistry = generic::resource::command::common::SetRegistry;
-            }
-
-            pub mod create {
-                use crate::version::v1::generic;
-                pub type Create<Kind> = generic::resource::command::create::Create<Kind>;
-                pub type AddressTemplate  = generic::resource::command::create::AddressTemplate;
-                pub type AddressSegmentTemplate = generic::resource::command::create::AddressSegmentTemplate;
-                pub type KindTemplate= generic::resource::command::create::KindTemplate;
-                pub type Strategy = generic::resource::command::create::Strategy;
-                pub type Template = generic::resource::command::create::Template;
-            }
-
-            pub mod select {
-                use crate::version::v1::generic;
-                pub type SelectIntoPayload=generic::resource::command::select::SelectIntoPayload;
-                pub type Select<ResourceType,Kind>=generic::resource::command::select::Select<ResourceType,Kind>;
-                pub type SubSelector<ResourceType,Kind>=generic::resource::command::select::SubSelector<ResourceType,Kind>;
-                pub type PropertiesPattern = generic::resource::command::select::PropertiesPattern;
-                pub type SelectionKind<ResourceType,Kind>= generic::resource::command::select::SelectionKind<ResourceType,Kind>;
-            }
-
-            pub mod update {
-                use crate::version::v1::generic;
-                pub type Update<Kind>=generic::resource::command::update::Update<Kind>;
-            }
-
-            pub mod query{
-                use crate::version::v1::generic;
-                pub type Query=generic::resource::command::query::Query;
-                pub type QueryResult<ResourceType,Kind>=generic::resource::command::query::QueryResult<ResourceType,Kind>;
-            }
-        }
-    }
-
-    pub mod portal {
-        pub mod inlet {
-            use std::convert::TryFrom;
-            use std::convert::TryInto;
-            use std::fmt::Debug;
-            use std::hash::Hash;
-            use std::str::FromStr;
-
-            use serde::{Deserialize, Serialize};
-
-            use crate::version::v1::generic::portal::inlet;
-
-            pub type Request<Entity> = inlet::Request<Entity>;
-            pub type Response<PAYLOAD> = inlet::Response<PAYLOAD>;
-            pub type Frame<ReqEntity,PAYLOAD> = inlet::Frame<ReqEntity,PAYLOAD>;
-        }
-
-        pub mod outlet {
-            use std::convert::TryFrom;
-            use std::convert::TryInto;
-            use std::fmt::Debug;
-            use std::hash::Hash;
-            use std::str::FromStr;
-
-            use serde::{Deserialize, Serialize};
-
-            use crate::version::v1::generic::portal::outlet;
-
-            pub type Request<ENTITY> =  outlet::Request<ENTITY>;
-            pub type Response<PAYLOAD> =  outlet::Response<PAYLOAD>;
-            pub type Frame<PAYLOAD,ReqEntity> =  outlet::Frame<PAYLOAD,ReqEntity>;
-        }
-    }
-
-    pub mod payload {
-        use std::collections::HashMap;
-        use std::fmt::Debug;
-        use std::hash::Hash;
-        use std::str::FromStr;
-
-        use serde::{Deserialize, Serialize};
-
-        use crate::version::v1::generic::payload;
-        use crate::version::v1::generic;
-
-        pub type Payload<KIND> = payload::Payload<KIND>;
-        pub type PayloadMap<KIND> = payload::PayloadMap<KIND>;
-        pub type PrimitiveList<KIND> = payload::PrimitiveList<KIND>;
-        pub type Primitive<KIND> = payload::Primitive<KIND>;
-        pub type PayloadDelivery<PAYLOAD,PAYLOAD_REF> = payload::PayloadDelivery<PAYLOAD,PAYLOAD_REF>;
-        pub type Call = payload::Call;
-        pub type CallKind = payload::CallKind;
-        pub type CallWithConfig = payload::CallWithConfig;
-        pub type MapPattern= payload::MapPattern;
-        pub type ListPattern = payload::ListPattern;
-        pub type PayloadTypePattern= payload::PayloadTypePattern;
-        pub type PayloadPattern = payload::PayloadPattern;
-        pub type Range= payload::Range;
-        pub type RcCommand<ResourceType,Kind> = generic::resource::command::RcCommand<ResourceType,Kind>;
-        pub type PayloadFormat = payload::PayloadFormat;
-    }
-
-
 }
-
 
 pub mod fail {
     use serde::{Deserialize, Serialize};
 
+    use crate::error::Error;
+    use crate::version::v0_0_1::id::Specific;
+
     pub mod mesh {
-        pub type Fail=crate::version::v1::fail::mesh::Fail;
+        use serde::{Deserialize, Serialize};
+
+        #[derive(Debug, Clone, Serialize, Deserialize)]
+        pub enum Fail {
+            Error(String),
+        }
     }
 
     pub mod portal {
-        pub type Fail=crate::version::v1::fail::portal::Fail;
+        use serde::{Deserialize, Serialize};
+
+        use crate::version::v0_0_1::fail::{http, msg, resource};
+
+        #[derive(Debug, Clone, Serialize, Deserialize)]
+        pub enum Fail {
+            Error(String),
+            Resource(resource::Fail),
+            Msg(msg::Fail),
+            Http(http::Error),
+        }
     }
 
     pub mod resource {
-        pub type Fail=crate::version::v1::fail::resource::Fail;
-        pub type Create=crate::version::v1::fail::resource::Create;
-        pub type Update=crate::version::v1::fail::resource::Update;
-        pub type Select=crate::version::v1::fail::resource::Select;
+        use serde::{Deserialize, Serialize};
+
+        use crate::version::v0_0_1::fail::{
+            Bad, BadCoercion, BadRequest, Conditional, Messaging, NotFound,
+        };
+        use crate::version::v0_0_1::id::Address;
+
+        #[derive(Debug, Clone, Serialize, Deserialize)]
+        pub enum Fail {
+            Create(Create),
+            Update(Update),
+            Select(Select),
+            BadRequest(BadRequest),
+            Conditional(Conditional),
+            Messaging(Messaging),
+        }
+
+        #[derive(Debug, Clone, Serialize, Deserialize)]
+        pub enum Create {
+            AddressAlreadyInUse(String),
+            WrongParentResourceType { expected: String, found: String },
+            CannotUpdateArchetype,
+            InvalidProperty { expected: String, found: String },
+        }
+
+        #[derive(Debug, Clone, Serialize, Deserialize)]
+        pub enum Update {
+            Immutable,
+        }
+
+        #[derive(Debug, Clone, Serialize, Deserialize)]
+        pub enum Select {
+            WrongAddress { required: Address, found: Address },
+            BadSelectRouting { required: String, found: String },
+            BadCoercion(BadCoercion),
+        }
     }
 
-    pub mod port {
-        pub type Fail=crate::version::v1::fail::msg::Fail;
+    pub mod msg {
+        use serde::{Deserialize, Serialize};
+
+        use crate::version::v0_0_1::fail::{BadRequest, Conditional};
+
+        #[derive(Debug, Clone, Serialize, Deserialize)]
+        pub enum Fail {
+            Error(String),
+            BadRequest(BadRequest),
+            Conditional(Conditional),
+        }
     }
 
     pub mod http {
-        pub type Error=crate::version::v1::fail::http::Error;
+        use serde::{Deserialize, Serialize};
+
+        #[derive(Debug, Clone, Serialize, Deserialize)]
+        pub struct Error {
+            pub code: u32,
+            pub message: String,
+        }
     }
 
-    pub type BadRequest=crate::version::v1::fail::BadRequest;
-    pub type Conditional=crate::version::v1::fail::Conditional;
-    pub type Timeout=crate::version::v1::fail::Timeout;
-    pub type NotFound=crate::version::v1::fail::NotFound;
-    pub type Bad=crate::version::v1::fail::Bad;
-    pub type Identifier=crate::version::v1::fail::Identifier;
-    pub type Illegal=crate::version::v1::fail::Illegal;
-    pub type Wrong=crate::version::v1::fail::Wrong;
-    pub type Messaging=crate::version::v1::fail::Messaging;
-    pub type Fail=crate::version::v1::fail::Fail;
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub enum BadRequest {
+        NotFound(NotFound),
+        Bad(Bad),
+        Illegal(Illegal),
+        Wrong(Wrong),
+    }
 
-}
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub struct BadCoercion {
+        pub from: String,
+        pub into: String,
+    }
 
-pub mod util {
-    use crate::version::v1::util;
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub enum Conditional {
+        Timeout(Timeout),
+    }
 
-    pub type ValuePattern<V> = util::ValuePattern<V>;
-    pub type ValueMatcher<V> = dyn util::ValueMatcher<V>;
-    pub type RegexMatcher = util::RegexMatcher;
-    pub type StringMatcher= util::StringMatcher;
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub struct Timeout {
+        pub waited: i32,
+        pub message: String,
+    }
 
-    pub fn unique_id() -> String {
-        util::unique_id()
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub enum NotFound {
+        ResourceType(String),
+        Kind(String),
+        Specific(String),
+        Address(String),
+        Key(String),
+    }
+
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub enum Bad {
+        ResourceType(String),
+        Kind(String),
+        Specific(String),
+        Address(String),
+        Key(String),
+    }
+
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub enum Identifier {
+        ResourceType,
+        Kind,
+        Specific,
+        Address,
+        Key,
+    }
+
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub enum Illegal {
+        Immutable,
+        EmptyToFieldOnMessage,
+    }
+
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub struct Wrong {
+        pub received: String,
+        pub expected: String,
+    }
+
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub enum Messaging {
+        RequestReplyExchangesRequireOneAndOnlyOneRecipient,
+    }
+
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub enum Fail {
+        Mesh(mesh::Fail),
+        Resource(resource::Fail),
+        Portal(portal::Fail),
+    }
+
+    impl ToString for Fail {
+        fn to_string(&self) -> String {
+            "Fail".to_string()
+        }
+    }
+
+    impl Into<Error> for Fail {
+        fn into(self) -> Error {
+            Error {
+                message: "Fail".to_string(),
+            }
+        }
     }
 }
-
-pub mod parse {
-    pub type Parser = crate::version::v1::parse::Parser;
-}
-
-
 
 
