@@ -35,6 +35,7 @@ pub mod generic {
     use crate::version::latest::id::Address;
     use crate::version::v0_0_1;
 
+
     impl TryInto<portal::outlet::Request> for Request {
         type Error = crate::error::Error;
 
@@ -99,6 +100,7 @@ pub mod generic {
         pub exchange: ExchangeId,
         pub entity: RespEntity
     }
+
 
     /*
     impl<Payload> Response<Payload> {

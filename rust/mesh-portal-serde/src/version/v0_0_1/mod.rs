@@ -63,6 +63,7 @@ pub mod id {
     pub type AddressAndType = generic::id::AddressAndType<ResourceType>;
     pub type Meta = HashMap<String, String>;
     pub type PayloadClaim = String;
+    pub type HostKey = String;
 
     #[derive(Debug, Clone, Eq, PartialEq, Hash)]
     pub struct Version {
@@ -3920,7 +3921,7 @@ pub mod generic {
                 use crate::version::v0_0_1::generic::resource::command::common::{
                     SetProperties, SetRegistry, StateSrc,
                 };
-                use crate::version::v0_0_1::id::Address;
+                use crate::version::v0_0_1::id::{Address, HostKey};
                 use crate::version::v0_0_1::pattern::SpecificPattern;
                 use crate::version::v0_0_1::util::ConvertFrom;
 
@@ -3944,7 +3945,7 @@ pub mod generic {
                 }
 
                 #[derive(Debug, Clone, Serialize, Deserialize)]
-                pub struct Create<Kind> {
+                pub struct Create<Kind,> {
                     pub template: Template,
                     pub state: StateSrc<Kind>,
                     pub properties: SetProperties<Kind>,
@@ -3981,10 +3982,11 @@ pub mod generic {
                 }
 
                 #[derive(Debug, Clone, Serialize, Deserialize)]
-                pub enum Strategy {
+                pub enum Strategy{
                     Create,
                     CreateOrUpdate,
                     Ensure,
+                    AlreadyHosted
                 }
 
                 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -3995,8 +3997,8 @@ pub mod generic {
 
                 #[derive(Debug, Clone, strum_macros::Display, Serialize, Deserialize)]
                 pub enum AddressSegmentTemplate {
-                    // right now only exact is supported
                     Exact(String),
+                    Pattern(String) // must have a '%'
                 }
             }
 
@@ -4299,6 +4301,8 @@ pub mod generic {
             pub mod get {
                 pub struct Get {}
             }
+
+
         }
     }
 

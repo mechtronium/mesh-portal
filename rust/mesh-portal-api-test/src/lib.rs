@@ -206,7 +206,7 @@ println!("created client: fred TCP client");
     #[async_trait]
     impl PortalServer for TestPortalServer {
         fn flavor(&self) -> String {
-            "test".to_string()
+            "starlane".to_string()
         }
 
         async fn auth(

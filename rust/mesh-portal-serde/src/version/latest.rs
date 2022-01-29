@@ -24,6 +24,7 @@ pub mod id {
     pub type AddressAndType = generic::id::AddressAndType<ResourceType>;
     pub type AddressSegment= id::AddressSegment;
     pub type Meta=id::Meta;
+    pub type HostKey=id::HostKey;
 }
 
 pub mod artifact {
