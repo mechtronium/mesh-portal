@@ -50,10 +50,10 @@ mod tests {
     };
     use mesh_portal_tcp_server::{Call, Event, PortalServer, PortalTcpServer};
     use mesh_portal_api::message;
-    use mesh_portal_serde::version::v0_0_1::config::{Config, ResourceConfigBody, Assign, ConfigBody};
+    use mesh_portal_serde::version::v1::config::{Config, ResourceConfigBody, Assign, ConfigBody};
     use mesh_portal_serde::version::latest::resource::command::select::Select;
     use mesh_portal_serde::version::latest::pattern::AddressKindPattern;
-    use mesh_portal_serde::version::v0_0_1::artifact::{ArtifactRequest, ArtifactResponse, Artifact};
+    use mesh_portal_serde::version::v1::artifact::{ArtifactRequest, ArtifactResponse, Artifact};
     use mesh_portal_serde::version::latest::util::unique_id;
     use mesh_portal_serde::version::latest::entity::response::RespEntity;
     use mesh_portal_serde::mesh::Response;

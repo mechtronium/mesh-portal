@@ -9,5 +9,6 @@ members = [
     "mesh-portal-tcp-server",
     "mesh-portal-api-test",
     "mesh-portal-parse",
+    "mesh-portal-versions",
 ]
 

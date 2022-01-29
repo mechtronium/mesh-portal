@@ -17,6 +17,7 @@
       <sourceFolder url="file://$MODULE_DIR$/mesh-portal-tcp-common/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/mesh-portal-tcp-server/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/mesh-portal-parse/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/mesh-portal-versions/src" isTestSource="false" />
       <excludeFolder url="file://$MODULE_DIR$/target" />
     </content>
     <orderEntry type="inheritedJdk" />

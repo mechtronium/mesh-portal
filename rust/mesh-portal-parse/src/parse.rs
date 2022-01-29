@@ -25,9 +25,9 @@ use mesh_portal_serde::version::latest::id::Address;
 use mesh_portal_serde::version::latest::payload::MapPattern;
 use std::iter::Map;
 use std::collections::HashMap;
-use mesh_portal_serde::version::v0_0_1::generic::payload::{MsgCall, HttpCall};
-use mesh_portal_serde::version::v0_0_1::parse::{Res, filepath_chars, parse_version, rec_version, path, address_segment_chars, domain_chars, skewer_chars, in_double_quotes};
-use mesh_portal_serde::version::v0_0_1::generic::resource::command::RcCommandType;
+use mesh_portal_serde::version::v1::generic::payload::{MsgCall, HttpCall};
+use mesh_portal_serde::version::v1::parse::{Res, filepath_chars, parse_version, rec_version, path, address_segment_chars, domain_chars, skewer_chars, in_double_quotes};
+use mesh_portal_serde::version::v1::generic::resource::command::RcCommandType;
 
 
 pub enum BindSection {

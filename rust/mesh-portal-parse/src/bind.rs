@@ -13,8 +13,8 @@ use mesh_portal_serde::version::latest::entity::request::Msg;
 use mesh_portal_serde::version::latest::generic::entity::request::ReqEntity;
 use mesh_portal_serde::version::latest::generic::payload::RcCommand;
 use mesh_portal_serde::version::latest::util::ValuePattern;
-use mesh_portal_serde::version::v0_0_1::{Pipeline, PipelineStep, ProtoBind, Scope, Selector};
-use mesh_portal_serde::version::v0_0_1::parse::Res;
+use mesh_portal_serde::version::v1::{Pipeline, PipelineStep, ProtoBind, Scope, Selector};
+use mesh_portal_serde::version::v1::parse::Res;
 
 use crate::parse::{call, PipelineStop};
 use crate::pattern::{Block, entity_pattern, EntityPattern, http_pattern, http_pattern_scoped, HttpPattern, msg_pattern, msg_pattern_scoped, MsgPattern, PatternBlock, pipeline_block, rc_pattern, rc_pattern_scoped, RcPattern};
@@ -31,8 +31,8 @@ pub mod test {
 
     use mesh_portal_serde::version::latest::payload::Call;
     use mesh_portal_serde::version::latest::util::{StringMatcher, ValuePattern};
-    use mesh_portal_serde::version::v0_0_1::{Pipeline, PipelineStep};
-    use mesh_portal_serde::version::v0_0_1::parse::camel_case;
+    use mesh_portal_serde::version::v1::{Pipeline, PipelineStep};
+    use mesh_portal_serde::version::v1::parse::camel_case;
 
     use crate::bind::{bind, consume_pipeline, consume_pipeline_step, consume_pipeline_stop, entity_selector, msg_section, msg_selectors, PipelineSegment, StepKind};
     use crate::parse::PipelineStop;

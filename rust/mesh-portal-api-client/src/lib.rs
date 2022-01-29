@@ -26,16 +26,16 @@ use mesh_portal_serde::version::latest::resource::Status;
 use mesh_portal_serde::version::latest::messaging::{ExchangeId, Exchange};
 use mesh_portal_serde::version::latest::log::Log;
 use mesh_portal_serde::version::latest::{portal, entity};
-use mesh_portal_serde::version::v0_0_1::util::ConvertFrom;
+use mesh_portal_serde::version::v1::util::ConvertFrom;
 use std::convert::TryInto;
 use tokio::task::yield_now;
-use mesh_portal_serde::version::v0_0_1::config::{PortalConfig, ResourceConfigBody, Config};
+use mesh_portal_serde::version::v1::config::{PortalConfig, ResourceConfigBody, Config};
 use mesh_portal_serde::version::latest::resource::ResourceStub;
 use mesh_portal_serde::version::latest::id::Address;
-use mesh_portal_serde::version::v0_0_1::generic::portal::outlet::Frame;
-use mesh_portal_serde::version::v0_0_1::generic::id::KindParts;
-use mesh_portal_serde::version::v0_0_1::generic::entity::request::ReqEntity;
-use mesh_portal_serde::version::v0_0_1::generic::payload::Payload;
+use mesh_portal_serde::version::v1::generic::portal::outlet::Frame;
+use mesh_portal_serde::version::v1::generic::id::KindParts;
+use mesh_portal_serde::version::v1::generic::entity::request::ReqEntity;
+use mesh_portal_serde::version::v1::generic::payload::Payload;
 
 
 #[derive(Clone)]
@@ -328,7 +328,7 @@ pub mod example {
     use mesh_portal_serde::version::latest::payload::{Payload, Primitive};
     use mesh_portal_serde::version::latest::entity;
     use mesh_portal_serde::version::latest::entity::request::Msg;
-    use mesh_portal_serde::version::v0_0_1::generic::payload::PayloadDelivery;
+    use mesh_portal_serde::version::v1::generic::payload::PayloadDelivery;
 
     pub struct HelloCtrl {
         pub skel: Arc<PortalSkel>,

@@ -30,16 +30,16 @@ use mesh_portal_serde::version::latest::payload::Range;
 use mesh_portal_serde::version::latest::payload::PayloadFormat;
 use std::ops::RangeTo;
 use mesh_portal_serde::version::latest::payload::{PayloadDelivery, PayloadRef};
-use mesh_portal_serde::version::v0_0_1::id::Address;
-use mesh_portal_serde::version::v0_0_1::util::ValueMatcher;
+use mesh_portal_serde::version::v1::id::Address;
+use mesh_portal_serde::version::v1::util::ValueMatcher;
 use mesh_portal_serde::version::latest::payload::RcCommand;
-use mesh_portal_serde::version::v0_0_1::parse::{Res, camel_case_to_string, path_regex};
+use mesh_portal_serde::version::v1::parse::{Res, camel_case_to_string, path_regex};
 use mesh_portal_serde::version::latest::generic::entity::request::{ReqEntity,Rc,Msg,Http};
 use crate::parse::call_with_config;
-use mesh_portal_serde::version::v0_0_1::generic::payload::HttpMethod;
-use mesh_portal_serde::version::v0_0_1::generic::resource::command::RcCommandType;
-use mesh_portal_serde::version::v0_0_1::generic::pattern::Pattern;
-use mesh_portal_serde::version::v0_0_1::pattern::parse::pattern;
+use mesh_portal_serde::version::v1::generic::payload::HttpMethod;
+use mesh_portal_serde::version::v1::generic::resource::command::RcCommandType;
+use mesh_portal_serde::version::v1::generic::pattern::Pattern;
+use mesh_portal_serde::version::v1::pattern::parse::pattern;
 
 
 #[cfg(test)]

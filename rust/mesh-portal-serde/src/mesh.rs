@@ -19,7 +19,7 @@ pub mod generic {
     use crate::version::latest::portal::{inlet, outlet};
     use crate::version::latest::{entity, portal};
     use crate::version::latest::{fail, generic};
-    use crate::version::v0_0_1::util::{unique_id, Convert, ConvertFrom};
+    use crate::version::v1::util::{unique_id, Convert, ConvertFrom};
 
     #[derive(Debug,Clone, Serialize, Deserialize)]
     pub struct Request {
@@ -33,7 +33,7 @@ pub mod generic {
     use crate::error::Error;
     use crate::version::latest::entity::response::RespEntity;
     use crate::version::latest::id::Address;
-    use crate::version::v0_0_1;
+    use crate::version::v1;
 
 
     impl TryInto<portal::outlet::Request> for Request {
