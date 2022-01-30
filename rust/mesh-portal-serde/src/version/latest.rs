@@ -24,7 +24,7 @@ pub mod artifact {
 pub mod id {
     use mesh_portal_versions::version::v0_0_1 as current;
     pub type ResourceType = current::id::ResourceType;
-    pub type Kind = current::id::Kind;
+    pub type ResourceKind = current::id::ResourceKind;
     pub type AddressAndKind = current::id::AddressAndKind;
     pub type AddressAndType = current::id::AddressAndType;
     pub type Meta = current::id::Meta;
@@ -319,7 +319,7 @@ pub mod fail {
     pub mod mesh {
         use mesh_portal_versions::version::v0_0_1 as current;
 
-        pub type Fail = current::fail::Fail;
+        pub type Fail = current::fail::mesh::Fail;
     }
 
     pub mod portal {

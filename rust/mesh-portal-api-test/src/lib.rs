@@ -36,7 +36,7 @@ mod tests {
     use mesh_portal_serde::mesh;
     use mesh_portal_serde::version::latest::entity::request::{Msg, Rc, RcCommand, ReqEntity};
     use mesh_portal_serde::version::latest::entity::response;
-    use mesh_portal_serde::version::latest::id::{Address, Kind, KindParts};
+    use mesh_portal_serde::version::latest::id::{Address, ResourceKind, KindParts};
     use mesh_portal_serde::version::latest::messaging::{Exchange, Message, Request, Response};
     use mesh_portal_serde::version::latest::payload::{Payload, Primitive, PrimitiveList, PrimitiveType};
     use mesh_portal_serde::version::latest::portal::{inlet, outlet};

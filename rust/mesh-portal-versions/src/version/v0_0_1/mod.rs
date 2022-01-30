@@ -58,16 +58,16 @@ pub mod id {
     use crate::version::v0_0_1::pattern::{Pattern, SpecificPattern, VersionReq};
 
     pub type ResourceType = String;
-    pub type Kind = KindParts;
+    pub type ResourceKind = KindParts;
 
     #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
     pub struct AddressAndKind {
         pub address: Address,
-        pub kind: Kind,
+        pub kind: ResourceKind,
     }
 
     impl AddressAndKind {
-        pub fn new(address: Address, kind: Kind) -> Self {
+        pub fn new(address: Address, kind: ResourceKind) -> Self {
             Self { address, kind }
         }
     }
@@ -364,8 +364,6 @@ pub mod id {
                 false
             }
         }
-
-
 
         pub fn push(&self, segment: String) -> Result<Self, Error> {
             Self::from_str(format!("{}:{}", self.to_string(), segment).as_str())
@@ -680,7 +678,7 @@ pub mod pattern {
 
     use crate::error::Error;
 
-    use crate::version::v0_0_1::id::{Address, AddressSegment, Kind, ResourceType, RouteSegment, Specific, Tks, Version};
+    use crate::version::v0_0_1::id::{Address, AddressSegment, ResourceKind, ResourceType, RouteSegment, Specific, Tks, Version};
     use crate::version::v0_0_1::parse::{address, camel_case_to_string, consume_address_kind_path, path, path_regex, Res};
     use crate::version::v0_0_1::pattern::parse::{address_kind_pattern, pattern};
     use crate::version::v0_0_1::pattern::specific::{
@@ -725,9 +723,9 @@ pub mod pattern {
             }
         }
 
-        pub fn matches(&self, kind: &Kind) -> bool
+        pub fn matches(&self, kind: &ResourceKind) -> bool
             where
-                Kind: Eq + PartialEq,
+                ResourceKind: Eq + PartialEq,
         {
             self.resource_type.matches(&kind.resource_type())
                 && self.kind.matches(kind)
@@ -745,7 +743,7 @@ pub mod pattern {
         }
     }
 
-    pub type KindPattern = Pattern<Kind>;
+    pub type KindPattern = Pattern<ResourceKind>;
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct AddressKindPattern {
         pub hops: Vec<Hop>,
@@ -813,7 +811,7 @@ pub mod pattern {
         pub fn matches(&self, address_kind_path: &AddressKindPath) -> bool
             where
                 ResourceType: Clone,
-                Kind: Clone,
+                ResourceKind: Clone,
         {
             if address_kind_path.segments.len() < self.hops.len() {
                 return false;
@@ -1095,7 +1093,7 @@ pub mod pattern {
         use nom::{Err, IResult};
 
         use crate::error::Error;
-        use crate::version::v0_0_1::id::{AddressAndKind, AddressSegment, Kind, KindParts, ResourceType, Specific, Version};
+        use crate::version::v0_0_1::id::{AddressAndKind, AddressSegment, ResourceKind, KindParts, ResourceType, Specific, Version};
         use crate::version::v0_0_1::parse::{address_segment_chars, camel_case, domain_chars, skewer_chars, version_req_chars, Res, version_address_segment, version_chars, address};
         use crate::version::v0_0_1::pattern::specific::{
             ProductPattern, VariantPattern, VendorPattern,
@@ -1224,7 +1222,7 @@ pub mod pattern {
             recognize(alt((skewer_chars, rec_domain)))(input)
         }
 
-        fn specific_pattern(input: &str) -> Res<&str, SpecificPattern> {
+        pub fn specific_pattern(input: &str) -> Res<&str, SpecificPattern> {
             tuple((
                 pattern(rec_domain),
                 tag(":"),
@@ -1272,10 +1270,7 @@ pub mod pattern {
                 match more {
                     Some((kind, specific)) => {
                         parts.kind = Option::Some(kind.to_string());
-                        match specific {
-                            Some(specific) => {}
-                            None => {}
-                        }
+                        parts.specific = specific;
                     }
                     None => {}
                 }
@@ -1288,19 +1283,19 @@ pub mod pattern {
             recognize(kind_parts)(input)
         }
 
-        pub fn kind(input: &str) -> Res<&str, Kind>
+        pub fn kind(input: &str) -> Res<&str, ResourceKind>
         {
             parse_from_str(rec_kind)
                 .parse(input)
                 .map(|(next, kind)| (next, kind))
         }
 
-        pub fn delim_kind(input: &str) -> Res<&str, Kind>
+        pub fn delim_kind(input: &str) -> Res<&str, ResourceKind>
         {
             delimited(tag("<"), kind, tag(">"))(input)
         }
 
-        pub fn consume_kind(input: &str) -> Result<Kind, Error>
+        pub fn consume_kind(input: &str) -> Result<ResourceKind, Error>
         {
             let (_, kind_parts) = all_consuming(kind_parts)(input)?;
 
@@ -1461,7 +1456,7 @@ pub mod pattern {
                 tag(":"),
                 skewer_chars,
                 tag(":"),
-                delimited(tag("("), version, tag(")")),
+                version,
             ))(input)
                 .map(|(next, (vendor, _, product, _, variant, _, version))| {
                     let specific = Specific {
@@ -1476,7 +1471,7 @@ pub mod pattern {
 
     }
 
-    fn skewer<T>(i: T) -> Res<T, T>
+    pub fn skewer<T>(i: T) -> Res<T, T>
     where
         T: InputTakeAtPosition,
         <T as InputTakeAtPosition>::Item: AsChar,
@@ -2477,7 +2472,7 @@ pub mod pattern {
             segment: AddressKindSegment,
         ) -> AddressKindPath
             where
-                Kind: Clone,
+                ResourceKind: Clone,
                 ResourceType: Clone,
         {
             let mut segments = self.segments.clone();
@@ -2532,7 +2527,7 @@ pub mod pattern {
     #[derive(Debug, Eq, PartialEq, Clone, Serialize, Deserialize)]
     pub struct AddressKindSegment {
         pub address_segment: AddressSegment,
-        pub kind: Kind,
+        pub kind: ResourceKind,
     }
 
     impl ToString for AddressKindSegment {
@@ -2658,7 +2653,6 @@ pub mod messaging {
         pub fn entity( &mut self, entity: ReqEntity ) {
             self.entity = Option::Some(entity);
         }
-
     }
 
     #[derive(Debug,Clone,Serialize,Deserialize)]
@@ -2686,6 +2680,7 @@ pub mod messaging {
             }
         }
     }
+
     #[derive(Debug,Clone,Serialize,Deserialize)]
     pub enum Message {
         Request(Request),
@@ -2807,7 +2802,7 @@ pub mod payload {
 
     use crate::error::Error;
     use crate::version::v0_0_1::bin::Bin;
-    use crate::version::v0_0_1::id::{Address, Kind, Meta, PayloadClaim, ResourceType};
+    use crate::version::v0_0_1::id::{Address, ResourceKind, Meta, PayloadClaim, ResourceType};
     use crate::version::v0_0_1::pattern::TksPattern;
     use std::str::FromStr;
     use crate::version::v0_0_1::entity::request::RcCommandType;
@@ -2830,6 +2825,19 @@ pub mod payload {
                 Payload::Primitive(primitive) => PayloadType::Primitive,
                 Payload::List(list) => PayloadType::List,
                 Payload::Map(map) => PayloadType::Map,
+            }
+        }
+    }
+
+    impl TryInto<Primitive> for Payload {
+        type Error = Error;
+
+        fn try_into(self) -> Result<Primitive, Self::Error> {
+            match self {
+                Payload::Primitive(primitive) => {
+                    Ok(primitive)
+                }
+                _ => { Err("Payload type must be Primitive".into())}
             }
         }
     }
@@ -2929,6 +2937,20 @@ pub mod payload {
         }
     }
 
+    impl TryInto<Bin> for Primitive {
+        type Error = Error;
+
+        fn try_into(self) -> Result<Bin, Self::Error> {
+            match self {
+                Primitive::Bin(bin) => {
+                    Ok(bin)
+                }
+                _ => {
+                    Err("Primitive must be of type Bin".into())
+                }
+            }
+        }
+    }
 
     #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
     pub struct PrimitiveList {
@@ -3599,7 +3621,14 @@ pub mod command {
             StatefulDirect(Payload),
         }
 
-        pub type SetProperties = PayloadMap;
+        #[derive(Debug, Clone, Serialize, Deserialize)]
+        pub enum PropertyMod {
+            Set{name:String, value: String },
+            UnSet(String)
+        }
+
+
+        pub type SetProperties = Vec<PropertyMod>;
 
         #[derive(Debug, Clone, Serialize, Deserialize, strum_macros::Display)]
         pub enum SetLabel {
@@ -3678,7 +3707,7 @@ pub mod config {
 
     use crate::version::v0_0_1::config::bind::BindConfig;
     use crate::version::v0_0_1::config::mechtron::MechtronConfig;
-    use crate::version::v0_0_1::id::{Address, Kind};
+    use crate::version::v0_0_1::id::{Address, ResourceKind};
     use crate::version::v0_0_1::resource;
     use crate::version::v0_0_1::resource::ResourceStub;
 
@@ -4176,7 +4205,7 @@ pub mod entity {
         use crate::version::v0_0_1::entity::request::update::Update;
         use crate::version::v0_0_1::entity::response::RespEntity;
         use crate::version::v0_0_1::fail::Fail;
-        use crate::version::v0_0_1::id::{Address, Kind, Meta, PayloadClaim, ResourceType};
+        use crate::version::v0_0_1::id::{Address, ResourceKind, Meta, PayloadClaim, ResourceType};
         use crate::version::v0_0_1::pattern::TksPattern;
         use crate::version::v0_0_1::payload::{HttpMethod, Payload};
         use crate::version::v0_0_1::util::ValueMatcher;
@@ -4323,9 +4352,23 @@ pub mod entity {
 
             use crate::error::Error;
             use crate::version::v0_0_1::command::common::{SetProperties, SetRegistry, StateSrc};
-            use crate::version::v0_0_1::id::{Address, HostKey};
+            use crate::version::v0_0_1::id::{Address, AddressSegment, HostKey, ResourceKind};
             use crate::version::v0_0_1::pattern::SpecificPattern;
             use crate::version::v0_0_1::util::ConvertFrom;
+
+            pub enum AddressTemplateSegment {
+                AddressSegment(AddressSegment),
+                Wildcard(String)
+            }
+
+            impl AddressTemplateSegment {
+                pub fn is_wildcard(&self) -> bool {
+                    match self {
+                        AddressTemplateSegment::AddressSegment(_) => {false}
+                        AddressTemplateSegment::Wildcard(_) => {true}
+                    }
+                }
+            }
 
             #[derive(Debug, Clone, Serialize, Deserialize)]
             pub struct Template {
@@ -4344,6 +4387,21 @@ pub mod entity {
                 pub resource_type: String,
                 pub kind: Option<String>,
                 pub specific: Option<SpecificPattern>,
+            }
+
+            impl TryInto<ResourceKind> for KindTemplate {
+                type Error = Error;
+
+                fn try_into(self) -> Result<ResourceKind, Self::Error> {
+                    if self.specific.is_some() {
+                        return Err("cannot create a ResourceKind from a specific pattern when using KindTemplate".into());
+                    }
+                    Ok(ResourceKind {
+                        resource_type: self.resource_type,
+                        kind: self.kind,
+                        specific: None
+                    })
+                }
             }
 
             #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -4596,7 +4654,7 @@ pub mod entity {
     pub mod response {
         use crate::error::Error;
         use crate::version::v0_0_1::fail;
-        use crate::version::v0_0_1::id::{Address, Kind};
+        use crate::version::v0_0_1::id::{Address, ResourceKind};
         use crate::version::v0_0_1::payload::Payload;
         use serde::{Serialize,Deserialize};
 
@@ -4631,7 +4689,7 @@ pub mod resource {
     use serde::{Deserialize, Serialize};
 
     use crate::error::Error;
-    use crate::version::v0_0_1::id::{Address, Kind, ResourceType};
+    use crate::version::v0_0_1::id::{Address, ResourceKind, ResourceType};
     use crate::version::v0_0_1::parse::{address, Res};
     use crate::version::v0_0_1::payload::{Payload, PayloadMap};
 
@@ -4777,14 +4835,14 @@ pub mod resource {
 
     #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
     pub struct Archetype {
-        pub kind: Kind,
+        pub kind: ResourceKind,
         pub properties: Properties,
     }
 
     #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
     pub struct ResourceStub {
         pub address: Address,
-        pub kind: Kind,
+        pub kind: ResourceKind,
         pub properties: Properties,
         pub status: Status,
     }
@@ -4839,7 +4897,7 @@ pub mod portal {
         use crate::error::Error;
         use crate::version::v0_0_1::artifact::ArtifactRequest;
         use crate::version::v0_0_1::frame::{CloseReason, PrimitiveFrame};
-        use crate::version::v0_0_1::id::{Address, Kind, ResourceType};
+        use crate::version::v0_0_1::id::{Address, ResourceKind, ResourceType};
         use crate::version::v0_0_1::log::Log;
         use crate::version::v0_0_1::messaging::{Request, Response};
         use crate::version::v0_0_1::pattern::TksPattern;
@@ -4914,7 +4972,7 @@ pub mod portal {
         use crate::version::v0_0_1::artifact::{Artifact, ArtifactResponse};
         use crate::version::v0_0_1::config::{Assign, Config, ConfigBody};
         use crate::version::v0_0_1::frame::{CloseReason, PrimitiveFrame};
-        use crate::version::v0_0_1::id::{Address, Kind, ResourceType};
+        use crate::version::v0_0_1::id::{Address, ResourceKind, ResourceType};
         use crate::version::v0_0_1::messaging::{Request, Response};
         use crate::version::v0_0_1::payload::Payload;
         use crate::version::v0_0_1::portal::Exchanger;
@@ -5289,7 +5347,7 @@ pub mod parse {
     use nom::branch::alt;
     use nom::bytes::complete::tag;
     use nom::bytes::complete::{is_a, is_not};
-    use nom::character::complete::{alpha0, alphanumeric1, digit1, alpha1};
+    use nom::character::complete::{alpha0, alphanumeric1, digit1, alpha1, multispace1,multispace0, space1,space0};
     use nom::combinator::{all_consuming, not, opt, recognize};
     use nom::error::{context, ErrorKind, VerboseError, ParseError};
     use nom::multi::{many0, separated_list1};
@@ -5299,9 +5357,11 @@ pub mod parse {
 
     use crate::error::Error;
     use crate::version::v0_0_1::id::{Address, AddressSegment, RouteSegment, Version};
-    use crate::version::v0_0_1::pattern::parse::{delim_kind, kind, version};
+    use crate::version::v0_0_1::pattern::parse::{delim_kind, kind, resource_type, specific, specific_pattern, version};
     use nom::bytes::complete::take;
-    use crate::version::v0_0_1::pattern::{AddressKindPath, AddressKindSegment};
+    use crate::version::v0_0_1::entity::request::create::{Create, AddressSegmentTemplate, AddressTemplate, KindTemplate, Template, Strategy, AddressTemplateSegment};
+    use crate::version::v0_0_1::command::common::{PropertyMod, SetProperties, StateSrc};
+    use crate::version::v0_0_1::pattern::{AddressKindPath, AddressKindSegment, skewer};
     use crate::version::v0_0_1::util::StringMatcher;
 
     pub struct Parser {}
@@ -5757,6 +5817,23 @@ println!("VERSION: {} ",version.to_string() );
         )
     }
 
+    pub fn skewer_chars_template<T>(i: T) -> Res<T, T>
+        where
+            T: InputTakeAtPosition,
+            <T as InputTakeAtPosition>::Item: AsChar,
+    {
+        i.split_at_position1_complete(
+            |item| {
+                let char_item = item.as_char();
+                char_item != '-' &&
+                    char_item.as_char() != '%' &&
+                    !char_item.is_digit(10) &&
+                    !(char_item.is_alpha() && char_item.is_lowercase())
+            },
+            ErrorKind::AlphaNumeric,
+        )
+    }
+
     pub fn space_chars<T>(i: T) -> Res<T, T>
     where
         T: InputTakeAtPosition,
@@ -5826,6 +5903,25 @@ println!("VERSION: {} ",version.to_string() );
         )
     }
 
+    pub fn file_chars_template<T>(i: T) -> Res<T, T>
+        where
+            T: InputTakeAtPosition,
+            <T as InputTakeAtPosition>::Item: AsChar,
+    {
+        i.split_at_position1_complete(
+            |item| {
+                let char_item = item.as_char();
+                !(char_item == '-')
+                    && !(char_item == '.')
+                    && !(char_item == '_')
+                    && !(char_item == '%')
+                    && !(char_item.is_alpha() || char_item.is_dec_digit())
+            },
+            ErrorKind::AlphaNumeric,
+        )
+    }
+
+
     pub fn not_space(input: &str) -> Res<&str, &str> {
         is_not(" \n\r\t")(input)
     }
@@ -5874,6 +5970,224 @@ println!("VERSION: {} ",version.to_string() );
     pub fn rec_version(input: &str) -> Res<&str, &str> {
         recognize(parse_version)(input)
     }
+
+    pub fn base_address_segment_wildcard(input: &str) -> Res<&str, AddressTemplateSegment> {
+        preceded(tag(":"),recognize(tuple((many0(skewer),tag("%"),many0(skewer)))))(input).map(|(next, base)| (next, AddressTemplateSegment::Wildcard(base.to_string())))
+    }
+
+    pub fn base_address_segment_template(input: &str) -> Res<&str, AddressTemplateSegment> {
+        preceded(tag(":"),rec_skewer)(input).map(|(next, base)| (next, AddressTemplateSegment::AddressSegment(AddressSegment::Base(base.to_string()))))
+    }
+
+    pub fn filepath_address_segment_wildcard(input: &str) -> Res<&str, AddressTemplateSegment> {
+        recognize(tuple((many0(filepath_chars),tag("%"),many0(filepath_chars))))(input).map(|(next, base)| (next, AddressTemplateSegment::Wildcard(base.to_string())))
+    }
+
+    pub fn filepath_address_segment_template(input: &str) -> Res<&str, AddressTemplateSegment> {
+        filepath_address_segment(input).map(|(next, segment)| (next, AddressTemplateSegment::AddressSegment(segment)))
+    }
+
+    pub fn address_template(input: &str) -> Res<&str, AddressTemplate> {
+        let (next, ((hub, space), mut bases, version, root, mut files)) = tuple((
+            tuple((route_segment, space_address_segment)),
+            many0(alt((base_address_segment_wildcard,base_address_segment_template))),
+            opt(version_address_segment),
+            opt( root_dir_address_segment ),
+            many0(alt( (filepath_address_segment_wildcard,filepath_address_segment_template))),
+        ))(input)?;
+
+        let mut base_wildcard = false;
+        for (index,segment) in bases.iter().enumerate() {
+            if segment.is_wildcard() {
+                if  index != bases.len()-1 {
+                    return Err(nom::Err::Error(VerboseError::from_error_kind( input, ErrorKind::Tag, )))
+                } else {
+                    base_wildcard = true;
+                }
+            }
+        }
+
+        if base_wildcard && version.is_some() {
+            return Err(nom::Err::Error(VerboseError::from_error_kind( input, ErrorKind::Tag, )))
+        }
+
+        if base_wildcard && root.is_some() {
+            return Err(nom::Err::Error(VerboseError::from_error_kind( input, ErrorKind::Tag, )))
+        }
+
+        let mut files_wildcard = false;
+        for (index,segment) in files.iter().enumerate() {
+            if segment.is_wildcard() {
+                if  index != files.len()-1 {
+                    return Err(nom::Err::Error(VerboseError::from_error_kind( input, ErrorKind::Tag, )))
+                } else {
+                    files_wildcard = true;
+                }
+            }
+        }
+
+        let mut space_last = false;
+        let last = if !files.is_empty()  {
+            match files.remove(files.len()-1 ) {
+                AddressTemplateSegment::AddressSegment(exact) => {AddressSegmentTemplate::Exact(exact.to_string())}
+                AddressTemplateSegment::Wildcard(pattern) => {AddressSegmentTemplate::Pattern(pattern)}
+            }
+        } else if root.is_some() {
+            AddressSegmentTemplate::Exact("/".to_string())
+        } else if let Option::Some(version) = &version  {
+            AddressSegmentTemplate::Exact(version.to_string())
+        } else if !bases.is_empty() {
+            match bases.remove(bases.len()-1 ) {
+                AddressTemplateSegment::AddressSegment(exact) => {AddressSegmentTemplate::Exact(exact.to_string())}
+                AddressTemplateSegment::Wildcard(pattern) => {AddressSegmentTemplate::Pattern(pattern)}
+            }
+        } else {
+            space_last = true;
+            AddressSegmentTemplate::Exact(space.to_string())
+        };
+
+        let mut bases:Vec<AddressSegment> = bases.into_iter().map( |b| match b {
+            AddressTemplateSegment::AddressSegment(seg) => {seg}
+            AddressTemplateSegment::Wildcard(_) => {panic!("should have filtered wildcards already!")}
+        } ).collect();
+
+        let mut files:Vec<AddressSegment> = files.into_iter().map( |b| match b {
+            AddressTemplateSegment::AddressSegment(seg) => {seg}
+            AddressTemplateSegment::Wildcard(_) => {panic!("should have filtered wildcards already!")}
+        } ).collect();
+
+
+        let mut segments = vec![];
+
+                if !space_last {
+                    segments.push(space);
+                }
+
+                segments.append(&mut bases);
+
+                match version {
+                    None => {}
+                    Some(version) => {
+                        segments.push(version);
+                    }
+                }
+
+                if let Option::Some(root) = root {
+                    segments.push(root);
+                    segments.append(&mut files);
+                }
+
+
+                let address = Address {
+                    route: hub,
+                    segments,
+                };
+
+                let address_template = AddressTemplate {
+                    parent: address,
+                    child_segment_template: last
+                };
+
+                Ok((next, address_template))
+    }
+
+
+    pub fn kind_template(input: &str) -> Res<&str, KindTemplate> {
+        tuple((
+            resource_type,
+            opt(delimited(
+                tag("<"),
+                tuple((camel_case, opt(delimited(tag("<"), specific_pattern, tag(">"))))),
+                tag(">"),
+            )),
+        ))(input)
+            .map(|(next, (resource_type, more))| {
+                let mut parts = KindTemplate{
+                    resource_type,
+                    kind: None,
+                    specific: None,
+                };
+
+                match more {
+                    Some((kind, specific)) => {
+                        parts.kind = Option::Some(kind.to_string());
+                        parts.specific = specific;
+                    }
+                    None => {}
+                }
+
+                (next, parts)
+            })
+    }
+
+    pub fn template(input: &str) -> Res<&str, Template> {
+        tuple((address_template,delimited(tag("<"),kind_template, tag(">"))))(input).map( |(next, (address,kind ))| {
+            (next, Template {
+                address,
+                kind
+            })
+        } )
+    }
+
+    pub fn set_property_mod(input: &str) -> Res<&str, PropertyMod> {
+        tuple((tag("+"),skewer,tag("="),property_value))(input).map( |(next,(_,name,_,value))| {
+            (next,
+            PropertyMod::Set{name: name.to_string(),value: value.to_string()})
+        })
+    }
+
+    pub fn property_value_not_space(input: &str) -> Res<&str,&str> {
+        not_space(input)
+    }
+
+    pub fn property_value_single_quotes(input: &str) -> Res<&str,&str> {
+        delimited(tag("'"),is_not("'"), tag("'"))(input)
+    }
+
+    pub fn property_value_double_quotes(input: &str) -> Res<&str,&str> {
+        delimited(tag("\""),is_not("\""), tag("\""))(input)
+    }
+
+
+    pub fn property_value(input: &str) -> Res<&str,&str> {
+        alt( (property_value_single_quotes,property_value_double_quotes,property_value_not_space) )(input)
+    }
+
+    pub fn unset_property_mod(input: &str) -> Res<&str, PropertyMod> {
+        tuple((tag("!"),skewer))(input).map( |(next,(_,name))| {
+            (next, PropertyMod::UnSet(name.to_string()))
+        })
+    }
+
+
+    pub fn property_mod(input: &str) -> Res<&str, PropertyMod> {
+        alt( (set_property_mod,unset_property_mod) )(input)
+    }
+
+    pub fn set_properties(input: &str) -> Res<&str, SetProperties> {
+        many0(tuple((multispace0,property_mod,multispace1)))(input).map( |(next, properties)| {
+            let properties = properties.into_iter().map( |(_,p,_)|p ).collect();
+            (next, properties)
+        } )
+    }
+
+    pub fn create(input: &str) -> Res<&str, Create> {
+        tuple((template,opt(delimited(tag("{"),set_properties, tag("}")))))(input).map( |(next, (template, properties))| {
+            let properties = match properties {
+                Some( properties ) => properties,
+                None => SetProperties::new()
+            };
+            let create = Create {
+                template,
+                state: StateSrc::Stateless,
+                properties,
+                strategy: Strategy::Create,
+                registry: Default::default()
+            };
+            (next, create)
+        } )
+    }
+
 }
 
 
@@ -5881,11 +6195,11 @@ println!("VERSION: {} ",version.to_string() );
 pub mod test {
     use std::str::FromStr;
 
-    use nom::combinator::all_consuming;
+    use nom::combinator::{all_consuming, recognize};
 
     use crate::error::Error;
     use crate::version::v0_0_1::id::{AddressSegment, RouteSegment};
-    use crate::version::v0_0_1::parse::{address, camel_case, route_segment, version_address_segment, skewer_chars, base_address_segment, rec_skewer};
+    use crate::version::v0_0_1::parse::{address, camel_case, route_segment, version_address_segment, skewer_chars, base_address_segment, rec_skewer, address_template, create};
     use nom::Err;
     use nom::error::VerboseError;
     use crate::version::v0_0_1::pattern::parse::version;
@@ -5907,7 +6221,7 @@ pub mod test {
     }
 
 
-        #[test]
+    #[test]
     pub fn test_address () -> Result<(),Error> {
         assert_eq!(("",RouteSegment::Resource),all_consuming(route_segment)("")?);
 
@@ -5917,6 +6231,7 @@ pub mod test {
          all_consuming(address)("hello.com:kitty:/file.txt")?;
          all_consuming(address)("hello.com:kitty:/")?;
          all_consuming(address)("hello.com:kitty:/greater-glory/file.txt")?;
+         assert_eq!( recognize(address)("hello:kitty-%"), Ok((":kitty-%", "hello"))) ;
 
         all_consuming(version)("1.0.0")?;
         let (next,version) = all_consuming(version_address_segment)(":1.2.3")?;
@@ -5926,6 +6241,22 @@ pub mod test {
         let (next, addy) = all_consuming(address)("hello.com:bundle:1.2.3:/file.txt")?;
         all_consuming(address)("hello.com:bundle:1.2.3:/greater-glory/file.txt")?;
 
+        Ok(())
+    }
+
+    #[test]
+    pub fn test_address_template () -> Result<(),Error> {
+        all_consuming(address_template)("hello:kitty")?;
+        all_consuming(address_template)("hello:kitty-%")?;
+        all_consuming(address_template)("hello:kitty:bob:/some-%-time")?;
+        Ok(())
+    }
+
+
+    #[test]
+    pub fn test_create() -> Result<(),Error> {
+        all_consuming(create)("hello:kitty<App>")?;
+        all_consuming(create)("hello:kitty<App>{ +config='some:config:1.0.0:/blah.conf' }")?;
         Ok(())
     }
 
