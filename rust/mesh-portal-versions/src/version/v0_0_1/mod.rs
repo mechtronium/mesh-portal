@@ -2977,6 +2977,22 @@ pub mod payload {
         }
     }
 
+    impl TryInto<String> for Primitive {
+        type Error = Error;
+
+        fn try_into(self) -> Result<String, Self::Error> {
+            match self {
+                Primitive::Text(text) => {
+                    Ok(text)
+                }
+                _ => {
+                    Err("Primitive must be of type Text".into())
+                }
+            }
+        }
+    }
+
+
     #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
     pub struct PrimitiveList {
         pub primitive_type: PrimitiveType,
@@ -4531,7 +4547,7 @@ pub mod entity {
                 pub fn to_primitive(
                     &self,
                     stubs: Vec<ResourceStub>,
-                ) -> Result<PrimitiveList, Fail> {
+                ) -> Result<PrimitiveList, Error> {
                     let stubs: Vec<Primitive> = stubs
                         .into_iter()
                         .map(|stub| Primitive::Stub(stub))
@@ -4577,6 +4593,25 @@ pub mod entity {
                         into_payload: self.into_payload,
                         hops,
                         address_kind_path,
+                    }
+                }
+            }
+
+            impl TryInto<SubSelector> for Select{
+                type Error = Error;
+
+                fn try_into(self) -> Result<SubSelector, Self::Error> {
+                    if let SelectionKind::SubSelector { address, hops, address_kind_path } = self.kind {
+                        Ok(SubSelector{
+                            address,
+                            pattern: self.pattern,
+                            properties: self.properties,
+                            into_payload: self.into_payload,
+                            hops: hops,
+                            address_kind_path
+                        } )
+                    } else {
+                        Err("Not of kind SubSelector".into())
                     }
                 }
             }
