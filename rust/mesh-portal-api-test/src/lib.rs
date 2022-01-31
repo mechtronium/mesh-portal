@@ -32,7 +32,7 @@ mod tests {
     use tokio::time::Duration;
 
     use mesh_portal_api_client::{client, InletApi, ResourceCtrl, PortalSkel, ResourceCtrlFactory, ResourceSkel};
-    use mesh_portal_api_server::{MuxCall, Portal, PortalMuxer, Router, PortalRequestHandler, DefaultPortalRequestHandler};
+    use mesh_portal_api_server::{MuxCall, Portal, PortalMuxer, Router, PortalAssignRequestHandler, DefaultPortalRequestHandler};
     use mesh_portal_serde::mesh;
     use mesh_portal_serde::version::latest::entity::request::{Msg, Rc, RcCommand, ReqEntity};
     use mesh_portal_serde::version::latest::entity::response;
@@ -47,7 +47,7 @@ mod tests {
     use mesh_portal_tcp_common::{
         FrameReader, FrameWriter, PrimitiveFrameReader, PrimitiveFrameWriter,
     };
-    use mesh_portal_tcp_server::{Call, Event, PortalServer, PortalTcpServer};
+    use mesh_portal_tcp_server::{TcpServerCall, Event, PortalServer, PortalTcpServer};
     use mesh_portal_serde::version::latest::pattern::AddressKindPattern;
     use mesh_portal_serde::version::latest::util::unique_id;
     use mesh_portal_serde::version::latest::config::{Assign, Config, ResourceConfigBody};
@@ -120,7 +120,7 @@ mod tests {
             let server = server.clone();
             tokio::spawn(async move {
                 let (listen_tx, listen_rx) = tokio::sync::oneshot::channel();
-                server.send(Call::ListenEvents(listen_tx)).await;
+                server.send(TcpServerCall::ListenEvents(listen_tx)).await;
                 let mut broadcast_rx = listen_rx.await.unwrap();
                 while let Result::Ok(event) = broadcast_rx.recv().await {
 
@@ -167,7 +167,7 @@ println!("created client: fred TCP client");
             GLOBAL_TX.send( GlobalEvent::Timeout).unwrap_or_default();
         });
         let result  = final_rx.await?;
-        server.send( Call::Shutdown ).await.unwrap_or_default();
+        server.send( TcpServerCall::Shutdown ).await.unwrap_or_default();
         result
     }
 
@@ -181,7 +181,7 @@ println!("created client: fred TCP client");
 
     pub struct TestPortalServer {
         pub atomic: AtomicU32,
-        pub request_handler: Arc<dyn PortalRequestHandler>
+        pub request_handler: Arc<dyn PortalAssignRequestHandler>
     }
 
     impl TestPortalServer {
@@ -244,7 +244,7 @@ println!("created client: fred TCP client");
             Box::new(InYourFaceRouter { mux_tx })
         }
 
-        fn portal_request_handler(&self) -> Arc<dyn PortalRequestHandler> {
+        fn portal_request_handler(&self) -> Arc<dyn PortalAssignRequestHandler> {
             self.request_handler.clone()
         }
     }
@@ -263,7 +263,7 @@ println!("created client: fred TCP client");
     }
 
     #[async_trait]
-    impl PortalRequestHandler for TestPortalRequestHandler {
+    impl PortalAssignRequestHandler for TestPortalRequestHandler {
         async fn default_assign(&self) -> Result<Assign, Error> {
             let index = self.seq.fetch_add(1, Ordering::Relaxed );
             let address = Address::from_str( format!("space:resource-{}",index).as_str() )?;

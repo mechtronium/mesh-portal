@@ -457,6 +457,13 @@ pub mod id {
             }
         }
 
+        pub fn root_with_route( route: RouteSegment) -> Self {
+            Self {
+                route,
+                segments: vec![],
+            }
+        }
+
         pub fn is_root(&self) -> bool {
             self.segments.is_empty()
         }
@@ -5378,6 +5385,7 @@ pub mod fail {
         Mesh(mesh::Fail),
         Resource(resource::Fail),
         Portal(portal::Fail),
+        Error(String)
     }
 
     impl ToString for Fail {
@@ -6330,7 +6338,7 @@ pub mod test {
     }
 
 
-    #[test]
+   #[test]
     pub fn test_address () -> Result<(),Error> {
         assert_eq!(("",RouteSegment::Resource),all_consuming(route_segment)("")?);
 

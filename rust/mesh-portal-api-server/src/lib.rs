@@ -76,7 +76,7 @@ pub enum PortalCall {
 pub struct Portal {
     key: u64,
     config: PortalConfig,
-    request_handler: Arc<dyn PortalRequestHandler>,
+    request_handler: Arc<dyn PortalAssignRequestHandler>,
     pub mux_tx: mpsc::Sender<MuxCall>,
     pub inlet_tx: mpsc::Sender<inlet::Frame>,
     pub outlet_tx: mpsc::Sender<outlet::Frame>,
@@ -88,7 +88,7 @@ impl Portal {
     pub fn new(
         key: u64,
         config: PortalConfig,
-        request_handler: Arc<dyn PortalRequestHandler>,
+        request_handler: Arc<dyn PortalAssignRequestHandler>,
         outlet_tx: mpsc::Sender<outlet::Frame>,
         logger: fn(log: Log),
     ) -> Self {
@@ -97,26 +97,37 @@ impl Portal {
 
         {
             let mux_tx = mux_tx.clone();
+            let request_handler = request_handler.clone();
+            let key = key.clone();
             tokio::spawn(async move {
                 loop {
                     match inlet_rx.recv().await {
                         Some(frame) => {
                             let frame:inlet::Frame = frame;
 println!("Server Portal Frame > {}",frame.to_string() );
-                            handle(&mux_tx, frame ).await;
+                            handle(&mux_tx, &request_handler, key, frame ).await;
                             continue;
                         }
                         None => {
                             break;
                         }
                     }
-                    async fn handle( mux_tx: &mpsc::Sender<MuxCall>, frame: inlet::Frame ) {
+                    async fn handle( mux_tx: &mpsc::Sender<MuxCall>, request_handler: &Arc<dyn PortalAssignRequestHandler>, key: u64, frame: inlet::Frame ) {
                         match frame {
                             inlet::Frame::Log(log) => {
                                 println!("{}",log.to_string());
                             }
-                            inlet::Frame::AssignRequest(assign) => {
-                                // we aren't doing this yet
+                            inlet::Frame::AssignRequest(request) => {
+                                let result = request_handler.handle_assign_request(request.item.clone(), mux_tx).await;
+                                match result {
+                                    Ok(assignment) => {
+                                        let assign = request.with(assignment);
+                                        mux_tx.send( MuxCall::Assign { assign, portal: key }).await;
+                                    }
+                                    Err(error) => {
+                                        println!("{}",error.to_string());
+                                    }
+                                }
                             }
                             inlet::Frame::Request(request) => {
                                mux_tx.send(MuxCall::MessageIn( Message::Request(request))).await;
@@ -175,12 +186,12 @@ println!("OUTLET FRAME SENT");
 }
 
 #[async_trait]
-pub trait PortalRequestHandler: Send + Sync + Debug {
+pub trait PortalAssignRequestHandler: Send + Sync + Debug {
     async fn default_assign(&self) -> Result<Assign, Error> {
         Err(anyhow!("request handler does not have a default assign"))
     }
 
-    async fn handle_assign_request(&self, request: AssignRequest) -> Result<Assign, Error> {
+    async fn handle_assign_request(&self, request: AssignRequest, mux_tx: &mpsc::Sender<MuxCall> ) -> Result<Assign, Error> {
         Err(anyhow!("request handler does not assign"))
     }
 
@@ -209,7 +220,7 @@ impl Default for DefaultPortalRequestHandler {
 }
 
 #[async_trait]
-impl PortalRequestHandler for DefaultPortalRequestHandler {}
+impl PortalAssignRequestHandler for DefaultPortalRequestHandler {}
 
 #[derive(Debug,strum_macros::Display)]
 pub enum MuxCall {

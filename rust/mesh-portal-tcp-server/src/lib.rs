@@ -20,7 +20,7 @@ use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::sync::{broadcast, mpsc, Mutex, oneshot};
 use tokio::sync::mpsc::error::SendTimeoutError;
 
-use mesh_portal_api_server::{MuxCall, Portal, PortalMuxer, Router, PortalRequestHandler, PortalCall};
+use mesh_portal_api_server::{MuxCall, Portal, PortalMuxer, Router, PortalAssignRequestHandler, PortalCall};
 use mesh_portal_serde::version::latest::frame::CloseReason;
 use mesh_portal_serde::version::latest::log::Log;
 use mesh_portal_serde::version::latest::portal::{Exchanger, inlet, outlet};
@@ -49,7 +49,7 @@ pub enum EventResult<E>{
     Err(String)
 }
 
-pub enum Call {
+pub enum TcpServerCall {
     ListenEvents(oneshot::Sender<broadcast::Receiver<Event>>),
     InjectMessage(Message),
     Shutdown
@@ -72,16 +72,16 @@ pub struct PortalTcpServer {
     port: usize,
     server: Arc<dyn PortalServer>,
     broadcaster_tx: broadcast::Sender<Event>,
-    call_tx: mpsc::Sender<Call>,
+    call_tx: mpsc::Sender<TcpServerCall>,
     mux_tx: mpsc::Sender<MuxCall>,
     alive: Arc<Mutex<Alive>>,
     key_seq: AtomicU64,
-    request_handler: Arc<dyn PortalRequestHandler>
+    request_handler: Arc<dyn PortalAssignRequestHandler>
 }
 
 impl PortalTcpServer {
 
-    pub fn new(port: usize, server: Box<dyn PortalServer>) -> mpsc::Sender<Call> {
+    pub fn new(port: usize, server: Box<dyn PortalServer>) -> mpsc::Sender<TcpServerCall> {
         let (call_tx,mut call_rx) = mpsc::channel(1024 );
         {
             let call_tx = call_tx.clone();
@@ -116,11 +116,11 @@ impl PortalTcpServer {
                             yield_now().await;
                             while let Option::Some(call) = call_rx.recv().await {
                                 match call {
-                                    Call::InjectMessage(_) => {}
-                                    Call::ListenEvents(tx) => {
+                                    TcpServerCall::InjectMessage(_) => {}
+                                    TcpServerCall::ListenEvents(tx) => {
                                         tx.send(broadcaster_tx.subscribe());
                                     },
-                                    Call::Shutdown => {
+                                    TcpServerCall::Shutdown => {
                                         broadcaster_tx.send(Event::Shutdown).unwrap_or_default();
                                         alive.lock().await.alive = false;
                                         match std::net::TcpStream::connect(format!("localhost:{}", port)) {
@@ -297,6 +297,6 @@ pub trait PortalServer: Sync+Send {
     async fn auth(&self, reader: &mut PrimitiveFrameReader, writer: &mut PrimitiveFrameWriter) -> Result<String,Error>;
     fn router_factory(&self, mux_tx: tokio::sync::mpsc::Sender<MuxCall> ) -> Box<dyn Router>;
     fn logger(&self) -> fn(message: &str);
-    fn portal_request_handler(&self) -> Arc<dyn PortalRequestHandler>;
+    fn portal_request_handler(&self) -> Arc<dyn PortalAssignRequestHandler>;
 }
 
