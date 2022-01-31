@@ -679,7 +679,7 @@ pub mod pattern {
     use crate::error::Error;
 
     use crate::version::v0_0_1::id::{Address, AddressSegment, ResourceKind, ResourceType, RouteSegment, Specific, Tks, Version};
-    use crate::version::v0_0_1::parse::{address, camel_case_to_string, consume_address_kind_path, path, path_regex, Res};
+    use crate::version::v0_0_1::parse::{address, camel_case_to_string, consume_address_kind_path, file_chars, path, path_regex, Res};
     use crate::version::v0_0_1::pattern::parse::{address_kind_pattern, pattern};
     use crate::version::v0_0_1::pattern::specific::{
         ProductPattern, VariantPattern, VendorPattern,
@@ -693,7 +693,7 @@ pub mod pattern {
     use nom::combinator::{all_consuming, opt, recognize};
     use nom::error::{ErrorKind, VerboseError};
     use nom::multi::separated_list0;
-    use nom::sequence::{delimited, preceded, tuple};
+    use nom::sequence::{delimited, preceded, terminated, tuple};
     use nom::{AsChar, InputTakeAtPosition, Parser};
     use nom_supreme::{parse_from_str, ParserExt};
     use std::collections::HashMap;
@@ -2245,7 +2245,7 @@ pub mod pattern {
     pub fn upload_pattern_block(input: &str) -> Res<&str, Block> {
         delimited(
             tag("^["),
-            tuple((multispace0, filename, multispace0)),
+            tuple((multispace0, file_chars, multispace0)),
             tag("]"),
         )(input)
         .map(|(next, (_, block, filename))| {
@@ -2257,6 +2257,24 @@ pub mod pattern {
             )
         })
     }
+
+    pub fn upload_step(input: &str) -> Res<&str, UploadBlock> {
+        terminated(
+            upload_pattern_block,
+            tag("->"))
+        (input)
+            .map(|(next, block)| {
+                if let Block::Upload(block) = block {
+                    (
+                        next,
+                        block
+                    )
+                } else {
+                    panic!("it should have been an UploadBlock!");
+                }
+            })
+    }
+
 
     pub fn request_pattern_block(input: &str) -> Res<&str, Block> {
         delimited(
@@ -2285,7 +2303,7 @@ pub mod pattern {
     }
 
     pub fn pipeline_block(input: &str) -> Res<&str, Block> {
-        alt((request_pattern_block, response_pattern_block))(input)
+        alt((request_pattern_block, response_pattern_block, upload_pattern_block))(input)
     }
 
     pub fn consume_pipeline_block(input: &str) -> Res<&str, Block> {
@@ -4351,9 +4369,11 @@ pub mod entity {
             use serde::{Deserialize, Serialize};
 
             use crate::error::Error;
+            use crate::version::v0_0_1::bin::Bin;
             use crate::version::v0_0_1::command::common::{SetProperties, SetRegistry, StateSrc};
             use crate::version::v0_0_1::id::{Address, AddressSegment, HostKey, ResourceKind};
             use crate::version::v0_0_1::pattern::SpecificPattern;
+            use crate::version::v0_0_1::payload::{Payload, Primitive};
             use crate::version::v0_0_1::util::ConvertFrom;
 
             pub enum AddressTemplateSegment {
@@ -4403,6 +4423,40 @@ pub mod entity {
                     })
                 }
             }
+
+            pub struct ProtoCreate {
+                pub template: Template,
+                pub properties: SetProperties,
+                pub strategy: Strategy,
+                pub registry: SetRegistry,
+                pub state: StateSrc,
+                pub file: Option<String>
+            }
+
+            impl ProtoCreate {
+                pub fn payload( mut self, payload: Payload ) -> Create {
+                    Create {
+                        template: self.template,
+                        state: StateSrc::StatefulDirect(payload),
+                        properties: self.properties,
+                        strategy: self.strategy,
+                        registry: self.registry
+                    }
+                }
+            }
+
+            impl Into<Create> for ProtoCreate {
+                fn into(self) -> Create {
+                    Create {
+                        template: self.template,
+                        state: self.state,
+                        properties: self.properties,
+                        strategy: self.strategy,
+                        registry: self.registry
+                    }
+                }
+            }
+
 
             #[derive(Debug, Clone, Serialize, Deserialize)]
             pub struct Create {
@@ -5357,11 +5411,13 @@ pub mod parse {
 
     use crate::error::Error;
     use crate::version::v0_0_1::id::{Address, AddressSegment, RouteSegment, Version};
-    use crate::version::v0_0_1::pattern::parse::{delim_kind, kind, resource_type, specific, specific_pattern, version};
+    use crate::version::v0_0_1::pattern::parse::{address_kind_pattern, delim_kind, kind, resource_type, specific, specific_pattern, version};
     use nom::bytes::complete::take;
-    use crate::version::v0_0_1::entity::request::create::{Create, AddressSegmentTemplate, AddressTemplate, KindTemplate, Template, Strategy, AddressTemplateSegment};
+    use crate::version::v0_0_1::entity::request::create::{Create, AddressSegmentTemplate, AddressTemplate, KindTemplate, Template, Strategy, AddressTemplateSegment, ProtoCreate};
     use crate::version::v0_0_1::command::common::{PropertyMod, SetProperties, StateSrc};
-    use crate::version::v0_0_1::pattern::{AddressKindPath, AddressKindSegment, skewer};
+    use crate::version::v0_0_1::config::bind::parse::pipeline_step;
+    use crate::version::v0_0_1::entity::request::select::{Select, SelectIntoPayload, SelectionKind};
+    use crate::version::v0_0_1::pattern::{AddressKindPath, AddressKindSegment, skewer, upload_step};
     use crate::version::v0_0_1::util::StringMatcher;
 
     pub struct Parser {}
@@ -6091,7 +6147,6 @@ println!("VERSION: {} ",version.to_string() );
                 Ok((next, address_template))
     }
 
-
     pub fn kind_template(input: &str) -> Res<&str, KindTemplate> {
         tuple((
             resource_type,
@@ -6148,7 +6203,6 @@ println!("VERSION: {} ",version.to_string() );
         delimited(tag("\""),is_not("\""), tag("\""))(input)
     }
 
-
     pub fn property_value(input: &str) -> Res<&str,&str> {
         alt( (property_value_single_quotes,property_value_double_quotes,property_value_not_space) )(input)
     }
@@ -6158,7 +6212,6 @@ println!("VERSION: {} ",version.to_string() );
             (next, PropertyMod::UnSet(name.to_string()))
         })
     }
-
 
     pub fn property_mod(input: &str) -> Res<&str, PropertyMod> {
         alt( (set_property_mod,unset_property_mod) )(input)
@@ -6188,6 +6241,60 @@ println!("VERSION: {} ",version.to_string() );
         } )
     }
 
+    pub fn select(input: &str) -> Res<&str, Select> {
+        address_kind_pattern(input).map( |(next, address_kind_pattern)| {
+            let select = Select {
+                pattern: address_kind_pattern,
+                properties: Default::default(),
+                into_payload: SelectIntoPayload::Stubs,
+                kind: SelectionKind::Initial
+            };
+            (next,select)
+        } )
+    }
+
+    pub fn publish(input: &str) -> Res<&str, ProtoCreate> {
+        let (next, (upload,_,address)) = tuple( (upload_step,space1,address) )(input)?;
+
+        let parent = match address.parent() {
+            None => {
+                return Err(nom::Err::Error(VerboseError::from_error_kind( input, ErrorKind::Tag, )));
+            }
+            Some(parent) => {parent}
+        };
+
+        let last = match address.last_segment() {
+            None => {
+                return Err(nom::Err::Error(VerboseError::from_error_kind( input, ErrorKind::Tag, )));
+            }
+            Some(last) => {last}
+        };
+
+        let template = Template {
+            address: AddressTemplate{
+                parent,
+                child_segment_template: AddressSegmentTemplate::Exact(last.to_string())
+            },
+            kind: KindTemplate {
+                resource_type: "ArtifactBundle".to_string(),
+                kind: None,
+                specific: None
+            }
+        };
+
+        let create = ProtoCreate {
+            template,
+            state: StateSrc::Stateless,
+            properties: Default::default(),
+            strategy: Strategy::Create,
+            registry: Default::default(),
+            file: Option::Some(upload.name)
+        };
+
+        Ok((next,create))
+    }
+
+
 }
 
 
@@ -6199,10 +6306,12 @@ pub mod test {
 
     use crate::error::Error;
     use crate::version::v0_0_1::id::{AddressSegment, RouteSegment};
-    use crate::version::v0_0_1::parse::{address, camel_case, route_segment, version_address_segment, skewer_chars, base_address_segment, rec_skewer, address_template, create};
+    use crate::version::v0_0_1::parse::{address, camel_case, route_segment, version_address_segment, skewer_chars, base_address_segment, rec_skewer, address_template, create, publish};
     use nom::Err;
     use nom::error::VerboseError;
+    use crate::version::v0_0_1::config::bind::parse::{pipeline, pipeline_step};
     use crate::version::v0_0_1::pattern::parse::version;
+    use crate::version::v0_0_1::pattern::upload_step;
 
     #[test]
     pub fn test_skewer_chars() -> Result<(),Error> {
@@ -6257,6 +6366,13 @@ pub mod test {
     pub fn test_create() -> Result<(),Error> {
         all_consuming(create)("hello:kitty<App>")?;
         all_consuming(create)("hello:kitty<App>{ +config='some:config:1.0.0:/blah.conf' }")?;
+        Ok(())
+    }
+
+    #[test]
+    pub fn test_pipeline() -> Result<(),Error> {
+        all_consuming(upload_step )("^[ bundle.zip ]->")?;
+        all_consuming(publish)("^[ bundle.zip ]-> space.org:hello:1.0.0")?;
         Ok(())
     }
 
