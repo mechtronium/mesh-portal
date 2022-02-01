@@ -16,7 +16,8 @@ use tokio::sync::mpsc::error::TrySendError;
 use tokio::task::yield_now;
 use mesh_portal_serde::version;
 use tokio::time::Duration;
-use mesh_portal_serde::version::latest::portal::{outlet, inlet};
+use mesh_portal_serde::version::latest::portal::{outlet, inlet, Exchanger};
+use mesh_portal_serde::version::latest::portal::inlet::AssignRequest;
 
 pub struct PortalTcpClient {
     pub host: String,
@@ -104,6 +105,10 @@ println!("reading frame: {}",frame.to_string());
             portal
         });
 
+    }
+
+    pub async fn request_assign( &self, request: AssignRequest ) -> Result<Arc<dyn ResourceCtrl>,Error> {
+        self.portal.request_assign(request).await
     }
 }
 

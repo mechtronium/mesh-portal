@@ -4447,20 +4447,31 @@ pub mod entity {
                 }
             }
 
-            pub struct ProtoCreate {
+            #[derive(Debug, Clone, Serialize, Deserialize)]
+            pub enum Require {
+                File(String)
+            }
+
+            #[derive(Debug, Clone, Serialize, Deserialize)]
+            pub enum Fulfillment {
+                File{ name: String, bin: Bin },
+                Complete
+            }
+
+            pub struct CreateOp {
                 pub template: Template,
                 pub properties: SetProperties,
                 pub strategy: Strategy,
                 pub registry: SetRegistry,
                 pub state: StateSrc,
-                pub file: Option<String>
+                pub requirements: Vec<Require>,
             }
 
-            impl ProtoCreate {
-                pub fn payload( mut self, payload: Payload ) -> Create {
+            impl CreateOp {
+                pub fn fulfillment( mut self, bin: Bin) -> Create {
                     Create {
                         template: self.template,
-                        state: StateSrc::StatefulDirect(payload),
+                        state: StateSrc::StatefulDirect(Payload::Primitive(Primitive::Bin(bin))),
                         properties: self.properties,
                         strategy: self.strategy,
                         registry: self.registry
@@ -4468,7 +4479,7 @@ pub mod entity {
                 }
             }
 
-            impl Into<Create> for ProtoCreate {
+            impl Into<Create> for CreateOp {
                 fn into(self) -> Create {
                     Create {
                         template: self.template,
@@ -5456,7 +5467,7 @@ pub mod parse {
     use crate::version::v0_0_1::id::{Address, AddressSegment, RouteSegment, Version};
     use crate::version::v0_0_1::pattern::parse::{address_kind_pattern, delim_kind, kind, resource_type, specific, specific_pattern, version};
     use nom::bytes::complete::take;
-    use crate::version::v0_0_1::entity::request::create::{Create, AddressSegmentTemplate, AddressTemplate, KindTemplate, Template, Strategy, AddressTemplateSegment, ProtoCreate};
+    use crate::version::v0_0_1::entity::request::create::{Create, AddressSegmentTemplate, AddressTemplate, KindTemplate, Template, Strategy, AddressTemplateSegment, CreateOp, Require};
     use crate::version::v0_0_1::command::common::{PropertyMod, SetProperties, StateSrc};
     use crate::version::v0_0_1::config::bind::parse::pipeline_step;
     use crate::version::v0_0_1::entity::request::select::{Select, SelectIntoPayload, SelectionKind};
@@ -6296,7 +6307,7 @@ println!("VERSION: {} ",version.to_string() );
         } )
     }
 
-    pub fn publish(input: &str) -> Res<&str, ProtoCreate> {
+    pub fn publish(input: &str) -> Res<&str, CreateOp> {
         let (next, (upload,_,address)) = tuple( (upload_step,space1,address) )(input)?;
 
         let parent = match address.parent() {
@@ -6325,13 +6336,13 @@ println!("VERSION: {} ",version.to_string() );
             }
         };
 
-        let create = ProtoCreate {
+        let create = CreateOp {
             template,
             state: StateSrc::Stateless,
             properties: Default::default(),
             strategy: Strategy::Create,
             registry: Default::default(),
-            file: Option::Some(upload.name)
+            requirements: vec![Require::File(upload.name)]
         };
 
         Ok((next,create))

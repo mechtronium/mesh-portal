@@ -21,15 +21,18 @@ use std::collections::HashMap;
 use tokio::sync::watch::Receiver;
 use mesh_portal_serde::std_logger;
 use mesh_portal_serde::version::latest::http::{HttpRequest, HttpResponse};
-use mesh_portal_serde::version::latest::portal::{inlet, outlet};
+use mesh_portal_serde::version::latest::portal::{Exchanger, inlet, outlet};
 use mesh_portal_serde::version::latest::resource::{ResourceStub, Status};
 use mesh_portal_serde::version::latest::log::Log;
 use mesh_portal_serde::version::latest::{portal, entity};
 use std::convert::TryInto;
+use dashmap::mapref::one::Ref;
+use tokio::sync::oneshot::Sender;
 use tokio::task::yield_now;
 use mesh_portal_serde::version::latest::config::{Config, PortalConfig, ResourceConfigBody};
 use mesh_portal_serde::version::latest::id::Address;
 use mesh_portal_serde::version::latest::messaging::{Exchange, ExchangeId, Request, Response};
+use mesh_portal_serde::version::latest::portal::inlet::AssignRequest;
 use mesh_portal_serde::version::latest::portal::outlet::Frame;
 
 
@@ -92,6 +95,7 @@ pub struct PortalSkel {
     pub inlet: Arc<dyn Inlet>,
     pub logger: fn(message: &str),
     pub exchanges: Exchanges,
+    pub assign_exchange: Arc<DashMap<String, oneshot::Sender<Arc<dyn ResourceCtrl>>>>,
     pub tx: mpsc::Sender<outlet::Frame>,
     pub ctrl_factory: Arc<dyn ResourceCtrlFactory>,
 }
@@ -129,11 +133,13 @@ impl Portal {
 
         let inlet :Arc<dyn Inlet>= inlet.into();
         let exchanges = Arc::new(DashMap::new());
+        let assign_exchange = Arc::new(DashMap::new());
         let skel =  PortalSkel {
             config,
             inlet,
             logger,
             exchanges,
+            assign_exchange,
             tx: outlet_tx,
             ctrl_factory,
         };
@@ -163,11 +169,19 @@ println!("CLIENT PROCESS");
                                 };
                                 let resource = skel.ctrl_factory.create(resource_skel)?;
                                 resources.insert( assign.stub.address.clone(), resource.clone() );
+                                let assign = assign.clone();
                                 tokio::spawn( async move {
 println!("CLIENT INIT");
                                     resource.init().await;
+                                    match skel.assign_exchange.remove( &assign.id ) {
+                                        None => {}
+                                        Some((_,tx)) => {
+                                            tx.send( resource )
+                                        }
+                                    }
 println!("CLIENT INIT COMPLETE");
                                 });
+
 
 println!("CLIENT RTN OK");
                                 return Ok(());
@@ -215,6 +229,13 @@ println!("Client outlet::Frame{}",frame.to_string());
         self.skel.inlet.inlet_frame(inlet::Frame::Log(log));
     }
 
+    pub async fn request_assign( &self, request: AssignRequest) -> Result<Arc<dyn ResourceCtrl>,Error> {
+       let (tx,rx) = oneshot::channel();
+       let request = Exchanger::new(request);
+       self.skel.assign_exchange.insert( request.id.clone(), tx );
+       self.skel.inlet.inlet_frame(inlet::Frame::AssignRequest(request) );
+       Ok(rx.await?)
+    }
 }
 
 #[async_trait]

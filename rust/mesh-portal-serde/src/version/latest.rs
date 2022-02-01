@@ -226,6 +226,9 @@ pub mod entity {
             pub type Strategy = current::entity::request::create::Strategy;
             pub type AddressTemplate = current::entity::request::create::AddressTemplate;
             pub type AddressSegmentTemplate = current::entity::request::create::AddressSegmentTemplate;
+            pub type CreateOp = current::entity::request::create::CreateOp;
+            pub type Require = current::entity::request::create::Require;
+            pub type Fulfilemment = current::entity::request::create::Fulfillment;
         }
 
         pub mod select {
