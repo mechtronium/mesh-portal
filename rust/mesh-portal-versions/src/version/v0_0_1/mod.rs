@@ -366,7 +366,11 @@ pub mod id {
         }
 
         pub fn push(&self, segment: String) -> Result<Self, Error> {
-            Self::from_str(format!("{}:{}", self.to_string(), segment).as_str())
+            if self.segments.is_empty() {
+                Self::from_str(segment.as_str())
+            } else {
+                Self::from_str(format!("{}:{}", self.to_string(), segment).as_str())
+            }
         }
 
         pub fn push_file(&self, segment: String) -> Result<Self, Error> {
@@ -423,13 +427,18 @@ pub mod id {
                 }
             }
 
-            for (i, segment) in self.segments.iter().enumerate() {
-                rtn.push_str(segment.to_string().as_str());
-                if i != self.segments.len() - 1 {
-                    rtn.push_str(segment.terminating_delim());
-                }
+            if self.segments.is_empty() {
+                "[root]".to_string()
             }
-            rtn.to_string()
+            else {
+                for (i, segment) in self.segments.iter().enumerate() {
+                    rtn.push_str(segment.to_string().as_str());
+                    if i != self.segments.len() - 1 {
+                        rtn.push_str(segment.terminating_delim());
+                    }
+                }
+                rtn.to_string()
+            }
         }
     }
 
@@ -5589,40 +5598,53 @@ pub mod parse {
         preceded( tag(":"),version)(input).map(|(next, version)| (next, AddressSegment::Version(version)))
     }
 
-    pub fn address(input: &str) -> Res<&str, Address> {
-        tuple((
-            tuple((route_segment, space_address_segment)),
-            many0(base_address_segment),
-            opt(version_address_segment),
-            opt( root_dir_address_segment ),
-            many0(filepath_address_segment),
-        ))(input)
-        .map(|(next, ((hub, space), mut bases, version, root, mut files))| {
-            let mut segments = vec![];
-            segments.push(space);
-            segments.append(&mut bases);
-            match version {
-                None => {}
-                Some(version) => {
-println!("VERSION: {} ",version.to_string() );
-
-                    segments.push(version);
-                }
-            }
-
-            if let Option::Some(root) = root {
-                segments.push(root);
-                segments.append(&mut files);
-            }
-
-
+    pub fn root_address(input: &str) -> Res<&str, Address> {
+        tuple( (route_segment, tag("[root]")))(input).map( |(next,(route,_))| {
             let address = Address {
-                route: hub,
-                segments,
+                route,
+                segments: vec![]
             };
-
             (next, address)
-        })
+        } )
+    }
+    pub fn regular_address(input: &str) -> Res<&str, Address> {
+                 tuple((
+                     tuple((route_segment, space_address_segment)),
+                     many0(base_address_segment),
+                     opt(version_address_segment),
+                     opt( root_dir_address_segment ),
+                     many0(filepath_address_segment),
+                 ))(input)
+            .map(|(next, ((hub, space), mut bases, version, root, mut files))| {
+                let mut segments = vec![];
+                segments.push(space);
+                segments.append(&mut bases);
+                match version {
+                    None => {}
+                    Some(version) => {
+                        println!("VERSION: {} ",version.to_string() );
+
+                        segments.push(version);
+                    }
+                }
+
+                if let Option::Some(root) = root {
+                    segments.push(root);
+                    segments.append(&mut files);
+                }
+
+
+                let address = Address {
+                    route: hub,
+                    segments,
+                };
+
+                (next, address)
+            })
+    }
+
+    pub fn address(input: &str) -> Res<&str, Address> {
+        alt((root_address,regular_address) )(input)
     }
 
     pub fn consume_address(input: &str) -> Res<&str, Address> {
@@ -6388,6 +6410,7 @@ pub mod test {
     pub fn test_address () -> Result<(),Error> {
         assert_eq!(("",RouteSegment::Resource),all_consuming(route_segment)("")?);
 
+         all_consuming(address)("[root]")?;
          all_consuming(address)("hello:kitty")?;
          all_consuming(address)("hello.com:kitty")?;
          all_consuming(address)("hello:kitty:/file.txt")?;
