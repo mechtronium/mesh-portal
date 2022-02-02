@@ -156,9 +156,9 @@ println!("Portal received frame: {}", frame.to_string());
                         println!("XXX>>> Client exiting outlet_rx loop");
                         break;
                     }
-                    process(&skel, &mut resources, frame).await;
+                    process(skel.clone(), &mut resources, frame).await;
 
-                        async fn process( skel: &PortalSkel,  resources: &mut HashMap<Address,Arc<dyn ResourceCtrl>>, frame: outlet::Frame ) -> Result<(),Error> {
+                        async fn process( skel: PortalSkel,  resources: &mut HashMap<Address,Arc<dyn ResourceCtrl>>, frame: outlet::Frame ) -> Result<(),Error> {
 println!("CLIENT PROCESS");
                             if let Frame::Assign(assign) = &frame {
                                 let resource_skel = ResourceSkel {
@@ -176,7 +176,7 @@ println!("CLIENT INIT");
                                     match skel.assign_exchange.remove( &assign.id ) {
                                         None => {}
                                         Some((_,tx)) => {
-                                            tx.send( resource )
+                                            tx.send( resource );
                                         }
                                     }
 println!("CLIENT INIT COMPLETE");
