@@ -72,6 +72,12 @@ pub mod id {
         }
     }
 
+    impl ToString for AddressAndKind {
+        fn to_string(&self) -> String {
+            format!("{}<{}>", self.address.to_string(), self.kind.to_string() )
+        }
+    }
+
     impl  FromStr for AddressAndKind{
         type Err = Error;
 
@@ -249,6 +255,7 @@ pub mod id {
 
     #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
     pub enum AddressSegment {
+        Root,
         Space(String),
         Base(String),
         RootDir,
@@ -299,7 +306,8 @@ pub mod id {
                 AddressSegment::Dir(_) => "/",
                 AddressSegment::File(_) => "",
                 AddressSegment::Version(_) => ":",
-                AddressSegment::RootDir => "/"
+                AddressSegment::RootDir => "/",
+                AddressSegment::Root => ""
             }
         }
 
@@ -311,6 +319,7 @@ pub mod id {
                 AddressSegment::File(_) => true,
                 AddressSegment::Version(_) => false,
                 AddressSegment::RootDir => true,
+                AddressSegment::Root => false
             }
         }
     }
@@ -323,7 +332,8 @@ pub mod id {
                 AddressSegment::Dir(dir) => dir.clone(),
                 AddressSegment::File(file) => file.clone(),
                 AddressSegment::Version(version) => version.to_string(),
-                AddressSegment::RootDir => "".to_string()
+                AddressSegment::RootDir => "".to_string(),
+                AddressSegment::Root => "".to_string()
             }
         }
     }
@@ -378,7 +388,7 @@ pub mod id {
         }
 
         pub fn push_segment(&self, segment: AddressSegment) -> Self {
-            let mut address = self.clone();
+           let mut address = self.clone();
             address.segments.push(segment);
             address
         }
@@ -787,6 +797,11 @@ pub mod pattern {
             }
         }
 
+        pub fn is_root(&self) -> bool {
+            self.hops.is_empty()
+        }
+
+
         pub fn is_final(&self) -> bool {
             self.hops.len() == 1
         }
@@ -833,6 +848,10 @@ pub mod pattern {
                 return false;
             }
 
+            if address_kind_path.is_root() && self.is_root() {
+                return true;
+            }
+
             if address_kind_path.segments.is_empty() || self.hops.is_empty() {
                 return false;
             }
@@ -840,9 +859,14 @@ pub mod pattern {
             let hop = self.hops.first().expect("hop");
             let seg = address_kind_path.segments.first().expect("segment");
 
+
             if address_kind_path.is_final() && self.is_final() {
                 // this is the final hop & segment if they match, everything matches!
                 hop.matches(seg)
+            } else if address_kind_path.is_root() {
+                false
+            } else if self.is_root() {
+                false
             } else if address_kind_path.is_final() {
                 // we still have hops that haven't been matched and we are all out of path
                 false
@@ -864,6 +888,10 @@ pub mod pattern {
                     self.matches(&address_kind_path.consume().expect("AddressKindPath"))
                 }
             } else if hop.matches(seg) {
+println!("seg {}", seg.to_string() );
+println!("self.hops.len() {}", self.hops.len() );
+println!("address_kind_path.len() {}", address_kind_path.segments.len() );
+println!("address_kind_path.to_string() {}", address_kind_path.to_string() );
                 // in a normal match situation, we consume the hop and move to the next one
                 self.consume()
                     .expect("AddressTksPattern")
@@ -2509,6 +2537,9 @@ pub mod pattern {
                 ResourceKind: Clone,
                 ResourceType: Clone,
         {
+if let AddressSegment::Root = segment.address_segment {
+    println!("pushing ROOT");
+}
             let mut segments = self.segments.clone();
             segments.push(segment);
             Self {
@@ -2528,6 +2559,10 @@ pub mod pattern {
                 route: self.route.clone(),
                 segments,
             })
+        }
+
+        pub fn is_root(&self) -> bool {
+            self.segments.is_empty()
         }
 
         pub fn is_final(&self) -> bool {
@@ -4463,7 +4498,7 @@ pub mod entity {
 
             #[derive(Debug, Clone, Serialize, Deserialize)]
             pub enum Fulfillment {
-                File{ name: String, bin: Bin },
+                File{ name: String, content: Bin },
                 Complete
             }
 
@@ -4522,10 +4557,10 @@ pub mod entity {
                 }
             }
 
-            #[derive(Debug, Clone, Serialize, Deserialize)]
+            #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
             pub enum Strategy{
                 Create,
-                CreateOrUpdate,
+                Apply,
                 Ensure,
                 HostedBy(HostKey)
             }
@@ -4805,7 +4840,7 @@ pub mod resource {
     use serde::{Deserialize, Serialize};
 
     use crate::error::Error;
-    use crate::version::v0_0_1::id::{Address, ResourceKind, ResourceType};
+    use crate::version::v0_0_1::id::{Address, AddressAndKind, ResourceKind, ResourceType};
     use crate::version::v0_0_1::parse::{address, Res};
     use crate::version::v0_0_1::payload::{Payload, PayloadMap};
 
@@ -4961,6 +4996,15 @@ pub mod resource {
         pub kind: ResourceKind,
         pub properties: Properties,
         pub status: Status,
+    }
+
+    impl ResourceStub {
+        pub fn address_and_kind(self) -> AddressAndKind {
+            AddressAndKind {
+                address: self.address,
+                kind: self.kind
+            }
+        }
     }
 
     #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
