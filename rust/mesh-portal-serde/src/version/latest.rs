@@ -236,8 +236,8 @@ pub mod entity {
 
             pub type SelectIntoPayload = current::entity::request::select::SelectIntoPayload;
             pub type Select = current::entity::request::select::Select;
-            pub type SelectionKind = current::entity::request::select::SelectionKind;
-            pub type SubSelector = current::entity::request::select::SubSelector;
+            pub type SelectionKind = current::entity::request::select::SelectKind;
+            pub type SubSelector = current::entity::request::select::SubSelect;
             pub type PropertiesPattern = current::entity::request::select::PropertiesPattern;
         }
 

@@ -4620,13 +4620,13 @@ pub mod entity {
                 pub pattern: AddressKindPattern,
                 pub properties: PropertiesPattern,
                 pub into_payload: SelectIntoPayload,
-                pub kind: SelectionKind
+                pub kind: SelectKind
             }
 
             #[derive(Debug, Clone, Serialize, Deserialize)]
-            pub enum SelectionKind {
+            pub enum SelectKind {
                 Initial,
-                SubSelector {
+                SubSelect {
                     address: Address,
                     hops: Vec<Hop>,
                     address_kind_path: AddressKindPath,
@@ -4640,8 +4640,8 @@ pub mod entity {
                     address: Address,
                     hops: Vec<Hop>,
                     address_kind_path: AddressKindPath,
-                ) -> SubSelector {
-                    SubSelector {
+                ) -> SubSelect {
+                    SubSelect {
                         address,
                         pattern: self.pattern,
                         properties: self.properties,
@@ -4652,12 +4652,12 @@ pub mod entity {
                 }
             }
 
-            impl TryInto<SubSelector> for Select{
+            impl TryInto<SubSelect> for Select{
                 type Error = Error;
 
-                fn try_into(self) -> Result<SubSelector, Self::Error> {
-                    if let SelectionKind::SubSelector { address, hops, address_kind_path } = self.kind {
-                        Ok(SubSelector{
+                fn try_into(self) -> Result<SubSelect, Self::Error> {
+                    if let SelectKind::SubSelect { address, hops, address_kind_path } = self.kind {
+                        Ok(SubSelect {
                             address,
                             pattern: self.pattern,
                             properties: self.properties,
@@ -4672,7 +4672,7 @@ pub mod entity {
             }
 
             #[derive(Debug, Clone, Serialize, Deserialize)]
-            pub struct SubSelector {
+            pub struct SubSelect {
                 pub address: Address,
                 pub pattern: AddressKindPattern,
                 pub properties: PropertiesPattern,
@@ -4681,13 +4681,13 @@ pub mod entity {
                 pub address_kind_path: AddressKindPath,
             }
 
-            impl Into<Select> for SubSelector {
+            impl Into<Select> for SubSelect {
                 fn into(self) -> Select {
                     Select {
                         pattern: self.pattern,
                         properties: self.properties,
                         into_payload: self.into_payload,
-                        kind: SelectionKind::SubSelector {
+                        kind: SelectKind::SubSelect {
                             address: self.address,
                             hops: self.hops,
                             address_kind_path: self.address_kind_path,
@@ -4696,15 +4696,15 @@ pub mod entity {
                 }
             }
 
-            impl SubSelector {
+            impl SubSelect {
                 pub fn sub_select(
                     &self,
                     address: Address,
                     hops: Vec<Hop>,
                     address_kind_path: AddressKindPath,
-                ) -> SubSelector
+                ) -> SubSelect
                 {
-                    SubSelector {
+                    SubSelect {
                         address,
                         pattern: self.pattern.clone(),
                         properties: self.properties.clone(),
@@ -4721,7 +4721,7 @@ pub mod entity {
                         pattern,
                         properties: Default::default(),
                         into_payload: SelectIntoPayload::Stubs,
-                        kind: SelectionKind::Initial,
+                        kind: SelectKind::Initial,
                     }
                 }
             }
@@ -5523,7 +5523,7 @@ pub mod parse {
     use crate::version::v0_0_1::entity::request::create::{Create, AddressSegmentTemplate, AddressTemplate, KindTemplate, Template, Strategy, AddressTemplateSegment, CreateOp, Require};
     use crate::version::v0_0_1::command::common::{PropertyMod, SetProperties, StateSrc};
     use crate::version::v0_0_1::config::bind::parse::pipeline_step;
-    use crate::version::v0_0_1::entity::request::select::{Select, SelectIntoPayload, SelectionKind};
+    use crate::version::v0_0_1::entity::request::select::{Select, SelectIntoPayload, SelectKind};
     use crate::version::v0_0_1::pattern::{AddressKindPath, AddressKindSegment, skewer, upload_step};
     use crate::version::v0_0_1::util::StringMatcher;
 
@@ -5622,6 +5622,7 @@ pub mod parse {
     pub fn filepath_address_segment(input: &str) -> Res<&str, AddressSegment> {
         alt((file_address_segment, dir_address_segment))(input)
     }
+
     pub fn dir_address_segment(input: &str) -> Res<&str, AddressSegment> {
         terminated(filepath_chars, tag("/"))(input)
             .map(|(next, dir)| (next, AddressSegment::Dir(dir.to_string())))
@@ -5632,7 +5633,6 @@ pub mod parse {
             (next,AddressSegment::RootDir)
         })
     }
-
 
     pub fn file_address_segment(input: &str) -> Res<&str, AddressSegment> {
         filepath_chars(input).map(|(next, filename)| (next, AddressSegment::File(filename.to_string())))
@@ -6367,7 +6367,7 @@ pub mod parse {
                 pattern: address_kind_pattern,
                 properties: Default::default(),
                 into_payload: SelectIntoPayload::Stubs,
-                kind: SelectionKind::Initial
+                kind: SelectKind::Initial
             };
             (next,select)
         } )
