@@ -258,7 +258,7 @@ pub mod id {
         Root,
         Space(String),
         Base(String),
-        RootDir,
+        FilesystemRootDir,
         Dir(String),
         File(String),
         Version(Version),
@@ -276,7 +276,7 @@ pub mod id {
         pub fn is_filepath(&self) -> bool {
             match self {
                 AddressSegment::Dir(_) => true,
-                AddressSegment::RootDir => true,
+                AddressSegment::FilesystemRootDir => true,
                 AddressSegment::File(_) => true,
                 _ => false
             }
@@ -292,7 +292,7 @@ pub mod id {
         pub fn is_dir(&self) -> bool {
             match self {
                 AddressSegment::Dir(_) => true,
-                AddressSegment::RootDir => true,
+                AddressSegment::FilesystemRootDir => true,
                 _ => false
             }
         }
@@ -306,7 +306,7 @@ pub mod id {
                 AddressSegment::Dir(_) => "/",
                 AddressSegment::File(_) => "",
                 AddressSegment::Version(_) => ":",
-                AddressSegment::RootDir => "/",
+                AddressSegment::FilesystemRootDir => "/",
                 AddressSegment::Root => ""
             }
         }
@@ -318,7 +318,7 @@ pub mod id {
                 AddressSegment::Dir(_) => true,
                 AddressSegment::File(_) => true,
                 AddressSegment::Version(_) => false,
-                AddressSegment::RootDir => true,
+                AddressSegment::FilesystemRootDir => true,
                 AddressSegment::Root => false
             }
         }
@@ -332,7 +332,7 @@ pub mod id {
                 AddressSegment::Dir(dir) => dir.clone(),
                 AddressSegment::File(file) => file.clone(),
                 AddressSegment::Version(version) => version.to_string(),
-                AddressSegment::RootDir => "".to_string(),
+                AddressSegment::FilesystemRootDir => "".to_string(),
                 AddressSegment::Root => "".to_string()
             }
         }
@@ -1132,13 +1132,13 @@ println!("address_kind_path.to_string() {}", address_kind_path.to_string() );
         use nom::combinator::{all_consuming, opt, recognize};
         use nom::error::{ParseError, VerboseError};
         use nom::multi::{many1, many0};
-        use nom::sequence::{delimited, terminated, tuple};
+        use nom::sequence::{delimited, preceded, terminated, tuple};
         use nom::Parser;
         use nom::{Err, IResult};
 
         use crate::error::Error;
         use crate::version::v0_0_1::id::{AddressAndKind, AddressSegment, ResourceKind, KindParts, ResourceType, Specific, Version};
-        use crate::version::v0_0_1::parse::{address_segment_chars, camel_case, domain_chars, skewer_chars, version_req_chars, Res, version_address_segment, version_chars, address};
+        use crate::version::v0_0_1::parse::{address_segment_chars, camel_case, domain_chars, skewer_chars, version_req_chars, Res, version_address_segment, version_chars, address, file_chars};
         use crate::version::v0_0_1::pattern::specific::{
             ProductPattern, VariantPattern, VendorPattern,
         };
@@ -1177,10 +1177,21 @@ println!("address_kind_path.to_string() {}", address_kind_path.to_string() );
         }
 
         fn exact_file_segment(input: &str) -> Res<&str, SegmentPattern> {
-            address_segment_chars(input).map(|(next, segment)| {
+            file_chars(input).map(|(next, segment)| {
                 (
                     next,
                     SegmentPattern::Exact(ExactSegment::Address(AddressSegment::File(
+                        segment.to_string(),
+                    ))),
+                )
+            })
+        }
+
+        fn exact_dir_segment(input: &str) -> Res<&str, SegmentPattern> {
+            file_chars(input).map(|(next, segment)| {
+                (
+                    next,
+                    SegmentPattern::Exact(ExactSegment::Address(AddressSegment::Dir(
                         segment.to_string(),
                     ))),
                 )
@@ -1213,6 +1224,11 @@ println!("address_kind_path.to_string() {}", address_kind_path.to_string() );
         fn file_segment(input: &str) -> Res<&str, SegmentPattern> {
             alt((recursive_segment, any_segment, exact_file_segment))(input)
         }
+
+        fn dir_segment(input: &str) -> Res<&str, SegmentPattern> {
+            terminated(alt((recursive_segment, any_segment, exact_dir_segment)),tag("/"))(input)
+        }
+
 
         fn version_segment(input: &str) -> Res<&str, SegmentPattern> {
             alt((recursive_segment, any_segment, exact_version_segment, version_req_segment))(input)
@@ -1429,17 +1445,30 @@ println!("address_kind_path.to_string() {}", address_kind_path.to_string() );
             })
         }
 
+
         fn file_hop(
             input: &str,
         ) -> Res<&str, Hop> {
-            tuple((file_segment, opt(tks)))(input).map(|(next, (segment, tks))| {
-                let tks = match tks {
-                    None => TksPattern::any(),
-                    Some(tks) => tks,
+            file_segment(input).map(|(next, segment)| {
+                let tks = TksPattern {
+                    resource_type: Pattern::Exact("File".to_string()),
+                    kind: Pattern::Any,
+                    specific: ValuePattern::Any
                 };
                 (next, Hop { segment, tks })
             })
         }
+
+
+        fn dir_hop(
+            input: &str,
+        ) -> Res<&str, Hop> {
+            dir_segment(input).map(|(next, segment)| {
+                let tks = TksPattern::any();
+                (next, Hop { segment, tks })
+            })
+        }
+
 
         fn version_hop(
             input: &str,
@@ -1457,7 +1486,7 @@ println!("address_kind_path.to_string() {}", address_kind_path.to_string() );
         pub fn address_kind_pattern(
             input: &str,
         ) -> Res<&str, AddressKindPattern> {
-            tuple( (space_hop,many0(base_hop),opt(version_hop),many0(file_hop)))(input).map( |(next, (space_hop, base_hops, version_hop, file_hops) )| {
+            tuple( (space_hop,many0(preceded(tag(":"),base_hop) ),opt(preceded( tag(":"), version_hop)),opt(preceded(tag(":/"),tuple((many0(dir_hop),opt(file_hop)))))))(input).map( |(next, (space_hop, base_hops, version_hop, filesystem_hops) )| {
                 let mut hops = vec![];
                 hops.push(space_hop);
                 for base_hop in base_hops {
@@ -1466,8 +1495,22 @@ println!("address_kind_path.to_string() {}", address_kind_path.to_string() );
                 if let Option::Some(version_hop) = version_hop {
                     hops.push( version_hop );
                 }
-                for file_hop in file_hops {
-                    hops.push(file_hop);
+                if let Some((dir_hops,file_hop)) = filesystem_hops{
+                    // first push the filesystem root
+                    hops.push( Hop {
+                        segment: SegmentPattern::Exact(ExactSegment::Address(AddressSegment::FilesystemRootDir)),
+                        tks: TksPattern {
+                            resource_type: Pattern::Exact("Dir".to_string()),
+                            kind: Pattern::Any,
+                            specific: ValuePattern::Any
+                        }
+                    });
+                    for dir_hop in dir_hops {
+                        hops.push(dir_hop );
+                    }
+                    if let Some(file_hop) = file_hop {
+                        hops.push(file_hop );
+                    }
                 }
 
                 let rtn = AddressKindPattern {
@@ -5630,7 +5673,7 @@ pub mod parse {
 
     pub fn root_dir_address_segment(input: &str) -> Res<&str, AddressSegment> {
         tag(":/")(input).map( |(next,_)| {
-            (next,AddressSegment::RootDir)
+            (next,AddressSegment::FilesystemRootDir)
         })
     }
 
@@ -6431,6 +6474,7 @@ pub mod test {
     use nom::error::VerboseError;
     use crate::version::v0_0_1::config::bind::parse::{pipeline, pipeline_step};
     use crate::version::v0_0_1::pattern::parse::version;
+    use crate::version::v0_0_1::pattern::parse::address_kind_pattern;
     use crate::version::v0_0_1::pattern::upload_step;
 
     #[test]
@@ -6496,5 +6540,21 @@ pub mod test {
         all_consuming(publish)("^[ bundle.zip ]-> space.org:hello:1.0.0")?;
         Ok(())
     }
+
+    #[test]
+    pub fn test_address_kind_pattern() -> Result<(),Error> {
+        all_consuming(address_kind_pattern)("*")?;
+        all_consuming(address_kind_pattern)("space")?;
+        all_consuming(address_kind_pattern)("space:base")?;
+        all_consuming(address_kind_pattern)("space:my-files:/")?;
+        all_consuming(address_kind_pattern)("space:my-files:/file.txt")?;
+        all_consuming(address_kind_pattern)("space:my-files:/dir/file.txt")?;
+        all_consuming(address_kind_pattern)("space<Space>:base")?;
+        all_consuming(address_kind_pattern)("**:*<Base>")?;
+        all_consuming(address_kind_pattern)("space<Space>:base<Base>")?;
+        all_consuming(address_kind_pattern)("space<Space>:**<Base>")?;
+        Ok(())
+    }
+
 
 }
