@@ -229,6 +229,7 @@ pub mod entity {
             pub type CreateOp = current::entity::request::create::CreateOp;
             pub type Require = current::entity::request::create::Require;
             pub type Fulfilemment = current::entity::request::create::Fulfillment;
+            pub type Set = current::entity::request::set::Set;
         }
 
         pub mod select {

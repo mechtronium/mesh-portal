@@ -4386,6 +4386,7 @@ pub mod entity {
         use crate::version::v0_0_1::payload::{HttpMethod, Payload};
         use crate::version::v0_0_1::util::ValueMatcher;
         use serde::{Serialize,Deserialize};
+        use crate::version::v0_0_1::entity::request::set::Set;
 
 
         #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -4440,6 +4441,7 @@ pub mod entity {
             Update(Update),
             Query(Query),
             Get,
+            Set(Set)
         }
 
 
@@ -4451,6 +4453,7 @@ pub mod entity {
                     RcCommand::Update(_) => RcCommandType::Update,
                     RcCommand::Query(_) => RcCommandType::Query,
                     RcCommand::Get => RcCommandType::Get,
+                    RcCommand::Set(_) => RcCommandType::Set
                 }
             }
         }
@@ -4471,6 +4474,7 @@ pub mod entity {
             Update,
             Query,
             Get,
+            Set
         }
 
         impl ValueMatcher<RcCommand>
@@ -4525,6 +4529,18 @@ pub mod entity {
                 format!("Http<{}>{}", self.method.to_string(), self.path)
             }
         }
+        pub mod set {
+            use crate::version::v0_0_1::command::common::SetProperties;
+            use crate::version::v0_0_1::id::Address;
+            use serde::{Serialize,Deserialize};
+
+            #[derive(Debug, Clone,Serialize, Deserialize)]
+            pub struct Set {
+                pub address: Address,
+                pub properties: SetProperties,
+            }
+        }
+
         pub mod create {
             use std::convert::TryInto;
 
@@ -5619,6 +5635,7 @@ pub mod parse {
     use crate::version::v0_0_1::command::common::{PropertyMod, SetProperties, StateSrc};
     use crate::version::v0_0_1::config::bind::parse::pipeline_step;
     use crate::version::v0_0_1::entity::request::select::{Select, SelectIntoPayload, SelectKind};
+    use crate::version::v0_0_1::entity::request::set::Set;
     use crate::version::v0_0_1::pattern::{AddressKindPath, AddressKindSegment, skewer, upload_step};
     use crate::version::v0_0_1::util::StringMatcher;
 
@@ -6453,6 +6470,18 @@ pub mod parse {
             (next, create)
         } )
     }
+
+    pub fn set(input: &str) -> Res<&str, Set> {
+        tuple((address,delimited(tag("{"),set_properties, tag("}"))))(input).map( |(next, (address, properties))| {
+            let set = Set {
+                address,
+                properties,
+            };
+            (next, set)
+        } )
+    }
+
+
 
     pub fn select(input: &str) -> Res<&str, Select> {
         address_kind_pattern(input).map( |(next, address_kind_pattern)| {
