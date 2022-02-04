@@ -303,10 +303,10 @@ pub mod id {
             match self {
                 AddressSegment::Space(_) => ":",
                 AddressSegment::Base(_) => ":",
-                AddressSegment::Dir(_) => "/",
+                AddressSegment::Dir(_) => "",
                 AddressSegment::File(_) => "",
                 AddressSegment::Version(_) => ":",
-                AddressSegment::FilesystemRootDir => "/",
+                AddressSegment::FilesystemRootDir => "",
                 AddressSegment::Root => ""
             }
         }
@@ -332,7 +332,7 @@ pub mod id {
                 AddressSegment::Dir(dir) => dir.clone(),
                 AddressSegment::File(file) => file.clone(),
                 AddressSegment::Version(version) => version.to_string(),
-                AddressSegment::FilesystemRootDir => "".to_string(),
+                AddressSegment::FilesystemRootDir => "/".to_string(),
                 AddressSegment::Root => "".to_string()
             }
         }
@@ -379,7 +379,34 @@ pub mod id {
             if self.segments.is_empty() {
                 Self::from_str(segment.as_str())
             } else {
-                Self::from_str(format!("{}:{}", self.to_string(), segment).as_str())
+                let last = self.last_segment().expect("expected last segment");
+                let address = match last {
+                    AddressSegment::Root => {
+                        segment
+                    }
+                    AddressSegment::Space(_) => {
+                        format!("{}:{}", self.to_string(), segment)
+                    }
+                    AddressSegment::Base(_) => {
+                        format!("{}:{}", self.to_string(), segment)
+                    }
+                    AddressSegment::FilesystemRootDir => {
+                        format!("{}{}",self.to_string(),segment)
+                    }
+                    AddressSegment::Dir(_) => {
+                        format!("{}{}",self.to_string(),segment)
+                    }
+                    AddressSegment::Version(_) => {
+                        if segment != "/" {
+                            return Err("Root filesystem artifact dir required after version".into());
+                        }
+                        format!("{}:/",self.to_string())
+                    }
+                    AddressSegment::File(_) => {
+                        return Err("cannot append to a file".into())
+                    }
+                };
+                Self::from_str(address.as_str())
             }
         }
 
@@ -1130,7 +1157,7 @@ println!("address_kind_path.to_string() {}", address_kind_path.to_string() );
         use nom::bytes::complete::tag;
         use nom::character::complete::{alpha1, digit1};
         use nom::combinator::{all_consuming, opt, recognize};
-        use nom::error::{ParseError, VerboseError};
+        use nom::error::{context, ParseError, VerboseError};
         use nom::multi::{many1, many0};
         use nom::sequence::{delimited, preceded, terminated, tuple};
         use nom::Parser;
@@ -1486,7 +1513,7 @@ println!("address_kind_path.to_string() {}", address_kind_path.to_string() );
         pub fn address_kind_pattern(
             input: &str,
         ) -> Res<&str, AddressKindPattern> {
-            tuple( (space_hop,many0(preceded(tag(":"),base_hop) ),opt(preceded( tag(":"), version_hop)),opt(preceded(tag(":/"),tuple((many0(dir_hop),opt(file_hop)))))))(input).map( |(next, (space_hop, base_hops, version_hop, filesystem_hops) )| {
+            context( "address_kind_pattern", tuple( (space_hop,many0(preceded(tag(":"),base_hop) ),opt(preceded( tag(":"), version_hop)),opt(preceded(tag(":/"),tuple((many0(dir_hop),opt(file_hop))))))))(input).map( |(next, (space_hop, base_hops, version_hop, filesystem_hops) )| {
                 let mut hops = vec![];
                 hops.push(space_hop);
                 for base_hop in base_hops {
@@ -2335,7 +2362,7 @@ println!("address_kind_path.to_string() {}", address_kind_path.to_string() );
             tuple((multispace0, file_chars, multispace0)),
             tag("]"),
         )(input)
-        .map(|(next, (_, block, filename))| {
+        .map(|(next, (_, filename,_))| {
             (
                 next,
                 Block::Upload(UploadBlock {
@@ -4365,6 +4392,10 @@ pub mod entity {
         }
 
         impl Rc {
+            pub fn empty_payload(command: RcCommand) ->Self {
+                Self{ command, payload: Payload::Empty }
+            }
+
             pub fn with_payload(
                 command: RcCommand,
                 payload: Payload,
@@ -5662,13 +5693,13 @@ pub mod parse {
     }
 
 
-    pub fn filepath_address_segment(input: &str) -> Res<&str, AddressSegment> {
-        alt((file_address_segment, dir_address_segment))(input)
+    pub fn filesystem_address_segment(input: &str) -> Res<&str, AddressSegment> {
+        alt((dir_address_segment,file_address_segment ))(input)
     }
 
     pub fn dir_address_segment(input: &str) -> Res<&str, AddressSegment> {
-        terminated(filepath_chars, tag("/"))(input)
-            .map(|(next, dir)| (next, AddressSegment::Dir(dir.to_string())))
+        context("dir_address_segment",terminated(file_chars, tag("/")))(input)
+            .map(|(next, dir)| (next, AddressSegment::Dir(format!("{}/",dir))))
     }
 
     pub fn root_dir_address_segment(input: &str) -> Res<&str, AddressSegment> {
@@ -5678,7 +5709,7 @@ pub mod parse {
     }
 
     pub fn file_address_segment(input: &str) -> Res<&str, AddressSegment> {
-        filepath_chars(input).map(|(next, filename)| (next, AddressSegment::File(filename.to_string())))
+        context("file_address_segment", file_chars)(input).map(|(next, filename)| (next, AddressSegment::File(filename.to_string())))
     }
 
     pub fn version_address_segment(input: &str) -> Res<&str, AddressSegment> {
@@ -5700,7 +5731,7 @@ pub mod parse {
                      many0(base_address_segment),
                      opt(version_address_segment),
                      opt( root_dir_address_segment ),
-                     many0(filepath_address_segment),
+                     many0(filesystem_address_segment),
                  ))(input)
             .map(|(next, ((hub, space), mut bases, version, root, mut files))| {
                 let mut segments = vec![];
@@ -5709,8 +5740,6 @@ pub mod parse {
                 match version {
                     None => {}
                     Some(version) => {
-                        println!("VERSION: {} ",version.to_string() );
-
                         segments.push(version);
                     }
                 }
@@ -6203,7 +6232,7 @@ pub mod parse {
     }
 
     pub fn filepath_address_segment_template(input: &str) -> Res<&str, AddressTemplateSegment> {
-        filepath_address_segment(input).map(|(next, segment)| (next, AddressTemplateSegment::AddressSegment(segment)))
+        filesystem_address_segment(input).map(|(next, segment)| (next, AddressTemplateSegment::AddressSegment(segment)))
     }
 
     pub fn address_template(input: &str) -> Res<&str, AddressTemplate> {
@@ -6504,18 +6533,23 @@ pub mod test {
          all_consuming(address)("hello:kitty:/file.txt")?;
          all_consuming(address)("hello.com:kitty:/file.txt")?;
          all_consuming(address)("hello.com:kitty:/")?;
-         all_consuming(address)("hello.com:kitty:/greater-glory/file.txt")?;
-         assert_eq!( recognize(address)("hello:kitty-%"), Ok((":kitty-%", "hello"))) ;
+         //all_consuming(address)("hello.com:kitty:/greater-glory/file.txt")?;
+         all_consuming(address)("hello.com:kitty:base")?;
 
-        all_consuming(version)("1.0.0")?;
+       all_consuming(version)("1.0.0")?;
         let (next,version) = all_consuming(version_address_segment)(":1.2.3")?;
         println!("next: '{}' segment: '{}'", next, version.to_string() );
         all_consuming(address)("hello.com:bundle:1.2.3")?;
         let (next, addy) = all_consuming(address)("hello.com:bundle:1.2.3:/")?;
-        let (next, addy) = all_consuming(address)("hello.com:bundle:1.2.3:/file.txt")?;
-        all_consuming(address)("hello.com:bundle:1.2.3:/greater-glory/file.txt")?;
+println!("{}", addy.last_segment().unwrap().to_string() );
+       let (next, addy) = all_consuming(address)("hello.com:bundle:1.2.3")?;
+//       let (next, addy) = all_consuming(address)("hello.com:bundle:1.2.3:/some/file.txt")?;
+       let (next, addy) = all_consuming(address)("hello.com:bundle:1.2.3:/greater-glory/file.txt")?;
+println!("{}", addy.to_string() );
+println!("{}", addy.parent().unwrap().to_string() );
+println!("{}", addy.last_segment().unwrap().to_string() );
 
-        Ok(())
+       Ok(())
     }
 
     #[test]
@@ -6536,7 +6570,8 @@ pub mod test {
 
     #[test]
     pub fn test_pipeline() -> Result<(),Error> {
-        all_consuming(upload_step )("^[ bundle.zip ]->")?;
+        let (_,block) = all_consuming(upload_step )("^[ bundle.zip ]->")?;
+        assert_eq!( "bundle.zip", block.name.as_str() );
         all_consuming(publish)("^[ bundle.zip ]-> space.org:hello:1.0.0")?;
         Ok(())
     }
@@ -6552,7 +6587,10 @@ pub mod test {
         all_consuming(address_kind_pattern)("space<Space>:base")?;
         all_consuming(address_kind_pattern)("**:*<Base>")?;
         all_consuming(address_kind_pattern)("space<Space>:base<Base>")?;
+        all_consuming(address_kind_pattern)("space:base:blah")?;
+        all_consuming(address_kind_pattern)("space:base:*")?;
         all_consuming(address_kind_pattern)("space<Space>:**<Base>")?;
+        all_consuming(address_kind_pattern)("space:series:1.0.0:/some/file.txt")?;
         Ok(())
     }
 
