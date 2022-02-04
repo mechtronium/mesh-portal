@@ -424,6 +424,27 @@ pub mod id {
             self.segments.last().cloned()
         }
 
+        pub fn filepath(&self) -> Option<String> {
+            let mut path = String::new();
+            for segment in &self.segments {
+                match segment {
+                    AddressSegment::Dir(dir) => {
+                        path.push_str(dir.as_str());
+                    }
+                    AddressSegment::File(file) => {
+                        path.push_str(file.as_str());
+                    }
+                    _ => {}
+                }
+            }
+            if path.is_empty() {
+                None
+            } else {
+                Some(path)
+            }
+        }
+
+
         pub fn is_filesystem_ref(&self) -> bool {
             if let Option::Some(last_segment) = self.last_segment() {
                 last_segment.is_filesystem_ref()
