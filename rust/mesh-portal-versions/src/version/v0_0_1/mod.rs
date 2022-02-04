@@ -346,6 +346,10 @@ pub mod id {
 
     impl Address {
 
+        pub fn to_safe_filename(&self) -> String {
+            self.to_string()
+        }
+
         pub fn is_artifact_bundle_part(&self) -> bool {
             for segment in &self.segments {
                 if segment.is_version() {
@@ -3426,7 +3430,6 @@ pub mod payload {
     Deserialize,
     Hash,
     strum_macros::Display,
-    strum_macros::EnumString,
     )]
     pub enum HttpMethod {
         Get,
@@ -3438,6 +3441,26 @@ pub mod payload {
         Connect,
         Options,
         Trace,
+    }
+
+    impl FromStr for HttpMethod {
+        type Err = Error;
+
+        fn from_str(s: &str) -> Result<Self, Self::Err> {
+            let input = s.to_uppercase();
+            match input.as_str() {
+                "GET" => Ok(HttpMethod::Get),
+                "POST" => Ok(HttpMethod::Post),
+                "PUT" => Ok(HttpMethod::Put),
+                "DELETE" => Ok(HttpMethod::Delete),
+                "PATCH" => Ok(HttpMethod::Patch),
+                "HEAD" => Ok(HttpMethod::Head),
+                "CONNECT" => Ok(HttpMethod::Connect),
+                "OPTIONS" => Ok(HttpMethod::Options),
+                "TRACE"=>  Ok(HttpMethod::Trace),
+                what => Err(format!("unrecognized http method.  found: {}", what ).into())
+            }
+        }
     }
 
     impl ValueMatcher<HttpMethod> for HttpMethod {
@@ -3850,18 +3873,27 @@ pub mod http {
     use serde::{Deserialize, Serialize};
 
     use crate::version::v0_0_1::Bin;
+    use crate::version::v0_0_1::id::Meta;
+    use crate::version::v0_0_1::payload::HttpMethod;
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct HttpRequest {
-        pub headers: HashMap<String, String>,
+        pub method: HttpMethod,
+        pub headers: Meta,
         pub path: String,
         pub body: Option<Bin>,
     }
 
+    impl ToString for HttpRequest {
+        fn to_string(&self) -> String {
+            format!("Http<{}>{}", self.method.to_string(), self.path)
+        }
+    }
+
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct HttpResponse {
+        pub code: u32,
         pub headers: HashMap<String, String>,
-        pub code: usize,
         pub body: Option<Bin>,
     }
 
@@ -4386,6 +4418,7 @@ pub mod entity {
         use crate::version::v0_0_1::payload::{HttpMethod, Payload};
         use crate::version::v0_0_1::util::ValueMatcher;
         use serde::{Serialize,Deserialize};
+        use crate::version::v0_0_1::entity::request::get::Get;
         use crate::version::v0_0_1::entity::request::set::Set;
 
 
@@ -4440,7 +4473,7 @@ pub mod entity {
             Select(Select),
             Update(Update),
             Query(Query),
-            Get,
+            Get(Get),
             Set(Set)
         }
 
@@ -4452,7 +4485,7 @@ pub mod entity {
                     RcCommand::Select(_) => RcCommandType::Select,
                     RcCommand::Update(_) => RcCommandType::Update,
                     RcCommand::Query(_) => RcCommandType::Query,
-                    RcCommand::Get => RcCommandType::Get,
+                    RcCommand::Get(_) => RcCommandType::Get,
                     RcCommand::Set(_) => RcCommandType::Set
                 }
             }
@@ -4516,19 +4549,10 @@ pub mod entity {
             }
         }
 
-        #[derive(Debug, Clone, Serialize, Deserialize)]
-        pub struct Http {
-            pub headers: Meta,
-            pub method: HttpMethod,
-            pub path: String,
-            pub body: Payload,
-        }
+        pub type Http=crate::version::v0_0_1::http::HttpRequest;
 
-        impl ToString for Http {
-            fn to_string(&self) -> String {
-                format!("Http<{}>{}", self.method.to_string(), self.path)
-            }
-        }
+
+
         pub mod set {
             use crate::version::v0_0_1::command::common::SetProperties;
             use crate::version::v0_0_1::id::Address;
@@ -4540,6 +4564,25 @@ pub mod entity {
                 pub properties: SetProperties,
             }
         }
+
+        pub mod get{
+            use crate::version::v0_0_1::command::common::SetProperties;
+            use crate::version::v0_0_1::id::Address;
+            use serde::{Serialize,Deserialize};
+
+            #[derive(Debug, Clone,Serialize, Deserialize)]
+            pub struct Get {
+                pub address: Address,
+                pub op: GetOp
+            }
+
+            #[derive(Debug, Clone,Serialize, Deserialize)]
+            pub enum GetOp{
+                State,
+                Properties(Vec<String>)
+            }
+        }
+
 
         pub mod create {
             use std::convert::TryInto;
@@ -4908,9 +4951,7 @@ pub mod entity {
             }
         }
 
-        pub mod get {
-            pub struct Get {}
-        }
+
     }
 
     pub mod response {
@@ -5459,6 +5500,15 @@ pub mod fail {
         }
     }
 
+    pub mod http {
+        use serde::{Deserialize, Serialize};
+
+        #[derive(Debug, Clone, Serialize, Deserialize)]
+        pub struct Error {
+            pub message: String
+        }
+    }
+
     pub mod resource {
         use serde::{Deserialize, Serialize};
 
@@ -5511,15 +5561,6 @@ pub mod fail {
         }
     }
 
-    pub mod http {
-        use serde::{Deserialize, Serialize};
-
-        #[derive(Debug, Clone, Serialize, Deserialize)]
-        pub struct Error {
-            pub code: u32,
-            pub message: String,
-        }
-    }
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub enum BadRequest {
@@ -5622,7 +5663,7 @@ pub mod parse {
     use nom::character::complete::{alpha0, alphanumeric1, digit1, alpha1, multispace1,multispace0, space1,space0};
     use nom::combinator::{all_consuming, not, opt, recognize};
     use nom::error::{context, ErrorKind, VerboseError, ParseError};
-    use nom::multi::{many0, separated_list1};
+    use nom::multi::{many0, separated_list0, separated_list1};
     use nom::sequence::{delimited, preceded, terminated, tuple};
     use nom::{AsChar, IResult, InputTakeAtPosition};
     use nom_supreme::parse_from_str;
@@ -5634,6 +5675,7 @@ pub mod parse {
     use crate::version::v0_0_1::entity::request::create::{Create, AddressSegmentTemplate, AddressTemplate, KindTemplate, Template, Strategy, AddressTemplateSegment, CreateOp, Require};
     use crate::version::v0_0_1::command::common::{PropertyMod, SetProperties, StateSrc};
     use crate::version::v0_0_1::config::bind::parse::pipeline_step;
+    use crate::version::v0_0_1::entity::request::get::{Get, GetOp};
     use crate::version::v0_0_1::entity::request::select::{Select, SelectIntoPayload, SelectKind};
     use crate::version::v0_0_1::entity::request::set::Set;
     use crate::version::v0_0_1::pattern::{AddressKindPath, AddressKindSegment, skewer, upload_step};
@@ -6165,6 +6207,7 @@ pub mod parse {
                 !(char_item == '-')
                     && !(char_item == '.')
                     && !(char_item == '/')
+                    && !(char_item == ':')
                     && !(char_item == '_')
                     && !(char_item.is_alpha() || char_item.is_dec_digit())
             },
@@ -6454,6 +6497,14 @@ pub mod parse {
         } )
     }
 
+    pub fn get_properties(input: &str) -> Res<&str, Vec<String>> {
+        separated_list0( tag(","),tuple((multispace0,skewer,multispace0)))(input).map( |(next, keys)| {
+            let keys: Vec<String> = keys.iter().map( |(_,key,_)|key.to_string()).collect();
+            (next,keys)
+        } )
+    }
+
+
     pub fn create(input: &str) -> Res<&str, Create> {
         tuple((template,opt(delimited(tag("{"),set_properties, tag("}")))))(input).map( |(next, (template, properties))| {
             let properties = match properties {
@@ -6481,6 +6532,25 @@ pub mod parse {
         } )
     }
 
+
+    pub fn get(input: &str) -> Res<&str, Get> {
+        tuple((address,opt(delimited(tag("{"),get_properties, tag("}")))))(input).map( |(next, (address, keys))| {
+            let op = match keys{
+                None => {
+                    GetOp::State
+                }
+                Some(keys) => {
+                    GetOp::Properties(keys)
+                }
+            };
+            let get = Get {
+                address,
+                op
+            };
+
+            (next, get)
+        } )
+    }
 
 
     pub fn select(input: &str) -> Res<&str, Select> {
@@ -6551,7 +6621,7 @@ pub mod test {
     use crate::version::v0_0_1::parse::{address, camel_case, route_segment, version_address_segment, skewer_chars, base_address_segment, rec_skewer, address_template, create, publish};
     use nom::Err;
     use nom::error::VerboseError;
-    use crate::version::v0_0_1::config::bind::parse::{pipeline, pipeline_step};
+    use crate::version::v0_0_1::config::bind::parse::{bind, pipeline, pipeline_step, pipeline_stop};
     use crate::version::v0_0_1::pattern::parse::version;
     use crate::version::v0_0_1::pattern::parse::address_kind_pattern;
     use crate::version::v0_0_1::pattern::upload_step;
@@ -6619,10 +6689,23 @@ println!("{}", addy.last_segment().unwrap().to_string() );
     }
 
     #[test]
-    pub fn test_pipeline() -> Result<(),Error> {
+    pub fn test_publish() -> Result<(),Error> {
         let (_,block) = all_consuming(upload_step )("^[ bundle.zip ]->")?;
         assert_eq!( "bundle.zip", block.name.as_str() );
         all_consuming(publish)("^[ bundle.zip ]-> space.org:hello:1.0.0")?;
+        Ok(())
+    }
+
+    #[test]
+    pub fn test_pipeline_stop() -> Result<(),Error> {
+        pipeline_stop( "apps:my-app^Http<Get>/*")?;
+        Ok(())
+    }
+
+
+    #[test]
+    pub fn test_pipeline() -> Result<(),Error> {
+        pipeline( "-> apps:my-app^Http<Get>/users/$1 => &")?;
         Ok(())
     }
 
@@ -6645,4 +6728,34 @@ println!("{}", addy.last_segment().unwrap().to_string() );
     }
 
 
+
+    #[test]
+    pub fn test_bind() -> Result<(),Error> {
+
+        bind( r#"
+
+        Bind {
+
+           Msg {
+
+               Tick -> {{}};
+
+               Ping -> {{  }} => &;
+
+               Signup -[ Map{username<Text>,password<Text>} ]-> strip:passsword:mechtron^Msg<Strip> -[ Map{username<Text>} ]-> {{*}} =[ Text ]=> &;
+
+               DoWhateverYouWant -[ * ]-> {{ * }} =[ * ]=> &;
+
+               FormSubmition -[ Text~json~mechtron-verifier^Msg<ValidateForm> ]-> {{ * }} =[ ]=> &;
+
+           }
+
+           Http {
+               Get/* -> apps:my-app => &;
+           }
+
+        }   "# )?;
+
+        Ok(())
+    }
 }
