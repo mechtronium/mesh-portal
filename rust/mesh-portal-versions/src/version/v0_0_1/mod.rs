@@ -4411,15 +4411,18 @@ pub mod entity {
         use crate::version::v0_0_1::entity::request::query::Query;
         use crate::version::v0_0_1::entity::request::select::Select;
         use crate::version::v0_0_1::entity::request::update::Update;
-        use crate::version::v0_0_1::entity::response::RespEntity;
-        use crate::version::v0_0_1::fail::Fail;
+        use crate::version::v0_0_1::entity::response::{PayloadResponse, RespEntity};
+        use crate::version::v0_0_1::fail::{BadRequest, Fail, NotFound};
         use crate::version::v0_0_1::id::{Address, ResourceKind, Meta, PayloadClaim, ResourceType};
         use crate::version::v0_0_1::pattern::TksPattern;
         use crate::version::v0_0_1::payload::{HttpMethod, Payload};
         use crate::version::v0_0_1::util::ValueMatcher;
         use serde::{Serialize,Deserialize};
+        use crate::error::Error;
         use crate::version::v0_0_1::entity::request::get::Get;
         use crate::version::v0_0_1::entity::request::set::Set;
+        use crate::version::v0_0_1::fail;
+        use crate::version::v0_0_1::http::HttpResponse;
 
 
         #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -4430,12 +4433,51 @@ pub mod entity {
         }
 
         impl ReqEntity {
-            pub fn ok(&self, payload: Payload) -> RespEntity {
-                RespEntity::Ok(payload)
+
+            pub fn not_found(&self) -> RespEntity {
+                match self {
+                    ReqEntity::Rc(_) => {
+                        RespEntity::Rc(PayloadResponse::Fail(Fail::Resource(fail::resource::Fail::BadRequest(BadRequest::NotFound(NotFound::Any)))))
+                    }
+                    ReqEntity::Msg(_) => {
+                        RespEntity::Msg(PayloadResponse::Fail(Fail::Resource(fail::resource::Fail::BadRequest(BadRequest::NotFound(NotFound::Any)))))
+                    }
+                    ReqEntity::Http(_) => {
+                        RespEntity::Http(HttpResponse {
+                            code: 404,
+                            headers: Default::default(),
+                            body: None
+                        })
+                    }
+                }
             }
 
-            pub fn fail(&self, fail: Fail) -> RespEntity {
-                RespEntity::Fail(fail)
+            pub fn ok(&self, payload: Payload) -> Result<RespEntity,Error> {
+                match self {
+                    ReqEntity::Rc(_) => {
+                        Ok(RespEntity::Rc(PayloadResponse::new(payload)))
+                    }
+                    ReqEntity::Msg(_) => {
+                        Ok(RespEntity::Msg(PayloadResponse::new(payload)))
+                    }
+                    _ => {
+                        Err("Cannot respond to HttpRequest with Payload".into())
+                    }
+                }
+            }
+
+            pub fn fail(&self, fail: Fail) -> Result<RespEntity,Error> {
+                match self {
+                    ReqEntity::Rc(_) => {
+                        Ok(RespEntity::Rc(PayloadResponse::Fail(fail)))
+                    }
+                    ReqEntity::Msg(_) => {
+                        Ok(RespEntity::Msg(PayloadResponse::Fail(fail)))
+                    }
+                    _ => {
+                        Err("Cannot respond to HttpRequest with Fail".into())
+                    }
+                }
             }
         }
 
@@ -4960,18 +5002,145 @@ pub mod entity {
         use crate::version::v0_0_1::id::{Address, ResourceKind};
         use crate::version::v0_0_1::payload::Payload;
         use serde::{Serialize,Deserialize};
+        use crate::version::v0_0_1::fail::Fail;
+        use crate::version::v0_0_1::http::HttpResponse;
+        use crate::version::v0_0_1::messaging::Response;
 
         #[derive(Debug, Clone, Serialize, Deserialize, strum_macros::Display)]
         pub enum RespEntity {
+            Rc(PayloadResponse),
+            Msg(PayloadResponse),
+            Http(HttpResponse),
+        }
+
+        impl RespEntity {
+
+            pub fn http(&self) -> Result<HttpResponse,Error> {
+                match self {
+                    RespEntity::Http(response) => {
+                        Ok(response.clone())
+                    }
+                    _ => Err("mismatch response".into())
+                }
+            }
+
+            pub fn payload(&self) -> Result<Payload,Error> {
+                match self {
+                    RespEntity::Rc(response) => {
+                        response.payload()
+                    }
+                    RespEntity::Msg(response) => {
+                        response.payload()
+                    }
+                    RespEntity::Http(_) => {
+                        Err("mismatch response".into())
+                    }
+                }
+            }
+
+            pub fn is_fail(&self) -> bool {
+                match self {
+                    RespEntity::Rc(resp) => {
+                        resp.is_fail()
+                    }
+                    RespEntity::Msg(resp) => {
+                        resp.is_fail()
+                    }
+                    RespEntity::Http(_) => false
+                }
+            }
+        }
+
+        impl TryInto<Result<Payload,Error>> for RespEntity {
+            type Error = Error;
+
+            fn try_into(self) -> Result<Result<Payload, Error>,Self::Error> {
+                match self {
+                    RespEntity::Rc(response) => {
+                        Ok(response.into())
+                    }
+                    RespEntity::Msg(response) => {
+                        Ok(response.into())
+                    }
+                    RespEntity::Http(_) => {
+                        Err("mismatch response".into())
+                    }
+                }
+            }
+        }
+
+
+        impl TryInto<HttpResponse> for RespEntity {
+            type Error = Error;
+
+            fn try_into(self) -> Result<HttpResponse, Self::Error> {
+                if let Self::Http(response) = self {
+                    Ok(response)
+                } else {
+                    Err("response mismatch".into())
+                }
+            }
+        }
+
+        impl TryInto<PayloadResponse> for RespEntity {
+            type Error = Error;
+
+            fn try_into(self) -> Result<PayloadResponse, Self::Error> {
+                match self {
+                    RespEntity::Rc(response) => {
+                        Ok(response)
+                    }
+                    RespEntity::Msg(response) => {
+                        Ok(response)
+                    }
+                    RespEntity::Http(_) => {
+                        Err("response mismatch".into())
+                    }
+                }
+
+            }
+        }
+
+        #[derive(Debug, Clone, Serialize, Deserialize, strum_macros::Display)]
+        pub enum PayloadResponse {
             Ok(Payload),
             Fail(fail::Fail),
         }
 
-        impl RespEntity {
-            pub fn ok_or(self) -> Result<Payload, Error> {
+        impl PayloadResponse {
+            pub fn new( payload: Payload ) -> Self {
+                Self::Ok(payload)
+            }
+
+            pub fn payload(&self) -> Result<Payload,Error> {
                 match self {
-                    Self::Ok(payload) => Result::Ok(payload),
-                    Self::Fail(fail) => Result::Err(fail.into()),
+                    Self::Ok( payload ) => Ok(payload.clone()),
+                    Self::Fail(fail) => Err(fail.clone().into())
+                }
+            }
+
+            pub fn is_fail(&self) -> bool {
+                match self {
+                    PayloadResponse::Ok(_) => false,
+                    PayloadResponse::Fail(_) => true
+                }
+            }
+        }
+
+        impl Into<Result<Payload,fail::Fail>> for PayloadResponse {
+            fn into(self) -> Result<Payload, fail::Fail> {
+                match self {
+                    PayloadResponse::Ok(payload) => Ok(payload),
+                    PayloadResponse::Fail(fail) => Err(fail)
+                }
+            }
+        }
+
+        impl Into<Result<Payload,Error>> for PayloadResponse {
+            fn into(self) -> Result<Payload, Error> {
+                match self {
+                    PayloadResponse::Ok(payload) => Ok(payload),
+                    PayloadResponse::Fail(fail) => Err(fail.into())
                 }
             }
         }
@@ -5589,6 +5758,7 @@ pub mod fail {
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub enum NotFound {
+        Any,
         ResourceType(String),
         Kind(String),
         Specific(String),
