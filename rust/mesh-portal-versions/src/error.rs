@@ -6,7 +6,7 @@ use nom::error::VerboseError;
 use semver::{ReqParseError, SemVerError};
 use std::num::ParseIntError;
 
-#[derive(Debug)]
+#[derive(Debug,Eq,PartialEq)]
 pub struct Error {
     pub message: String,
 }
@@ -91,6 +91,14 @@ impl From<strum::ParseError> for Error {
 
 impl From<ParseIntError> for Error {
     fn from(x: ParseIntError) -> Self {
+        Self{
+            message: x.to_string()
+        }
+    }
+}
+
+impl From<regex::Error> for Error {
+    fn from(x: regex::Error) -> Self {
         Self{
             message: x.to_string()
         }

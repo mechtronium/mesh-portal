@@ -47,6 +47,7 @@ pub mod id {
     use nom::bytes::complete::tag;
     use nom::combinator::{all_consuming, opt};
     use nom::sequence::{delimited, tuple};
+    use regex::Captures;
 
     use semver::SemVerError;
     use serde::de::Visitor;
@@ -265,6 +266,36 @@ pub mod id {
     }
 
     impl AddressSegment {
+
+        pub fn apply_captures( self, captures: &Captures ) -> Result<Self,Error> {
+            match self {
+                AddressSegment::Root => Ok(AddressSegment::Root),
+                AddressSegment::Space(replacement) =>  {
+                    let mut dst = String::new();
+                    captures.expand( replacement.as_str(), & mut dst );
+                    Ok(AddressSegment::Space(dst))
+                }
+                AddressSegment::Base(replacement) => {
+                    let mut dst = String::new();
+                    captures.expand( replacement.as_str(), & mut dst );
+                    Ok(AddressSegment::Base(dst))
+                }
+                AddressSegment::FilesystemRootDir => Ok(AddressSegment::FilesystemRootDir),
+                AddressSegment::Dir(replacement) => {
+                    let mut dst = String::new();
+                    captures.expand( replacement.as_str(), & mut dst );
+                    Ok(AddressSegment::Dir(dst))
+                }
+                AddressSegment::File(replacement) => {
+                    let mut dst = String::new();
+                    captures.expand( replacement.as_str(), & mut dst );
+                    Ok(AddressSegment::File(dst))
+                }
+                AddressSegment::Version(version) => {
+                    Ok(AddressSegment::Version(version))
+                }
+            }
+        }
 
         pub fn is_version(&self) -> bool {
             match self {
@@ -540,6 +571,28 @@ pub mod id {
         }
     }
 
+    #[derive(Debug, Clone, Serialize, Deserialize,Eq, PartialEq )]
+    pub struct CaptureAddress {
+        pub route: RouteSegment,
+        pub segments: Vec<AddressSegment>,
+    }
+
+    impl CaptureAddress {
+        pub fn to_address( self, captures: Captures ) -> Result<Address,Error> {
+            let mut segments = vec![];
+            for segment in self.segments  {
+                segments.push( segment.apply_captures(&captures)? )
+            }
+            let address = Address {
+                route: self.route,
+                segments
+            };
+
+            // to make sure all the regex captures are removed...
+            let address = Address::from_str( address.to_string().as_str() )?;
+            Ok(address)
+        }
+    }
 
     #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
     pub struct KindParts {
@@ -776,7 +829,8 @@ pub mod pattern {
     use nom_supreme::{parse_from_str, ParserExt};
     use std::collections::HashMap;
     use nom_supreme::parser_ext::FromStrParser;
-    use crate::version::v0_0_1::entity::request::{Http, Msg, RcCommandType, ReqEntity};
+    use regex::Regex;
+    use crate::version::v0_0_1::entity::request::{Http, Msg, Rc, RcCommandType, ReqEntity};
 
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1741,6 +1795,17 @@ println!("address_kind_path.to_string() {}", address_kind_path.to_string() );
         pub command: Pattern<RcCommandType>,
     }
 
+    impl ValueMatcher<Rc> for RcPattern {
+        fn is_match(&self, rc: &Rc) -> Result<(), Error> {
+            if self.command.matches(&rc.command.get_type() ) {
+                Ok(())
+            } else {
+                Err("no match".into())
+            }
+        }
+    }
+
+
     impl ToString for RcPattern {
         fn to_string(&self) -> String {
             format!("Rc<{}>", self.command.to_string())
@@ -1791,8 +1856,9 @@ println!("address_kind_path.to_string() {}", address_kind_path.to_string() );
         fn is_match(&self, found: &Http) -> Result<(), Error> {
             self.method.is_match(&found.method)?;
 
-            let matches = found.path.matches(&self.path_regex);
-            if matches.count() > 0 {
+            let regex = Regex::new(self.path_regex.as_str() )?;
+
+            if regex.is_match(found.path.as_str() ) {
                 Ok(())
             } else {
                 Err(format!(
@@ -1803,6 +1869,7 @@ println!("address_kind_path.to_string() {}", address_kind_path.to_string() );
             }
         }
     }
+
     pub fn primitive(input: &str) -> Res<&str, PrimitiveType> {
         parse_from_str(alpha1).parse(input)
     }
@@ -2172,7 +2239,7 @@ println!("address_kind_path.to_string() {}", address_kind_path.to_string() );
     }
 
     pub fn msg_pattern_scoped(input: &str) -> Res<&str, MsgPattern> {
-        tuple((msg_action, opt(path_regex)))(input).map(|(next, (action, path_regex))| {
+        tuple((delimited(tag("<"),msg_action,tag(">")), opt(path_regex)))(input).map(|(next, (action, path_regex))| {
             let path_regex = match path_regex {
                 None => "*".to_string(),
                 Some(path_regex) => path_regex.to_string(),
@@ -2213,7 +2280,7 @@ println!("address_kind_path.to_string() {}", address_kind_path.to_string() );
     }
 
     pub fn http_pattern_scoped(input: &str) -> Res<&str, HttpPattern> {
-        tuple((http_method_pattern, opt(path_regex)))(input).map(|(next, (method, path_regex))| {
+        tuple((delimited( tag("<"),http_method_pattern, tag(">")), opt(path_regex)))(input).map(|(next, (method, path_regex))| {
             let path_regex = match path_regex {
                 None => "*".to_string(),
                 Some(path_regex) => path_regex.to_string(),
@@ -2250,7 +2317,7 @@ println!("address_kind_path.to_string() {}", address_kind_path.to_string() );
     }
 
     pub fn rc_pattern_scoped(input: &str) -> Res<&str, RcPattern> {
-        pattern(rc_command_type)(input).map(|(next, command)| (next, RcPattern { command }))
+        pattern(delimited( tag("<"), rc_command_type, tag(">")))(input).map(|(next, command)| (next, RcPattern { command }))
     }
 
     pub fn rc_pattern(input: &str) -> Res<&str, RcPattern> {
@@ -3997,13 +4064,16 @@ pub mod config {
     pub mod bind {
         use crate::error::Error;
         use crate::version::v0_0_1::entity::EntityType;
-        use crate::version::v0_0_1::pattern::{Block, HttpPattern, MsgPattern, RcPattern};
+        use crate::version::v0_0_1::pattern::{Block, EntityPattern, HttpPattern, MsgPattern, RcPattern};
         use crate::version::v0_0_1::payload::Call;
         use crate::version::v0_0_1::payload::{Payload, PayloadPattern};
-        use crate::version::v0_0_1::util::ValuePattern;
+        use crate::version::v0_0_1::util::{ValueMatcher, ValuePattern};
         use serde::{Deserialize, Serialize};
         use std::convert::TryInto;
-        use crate::version::v0_0_1::entity::request::ReqEntity;
+        use crate::version::v0_0_1::entity::request::{Http, Msg, Rc, ReqEntity};
+        use crate::version::v0_0_1::http::HttpRequest;
+        use crate::version::v0_0_1::id::CaptureAddress;
+        use crate::version::v0_0_1::payload::PayloadType::Primitive;
 
         pub struct ProtoBind {
             pub sections: Vec<Section>,
@@ -4095,6 +4165,18 @@ pub mod config {
             }
         }
 
+        impl<T> Scope<T,Selector<HttpPattern>> {
+            pub fn find_match( &self, m: &HttpRequest ) -> Result<Selector<HttpPattern>,Error> {
+                for e in &self.elements {
+                    if e.is_match(m).is_ok() {
+                        return Ok(e.clone());
+                    }
+                }
+                Err("no match".into())
+            }
+        }
+
+
         #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
         pub struct Pipeline {
             pub segments: Vec<PipelineSegment>,
@@ -4136,6 +4218,7 @@ pub mod config {
             Internal,
             Call(Call),
             Return,
+            CaptureAddress(CaptureAddress)
         }
 
         #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -4149,6 +4232,33 @@ pub mod config {
                 Selector { pattern, pipeline }
             }
         }
+
+        impl Selector<EntityPattern> {
+            pub fn is_match(&self, m: &ReqEntity) -> Result<(), Error> {
+                self.pattern.is_match(m)
+            }
+        }
+
+
+        impl Selector<MsgPattern> {
+            pub fn is_match(&self, m: &Msg ) -> Result<(), Error> {
+                self.pattern.is_match(m)
+            }
+        }
+
+        impl Selector<RcPattern> {
+            pub fn is_match(&self, m: &Rc ) -> Result<(), Error> {
+                self.pattern.is_match(m)
+            }
+        }
+
+
+        impl Selector<HttpPattern> {
+            pub fn is_match(&self, m: &Http ) -> Result<(), Error> {
+                self.pattern.is_match(m)
+            }
+        }
+
 
         pub enum Whitelist {
             Any,
@@ -4192,11 +4302,8 @@ pub mod config {
                 Selector, StepKind,
             };
             use crate::version::v0_0_1::entity::EntityType;
-            use crate::version::v0_0_1::parse::Res;
-            use crate::version::v0_0_1::pattern::{
-                call, entity_pattern, http_pattern_scoped, msg_pattern_scoped, pipeline_block,
-                rc_pattern_scoped, EntityPattern, HttpPattern, MsgPattern, RcPattern,
-            };
+            use crate::version::v0_0_1::parse::{capture_address, Res};
+            use crate::version::v0_0_1::pattern::{call, entity_pattern, http_pattern_scoped, msg_pattern_scoped, pipeline_block, rc_pattern_scoped, EntityPattern, HttpPattern, MsgPattern, RcPattern, http_pattern};
             use nom::branch::alt;
             use nom::bytes::complete::tag;
             use nom::character::complete::multispace0;
@@ -4312,11 +4419,16 @@ pub mod config {
                 call(input).map(|(next, call)| (next, PipelineStop::Call(call)))
             }
 
+            pub fn capture_address_pipeline_stop(input: &str) -> Res<&str, PipelineStop> {
+                capture_address(input).map(|(next, address)| (next, PipelineStop::CaptureAddress(address)))
+            }
+
             pub fn pipeline_stop(input: &str) -> Res<&str, PipelineStop> {
                 alt((
                     inner_pipeline_stop,
                     return_pipeline_stop,
                     call_pipeline_stop,
+                    capture_address_pipeline_stop
                 ))(input)
             }
 
@@ -5839,7 +5951,7 @@ pub mod parse {
     use nom_supreme::parse_from_str;
 
     use crate::error::Error;
-    use crate::version::v0_0_1::id::{Address, AddressSegment, RouteSegment, Version};
+    use crate::version::v0_0_1::id::{Address, AddressSegment, CaptureAddress, RouteSegment, Version};
     use crate::version::v0_0_1::pattern::parse::{address_kind_pattern, delim_kind, kind, resource_type, specific, specific_pattern, version};
     use nom::bytes::complete::take;
     use crate::version::v0_0_1::entity::request::create::{Create, AddressSegmentTemplate, AddressTemplate, KindTemplate, Template, Strategy, AddressTemplateSegment, CreateOp, Require};
@@ -6015,6 +6127,62 @@ pub mod parse {
 
     pub fn consume_address(input: &str) -> Res<&str, Address> {
         all_consuming(address)(input)
+    }
+
+    pub fn capture_address(input: &str) -> Res<&str, CaptureAddress> {
+        tuple((
+            tuple((route_segment, space_address_capture_segment)),
+            many0(base_address_capture_segment),
+            opt(version_address_segment),
+            opt( root_dir_address_segment ),
+            many0(filesystem_address_capture_segment ),
+        ))(input)
+            .map(|(next, ((hub, space), mut bases, version, root, mut files))| {
+                let mut segments = vec![];
+                segments.push(space);
+                segments.append(&mut bases);
+                match version {
+                    None => {}
+                    Some(version) => {
+                        segments.push(version);
+                    }
+                }
+
+                if let Option::Some(root) = root {
+                    segments.push(root);
+                    segments.append(&mut files);
+                }
+
+
+                let address = CaptureAddress {
+                    route: hub,
+                    segments,
+                };
+
+                (next, address)
+            })
+    }
+
+    pub fn space_address_capture_segment(input: &str) -> Res<&str, AddressSegment> {
+        space_chars_plus_capture(input).map(|(next, space)| (next, AddressSegment::Space(space.to_string())))
+    }
+
+    pub fn base_address_capture_segment(input: &str) -> Res<&str, AddressSegment> {
+        preceded(tag(":"),rec_skewer_capture)(input).map(|(next, base)| (next, AddressSegment::Base(base.to_string())))
+    }
+
+
+    pub fn filesystem_address_capture_segment(input: &str) -> Res<&str, AddressSegment> {
+        alt((dir_address_capture_segment,file_address_capture_segment ))(input)
+    }
+
+    pub fn dir_address_capture_segment(input: &str) -> Res<&str, AddressSegment> {
+        context("dir_address_capture_segment",terminated(file_chars_plus_capture, tag("/")))(input)
+            .map(|(next, dir)| (next, AddressSegment::Dir(format!("{}/",dir))))
+    }
+
+    pub fn file_address_capture_segment(input: &str) -> Res<&str, AddressSegment> {
+        context("file_address_capture_segment", file_chars_plus_capture)(input).map(|(next, filename)| (next, AddressSegment::File(filename.to_string())))
     }
 
     pub fn space_address_kind_segment(
@@ -6299,6 +6467,14 @@ pub mod parse {
             )))(input)
     }
 
+    pub fn rec_skewer_capture(input: &str)->Res<&str,&str> {
+        recognize(tuple((
+            lowercase1,
+            opt(skewer_chars_plus_capture),
+        )))(input)
+    }
+
+
     pub fn skewer_chars<T>(i: T) -> Res<T, T>
     where
         T: InputTakeAtPosition,
@@ -6308,6 +6484,24 @@ pub mod parse {
             |item| {
                 let char_item = item.as_char();
                 char_item != '-' &&
+                    !char_item.is_digit(10) &&
+                    !(char_item.is_alpha() && char_item.is_lowercase())
+            },
+            ErrorKind::AlphaNumeric,
+        )
+    }
+
+
+    pub fn skewer_chars_plus_capture<T>(i: T) -> Res<T, T>
+        where
+            T: InputTakeAtPosition,
+            <T as InputTakeAtPosition>::Item: AsChar,
+    {
+        i.split_at_position1_complete(
+            |item| {
+                let char_item = item.as_char();
+                char_item != '-' &&
+                char_item != '$' &&
                     !char_item.is_digit(10) &&
                     !(char_item.is_alpha() && char_item.is_lowercase())
             },
@@ -6349,6 +6543,25 @@ pub mod parse {
         )
     }
 
+    pub fn space_chars_plus_capture<T>(i: T) -> Res<T, T>
+        where
+            T: InputTakeAtPosition,
+            <T as InputTakeAtPosition>::Item: AsChar,
+    {
+        i.split_at_position1_complete(
+            |item| {
+                let char_item = item.as_char();
+                !(char_item == '-')
+                    && !(char_item == '.')
+                    && !(char_item == '$')
+                    && !((char_item.is_alpha() && char_item.is_lowercase())
+                    || char_item.is_dec_digit())
+            },
+            ErrorKind::AlphaNumeric,
+        )
+    }
+
+
     pub fn domain_chars<T>(i: T) -> Res<T, T>
     where
         T: InputTakeAtPosition,
@@ -6379,6 +6592,24 @@ pub mod parse {
                     && !(char_item == '/')
                     && !(char_item == ':')
                     && !(char_item == '_')
+                    && !(char_item.is_alpha() || char_item.is_dec_digit())
+            },
+            ErrorKind::AlphaNumeric,
+        )
+    }
+
+    pub fn file_chars_plus_capture<T>(i: T) -> Res<T, T>
+        where
+            T: InputTakeAtPosition,
+            <T as InputTakeAtPosition>::Item: AsChar,
+    {
+        i.split_at_position1_complete(
+            |item| {
+                let char_item = item.as_char();
+                !(char_item == '-')
+                    && !(char_item == '.')
+                    && !(char_item == '_')
+                    && !(char_item == '$')
                     && !(char_item.is_alpha() || char_item.is_dec_digit())
             },
             ErrorKind::AlphaNumeric,
@@ -6434,7 +6665,7 @@ pub mod parse {
     }
 
     pub fn path_regex(input: &str) -> Res<&str, &str> {
-        recognize(tuple((tag("/"), opt(not_space))))(input)
+        recognize(opt(not_space))(input)
     }
     pub fn camel_case(input: &str) -> Res<&str, &str> {
         recognize(tuple((
@@ -6788,13 +7019,18 @@ pub mod test {
 
     use crate::error::Error;
     use crate::version::v0_0_1::id::{AddressSegment, RouteSegment};
-    use crate::version::v0_0_1::parse::{address, camel_case, route_segment, version_address_segment, skewer_chars, base_address_segment, rec_skewer, address_template, create, publish};
+    use crate::version::v0_0_1::parse::{address, camel_case, route_segment, version_address_segment, skewer_chars, base_address_segment, rec_skewer, address_template, create, publish, capture_address, file_address_capture_segment};
     use nom::Err;
     use nom::error::VerboseError;
-    use crate::version::v0_0_1::config::bind::parse::{bind, pipeline, pipeline_step, pipeline_stop};
+    use regex::Regex;
+    use crate::version::v0_0_1::config::bind::parse::{bind, http_section, http_selector, pipeline, pipeline_step, pipeline_stop};
+    use crate::version::v0_0_1::config::bind::Section;
+    use crate::version::v0_0_1::http::HttpRequest;
     use crate::version::v0_0_1::pattern::parse::version;
     use crate::version::v0_0_1::pattern::parse::address_kind_pattern;
-    use crate::version::v0_0_1::pattern::upload_step;
+    use crate::version::v0_0_1::pattern::{http_pattern, http_pattern_scoped, upload_step};
+    use crate::version::v0_0_1::payload::HttpMethod;
+    use crate::version::v0_0_1::util::ValueMatcher;
 
     #[test]
     pub fn test_skewer_chars() -> Result<(),Error> {
@@ -6876,8 +7112,21 @@ println!("{}", addy.last_segment().unwrap().to_string() );
     #[test]
     pub fn test_pipeline() -> Result<(),Error> {
         pipeline( "-> apps:my-app^Http<Get>/users/$1 => &")?;
+        pipeline( "-> apps:bundle:1.0.0:/html/$1 => &")?;
         Ok(())
     }
+
+    #[test]
+    pub fn test_capture_address() -> Result<(),Error> {
+
+        file_address_capture_segment("$1")?;
+
+        let address = all_consuming(capture_address)("apps:bundle:1.0.0:/html/$1")?.1;
+        let regex = Regex::new( "/(.*)" )?;
+        let address = address.to_address(regex.captures("/index.html" ).unwrap() )?;
+        Ok(())
+    }
+
 
     #[test]
     pub fn test_address_kind_pattern() -> Result<(),Error> {
@@ -6908,23 +7157,156 @@ println!("{}", addy.last_segment().unwrap().to_string() );
 
            Msg {
 
-               Tick -> {{}};
+               <Tick> -> {{}};
 
-               Ping -> {{  }} => &;
+               <Ping> -> {{  }} => &;
 
-               Signup -[ Map{username<Text>,password<Text>} ]-> strip:passsword:mechtron^Msg<Strip> -[ Map{username<Text>} ]-> {{*}} =[ Text ]=> &;
+               <Signup> -[ Map{username<Text>,password<Text>} ]-> strip:passsword:mechtron^Msg<Strip> -[ Map{username<Text>} ]-> {{*}} =[ Text ]=> &;
 
-               DoWhateverYouWant -[ * ]-> {{ * }} =[ * ]=> &;
+               <DoWhateverYouWant> -[ * ]-> {{ * }} =[ * ]=> &;
 
-               FormSubmition -[ Text~json~mechtron-verifier^Msg<ValidateForm> ]-> {{ * }} =[ ]=> &;
+               <FormSubmition> -[ Text~json~mechtron-verifier^Msg<ValidateForm> ]-> {{ * }} =[ ]=> &;
 
            }
 
            Http {
-               Get/* -> apps:my-app => &;
-           }
+
+              <Get>^/(.*) -> space:1.0.0:/html/$1 => &;
+
+              <Get>^/some -> {{ }} => &;
+
+              <Post>^/some -> {{ }} => &;
+
+            }
 
         }   "# )?;
+
+        Ok(())
+    }
+
+    #[test]
+    pub fn test_http_pattern() -> Result<(),Error>{
+        let any_pattern = all_consuming( http_pattern )("Http<*>")?.1;
+        let get_any_pattern = all_consuming( http_pattern )("Http<Get>")?.1;
+        let get_some_pattern = all_consuming( http_pattern )("Http<Get>^/some$")?.1;
+        let get_some_star_pattern = all_consuming( http_pattern )("Http<Get>^/some/*")?.1;
+        let get_some_capture_pattern = all_consuming( http_pattern )("Http<Get>^/some/(.*)")?.1;
+
+        let get_some = crate::version::v0_0_1::http::HttpRequest {
+            method: HttpMethod::Get,
+            headers: Default::default(),
+            path: "/some".to_string(),
+            body: None
+        };
+
+        let get_some_plus = crate::version::v0_0_1::http::HttpRequest {
+            method: HttpMethod::Get,
+            headers: Default::default(),
+            path: "/some/plus".to_string(),
+            body: None
+        };
+
+        let post_some = crate::version::v0_0_1::http::HttpRequest {
+            method: HttpMethod::Post,
+            headers: Default::default(),
+            path: "/some".to_string(),
+            body: None
+        };
+
+
+        assert_eq!(any_pattern.is_match(&get_some), Ok(()) );
+        assert_eq!(any_pattern.is_match(&post_some), Ok(()) );
+        assert_eq!(get_any_pattern.is_match(&get_some), Ok(()) );
+        assert_eq!(get_any_pattern.is_match(&get_some_plus), Ok(()) );
+        assert_eq!(get_some_pattern.is_match(&get_some), Ok(()) );
+        assert!( get_some_pattern.is_match(&post_some).is_err() );
+        assert!( get_some_pattern.is_match(&get_some_plus ).is_err() );
+        assert!( get_some_star_pattern.is_match(&get_some_plus ).is_ok() );
+        assert!( get_some_capture_pattern.is_match(&get_some_plus ).is_ok() );
+
+
+        Ok(())
+    }
+
+    #[test]
+    pub fn test_selector() -> Result<(),Error> {
+        let get_some = crate::version::v0_0_1::http::HttpRequest {
+            method: HttpMethod::Get,
+            headers: Default::default(),
+            path: "/some".to_string(),
+            body: None
+        };
+
+        let get_some_plus = crate::version::v0_0_1::http::HttpRequest {
+            method: HttpMethod::Get,
+            headers: Default::default(),
+            path: "/some/plus".to_string(),
+            body: None
+        };
+
+        let post_some = crate::version::v0_0_1::http::HttpRequest {
+            method: HttpMethod::Post,
+            headers: Default::default(),
+            path: "/some".to_string(),
+            body: None
+        };
+
+        let get_selector = all_consuming(http_selector)("<Get> -> {{}};")?.1;
+        let get_some_selector = all_consuming(http_selector)("<Get>^/some -> {{}} => &;")?.1;
+        let post_some_selector = all_consuming(http_selector)("<Post>^/some -> {{}} => &;")?.1;
+
+
+        assert!(get_selector.is_match(&get_some).is_ok());
+        assert!(get_some_selector.is_match(&get_some).is_ok());
+        assert!(post_some_selector.is_match(&post_some).is_ok());
+        Ok(())
+    }
+    #[test]
+    pub fn test_scope() -> Result<(),Error> {
+        let get_some = crate::version::v0_0_1::http::HttpRequest {
+            method: HttpMethod::Get,
+            headers: Default::default(),
+            path: "/some".to_string(),
+            body: None
+        };
+
+        let get_some_plus = crate::version::v0_0_1::http::HttpRequest {
+            method: HttpMethod::Get,
+            headers: Default::default(),
+            path: "/some/plus".to_string(),
+            body: None
+        };
+
+        let post_some = crate::version::v0_0_1::http::HttpRequest {
+            method: HttpMethod::Post,
+            headers: Default::default(),
+            path: "/some".to_string(),
+            body: None
+        };
+
+        let delete_some = crate::version::v0_0_1::http::HttpRequest {
+            method: HttpMethod::Delete,
+            headers: Default::default(),
+            path: "/some".to_string(),
+            body: None
+        };
+
+
+
+        let section = all_consuming(http_section )(r#"Http {
+          <Get>^/(.*) -> {{}} => &;
+          <Get>^/some -> {{ }} => &;
+          <Post>^/some -> {{ }} => &;
+        }"#)?.1;
+
+        if let Section::Http( scope ) = section {
+            assert!(scope.find_match(&get_some).is_ok());
+            assert!(scope.find_match(&get_some).is_ok());
+            assert!(scope.find_match(&post_some).is_ok());
+            assert!(scope.find_match(&delete_some).is_err());
+        } else {
+            return Err("expected Http Section".into());
+        }
 
         Ok(())
     }
