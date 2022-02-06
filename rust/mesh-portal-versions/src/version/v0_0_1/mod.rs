@@ -377,6 +377,18 @@ pub mod id {
 
     impl Address {
 
+        pub fn to_bundle(self) -> Result<Address,Error> {
+            if self.segments.is_empty() {
+                return Err("Address does not contain a bundle".into());
+            }
+
+            if let Some(AddressSegment::Version(_)) = self.segments.last() {
+                return Ok(self);
+            }
+
+            return self.parent().expect("expected parent").to_bundle()
+        }
+
         pub fn to_safe_filename(&self) -> String {
             self.to_string()
         }
@@ -4723,8 +4735,12 @@ pub mod entity {
                     ReqEntity::Msg(_) => {
                         Ok(RespEntity::Msg(PayloadResponse::Fail(fail)))
                     }
-                    _ => {
-                        Err("Cannot respond to HttpRequest with Fail".into())
+                    ReqEntity::Http(_) => {
+                        Ok(RespEntity::Http( HttpResponse {
+                            code: 500,
+                            headers: Default::default(),
+                            body: Payload::Empty
+                        } ))
                     }
                 }
             }
