@@ -1977,7 +1977,7 @@ println!("address_kind_path.to_string() {}", address_kind_path.to_string() );
         Upload(UploadBlock),
         RequestPattern(PatternBlock),
         ResponsePattern(PatternBlock),
-        Payload(Payload),
+        CreatePayload(Payload),
     }
 
     #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
@@ -2443,7 +2443,7 @@ println!("address_kind_path.to_string() {}", address_kind_path.to_string() );
         .map(|(next, (_, text, _))| {
             (
                 next,
-                Block::Payload(Payload::Primitive(Primitive::Text(text.to_string()))),
+                Block::CreatePayload(Payload::Primitive(Primitive::Text(text.to_string()))),
             )
         })
     }
@@ -2790,6 +2790,7 @@ pub mod messaging {
     use crate::version::v0_0_1::entity::request::ReqEntity;
     use crate::version::v0_0_1::entity::response::RespEntity;
     use crate::version::v0_0_1::id::Address;
+    use crate::version::v0_0_1::payload::Payload;
     use crate::version::v0_0_1::util::unique_id;
 
     pub type ExchangeId = String;
@@ -2919,6 +2920,18 @@ pub mod messaging {
     }
 
     impl Message{
+
+        pub fn payload(&self) -> Result<Payload,Error> {
+            match self {
+                Message::Request(request) => {
+                    Ok(request.entity.payload().clone())
+                }
+                Message::Response(response) => {
+                    response.entity.payload()
+                }
+            }
+        }
+
         pub fn to(&self) -> Address {
             match self {
                 Message::Request(request) => {
@@ -3036,6 +3049,7 @@ pub mod payload {
     use crate::version::v0_0_1::id::{Address, ResourceKind, Meta, PayloadClaim, ResourceType};
     use crate::version::v0_0_1::pattern::TksPattern;
     use std::str::FromStr;
+    use std::sync::Arc;
     use crate::version::v0_0_1::entity::request::RcCommandType;
     use crate::version::v0_0_1::resource::{Resource, ResourceStub, Status};
     use crate::version::v0_0_1::util::{ValueMatcher, ValuePattern};
@@ -3050,12 +3064,39 @@ pub mod payload {
     }
 
     impl Payload {
+        pub fn is_some(&self) -> bool {
+            if let Self::Empty = self {
+                false
+            } else {
+                true
+            }
+        }
+
+        pub fn from_bin( bin: Bin ) -> Self {
+            Self::Primitive(Primitive::Bin(bin))
+        }
+
         pub fn payload_type(&self) -> PayloadType {
             match self {
                 Payload::Empty => PayloadType::Empty,
                 Payload::Primitive(primitive) => PayloadType::Primitive,
                 Payload::List(list) => PayloadType::List,
                 Payload::Map(map) => PayloadType::Map,
+            }
+        }
+
+        pub fn to_bin(self) -> Result<Bin,Error> {
+            match self {
+                Payload::Empty => {
+                    Ok(Arc::new(vec![]))
+                }
+                Payload::Primitive(primitive) => { primitive.to_bin() }
+                Payload::List(list) => {
+                    list.to_bin()
+                }
+                Payload::Map(map) => {
+                    map.to_bin()
+                }
             }
         }
     }
@@ -3131,6 +3172,9 @@ pub mod payload {
         }
 
          */
+        pub fn to_bin(self) -> Result<Bin,Error>{
+            Ok(Arc::new(bincode::serialize(&self)?))
+        }
 
         pub fn new() -> Self {
             Self {
@@ -3164,6 +3208,41 @@ pub mod payload {
                 Primitive::Int(_) => PrimitiveType::Int,
                 Primitive::Status(_) => PrimitiveType::Status,
                 Primitive::Resource(_) => PrimitiveType::Resource,
+            }
+        }
+
+        pub fn to_bin(self) -> Result<Bin,Error> {
+            match self {
+                Primitive::Text(text) => {
+                    let text = text.into_bytes();
+                    Ok(Arc::new( text ))
+                }
+                Primitive::Address(address) => {
+                    let address = address.to_string().into_bytes();
+                    Ok(Arc::new( address ))
+                }
+                Primitive::Stub(stub) => {
+                    Ok(Arc::new(bincode::serialize(&stub)?))
+                }
+                Primitive::Meta(meta) => {
+                    Ok(Arc::new(bincode::serialize(&meta)?))
+                }
+                Primitive::Bin(bin) => {
+                    Ok(bin)
+                }
+                Primitive::Boolean(flag) => {
+                    Ok(Arc::new(flag.to_string().into_bytes()))
+                }
+                Primitive::Int(int) => {
+                    Ok(Arc::new(int.to_string().into_bytes()))
+                }
+                Primitive::Status(status) => {
+                    let status = status.to_string().into_bytes();
+                    Ok(Arc::new( status ) )
+                }
+                Primitive::Resource(resource) => {
+                    Ok(Arc::new(bincode::serialize(&resource)?))
+                }
             }
         }
     }
@@ -3233,6 +3312,10 @@ pub mod payload {
                 }
             }
             Ok(())
+        }
+
+        pub fn to_bin(self) -> Result<Bin,Error>{
+            Ok(Arc::new(bincode::serialize(&self)?))
         }
     }
 
@@ -3941,14 +4024,14 @@ pub mod http {
 
     use crate::version::v0_0_1::Bin;
     use crate::version::v0_0_1::id::Meta;
-    use crate::version::v0_0_1::payload::HttpMethod;
+    use crate::version::v0_0_1::payload::{HttpMethod, Payload};
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct HttpRequest {
         pub method: HttpMethod,
         pub headers: Meta,
         pub path: String,
-        pub body: Option<Bin>,
+        pub body: Payload
     }
 
     impl ToString for HttpRequest {
@@ -3961,7 +4044,7 @@ pub mod http {
     pub struct HttpResponse {
         pub code: u32,
         pub headers: HashMap<String, String>,
-        pub body: Option<Bin>,
+        pub body: Payload
     }
 
     impl HttpResponse {
@@ -3969,7 +4052,7 @@ pub mod http {
             Self {
                 headers: Default::default(),
                 code: 500,
-                body: None,
+                body: Payload::Empty,
             }
         }
     }
@@ -3977,6 +4060,7 @@ pub mod http {
 
 pub mod config {
     use std::collections::HashMap;
+    use std::ops::Deref;
 
     use serde::{Deserialize, Serialize};
 
@@ -4036,6 +4120,14 @@ pub mod config {
     pub struct Config<Body> {
         pub address: Address,
         pub body: Body,
+    }
+
+    impl <Body> Deref for Config<Body> {
+        type Target = Body;
+
+        fn deref(&self) -> &Self::Target {
+            &self.body
+        }
     }
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -4140,15 +4232,6 @@ pub mod config {
             }
         }
 
-        impl BindConfig {
-            pub fn select(&self, entity: ReqEntity) {
-                match entity {
-                    ReqEntity::Rc(_) => {}
-                    ReqEntity::Msg(_) => {}
-                    ReqEntity::Http(_) => {}
-                }
-            }
-        }
 
         #[derive(Debug, Clone, Serialize, Deserialize)]
         pub struct Scope<T, E> {
@@ -4176,6 +4259,17 @@ pub mod config {
             }
         }
 
+        impl<T> Scope<T,Selector<MsgPattern>> {
+            pub fn find_match( &self, m: &Msg ) -> Result<Selector<MsgPattern>,Error> {
+                for e in &self.elements {
+                    if e.is_match(m).is_ok() {
+                        return Ok(e.clone());
+                    }
+                }
+                Err("no match".into())
+            }
+        }
+
 
         #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
         pub struct Pipeline {
@@ -4185,6 +4279,14 @@ pub mod config {
         impl Pipeline {
             pub fn new() -> Self {
                 Self { segments: vec![] }
+            }
+
+            pub fn consume(&mut self) -> Option<PipelineSegment> {
+                if self.segments.is_empty() {
+                   Option::None
+                } else {
+                   Option::Some(self.segments.remove(0))
+                }
             }
         }
 
@@ -4546,6 +4648,40 @@ pub mod entity {
 
         impl ReqEntity {
 
+            pub fn payload(&self) -> &Payload {
+                match self {
+                    ReqEntity::Rc(_) => {&Payload::Empty}
+                    ReqEntity::Msg(msg) => {&msg.payload}
+                    ReqEntity::Http(http) => {&http.body}
+                }
+            }
+
+            pub fn path(&self) -> String {
+                match self {
+                    ReqEntity::Rc(_) => {"".to_string()}
+                    ReqEntity::Msg(msg) => {
+                        msg.path.clone()
+                    }
+                    ReqEntity::Http(http) => {
+                        http.path.clone()
+                    }
+                }
+            }
+
+            pub fn with_new_payload(self, payload: Payload  ) -> Self {
+                match self {
+                    ReqEntity::Rc(_) => {self}
+                    ReqEntity::Msg(mut msg) => {
+                        msg.payload = payload;
+                        Self::Msg(msg)
+                    }
+                    ReqEntity::Http(mut http) => {
+                        http.body = payload;
+                        Self::Http(http)
+                    }
+                }
+            }
+
             pub fn not_found(&self) -> RespEntity {
                 match self {
                     ReqEntity::Rc(_) => {
@@ -4558,7 +4694,7 @@ pub mod entity {
                         RespEntity::Http(HttpResponse {
                             code: 404,
                             headers: Default::default(),
-                            body: None
+                            body: Payload::Empty
                         })
                     }
                 }
@@ -4577,6 +4713,7 @@ pub mod entity {
                     }
                 }
             }
+
 
             pub fn fail(&self, fail: Fail) -> Result<RespEntity,Error> {
                 match self {
@@ -5114,6 +5251,7 @@ pub mod entity {
         use crate::version::v0_0_1::id::{Address, ResourceKind};
         use crate::version::v0_0_1::payload::Payload;
         use serde::{Serialize,Deserialize};
+        use crate::version::v0_0_1::entity::request::{Msg, ReqEntity};
         use crate::version::v0_0_1::fail::Fail;
         use crate::version::v0_0_1::http::HttpResponse;
         use crate::version::v0_0_1::messaging::Response;
@@ -5126,6 +5264,22 @@ pub mod entity {
         }
 
         impl RespEntity {
+
+            pub fn with_new_payload( self, payload: Payload  ) -> RespEntity{
+                match self {
+                    RespEntity::Rc(_) => {
+                        RespEntity::Rc( PayloadResponse::Ok(payload))
+                    }
+                    RespEntity::Msg(_) => {
+                        RespEntity::Msg( PayloadResponse::Ok(payload))
+                    }
+                    RespEntity::Http(mut http) => {
+                        http.body = payload;
+                        RespEntity::Http(http)
+                    }
+                }
+            }
+
 
             pub fn http(&self) -> Result<HttpResponse,Error> {
                 match self {
@@ -5144,8 +5298,8 @@ pub mod entity {
                     RespEntity::Msg(response) => {
                         response.payload()
                     }
-                    RespEntity::Http(_) => {
-                        Err("mismatch response".into())
+                    RespEntity::Http(http) => {
+                        Ok(http.body.clone())
                     }
                 }
             }
@@ -7029,7 +7183,7 @@ pub mod test {
     use crate::version::v0_0_1::pattern::parse::version;
     use crate::version::v0_0_1::pattern::parse::address_kind_pattern;
     use crate::version::v0_0_1::pattern::{http_pattern, http_pattern_scoped, upload_step};
-    use crate::version::v0_0_1::payload::HttpMethod;
+    use crate::version::v0_0_1::payload::{HttpMethod, Payload};
     use crate::version::v0_0_1::util::ValueMatcher;
 
     #[test]
@@ -7196,21 +7350,21 @@ println!("{}", addy.last_segment().unwrap().to_string() );
             method: HttpMethod::Get,
             headers: Default::default(),
             path: "/some".to_string(),
-            body: None
+            body: Payload::Empty
         };
 
         let get_some_plus = crate::version::v0_0_1::http::HttpRequest {
             method: HttpMethod::Get,
             headers: Default::default(),
             path: "/some/plus".to_string(),
-            body: None
+            body: Payload::Empty
         };
 
         let post_some = crate::version::v0_0_1::http::HttpRequest {
             method: HttpMethod::Post,
             headers: Default::default(),
             path: "/some".to_string(),
-            body: None
+            body: Payload::Empty
         };
 
 
@@ -7234,21 +7388,21 @@ println!("{}", addy.last_segment().unwrap().to_string() );
             method: HttpMethod::Get,
             headers: Default::default(),
             path: "/some".to_string(),
-            body: None
+            body: Payload::Empty
         };
 
         let get_some_plus = crate::version::v0_0_1::http::HttpRequest {
             method: HttpMethod::Get,
             headers: Default::default(),
             path: "/some/plus".to_string(),
-            body: None
+            body: Payload::Empty
         };
 
         let post_some = crate::version::v0_0_1::http::HttpRequest {
             method: HttpMethod::Post,
             headers: Default::default(),
             path: "/some".to_string(),
-            body: None
+            body: Payload::Empty
         };
 
         let get_selector = all_consuming(http_selector)("<Get> -> {{}};")?.1;
@@ -7267,28 +7421,28 @@ println!("{}", addy.last_segment().unwrap().to_string() );
             method: HttpMethod::Get,
             headers: Default::default(),
             path: "/some".to_string(),
-            body: None
+            body: Payload::Empty
         };
 
         let get_some_plus = crate::version::v0_0_1::http::HttpRequest {
             method: HttpMethod::Get,
             headers: Default::default(),
             path: "/some/plus".to_string(),
-            body: None
+            body: Payload::Empty
         };
 
         let post_some = crate::version::v0_0_1::http::HttpRequest {
             method: HttpMethod::Post,
             headers: Default::default(),
             path: "/some".to_string(),
-            body: None
+            body: Payload::Empty
         };
 
         let delete_some = crate::version::v0_0_1::http::HttpRequest {
             method: HttpMethod::Delete,
             headers: Default::default(),
             path: "/some".to_string(),
-            body: None
+            body: Payload::Empty
         };
 
 
