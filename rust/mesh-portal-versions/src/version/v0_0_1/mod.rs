@@ -3971,6 +3971,7 @@ pub mod command {
     }
 
     pub mod common {
+        use std::collections::HashMap;
         use std::convert::{TryFrom, TryInto};
         use std::ops::{Deref, DerefMut};
 
@@ -3987,12 +3988,57 @@ pub mod command {
 
         #[derive(Debug, Clone, Serialize, Deserialize)]
         pub enum PropertyMod {
-            Set{name:String, value: String },
+            Set{ key:String, value: String, lock: bool },
             UnSet(String)
         }
 
 
-        pub type SetProperties = Vec<PropertyMod>;
+        #[derive(Debug, Clone, Serialize, Deserialize)]
+        pub struct SetProperties {
+            pub map: HashMap<String,PropertyMod>
+        }
+
+        impl Default for SetProperties {
+            fn default() -> Self {
+                Self {
+                    map: Default::default()
+                }
+            }
+        }
+
+        impl SetProperties {
+            pub fn new() -> Self {
+                Self {
+                    map: HashMap::new()
+                }
+            }
+
+            pub fn append( &mut self, properties: SetProperties ) {
+                for (_,property) in properties.map.into_iter() {
+                    self.push( property );
+                }
+            }
+
+            pub fn push( &mut self, property: PropertyMod ) {
+                match &property {
+                    PropertyMod::Set { key, value,lock } => {
+                        self.map.insert(key.clone(),property);
+                    }
+                    PropertyMod::UnSet(key) => {
+                        self.map.insert(key.clone(),property);
+                    }
+                }
+            }
+        }
+
+        impl Deref for SetProperties {
+            type Target = HashMap<String,PropertyMod>;
+
+            fn deref(&self) -> &Self::Target {
+                &self.map
+            }
+        }
+
 
         #[derive(Debug, Clone, Serialize, Deserialize, strum_macros::Display)]
         pub enum SetLabel {
@@ -5441,6 +5487,7 @@ pub mod entity {
 }
 
 pub mod resource {
+    use std::collections::HashMap;
     use std::str::FromStr;
 
     use nom::branch::alt;
@@ -5595,7 +5642,14 @@ pub mod resource {
     }
 
 
-    pub type Properties = PayloadMap;
+    pub type Properties = HashMap<String,Property>;
+
+    #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
+    pub struct Property{
+        pub key: String,
+        pub value: String,
+        pub locked: bool
+    }
 
     #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
     pub struct Archetype {
@@ -7055,11 +7109,19 @@ pub mod parse {
     }
 
     pub fn set_property_mod(input: &str) -> Res<&str, PropertyMod> {
-        tuple((tag("+"),skewer_dot,tag("="),property_value))(input).map( |(next,(_,name,_,value))| {
+        tuple((tag("+"),skewer_dot,tag("="),property_value))(input).map( |(next,(_,key,_,value))| {
             (next,
-            PropertyMod::Set{name: name.to_string(),value: value.to_string()})
+            PropertyMod::Set{key: key.to_string(),value: value.to_string(), lock: false})
         })
     }
+
+    pub fn set_property_mod_lock(input: &str) -> Res<&str, PropertyMod> {
+        tuple((tag("+@"),skewer_dot,tag("="),property_value))(input).map( |(next,(_,key,_,value))| {
+            (next,
+             PropertyMod::Set{key: key.to_string(),value: value.to_string(), lock: true})
+        })
+    }
+
 
     pub fn property_value_not_space(input: &str) -> Res<&str,&str> {
         not_space(input)
@@ -7089,8 +7151,11 @@ pub mod parse {
 
     pub fn set_properties(input: &str) -> Res<&str, SetProperties> {
         many0(tuple((multispace0,property_mod,multispace1)))(input).map( |(next, properties)| {
-            let properties = properties.into_iter().map( |(_,p,_)|p ).collect();
-            (next, properties)
+            let mut set_properties = SetProperties::new();
+            for (_,property,_) in properties {
+                set_properties.push(property);
+            }
+            (next, set_properties)
         } )
     }
 

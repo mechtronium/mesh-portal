@@ -154,6 +154,7 @@ pub mod command {
         pub type StateSrc = current::command::common::StateSrc;
         pub type SetLabel = current::command::common::SetLabel;
         pub type SetProperties = current::command::common::SetProperties;
+        pub type PropertyMod = current::command::common::PropertyMod;
         pub type SetRegistry = current::command::common::SetRegistry;
     }
 }
@@ -280,6 +281,7 @@ pub mod resource {
     pub type Archetype = current::resource::Archetype;
     pub type ResourceStub = current::resource::ResourceStub;
     pub type Resource = current::resource::Resource;
+    pub type Property = current::resource::Property;
 }
 
 pub mod portal {
