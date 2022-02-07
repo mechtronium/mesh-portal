@@ -6551,6 +6551,22 @@ pub mod parse {
             ErrorKind::AlphaNumeric,
         )
     }
+    pub fn skewer_dot<T>(i: T) -> Res<T, T>
+        where
+            T: InputTakeAtPosition,
+            <T as InputTakeAtPosition>::Item: AsChar,
+    {
+        i.split_at_position1_complete(
+            |item| {
+                let char_item = item.as_char();
+                !(char_item == '-')
+                    && !(char_item == '.')
+                    && !((char_item.is_alpha() && char_item.is_lowercase())
+                    || char_item.is_dec_digit())
+            },
+            ErrorKind::AlphaNumeric,
+        )
+    }
 
     pub fn domain<T>(i: T) -> Res<T, T>
     where
@@ -7039,7 +7055,7 @@ pub mod parse {
     }
 
     pub fn set_property_mod(input: &str) -> Res<&str, PropertyMod> {
-        tuple((tag("+"),skewer,tag("="),property_value))(input).map( |(next,(_,name,_,value))| {
+        tuple((tag("+"),skewer_dot,tag("="),property_value))(input).map( |(next,(_,name,_,value))| {
             (next,
             PropertyMod::Set{name: name.to_string(),value: value.to_string()})
         })
@@ -7062,7 +7078,7 @@ pub mod parse {
     }
 
     pub fn unset_property_mod(input: &str) -> Res<&str, PropertyMod> {
-        tuple((tag("!"),skewer))(input).map( |(next,(_,name))| {
+        tuple((tag("!"),skewer_dot))(input).map( |(next,(_,name))| {
             (next, PropertyMod::UnSet(name.to_string()))
         })
     }
