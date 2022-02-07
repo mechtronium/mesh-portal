@@ -4725,8 +4725,13 @@ pub mod entity {
                     ReqEntity::Msg(_) => {
                         Ok(RespEntity::Msg(PayloadResponse::new(payload)))
                     }
-                    _ => {
-                        Err("Cannot respond to HttpRequest with Payload".into())
+                    ReqEntity::Http(_) => {
+                        Ok(RespEntity::Http( HttpResponse {
+                            code: 200,
+                            headers: Default::default(),
+                            body: payload
+                        } ))
+
                     }
                 }
             }
