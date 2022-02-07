@@ -475,6 +475,9 @@ pub mod id {
             let mut path = String::new();
             for segment in &self.segments {
                 match segment {
+                    AddressSegment::FilesystemRootDir => {
+                        path.push_str("/");
+                    }
                     AddressSegment::Dir(dir) => {
                         path.push_str(dir.as_str());
                     }
@@ -4422,10 +4425,12 @@ pub mod config {
             use nom::bytes::complete::tag;
             use nom::character::complete::multispace0;
             use nom::combinator::{all_consuming, opt};
+            use nom::error::context;
             use nom::multi::{many0, many1};
             use nom::sequence::{delimited, tuple};
 
             pub fn bind(input: &str) -> Res<&str, ProtoBind> {
+                context( "bind",
                 delimited(
                     multispace0,
                     tuple((
@@ -4438,7 +4443,7 @@ pub mod config {
                         ),
                     )),
                     multispace0,
-                )(input)
+                ))(input)
                 .map(|(next, (_, _, sections))| {
                     let bind = ProtoBind { sections };
 
