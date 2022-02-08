@@ -32,6 +32,7 @@ use std::future::Future;
 use tokio::task::yield_now;
 use mesh_portal_serde::version::latest::config::PortalConfig;
 use mesh_portal_serde::version::latest::messaging::Message;
+use serde::{Serialize,Deserialize};
 
 #[derive(Clone,strum_macros::Display)]
 pub enum Event {
@@ -75,7 +76,6 @@ pub struct PortalTcpServer {
     call_tx: mpsc::Sender<TcpServerCall>,
     mux_tx: mpsc::Sender<MuxCall>,
     alive: Arc<Mutex<Alive>>,
-    key_seq: AtomicU64,
     request_handler: Arc<dyn PortalAssignRequestHandler>
 }
 
@@ -96,7 +96,6 @@ impl PortalTcpServer {
 
                 let server = Self {
                     request_handler: server.portal_request_handler(),
-                    key_seq: AtomicU64::new(0),
                     portal_config: Default::default(),
                     port,
                     server,
@@ -197,8 +196,8 @@ impl PortalTcpServer {
 
         match self.server.auth(&mut reader, &mut writer).await
         {
-            Ok(user) => {
-                self.broadcaster_tx.send( Event::Authorization(EventResult::Ok(user.clone()))).unwrap_or_default();
+            Ok(client_ident) => {
+                self.broadcaster_tx.send( Event::Authorization(EventResult::Ok(client_ident.user.clone()))).unwrap_or_default();
                 tokio::time::sleep(Duration::from_secs(0)).await;
                 writer.write_string( "Ok".to_string() ).await?;
 
@@ -213,9 +212,12 @@ impl PortalTcpServer {
                             println!("{}", log.to_string() );
                         }
 
-                        let key = self.key_seq.fetch_add(1, Ordering::Relaxed );
+                        let portal_key = match client_ident.portal_key {
+                            None => uuid::Uuid::new_v4().to_string(),
+                            Some(portal_key) => portal_key
+                        };
 
-                        let portal = Portal::new(key,self.portal_config.clone(), self.request_handler.clone(), outlet_tx, logger );
+                        let portal = Portal::new(portal_key.clone(),self.portal_config.clone(), self.request_handler.clone(), outlet_tx, logger );
                         let inlet_tx = portal.inlet_tx.clone();
                         let result = self.mux_tx.send(MuxCall::Add(portal)).await;
                         yield_now().await;
@@ -230,8 +232,8 @@ impl PortalTcpServer {
                                     Ok(assign) => {
                                         let assign = Exchanger::new(assign);
 
-                                        self.broadcaster_tx.send( Event::ResourceCtrl(EventResult::Ok(user.clone()))).unwrap_or_default();
-                                        self.mux_tx.send(MuxCall::Assign {assign, portal:key }).await?;
+                                        self.broadcaster_tx.send( Event::ResourceCtrl(EventResult::Ok(client_ident.user.clone()))).unwrap_or_default();
+                                        self.mux_tx.send(MuxCall::Assign {assign, portal_key }).await?;
                                         yield_now().await;
                                     }
                                     Err(_) => {
@@ -294,9 +296,26 @@ pub struct RouterProxy {
 #[async_trait]
 pub trait PortalServer: Sync+Send {
     fn flavor(&self) -> String;
-    async fn auth(&self, reader: &mut PrimitiveFrameReader, writer: &mut PrimitiveFrameWriter) -> Result<String,Error>;
+
+    async fn auth(
+        &self,
+        reader: &mut PrimitiveFrameReader,
+        writer: &mut PrimitiveFrameWriter,
+    ) -> Result<ClientIdent, anyhow::Error> {
+        let frame = reader.read().await?;
+        let client_ident: ClientIdent = bincode::deserialize(frame.data.as_slice() )?;
+        tokio::time::sleep(Duration::from_secs(0)).await;
+        Ok(client_ident)
+    }
+
     fn router_factory(&self, mux_tx: tokio::sync::mpsc::Sender<MuxCall> ) -> Box<dyn Router>;
     fn logger(&self) -> fn(message: &str);
     fn portal_request_handler(&self) -> Arc<dyn PortalAssignRequestHandler>;
 }
 
+
+#[derive(Debug,Clone,Serialize,Deserialize)]
+pub struct ClientIdent {
+    pub user: String,
+    pub portal_key: Option<String>
+}

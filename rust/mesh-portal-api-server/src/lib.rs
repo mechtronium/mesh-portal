@@ -15,7 +15,6 @@ use futures::future::select_all;
 use futures::FutureExt;
 use tokio::sync::mpsc::error::{SendError, SendTimeoutError, TryRecvError};
 use tokio::sync::{mpsc, oneshot};
-use uuid::Uuid;
 
 use mesh_portal_serde::version::latest;
 use mesh_portal_serde::version::latest::entity::response;
@@ -74,7 +73,7 @@ pub enum PortalCall {
 
 #[derive(Debug)]
 pub struct Portal {
-    key: u64,
+    key: String,
     config: PortalConfig,
     request_handler: Arc<dyn PortalAssignRequestHandler>,
     pub mux_tx: mpsc::Sender<MuxCall>,
@@ -86,7 +85,7 @@ pub struct Portal {
 
 impl Portal {
     pub fn new(
-        key: u64,
+        key: String,
         config: PortalConfig,
         request_handler: Arc<dyn PortalAssignRequestHandler>,
         outlet_tx: mpsc::Sender<outlet::Frame>,
@@ -105,14 +104,14 @@ impl Portal {
                         Some(frame) => {
                             let frame:inlet::Frame = frame;
 println!("Server Portal Frame > {}",frame.to_string() );
-                            handle(&mux_tx, &request_handler, key, frame ).await;
+                            handle(&mux_tx, &request_handler, key.clone(), frame ).await;
                             continue;
                         }
                         None => {
                             break;
                         }
                     }
-                    async fn handle( mux_tx: &mpsc::Sender<MuxCall>, request_handler: &Arc<dyn PortalAssignRequestHandler>, key: u64, frame: inlet::Frame ) {
+                    async fn handle( mux_tx: &mpsc::Sender<MuxCall>, request_handler: &Arc<dyn PortalAssignRequestHandler>, key: String, frame: inlet::Frame ) {
                         match frame {
                             inlet::Frame::Log(log) => {
                                 println!("{}",log.to_string());
@@ -122,7 +121,7 @@ println!("Server Portal Frame > {}",frame.to_string() );
                                 match result {
                                     Ok(assignment) => {
                                         let assign = request.with(assignment);
-                                        mux_tx.send( MuxCall::Assign { assign, portal: key }).await;
+                                        mux_tx.send( MuxCall::Assign { assign, portal_key: key }).await;
                                     }
                                     Err(error) => {
                                         println!("{}",error.to_string());
@@ -227,7 +226,7 @@ pub enum MuxCall {
     Add(Portal),
     Assign {
         assign: Exchanger<Assign>,
-        portal: u64,
+        portal_key: String,
     },
     Remove(Address),
     MessageIn(Message),
@@ -243,8 +242,8 @@ pub trait Router: Send + Sync {
 }
 
 pub struct PortalMuxer {
-    portals: HashMap<u64, Portal>,
-    address_to_portal: HashMap<Address, u64>,
+    portals: HashMap<String, Portal>,
+    address_to_portal: HashMap<Address, String>,
     address_to_assign: HashMap<Address, Assign>,
     router: Box<dyn Router>,
     mux_tx: mpsc::Sender<MuxCall>,
@@ -286,16 +285,16 @@ println!("MuxCall: {}",call.to_string());
                         MuxCall::Add(portal) => {
                             muxer.portals.insert(portal.key.clone(), portal);
                         }
-                        MuxCall::Assign { assign, portal } => {
+                        MuxCall::Assign { assign, portal_key } => {
                             muxer
                                 .address_to_assign
                                 .insert(assign.stub.address.clone(), assign.item.clone());
                             muxer
                                 .address_to_portal
-                                .insert(assign.stub.address.clone(), portal);
+                                .insert(assign.stub.address.clone(), portal_key.clone());
                             let portal = muxer
                                 .portals
-                                .get(&portal)
+                                .get(&portal_key)
                                 .ok_or(anyhow!("expected portal"))?;
                             portal.send(outlet::Frame::Assign(assign.clone())).await?;
                             muxer.router.logger(

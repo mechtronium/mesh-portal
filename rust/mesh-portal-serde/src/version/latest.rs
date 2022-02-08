@@ -267,6 +267,7 @@ pub mod entity {
         use mesh_portal_versions::version::v0_0_1 as current;
 
         pub type RespEntity = current::entity::response::RespEntity;
+        pub type PayloadResponse= current::entity::response::PayloadResponse;
     }
 }
 

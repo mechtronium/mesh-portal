@@ -40,7 +40,6 @@ use mesh_portal_serde::version::latest::portal::outlet::Frame;
 pub struct ResourceSkel {
   pub portal: PortalSkel,
   pub stub: ResourceStub,
-  pub config: Config<ResourceConfigBody>,
   pub logger: fn(message: &str),
 }
 
@@ -164,7 +163,6 @@ println!("CLIENT PROCESS");
                                 let resource_skel = ResourceSkel {
                                     portal: skel.clone(),
                                     stub: assign.stub.clone(),
-                                    config: assign.config.clone(),
                                     logger: skel.logger,
                                 };
                                 let resource = skel.ctrl_factory.create(resource_skel)?;

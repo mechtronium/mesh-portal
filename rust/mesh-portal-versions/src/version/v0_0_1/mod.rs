@@ -3021,6 +3021,15 @@ pub mod frame {
         }
     }
 
+    impl From<Vec<u8>> for PrimitiveFrame {
+        fn from(value: Vec<u8>) -> Self {
+            Self {
+                data: value
+            }
+        }
+    }
+
+
     impl From<String> for PrimitiveFrame {
         fn from(value: String) -> Self {
             let bytes = value.as_bytes();
@@ -4210,7 +4219,7 @@ pub mod config {
         #[derive(Debug, Clone, Serialize, Deserialize)]
         pub struct MechtronConfig {
             pub wasm: Address,
-            pub kind: String,
+            pub name: String,
         }
     }
 
@@ -5761,7 +5770,7 @@ pub mod portal {
                     Frame::Config(config) => Option::Some(config.from.clone()),
                     Frame::Status(status) => Option::Some(status.from.clone()),
                     Frame::Close(_) => Option::None,
-                    Frame::AssignRequest(_) => Option::None
+                    Frame::AssignRequest(_) => Option::None,
                 }
             }
         }
