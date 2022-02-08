@@ -211,12 +211,10 @@ pub mod entity {
     pub mod request {
         use mesh_portal_versions::version::v0_0_1 as current;
 
-        pub type ReqEntity = current::entity::request::ReqEntity;
-        pub type RcCommand = current::entity::request::RcCommand;
-        pub type RcCommandType = current::entity::request::RcCommandType;
+        pub type Action = current::entity::request::Action;
+        pub type RequestCore= current::entity::request::RequestCore;
         pub type Rc = current::entity::request::Rc;
-        pub type Msg = current::entity::request::Msg;
-        pub type Http = current::entity::request::Http;
+        pub type RcCommandType = current::entity::request::RcCommandType;
 
         pub mod create {
             use mesh_portal_versions::version::v0_0_1 as current;
@@ -266,8 +264,7 @@ pub mod entity {
     pub mod response {
         use mesh_portal_versions::version::v0_0_1 as current;
 
-        pub type RespEntity = current::entity::response::RespEntity;
-        pub type PayloadResponse= current::entity::response::PayloadResponse;
+        pub type ResponseCore = current::entity::response::ResponseCore;
     }
 }
 

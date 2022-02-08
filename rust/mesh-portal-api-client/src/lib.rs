@@ -335,7 +335,6 @@ pub mod example {
     use std::collections::HashMap;
     use mesh_portal_serde::version::latest::payload::{Payload, Primitive};
     use mesh_portal_serde::version::latest::entity;
-    use mesh_portal_serde::version::latest::entity::request::Msg;
 
     pub struct HelloCtrl {
         pub skel: Arc<PortalSkel>,

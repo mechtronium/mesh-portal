@@ -52,7 +52,7 @@ mod tests {
     use mesh_portal_serde::version::latest::util::unique_id;
     use mesh_portal_serde::version::latest::config::{Assign, Config, ResourceConfigBody};
     use mesh_portal_serde::version::latest::entity::request::select::{Select, SelectIntoPayload, SelectionKind};
-    use mesh_portal_serde::version::latest::entity::response::RespEntity;
+    use mesh_portal_serde::version::latest::entity::response::ResponseCore;
     use mesh_portal_serde::version::latest::entity::response::PayloadResponse;
     use mesh_portal_serde::version::latest::frame::PrimitiveFrame;
 
@@ -288,7 +288,7 @@ println!("created client: fred TCP client");
             tokio::spawn(async move {
                match message.clone() {
                     Message::Request(request) => {
-                        match &request.entity{
+                        match &request.core {
                             ReqEntity::Rc(rc) => {
                                 match &rc.command{
                                     RcCommand::Select(select) => {
@@ -308,7 +308,7 @@ println!("created client: fred TCP client");
                                                     id: unique_id(),
                                                     to: request.from.clone(),
                                                     from: request.to.clone(),
-                                                    entity: RespEntity::Msg(PayloadResponse::Ok(Payload::List(list))),
+                                                    core: ResponseCore::Msg(PayloadResponse::Ok(Payload::List(list))),
                                                     response_to: request.id.clone()
                                                 };
 
@@ -445,8 +445,8 @@ println!("created client: fred TCP client");
 
 self.log(format!("Select... from: {} to: {}", self.skel.stub.address.to_string(), self.skel.stub.address.parent().expect("expected a parent").to_string() ));
             match self.skel.portal.api().exchange(request).await {
-                Ok(response) => match response.entity {
-                    RespEntity::Msg(PayloadResponse::Ok(Payload::List(resources))) => {
+                Ok(response) => match response.core {
+                    ResponseCore::Msg(PayloadResponse::Ok(Payload::List(resources))) => {
 self.log(format!("Ok({} Stubs)",resources.list.len()));
                         for resource in resources.iter() {
                             if let Primitive::Stub(resource) = resource {
@@ -473,8 +473,8 @@ self.log(format!("Received Response<Msg<Greet>>"));
                                     match result {
                                         Ok(response) => {
 self.log(format!("Extracted RespEntity"));
-                                            match &response.entity {
-                                                response::RespEntity::Msg(PayloadResponse::Ok(Payload::Primitive(Primitive::Text(response)))) => {
+                                            match &response.core {
+                                                response::ResponseCore::Msg(PayloadResponse::Ok(Payload::Primitive(Primitive::Text(response)))) => {
 self.log(format!("Got Ok Response!"));
                                                     println!("got response: {}", response);
                                                     GLOBAL_TX.send(GlobalEvent::Ok(self.name.clone()));
@@ -509,7 +509,7 @@ self.log(format!("Received Request<Msg<Greet>>"));
                     from: self.skel.stub.address.clone(),
                     to: request.from,
                     response_to: request.id,
-                    entity: RespEntity::Msg(PayloadResponse::Ok(Payload::Primitive(Primitive::Text("Hello".to_string()))))
+                    core: ResponseCore::Msg(PayloadResponse::Ok(Payload::Primitive(Primitive::Text("Hello".to_string()))))
                 };
                 GLOBAL_TX.send(GlobalEvent::Progress("Responding to hello message".to_string()));
 self.log_str("Sending To Response<Msg<Greet>>");
