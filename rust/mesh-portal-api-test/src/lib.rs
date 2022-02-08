@@ -47,7 +47,7 @@ mod tests {
     use mesh_portal_tcp_common::{
         FrameReader, FrameWriter, PrimitiveFrameReader, PrimitiveFrameWriter,
     };
-    use mesh_portal_tcp_server::{TcpServerCall, Event, PortalServer, PortalTcpServer, ClientIdent};
+    use mesh_portal_tcp_server::{TcpServerCall, Event, PortalServer, PortalTcpServer, PortalAuth};
     use mesh_portal_serde::version::latest::pattern::AddressKindPattern;
     use mesh_portal_serde::version::latest::util::unique_id;
     use mesh_portal_serde::version::latest::config::{Assign, Config, ResourceConfigBody};
@@ -362,7 +362,7 @@ println!("created client: fred TCP client");
             reader: &mut PrimitiveFrameReader,
             writer: &mut PrimitiveFrameWriter,
         ) -> Result<(), Error> {
-            let client_ident = ClientIdent {
+            let client_ident = PortalAuth {
                 user: self.user.clone(),
                 portal_key: None
             };

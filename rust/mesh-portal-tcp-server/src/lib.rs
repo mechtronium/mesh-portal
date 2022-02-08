@@ -23,10 +23,10 @@ use tokio::sync::mpsc::error::SendTimeoutError;
 use mesh_portal_api_server::{MuxCall, Portal, PortalMuxer, Router, PortalAssignRequestHandler, PortalCall};
 use mesh_portal_serde::version::latest::frame::CloseReason;
 use mesh_portal_serde::version::latest::log::Log;
-use mesh_portal_serde::version::latest::portal::{Exchanger, inlet, outlet};
+use mesh_portal_serde::version::latest::portal::{Exchanger, initin, initout, inlet, outlet};
 use mesh_portal_serde::version::latest::resource::Status;
 use mesh_portal_serde::version::latest::resource::Code;
-use mesh_portal_tcp_common::{FrameReader, FrameWriter, PrimitiveFrameReader, PrimitiveFrameWriter};
+use mesh_portal_tcp_common::{PortalAuth, FrameReader, FrameWriter, PrimitiveFrameReader, PrimitiveFrameWriter, PortalInfo};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::future::Future;
 use tokio::task::yield_now;
@@ -41,6 +41,8 @@ pub enum Event {
     FlavorNegotiation(EventResult<String>),
     Authorization(EventResult<String>),
     ResourceCtrl(EventResult<String>),
+    Added(PortalInfo),
+    Removed(PortalInfo),
     Shutdown,
 }
 
@@ -175,34 +177,41 @@ impl PortalTcpServer {
         let mut reader = PrimitiveFrameReader::new(reader);
         let mut writer = PrimitiveFrameWriter::new(writer);
 
-        let flavor = reader.read_string().await?;
+        let mut reader:FrameReader<initin::Frame> = FrameReader::new(reader);
+        let mut writer:FrameWriter<initout::Frame> = FrameWriter::new(writer);
 
-        // first verify flavor matches
-        if flavor != self.server.flavor() {
-            let message = format!("ERROR: flavor does not match.  expected '{}'", self.server.flavor() );
+        if let initin::Frame::Flavor(flavor) = reader.read().await? {
+            // first verify flavor matches
+            if flavor != self.server.flavor() {
+                let message = format!("ERROR: flavor does not match.  expected '{}'", self.server.flavor());
 
-            writer.write_string(message.clone() ).await?;
-            tokio::time::sleep(Duration::from_secs(0)).await;
+                writer.write_string(message.clone()).await?;
+                tokio::time::sleep(Duration::from_secs(0)).await;
 
-            self.broadcaster_tx.send( Event::FlavorNegotiation(EventResult::Err(message.clone()))).unwrap_or_default();
-            return Err(anyhow!(message));
+                self.broadcaster_tx.send(Event::FlavorNegotiation(EventResult::Err(message.clone()))).unwrap_or_default();
+                return Err(anyhow!(message));
+            } else {
+                self.broadcaster_tx.send(Event::FlavorNegotiation(EventResult::Ok(self.server.flavor()))).unwrap_or_default();
+            }
         } else {
-            self.broadcaster_tx.send( Event::FlavorNegotiation(EventResult::Ok(self.server.flavor()))).unwrap_or_default();
+            let message = format!("ERROR: unexpected frame.  expected flavor '{}'", self.server.flavor());
+            self.broadcaster_tx.send(Event::FlavorNegotiation(EventResult::Err(message.clone()))).unwrap_or_default();
+            return Err(anyhow!(message));
         }
 
 
-        writer.write_string( "Ok".to_string() ).await?;
+        writer.write( initout::Frame::Ok ).await?;
         yield_now().await;
 
-        match self.server.auth(&mut reader, &mut writer).await
+
+        if let initin::Frame::Auth(client_ident) = reader.read().await?
         {
-            Ok(client_ident) => {
                 self.broadcaster_tx.send( Event::Authorization(EventResult::Ok(client_ident.user.clone()))).unwrap_or_default();
                 tokio::time::sleep(Duration::from_secs(0)).await;
-                writer.write_string( "Ok".to_string() ).await?;
+                writer.write( initout::Frame::Ok ).await?;
 
-                let mut reader : FrameReader<inlet::Frame> = FrameReader::new(reader );
-                let mut writer : FrameWriter<outlet::Frame>  = FrameWriter::new(writer );
+                let mut reader : FrameReader<inlet::Frame> = FrameReader::new(reader.done() );
+                let mut writer : FrameWriter<outlet::Frame>  = FrameWriter::new(writer.done() );
 
 //                        self.broadcaster_tx.send( Event::Info(EventResult::Ok(info.clone()))).unwrap_or_default();
 
@@ -232,8 +241,12 @@ impl PortalTcpServer {
                                     Ok(assign) => {
                                         let assign = Exchanger::new(assign);
 
-                                        self.broadcaster_tx.send( Event::ResourceCtrl(EventResult::Ok(client_ident.user.clone()))).unwrap_or_default();
+                                        let portal_info = PortalInfo {
+                                            portal_key: assign.portal_key.clone()
+                                        };
+
                                         self.mux_tx.send(MuxCall::Assign {assign, portal_key }).await?;
+                                        self.broadcaster_tx.send( Event::Added(portal_info) ).unwrap_or_default();
                                         yield_now().await;
                                     }
                                     Err(_) => {
@@ -275,13 +288,7 @@ println!("server: outlet_rx complete.");
                         });
                         task.await?;
                     }
-                }
-            Err(err) => {
-                let message = format!("ERROR: authorization failed: {}", err.to_string());
-                (self.server.logger())(message.as_str());
-                self.broadcaster_tx.send( Event::Authorization(EventResult::Err(message.clone()))).unwrap_or_default();
-                writer.write_string( message ).await?;
-            }
+
         }
         Ok(())
 
@@ -301,9 +308,9 @@ pub trait PortalServer: Sync+Send {
         &self,
         reader: &mut PrimitiveFrameReader,
         writer: &mut PrimitiveFrameWriter,
-    ) -> Result<ClientIdent, anyhow::Error> {
+    ) -> Result<PortalAuth, anyhow::Error> {
         let frame = reader.read().await?;
-        let client_ident: ClientIdent = bincode::deserialize(frame.data.as_slice() )?;
+        let client_ident: PortalAuth = bincode::deserialize(frame.data.as_slice() )?;
         tokio::time::sleep(Duration::from_secs(0)).await;
         Ok(client_ident)
     }
@@ -314,8 +321,3 @@ pub trait PortalServer: Sync+Send {
 }
 
 
-#[derive(Debug,Clone,Serialize,Deserialize)]
-pub struct ClientIdent {
-    pub user: String,
-    pub portal_key: Option<String>
-}

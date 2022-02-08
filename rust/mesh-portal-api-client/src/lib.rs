@@ -55,7 +55,7 @@ pub trait ResourceCtrl: Sync+Send {
         Ok(())
     }
 
-    async fn outlet_frame(&self, frame: outlet::Frame ) -> Result<Option<Response>,Error> {
+    async fn handle(&self, frame: outlet::Frame ) -> Result<Option<Response>,Error> {
         Ok(Option::None)
     }
 }
@@ -200,7 +200,7 @@ println!("Client outlet::Frame{}",frame.to_string());
                             let resource = resources.get(&to).ok_or(anyhow!("expected to find resource for address"))?;
 
                             println!("SSS SEnding to outlet_frame....");
-                            if let Option::Some(response) = resource.outlet_frame(frame).await? {
+                            if let Option::Some(response) = resource.handle(frame).await? {
                                 println!("GGG GOT a response !");
                                 skel.inlet.inlet_frame(inlet::Frame::Response(response));
                             }
@@ -269,14 +269,18 @@ impl InletApi {
     pub async fn exchange(
         &mut self,
         request: Request
-    ) -> Result<Response, Error> {
+    ) -> Response {
 
         let (tx,rx) = oneshot::channel();
         self.exchanges.insert(request.id.clone(), tx);
-        self.inlet.inlet_frame(inlet::Frame::Request(request));
+        self.inlet.inlet_frame(inlet::Frame::Request(request.clone()));
 
         let result = tokio::time::timeout(Duration::from_secs(self.config.response_timeout.clone()),rx).await;
-        Ok(result??)
+        match result {
+            Ok(Ok(response)) => response,
+            Ok(Err(error)) => request.fail(error.to_string()),
+            Err(error) => request.fail(error.to_string())
+        }
     }
 
     pub fn send_response(&self, response: Response ) {

@@ -17,7 +17,7 @@ pub mod artifact {
     use mesh_portal_versions::version::v0_0_1 as current;
     pub type Artifact = current::artifact::Artifact;
     pub type ArtifactRequest = current::artifact::ArtifactRequest;
-    pub type ArtifactResponse<B> = current::artifact::ArtifactResponse<B>;
+    pub type ArtifactResponse = current::artifact::ArtifactResponse;
 }
 
 
@@ -290,6 +290,7 @@ pub mod portal {
     pub mod inlet {
         use mesh_portal_versions::version::v0_0_1 as current;
 
+        pub type Log = current::portal::inlet::Log;
         pub type Frame = current::portal::inlet::Frame;
         pub type AssignRequest = current::portal::inlet::AssignRequest;
     }
@@ -298,6 +299,16 @@ pub mod portal {
         use mesh_portal_versions::version::v0_0_1 as current;
 
         pub type Frame = current::portal::outlet::Frame;
+    }
+
+    pub mod initin {
+        use mesh_portal_versions::version::v0_0_1 as current;
+        pub type Frame = current::portal::initin::Frame;
+    }
+
+    pub mod initout{
+        use mesh_portal_versions::version::v0_0_1 as current;
+        pub type Frame = current::portal::initout::Frame;
     }
 }
 

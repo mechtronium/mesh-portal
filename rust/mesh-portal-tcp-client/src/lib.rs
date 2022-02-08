@@ -4,7 +4,7 @@ extern crate async_trait;
 #[macro_use]
 extern crate anyhow;
 
-use mesh_portal_tcp_common::{PrimitiveFrameReader, PrimitiveFrameWriter, FrameWriter, FrameReader};
+use mesh_portal_tcp_common::{PrimitiveFrameReader, PrimitiveFrameWriter, FrameWriter, FrameReader, PortalAuth};
 use anyhow::Error;
 use mesh_portal_api_client::{Portal, ResourceCtrl, PortalSkel, InletApi, Inlet, ResourceCtrlFactory};
 use std::sync::Arc;
@@ -16,7 +16,7 @@ use tokio::sync::mpsc::error::TrySendError;
 use tokio::task::yield_now;
 use mesh_portal_serde::version;
 use tokio::time::Duration;
-use mesh_portal_serde::version::latest::portal::{outlet, inlet, Exchanger};
+use mesh_portal_serde::version::latest::portal::{outlet, inlet, Exchanger, initin, initout};
 use mesh_portal_serde::version::latest::portal::inlet::AssignRequest;
 
 pub struct PortalTcpClient {
@@ -26,35 +26,41 @@ pub struct PortalTcpClient {
 
 impl PortalTcpClient {
 
-    pub async fn new( host: String, client: Box<dyn PortalClient> ) -> Result<Self,Error> {
+    pub async fn new( host: String, mut client: Box<dyn PortalClient> ) -> Result<Self,Error> {
         let stream = TcpStream::connect(host.clone()).await?;
 
         let (reader,writer) = stream.into_split();
         let mut reader = PrimitiveFrameReader::new(reader);
         let mut writer = PrimitiveFrameWriter::new(writer);
 
-        writer.write_string(client.flavor()).await?;
+        let mut reader : FrameReader<initout::Frame> = FrameReader::new(reader );
+        let mut writer : FrameWriter<initin::Frame>  = FrameWriter::new(writer );
 
-        let result = reader.read_string().await?;
+        writer.write(initin::Frame::Flavor(client.flavor())).await?;
 
-        if result != "Ok" {
-            let message = format!("FLAVOR MATCH FAILED: {}",result);
-            (client.logger())(message.as_str());
-            return Err(anyhow!(message));
-        }
+        if let initout::Frame::Ok = reader.read().await? {
 
-        client.auth(&mut reader, &mut writer).await?;
-
-        let result = reader.read_string().await?;
-
-        if result != "Ok" {
+        } else {
             let message = format!("AUTH FAILED: {}",result);
             (client.logger())(message.as_str());
             return Err(anyhow!(message));
         }
 
-        let mut reader : FrameReader<outlet::Frame> = FrameReader::new(reader );
-        let mut writer : FrameWriter<inlet::Frame>  = FrameWriter::new(writer );
+        let auth = client.auth();
+        writer.write( initin::Frame::Auth(auth)).await?;
+
+        if let initout::Frame::Ok = reader.read().await? {
+
+        } else {
+            let message = format!("AUTH FAILED: {}",result);
+            (client.logger())(message.as_str());
+            return Err(anyhow!(message));
+        }
+
+        let factory = client.init( &mut reader, &mut writer ).await?;
+
+        let mut reader : FrameReader<outlet::Frame> = FrameReader::new(reader.done() );
+        let mut writer : FrameWriter<inlet::Frame>  = FrameWriter::new(writer.done() );
 
         let (inlet_tx, mut inlet_rx) = mpsc::channel(1024 );
         let (outlet_tx, mut outlet_rx) = mpsc::channel(1024 );
@@ -80,7 +86,7 @@ impl PortalTcpClient {
           logger: client.logger()
         });
 
-        let portal = Portal::new(Default::default(), inlet, outlet_tx.clone(), outlet_rx, client.resource_ctrl_factory(), client.logger()).await?;
+        let portal = Portal::new(Default::default(), inlet, outlet_tx.clone(), outlet_rx, factory, client.logger()).await?;
         {
             let logger = client.logger();
             tokio::spawn(async move {
@@ -115,9 +121,11 @@ println!("reading frame: {}",frame.to_string());
 #[async_trait]
 pub trait PortalClient: Send+Sync {
     fn flavor(&self) -> String;
-    async fn auth( &self, reader: & mut PrimitiveFrameReader, writer: & mut PrimitiveFrameWriter ) -> Result<(),Error>;
-    fn resource_ctrl_factory(&self) ->Arc<dyn ResourceCtrlFactory>;
+    fn auth( &self ) -> PortalAuth;
     fn logger(&self) -> fn(message: &str);
+
+    async fn init( &self, reader: & mut FrameReader<initout::Frame>, writer: & mut FrameWriter<initin::Frame> ) -> Result<Arc< dyn ResourceCtrlFactory >,Error>;
+
 }
 
 struct TcpInlet {

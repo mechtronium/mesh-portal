@@ -26,13 +26,12 @@ pub mod artifact {
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct ArtifactRequest {
         pub address: Address,
-        pub from: Address,
     }
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
-    pub struct ArtifactResponse<B> {
+    pub struct ArtifactResponse {
         pub to: Address,
-        pub payload: B,
+        pub payload: Bin,
     }
 }
 
@@ -3026,36 +3025,7 @@ pub mod messaging {
 
 }
 
-pub mod log {
-    use serde::{Deserialize, Serialize};
 
-    #[derive(Debug, Clone, Serialize, Deserialize)]
-    pub enum Log {
-        Warn(String),
-        Info(String),
-        Error(String),
-        Fatal(String),
-    }
-
-    impl ToString for Log {
-        fn to_string(&self) -> String {
-            match self {
-                Log::Warn(message) => {
-                    format!("WARN: {}", message)
-                }
-                Log::Info(message) => {
-                    format!("INFO: {}", message)
-                }
-                Log::Error(message) => {
-                    format!("ERROR: {}", message)
-                }
-                Log::Fatal(message) => {
-                    format!("FATAL: {}", message)
-                }
-            }
-        }
-    }
-}
 
 pub mod frame {
     use std::convert::TryInto;
@@ -4290,24 +4260,12 @@ pub mod config {
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub enum ConfigBody {
         Bind(BindConfig),
-        Mechtron(MechtronConfig),
     }
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub enum ResourceConfigBody {
         Control,
-        Mechtron(MechtronConfig),
-    }
-
-    pub mod mechtron {
-        use crate::version::v0_0_1::id::Address;
-        use serde::{Deserialize, Serialize};
-
-        #[derive(Debug, Clone, Serialize, Deserialize)]
-        pub struct MechtronConfig {
-            pub wasm: Address,
-            pub name: String,
-        }
+        Named(String),
     }
 
     pub mod bind {
@@ -5632,6 +5590,16 @@ pub mod portal {
         use crate::version::v0_0_1::util::unique_id;
         use serde::{Serialize,Deserialize};
 
+        pub struct Log {
+            pub src: String,
+            pub message: String
+        }
+
+        impl ToString for Log {
+            fn to_string(&self) -> String {
+                format!("{}: {}", self.src, self.message )
+            }
+        }
 
         #[derive(Debug, Clone, Serialize, Deserialize, strum_macros::Display)]
         pub enum Frame {
@@ -5738,7 +5706,72 @@ pub mod portal {
             }
         }
 
+        impl TryFrom<PrimitiveFrame> for Frame {
+            type Error = Error;
 
+            fn try_from(value: PrimitiveFrame) -> Result<Self, Self::Error> {
+                Ok(bincode::deserialize(value.data.as_slice())?)
+            }
+        }
+    }
+
+    pub mod initin {
+        use crate::error::Error;
+        use crate::version::v0_0_1::artifact::{Artifact, ArtifactRequest, ArtifactResponse};
+        use crate::version::v0_0_1::frame::PrimitiveFrame;
+        use crate::version::v0_0_1::portal::Exchanger;
+
+        #[derive(Debug, Clone, Serialize, Deserialize, strum_macros::Display)]
+        pub enum Frame {
+            Flavor(String),
+            Auth(PortalAuth),
+            Artifact(Exchanger<ArtifactRequest>),
+            Ok,
+            Ready
+        }
+
+        impl TryInto<PrimitiveFrame>
+        for Frame
+        {
+            type Error = Error;
+
+            fn try_into(self) -> Result<PrimitiveFrame, Self::Error> {
+                Ok(PrimitiveFrame {
+                    data: bincode::serialize(&self)?,
+                })
+            }
+        }
+
+        impl TryFrom<PrimitiveFrame> for Frame {
+            type Error = Error;
+
+            fn try_from(value: PrimitiveFrame) -> Result<Self, Self::Error> {
+                Ok(bincode::deserialize(value.data.as_slice())?)
+            }
+        }
+    }
+    pub mod initout {
+        use crate::error::Error;
+        use crate::version::v0_0_1::artifact::{Artifact, ArtifactResponse};
+        use crate::version::v0_0_1::frame::PrimitiveFrame;
+        use crate::version::v0_0_1::portal::Exchanger;
+
+        #[derive(Debug, Clone, Serialize, Deserialize, strum_macros::Display)]
+        pub enum Frame {
+            Ok,
+            Artifact(Exchanger<ArtifactResponse>),
+        }
+        impl TryInto<PrimitiveFrame>
+        for Frame
+        {
+            type Error = Error;
+
+            fn try_into(self) -> Result<PrimitiveFrame, Self::Error> {
+                Ok(PrimitiveFrame {
+                    data: bincode::serialize(&self)?,
+                })
+            }
+        }
 
         impl TryFrom<PrimitiveFrame> for Frame {
             type Error = Error;
