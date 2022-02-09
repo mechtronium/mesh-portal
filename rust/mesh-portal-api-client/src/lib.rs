@@ -19,11 +19,9 @@ use std::prelude::rust_2021::TryFrom;
 use std::ops::Deref;
 use std::collections::HashMap;
 use tokio::sync::watch::Receiver;
-use mesh_portal_serde::std_logger;
 use mesh_portal_serde::version::latest::http::{HttpRequest, HttpResponse};
 use mesh_portal_serde::version::latest::portal::{Exchanger, inlet, outlet};
 use mesh_portal_serde::version::latest::resource::{ResourceStub, Status};
-use mesh_portal_serde::version::latest::log::Log;
 use mesh_portal_serde::version::latest::{portal, entity};
 use std::convert::TryInto;
 use dashmap::mapref::one::Ref;
@@ -32,9 +30,12 @@ use tokio::task::yield_now;
 use mesh_portal_serde::version::latest::config::{Config, PortalConfig, ResourceConfigBody};
 use mesh_portal_serde::version::latest::id::Address;
 use mesh_portal_serde::version::latest::messaging::{Exchange, ExchangeId, Request, Response};
-use mesh_portal_serde::version::latest::portal::inlet::AssignRequest;
+use mesh_portal_serde::version::latest::portal::inlet::{AssignRequest, Log};
 use mesh_portal_serde::version::latest::portal::outlet::Frame;
 
+pub fn std_logger( log: Log ) {
+    println!("{}", log.to_string())
+}
 
 #[derive(Clone)]
 pub struct ResourceSkel {
@@ -86,28 +87,35 @@ impl StatusChamber{
 
 pub type Exchanges = Arc<DashMap<ExchangeId, oneshot::Sender<Response>>>;
 
-
-
 #[derive(Clone)]
-pub struct PortalSkel {
+pub struct PrePortalSkel {
     pub config: PortalConfig,
     pub inlet: Arc<dyn Inlet>,
     pub logger: fn(message: &str),
     pub exchanges: Exchanges,
     pub assign_exchange: Arc<DashMap<String, oneshot::Sender<Arc<dyn ResourceCtrl>>>>,
-    pub tx: mpsc::Sender<outlet::Frame>,
-    pub ctrl_factory: Arc<dyn ResourceCtrlFactory>,
 }
-
-
-impl PortalSkel {
+impl PrePortalSkel {
 
     pub fn api(&self) -> InletApi {
         InletApi::new( self.config.clone(), self.inlet.clone(), self.exchanges.clone(), std_logger )
     }
 
 }
+#[derive(Clone)]
+pub struct PortalSkel {
+    pub pre: PrePortalSkel,
+    pub tx: mpsc::Sender<outlet::Frame>,
+    pub ctrl_factory: Arc<dyn ResourceCtrlFactory>,
+}
 
+impl Deref for PortalSkel {
+    type Target = PrePortalSkel;
+
+    fn deref(&self) -> &Self::Target {
+        &self.pre
+    }
+}
 
 pub enum ResourceCommand {
     Add{address: Address, resource: Arc<dyn ResourceCtrl> },
@@ -122,23 +130,15 @@ pub struct Portal {
 
 impl Portal {
     pub async fn new(
-        config: PortalConfig,
-        inlet: Box<dyn Inlet>,
+        pre: PrePortalSkel,
         outlet_tx: mpsc::Sender<outlet::Frame>,
         mut outlet_rx: mpsc::Receiver<outlet::Frame>,
         ctrl_factory: Arc<dyn ResourceCtrlFactory>,
         logger: fn(message: &str)
     ) -> Result<Arc<Portal>, Error> {
 
-        let inlet :Arc<dyn Inlet>= inlet.into();
-        let exchanges = Arc::new(DashMap::new());
-        let assign_exchange = Arc::new(DashMap::new());
         let skel =  PortalSkel {
-            config,
-            inlet,
-            logger,
-            exchanges,
-            assign_exchange,
+            pre,
             tx: outlet_tx,
             ctrl_factory,
         };

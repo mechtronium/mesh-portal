@@ -2820,49 +2820,19 @@ pub mod messaging {
     use crate::version::v0_0_1::payload::{Payload, Primitive};
     use crate::version::v0_0_1::util::unique_id;
 
-    pub type ExchangeId = String;
-
-    #[derive(Debug, Clone, Serialize, Deserialize)]
-    pub enum ExchangeType {
-        Notification,
-        RequestResponse,
+    pub struct RequestExchange {
+        pub request: Request,
+        pub tx: oneshot::Sender<Response>
     }
 
-    #[derive(Debug, Clone, Serialize, Deserialize)]
-    pub enum Exchange {
-        Notification,
-        RequestResponse(ExchangeId),
-    }
-
-    impl Exchange {
-        pub fn requires_response(&self) -> bool {
-            match self {
-                Exchange::Notification => false,
-                Exchange::RequestResponse(_) => true,
-            }
-        }
-    }
-
-    impl TryInto<ExchangeId> for Exchange {
-        type Error = Error;
-
-        fn try_into(self) -> Result<ExchangeId, Self::Error> {
-            match self {
-                Exchange::Notification => Err(
-                    "Exchange Notification cannot be converted into a RequestResponse Exchange"
-                        .into(),
-                ),
-                Exchange::RequestResponse(id) => Ok(id),
-            }
-        }
-    }
-
-    impl Into<ExchangeType> for Exchange {
-        fn into(self) -> ExchangeType {
-            match self {
-                Exchange::Notification => ExchangeType::Notification,
-                Exchange::RequestResponse(_) => ExchangeType::RequestResponse,
-            }
+    impl RequestExchange {
+        pub fn new(request: Request) -> (Self,oneshot::Receiver<Response>) {
+            let (tx, rx) = oneshot::channel();
+            let exchange = Self {
+                request,
+                tx
+            };
+            (exchange,rx)
         }
     }
 
@@ -4192,7 +4162,6 @@ pub mod config {
     use serde::{Deserialize, Serialize};
 
     use crate::version::v0_0_1::config::bind::BindConfig;
-    use crate::version::v0_0_1::config::mechtron::MechtronConfig;
     use crate::version::v0_0_1::id::{Address, ResourceKind};
     use crate::version::v0_0_1::resource;
     use crate::version::v0_0_1::resource::ResourceStub;
@@ -5580,7 +5549,6 @@ pub mod portal {
         use crate::version::v0_0_1::artifact::ArtifactRequest;
         use crate::version::v0_0_1::frame::{CloseReason, PrimitiveFrame};
         use crate::version::v0_0_1::id::{Address, ResourceKind, ResourceType};
-        use crate::version::v0_0_1::log::Log;
         use crate::version::v0_0_1::messaging::{Request, Response};
         use crate::version::v0_0_1::pattern::TksPattern;
         use crate::version::v0_0_1::payload::Payload;
@@ -5590,6 +5558,7 @@ pub mod portal {
         use crate::version::v0_0_1::util::unique_id;
         use serde::{Serialize,Deserialize};
 
+        #[derive(Debug, Clone, Serialize, Deserialize)]
         pub struct Log {
             pub src: String,
             pub message: String
@@ -5608,7 +5577,6 @@ pub mod portal {
             Request(Request),
             Response(Response),
             Artifact(Exchanger<ArtifactRequest>), // portal inlet will cache and return artifact
-            Config(Exchanger<ArtifactRequest>), // portal inlet will cache, parse and return artifact config
             Status(StatusUpdate),
             Close(CloseReason),
         }
@@ -5622,8 +5590,7 @@ pub mod portal {
                         // Response will need a from field for it to work within Ports
                         Option::None
                     }
-                    Frame::Artifact(artifact) => Option::Some(artifact.from.clone()),
-                    Frame::Config(config) => Option::Some(config.from.clone()),
+                    Frame::Artifact(artifact) => Option::None,
                     Frame::Status(status) => Option::Some(status.from.clone()),
                     Frame::Close(_) => Option::None,
                     Frame::AssignRequest(_) => Option::None,
@@ -5675,8 +5642,7 @@ pub mod portal {
             Assign(Exchanger<Assign>),
             Request(Request),
             Response(Response),
-            Artifact(Exchanger<ArtifactResponse<Artifact>>),
-            Config(Exchanger<ArtifactResponse<Config<ConfigBody>>>),
+            Artifact(Exchanger<ArtifactResponse>),
             Close(CloseReason),
         }
 
@@ -5687,7 +5653,6 @@ pub mod portal {
                     Frame::Request(request) => Option::Some(request.to.clone()),
                     Frame::Response(response) => Option::Some(response.to.clone()),
                     Frame::Artifact(artifact) => Option::Some(artifact.to.clone()),
-                    Frame::Config(config) => Option::Some(config.to.clone()),
                     Frame::Close(_) => Option::None,
                 }
             }
@@ -5720,6 +5685,13 @@ pub mod portal {
         use crate::version::v0_0_1::artifact::{Artifact, ArtifactRequest, ArtifactResponse};
         use crate::version::v0_0_1::frame::PrimitiveFrame;
         use crate::version::v0_0_1::portal::Exchanger;
+        use serde::{Serialize,Deserialize};
+
+        #[derive(Debug,Clone,Serialize,Deserialize)]
+        pub struct PortalAuth {
+            pub user: String,
+            pub portal_key: Option<String>
+        }
 
         #[derive(Debug, Clone, Serialize, Deserialize, strum_macros::Display)]
         pub enum Frame {
@@ -5755,6 +5727,7 @@ pub mod portal {
         use crate::version::v0_0_1::artifact::{Artifact, ArtifactResponse};
         use crate::version::v0_0_1::frame::PrimitiveFrame;
         use crate::version::v0_0_1::portal::Exchanger;
+        use serde::{Serialize,Deserialize};
 
         #[derive(Debug, Clone, Serialize, Deserialize, strum_macros::Display)]
         pub enum Frame {

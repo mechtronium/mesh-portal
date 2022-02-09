@@ -32,9 +32,8 @@ mod tests {
     use tokio::time::Duration;
 
     use mesh_portal_api_client::{client, InletApi, ResourceCtrl, PortalSkel, ResourceCtrlFactory, ResourceSkel};
-    use mesh_portal_api_server::{MuxCall, Portal, PortalMuxer, Router, PortalAssignRequestHandler, DefaultPortalRequestHandler};
+    use mesh_portal_api_server::{MuxCall, Portal, PortalMuxer, MeshRouter, PortalAssignRequestHandler, DefaultPortalRequestHandler};
     use mesh_portal_serde::mesh;
-    use mesh_portal_serde::version::latest::entity::request::{Msg, Rc, RcCommand, ReqEntity};
     use mesh_portal_serde::version::latest::entity::response;
     use mesh_portal_serde::version::latest::id::{Address, ResourceKind, KindParts};
     use mesh_portal_serde::version::latest::messaging::{Exchange, Message, Request, Response};
@@ -47,7 +46,7 @@ mod tests {
     use mesh_portal_tcp_common::{
         FrameReader, FrameWriter, PrimitiveFrameReader, PrimitiveFrameWriter,
     };
-    use mesh_portal_tcp_server::{TcpServerCall, Event, PortalServer, PortalTcpServer, PortalAuth};
+    use mesh_portal_tcp_server::{TcpServerCall, PortalServerEvent, PortalServer, PortalTcpServer, PortalAuth};
     use mesh_portal_serde::version::latest::pattern::AddressKindPattern;
     use mesh_portal_serde::version::latest::util::unique_id;
     use mesh_portal_serde::version::latest::config::{Assign, Config, ResourceConfigBody};
@@ -127,25 +126,25 @@ mod tests {
                 while let Result::Ok(event) = broadcast_rx.recv().await {
 
                 yield_now().await;
-                if let Event::Status(status) = &event {
+                if let PortalServerEvent::Status(status) = &event {
                         println!("event: Status({})", status.to_string());
                     } else {
                         println!("event: {}", event.to_string());
                     }
                     match event {
                         // fix this: it should not be Unknown (but Done isn't working)
-                        Event::Status(Status::Unknown) => {
+                        PortalServerEvent::Status(Status::Unknown) => {
                         }
-                        Event::Status(Status::Panic(error)) => {
+                        PortalServerEvent::Status(Status::Panic(error)) => {
                             eprintln!("PANIC: {}", error);
                         }
 
-                        Event::ClientConnected => {}
-                        Event::FlavorNegotiation(_) => {}
-                        Event::Authorization(_) => {}
-                        Event::ResourceCtrl(_) => {}
-                        Event::Shutdown => {}
-                        Event::Status(_) => {}
+                        PortalServerEvent::ClientConnected => {}
+                        PortalServerEvent::FlavorNegotiation(_) => {}
+                        PortalServerEvent::Authorization(_) => {}
+                        PortalServerEvent::ResourceAssigned(_) => {}
+                        PortalServerEvent::Shutdown => {}
+                        PortalServerEvent::Status(_) => {}
                     }
                     yield_now().await;
                 }
@@ -175,7 +174,7 @@ println!("created client: fred TCP client");
 
     pub struct TestRouter {}
 
-    impl Router for TestRouter {
+    impl MeshRouter for TestRouter {
         fn route(&self, message: Message) {
             todo!()
         }
@@ -233,7 +232,7 @@ println!("created client: fred TCP client");
             test_logger
         }
 
-        fn router_factory(&self, mux_tx: Sender<MuxCall>) -> Box<dyn Router> {
+        fn router_factory(&self, mux_tx: Sender<MuxCall>) -> Box<dyn MeshRouter> {
             Box::new(InYourFaceRouter { mux_tx })
         }
 
@@ -281,7 +280,7 @@ println!("created client: fred TCP client");
     pub struct InYourFaceRouter {
         mux_tx: Sender<MuxCall>,
     }
-    impl Router for InYourFaceRouter {
+    impl MeshRouter for InYourFaceRouter {
         fn route(&self, message: Message) {
 
             let mux_tx = self.mux_tx.clone();

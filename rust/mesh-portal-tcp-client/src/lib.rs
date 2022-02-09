@@ -4,24 +4,26 @@ extern crate async_trait;
 #[macro_use]
 extern crate anyhow;
 
-use mesh_portal_tcp_common::{PrimitiveFrameReader, PrimitiveFrameWriter, FrameWriter, FrameReader, PortalAuth};
+use mesh_portal_tcp_common::{PrimitiveFrameReader, PrimitiveFrameWriter, FrameWriter, FrameReader };
 use anyhow::Error;
-use mesh_portal_api_client::{Portal, ResourceCtrl, PortalSkel, InletApi, Inlet, ResourceCtrlFactory};
+use mesh_portal_api_client::{Portal, ResourceCtrl, PortalSkel, InletApi, Inlet, ResourceCtrlFactory, Exchanges, PrePortalSkel};
 use std::sync::Arc;
+use dashmap::DashMap;
 use tokio::net::TcpStream;
-use tokio::sync::mpsc;
+use tokio::sync::{broadcast, mpsc};
 use mesh_portal_serde::version::latest::portal;
-use mesh_portal_serde::version::latest::log::Log;
 use tokio::sync::mpsc::error::TrySendError;
 use tokio::task::yield_now;
 use mesh_portal_serde::version;
 use tokio::time::Duration;
 use mesh_portal_serde::version::latest::portal::{outlet, inlet, Exchanger, initin, initout};
+use mesh_portal_serde::version::latest::portal::initin::PortalAuth;
 use mesh_portal_serde::version::latest::portal::inlet::AssignRequest;
 
 pub struct PortalTcpClient {
     pub host: String,
-    pub portal: Arc<Portal>
+    pub portal: Arc<Portal>,
+    pub close_tx: broadcast::Sender<i32>
 }
 
 impl PortalTcpClient {
@@ -41,7 +43,7 @@ impl PortalTcpClient {
         if let initout::Frame::Ok = reader.read().await? {
 
         } else {
-            let message = format!("AUTH FAILED: {}",result);
+            let message = "FLAVOR NEGOTIATION FAILED".to_string();
             (client.logger())(message.as_str());
             return Err(anyhow!(message));
         }
@@ -52,21 +54,38 @@ impl PortalTcpClient {
         if let initout::Frame::Ok = reader.read().await? {
 
         } else {
-            let message = format!("AUTH FAILED: {}",result);
+            let message = "AUTH FAILED".to_string();
             (client.logger())(message.as_str());
             return Err(anyhow!(message));
         }
 
-        let factory = client.init( &mut reader, &mut writer ).await?;
+        let (inlet_tx, mut inlet_rx) = mpsc::channel(1024 );
+        let (outlet_tx, mut outlet_rx) = mpsc::channel(1024 );
+
+        let inlet = Arc::new(TcpInlet{
+            sender: inlet_tx,
+            logger: client.logger()
+        });
+
+        let skel = PrePortalSkel {
+            config: Default::default(),
+            inlet,
+            logger: client.logger(),
+            exchanges: Arc::new(DashMap::new() ),
+            assign_exchange: Arc::new(DashMap::new() ),
+        };
+
+        let factory = client.init( &mut reader, &mut writer, skel.clone() ).await?;
 
         let mut reader : FrameReader<outlet::Frame> = FrameReader::new(reader.done() );
         let mut writer : FrameWriter<inlet::Frame>  = FrameWriter::new(writer.done() );
 
-        let (inlet_tx, mut inlet_rx) = mpsc::channel(1024 );
-        let (outlet_tx, mut outlet_rx) = mpsc::channel(1024 );
+
+        let (close_tx,_) = broadcast::channel(128 );
 
         {
             let logger = client.logger();
+            let close_tx = close_tx.clone();
             tokio::spawn(async move {
                 while let Option::Some(frame) = inlet_rx.recv().await {
                     match writer.write(frame).await {
@@ -78,17 +97,15 @@ impl PortalTcpClient {
                     }
                     yield_now().await;
                 }
+                close_tx.send(0);
             });
         }
 
-        let inlet = Box::new(TcpInlet{
-          sender: inlet_tx,
-          logger: client.logger()
-        });
 
-        let portal = Portal::new(Default::default(), inlet, outlet_tx.clone(), outlet_rx, factory, client.logger()).await?;
+        let portal = Portal::new(skel, outlet_tx.clone(), outlet_rx, factory, client.logger()).await?;
         {
             let logger = client.logger();
+            let close_tx = close_tx.clone();
             tokio::spawn(async move {
                 while let Result::Ok(frame) = reader.read().await {
 println!("reading frame: {}",frame.to_string());
@@ -103,12 +120,14 @@ println!("reading frame: {}",frame.to_string());
                     }
                     yield_now().await;
                 }
+                close_tx.send(0);
             });
         }
 
         return Ok(Self {
             host,
-            portal
+            portal,
+            close_tx
         });
 
     }
@@ -124,7 +143,7 @@ pub trait PortalClient: Send+Sync {
     fn auth( &self ) -> PortalAuth;
     fn logger(&self) -> fn(message: &str);
 
-    async fn init( &self, reader: & mut FrameReader<initout::Frame>, writer: & mut FrameWriter<initin::Frame> ) -> Result<Arc< dyn ResourceCtrlFactory >,Error>;
+    async fn init( &self, reader: & mut FrameReader<initout::Frame>, writer: & mut FrameWriter<initin::Frame>, skel: PrePortalSkel ) -> Result<Arc< dyn ResourceCtrlFactory >,Error>;
 
 }
 

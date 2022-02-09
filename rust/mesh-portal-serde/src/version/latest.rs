@@ -88,21 +88,13 @@ pub mod pattern {
 pub mod messaging {
     use mesh_portal_versions::version::v0_0_1 as current;
 
+    pub type RequestExchange = current::messaging::RequestExchange;
     pub type Request = current::messaging::Request;
     pub type Response= current::messaging::Response;
     pub type ProtoRequest= current::messaging::ProtoRequest;
-    pub type ProtoResponse= current::messaging::ProtoResponse;
-    pub type ExchangeId = current::messaging::ExchangeId;
-    pub type ExchangeType = current::messaging::ExchangeType;
-    pub type Exchange = current::messaging::Exchange;
     pub type Message = current::messaging::Message;
 }
 
-pub mod log {
-    use mesh_portal_versions::version::v0_0_1 as current;
-
-    pub type Log = current::log::Log;
-}
 
 pub mod frame {
     use mesh_portal_versions::version::v0_0_1 as current;
@@ -177,11 +169,6 @@ pub mod config {
     pub type ConfigBody = current::config::ConfigBody;
     pub type ResourceConfigBody = current::config::ResourceConfigBody;
 
-    pub mod mechtron {
-        use mesh_portal_versions::version::v0_0_1 as current;
-
-        pub type MechtronConfig = current::config::mechtron::MechtronConfig;
-    }
 
     pub mod bind {
         use mesh_portal_versions::version::v0_0_1 as current;
@@ -304,6 +291,7 @@ pub mod portal {
     pub mod initin {
         use mesh_portal_versions::version::v0_0_1 as current;
         pub type Frame = current::portal::initin::Frame;
+        pub type PortalAuth = current::portal::initin::PortalAuth;
     }
 
     pub mod initout{

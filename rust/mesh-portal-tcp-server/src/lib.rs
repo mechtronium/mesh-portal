@@ -20,29 +20,30 @@ use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::sync::{broadcast, mpsc, Mutex, oneshot};
 use tokio::sync::mpsc::error::SendTimeoutError;
 
-use mesh_portal_api_server::{MuxCall, Portal, PortalMuxer, Router, PortalAssignRequestHandler, PortalCall};
+use mesh_portal_api_server::{MuxCall, Portal, PortalMuxer, MeshRouter, PortalAssignRequestHandler, PortalCall, PortalMuxerEvent};
 use mesh_portal_serde::version::latest::frame::CloseReason;
-use mesh_portal_serde::version::latest::log::Log;
 use mesh_portal_serde::version::latest::portal::{Exchanger, initin, initout, inlet, outlet};
-use mesh_portal_serde::version::latest::resource::Status;
+use mesh_portal_serde::version::latest::resource::{ResourceStub, Status};
 use mesh_portal_serde::version::latest::resource::Code;
-use mesh_portal_tcp_common::{PortalAuth, FrameReader, FrameWriter, PrimitiveFrameReader, PrimitiveFrameWriter, PortalInfo};
+use mesh_portal_tcp_common::{FrameReader, FrameWriter, PrimitiveFrameReader, PrimitiveFrameWriter, PortalInfo};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::future::Future;
 use tokio::task::yield_now;
 use mesh_portal_serde::version::latest::config::PortalConfig;
-use mesh_portal_serde::version::latest::messaging::Message;
+use mesh_portal_serde::version::latest::messaging::{Message, Response};
+use mesh_portal_serde::version::latest::messaging::Request;
 use serde::{Serialize,Deserialize};
+use tokio::sync::broadcast::Receiver;
+use tokio::sync::oneshot::error::RecvError;
+use mesh_portal_serde::version::latest::portal::initin::PortalAuth;
+use mesh_portal_serde::version::latest::portal::inlet::Log;
 
 #[derive(Clone,strum_macros::Display)]
-pub enum Event {
+pub enum PortalServerEvent {
     Status(Status),
     ClientConnected,
     FlavorNegotiation(EventResult<String>),
     Authorization(EventResult<String>),
-    ResourceCtrl(EventResult<String>),
-    Added(PortalInfo),
-    Removed(PortalInfo),
     Shutdown,
 }
 
@@ -53,8 +54,8 @@ pub enum EventResult<E>{
 }
 
 pub enum TcpServerCall {
-    ListenEvents(oneshot::Sender<broadcast::Receiver<Event>>),
-    InjectMessage(Message),
+    ListenEvents(oneshot::Sender<broadcast::Receiver<PortalServerEvent>>),
+    GetPortalMuxerBroadcaster(oneshot::Sender<broadcast::Receiver<PortalMuxerEvent>>),
     Shutdown
 }
 
@@ -74,7 +75,7 @@ pub struct PortalTcpServer {
     portal_config: PortalConfig,
     port: usize,
     server: Arc<dyn PortalServer>,
-    broadcaster_tx: broadcast::Sender<Event>,
+    broadcaster_tx: broadcast::Sender<PortalServerEvent>,
     call_tx: mpsc::Sender<TcpServerCall>,
     mux_tx: mpsc::Sender<MuxCall>,
     alive: Arc<Mutex<Alive>>,
@@ -108,27 +109,39 @@ impl PortalTcpServer {
                 };
 
                 tokio::spawn(async move {
-                    server.broadcaster_tx.send(Event::Status(Status::Unknown)).unwrap_or_default();
+                    server.broadcaster_tx.send(PortalServerEvent::Status(Status::Unknown)).unwrap_or_default();
                     {
                         let port = server.port.clone();
                         let broadcaster_tx = server.broadcaster_tx.clone();
                         let alive = server.alive.clone();
+                        let mux_tx = server.mux_tx.clone();
                         tokio::spawn(async move {
                             yield_now().await;
                             while let Option::Some(call) = call_rx.recv().await {
                                 match call {
-                                    TcpServerCall::InjectMessage(_) => {}
                                     TcpServerCall::ListenEvents(tx) => {
                                         tx.send(broadcaster_tx.subscribe());
                                     },
                                     TcpServerCall::Shutdown => {
-                                        broadcaster_tx.send(Event::Shutdown).unwrap_or_default();
+                                        broadcaster_tx.send(PortalServerEvent::Shutdown).unwrap_or_default();
                                         alive.lock().await.alive = false;
                                         match std::net::TcpStream::connect(format!("localhost:{}", port)) {
                                             Ok(_) => {}
                                             Err(_) => {}
                                         }
                                         return;
+                                    }
+                                    TcpServerCall::GetPortalMuxerBroadcaster(tx) => {
+                                        let (tx2,rx2) = oneshot::channel();
+                                        mux_tx.send( MuxCall::GetBroadcaster(tx)).await;
+                                        match rx2.await {
+                                            Ok(broadcast_rx) => {
+                                                tx.send( broadcast_rx );
+                                            }
+                                            Err(err) => {
+                                                eprintln!("{}",err.to_string());
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -149,7 +162,7 @@ impl PortalTcpServer {
                 Ok(std_listener) => {
                     tokio::time::sleep(Duration::from_secs(0)).await;
                     let listener = TcpListener::from_std(std_listener).unwrap();
-                    self.broadcaster_tx.send( Event::Status(Status::Ready) ).unwrap_or_default();
+                    self.broadcaster_tx.send( PortalServerEvent::Status(Status::Ready) ).unwrap_or_default();
                     tokio::time::sleep(Duration::from_secs(0)).await;
                     while let Ok((stream, _)) = listener.accept().await {
                         {
@@ -158,15 +171,15 @@ impl PortalTcpServer {
                                 break;
                             }
                         }
-                        self.broadcaster_tx.send( Event::ClientConnected ).unwrap_or_default();
+                        self.broadcaster_tx.send( PortalServerEvent::ClientConnected ).unwrap_or_default();
                         (&self).handle(stream).await;
                     }
-                    self.broadcaster_tx.send( Event::Status(Status::Done(Code::Ok)) ).unwrap_or_default();
+                    self.broadcaster_tx.send( PortalServerEvent::Status(Status::Done(Code::Ok)) ).unwrap_or_default();
                 }
                 Err(error) => {
                     let message = format!("FATAL: could not setup TcpListener {}", error);
                     (self.server.logger())(message.as_str());
-                    self.broadcaster_tx.send( Event::Status(Status::Panic(message)) ).unwrap_or_default();
+                    self.broadcaster_tx.send( PortalServerEvent::Status(Status::Panic(message)) ).unwrap_or_default();
                 }
             }
 
@@ -184,18 +197,18 @@ impl PortalTcpServer {
             // first verify flavor matches
             if flavor != self.server.flavor() {
                 let message = format!("ERROR: flavor does not match.  expected '{}'", self.server.flavor());
+                println!("{}",message);
 
-                writer.write_string(message.clone()).await?;
                 tokio::time::sleep(Duration::from_secs(0)).await;
 
-                self.broadcaster_tx.send(Event::FlavorNegotiation(EventResult::Err(message.clone()))).unwrap_or_default();
+                self.broadcaster_tx.send(PortalServerEvent::FlavorNegotiation(EventResult::Err(message.clone()))).unwrap_or_default();
                 return Err(anyhow!(message));
             } else {
-                self.broadcaster_tx.send(Event::FlavorNegotiation(EventResult::Ok(self.server.flavor()))).unwrap_or_default();
+                self.broadcaster_tx.send(PortalServerEvent::FlavorNegotiation(EventResult::Ok(self.server.flavor()))).unwrap_or_default();
             }
         } else {
             let message = format!("ERROR: unexpected frame.  expected flavor '{}'", self.server.flavor());
-            self.broadcaster_tx.send(Event::FlavorNegotiation(EventResult::Err(message.clone()))).unwrap_or_default();
+            self.broadcaster_tx.send(PortalServerEvent::FlavorNegotiation(EventResult::Err(message.clone()))).unwrap_or_default();
             return Err(anyhow!(message));
         }
 
@@ -206,7 +219,7 @@ impl PortalTcpServer {
 
         if let initin::Frame::Auth(client_ident) = reader.read().await?
         {
-                self.broadcaster_tx.send( Event::Authorization(EventResult::Ok(client_ident.user.clone()))).unwrap_or_default();
+                self.broadcaster_tx.send( PortalServerEvent::Authorization(EventResult::Ok(client_ident.user.clone()))).unwrap_or_default();
                 tokio::time::sleep(Duration::from_secs(0)).await;
                 writer.write( initout::Frame::Ok ).await?;
 
@@ -228,7 +241,7 @@ impl PortalTcpServer {
 
                         let portal = Portal::new(portal_key.clone(),self.portal_config.clone(), self.request_handler.clone(), outlet_tx, logger );
                         let inlet_tx = portal.inlet_tx.clone();
-                        let result = self.mux_tx.send(MuxCall::Add(portal)).await;
+                        let result = self.mux_tx.send(MuxCall::AddPortal(portal)).await;
                         yield_now().await;
                         match result {
                             Err(err) => {
@@ -242,11 +255,11 @@ impl PortalTcpServer {
                                         let assign = Exchanger::new(assign);
 
                                         let portal_info = PortalInfo {
-                                            portal_key: assign.portal_key.clone()
+                                            portal_key: portal_key.clone()
                                         };
 
                                         self.mux_tx.send(MuxCall::Assign {assign, portal_key }).await?;
-                                        self.broadcaster_tx.send( Event::Added(portal_info) ).unwrap_or_default();
+                                        self.broadcaster_tx.send( PortalServerEvent::PortalAdded(portal_info) ).unwrap_or_default();
                                         yield_now().await;
                                     }
                                     Err(_) => {
@@ -315,7 +328,7 @@ pub trait PortalServer: Sync+Send {
         Ok(client_ident)
     }
 
-    fn router_factory(&self, mux_tx: tokio::sync::mpsc::Sender<MuxCall> ) -> Box<dyn Router>;
+    fn router_factory(&self) -> Box<dyn MeshRouter>;
     fn logger(&self) -> fn(message: &str);
     fn portal_request_handler(&self) -> Arc<dyn PortalAssignRequestHandler>;
 }

@@ -189,13 +189,5 @@ impl PrimitiveFrameWriter {
     }
 }
 
-#[derive(Debug,Clone,Serialize,Deserialize)]
-pub struct PortalAuth {
-    pub user: String,
-    pub portal_key: Option<String>
-}
 
-#[derive(Debug,Clone)]
-pub struct PortalInfo {
-    pub portal_key: String
-}
+
