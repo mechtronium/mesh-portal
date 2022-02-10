@@ -66,7 +66,7 @@ impl PortalApi {
 pub enum PortalEvent {
     PortalAdded(PortalApi),
     PortalRemoved(String),
-    ResourceAdded(ResourceApi),
+    ResourceAdded(PortalResourceApi),
     ResourceRemoved(Address)
 }
 
@@ -137,7 +137,7 @@ impl Portal {
                            let assign = Exchanger::new(assign);
                            let stub = assign.stub.clone();
                            outlet_tx.send(outlet::Frame::Assign(assign)).await;
-                           let resource_api = ResourceApi {
+                           let resource_api = PortalResourceApi {
                                stub,
                                portal_api: portal_api
                            };
@@ -308,12 +308,12 @@ pub trait PortalRequestHandler: Send + Sync {
 
 
 #[derive(Debug,Clone)]
-pub struct ResourceApi {
+pub struct PortalResourceApi {
    portal_api: PortalApi,
    pub stub: ResourceStub
 }
 
-impl ResourceApi {
+impl PortalResourceApi {
    pub async fn handle_request( &self, request: Request ) -> Response {
        self.portal_api.handle_request(request).await
    }
