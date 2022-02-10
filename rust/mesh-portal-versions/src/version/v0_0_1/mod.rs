@@ -2812,6 +2812,7 @@ pub mod messaging {
     use std::convert::TryInto;
 
     use serde::{Deserialize, Serialize};
+    use tokio::sync::oneshot;
 
     use crate::error::Error;
     use crate::version::v0_0_1::entity::request::RequestCore;
@@ -2855,7 +2856,7 @@ pub mod messaging {
         }
 
         pub fn respond(self, core: ResponseCore) -> ProtoResponse {
-            ProtoResponse::new(self.from, core, self.id)
+            ProtoResponse::new( core )
         }
 
         pub fn fail( self, error: String ) -> Response {
@@ -2935,17 +2936,13 @@ pub mod messaging {
 
     #[derive(Debug,Clone)]
     pub struct ProtoResponse {
-        pub to: Address,
         pub core: ResponseCore,
-        pub response_to: String
     }
 
     impl ProtoResponse{
-        pub fn new(to: Address, core: ResponseCore, response_to: String ) -> Self {
+        pub fn new( core: ResponseCore) -> Self {
             Self {
-                to,
                 core,
-                response_to
             }
         }
     }
@@ -5291,6 +5288,10 @@ pub mod entity {
                     body: payload
                 }
             }
+
+            pub fn is_ok(&self) -> bool {
+                return self.code >= 200 && self.code <= 299;
+            }
         }
 
         impl TryInto<HttpResponse> for ResponseCore {
@@ -5562,6 +5563,15 @@ pub mod portal {
         pub struct Log {
             pub src: String,
             pub message: String
+        }
+
+        impl Log {
+            pub fn new( src: &str, message: &str ) -> Self {
+                Self {
+                    src: src.to_string(),
+                    message: message.to_string()
+                }
+            }
         }
 
         impl ToString for Log {

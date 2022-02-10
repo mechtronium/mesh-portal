@@ -92,6 +92,7 @@ pub mod messaging {
     pub type Request = current::messaging::Request;
     pub type Response= current::messaging::Response;
     pub type ProtoRequest= current::messaging::ProtoRequest;
+    pub type ProtoResponse = current::messaging::ProtoResponse;
     pub type Message = current::messaging::Message;
 }
 

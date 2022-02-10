@@ -31,14 +31,14 @@ mod tests {
     use tokio::task::yield_now;
     use tokio::time::Duration;
 
-    use mesh_portal_api_client::{client, InletApi, ResourceCtrl, PortalSkel, ResourceCtrlFactory, ResourceSkel};
-    use mesh_portal_api_server::{MuxCall, Portal, PortalMuxer, MeshRouter, PortalAssignRequestHandler, DefaultPortalRequestHandler};
+    use mesh_portal_api_client::{client, InletApi, ResourceCtrl, PortalSkel, ResourceCtrlFactory, ResourceSkel, PrePortalSkel};
+    use mesh_portal_api_server::{ Portal,  PortalRequestHandler };
     use mesh_portal_serde::mesh;
     use mesh_portal_serde::version::latest::entity::response;
     use mesh_portal_serde::version::latest::id::{Address, ResourceKind, KindParts};
-    use mesh_portal_serde::version::latest::messaging::{Exchange, Message, Request, Response};
+    use mesh_portal_serde::version::latest::messaging::{ Message, Request, Response};
     use mesh_portal_serde::version::latest::payload::{Payload, Primitive, PrimitiveList, PrimitiveType};
-    use mesh_portal_serde::version::latest::portal::{inlet, outlet};
+    use mesh_portal_serde::version::latest::portal::{initin, initout, inlet, outlet};
     use mesh_portal_serde::version::latest::resource::Status;
     use mesh_portal_serde::version::latest::resource::ResourceStub;
     use mesh_portal_serde::version::latest::resource::Archetype;
@@ -54,6 +54,7 @@ mod tests {
     use mesh_portal_serde::version::latest::entity::response::ResponseCore;
     use mesh_portal_serde::version::latest::entity::response::PayloadResponse;
     use mesh_portal_serde::version::latest::frame::PrimitiveFrame;
+    use mesh_portal_serde::version::latest::portal::initout::Frame;
 
     lazy_static! {
     static ref GLOBAL_TX : tokio::sync::broadcast::Sender<GlobalEvent> = {
@@ -182,7 +183,7 @@ println!("created client: fred TCP client");
 
     pub struct TestPortalServer {
         pub atomic: AtomicU32,
-        pub request_handler: Arc<dyn PortalAssignRequestHandler>
+        pub request_handler: Arc<dyn PortalRequestHandler>
     }
 
     impl TestPortalServer {
@@ -232,12 +233,13 @@ println!("created client: fred TCP client");
             test_logger
         }
 
-        fn router_factory(&self, mux_tx: Sender<MuxCall>) -> Box<dyn MeshRouter> {
-            Box::new(InYourFaceRouter { mux_tx })
+
+        fn portal_request_handler(&self) -> Arc<dyn PortalRequestHandler> {
+            self.request_handler.clone()
         }
 
-        fn portal_request_handler(&self) -> Arc<dyn PortalAssignRequestHandler> {
-            self.request_handler.clone()
+        fn add_portal(&self, portal: Portal) {
+            todo!()
         }
     }
 
@@ -255,7 +257,11 @@ println!("created client: fred TCP client");
     }
 
     #[async_trait]
-    impl PortalAssignRequestHandler for TestPortalRequestHandler {
+    impl PortalRequestHandler for TestPortalRequestHandler {
+        async fn route_to_mesh(&self, request: Request) -> Response {
+            todo!()
+        }
+
         async fn default_assign(&self) -> Result<Assign, Error> {
             let index = self.seq.fetch_add(1, Ordering::Relaxed );
             let address = Address::from_str( format!("space:resource-{}",index).as_str() )?;
@@ -356,31 +362,23 @@ println!("created client: fred TCP client");
             return "test".to_string();
         }
 
-        async fn auth(
-            &self,
-            reader: &mut PrimitiveFrameReader,
-            writer: &mut PrimitiveFrameWriter,
-        ) -> Result<(), Error> {
-            let client_ident = PortalAuth {
+        fn auth(&self) -> PortalAuth {
+            PortalAuth {
                 user: self.user.clone(),
                 portal_key: None
-            };
-            let frame = bincode::serialize(&client_ident )?;
-            let frame : PrimitiveFrame = From::from(frame);
-            writer.write(frame).await?;
-            Ok(())
+            }
         }
 
-
-        fn resource_ctrl_factory(&self) ->Arc<dyn ResourceCtrlFactory> {
-            Arc::new(FriendlyResourceCtrlFactory{name: self.user.clone()})
-        }
 
         fn logger(&self) -> fn(m: &str) {
             fn logger(message: &str) {
                 println!("{}", message);
             }
             logger
+        }
+
+        async fn init(&self, reader: &mut FrameReader<initout::Frame>, writer: &mut FrameWriter<initin::Frame>, skel: PrePortalSkel) -> Result<Arc<dyn ResourceCtrlFactory>, Error> {
+            todo!()
         }
     }
 

@@ -28,10 +28,12 @@ use dashmap::mapref::one::Ref;
 use tokio::sync::oneshot::Sender;
 use tokio::task::yield_now;
 use mesh_portal_serde::version::latest::config::{Config, PortalConfig, ResourceConfigBody};
+use mesh_portal_serde::version::latest::entity::response::ResponseCore;
 use mesh_portal_serde::version::latest::id::Address;
-use mesh_portal_serde::version::latest::messaging::{Exchange, ExchangeId, Request, Response};
+use mesh_portal_serde::version::latest::messaging::{ProtoResponse, Request, Response};
 use mesh_portal_serde::version::latest::portal::inlet::{AssignRequest, Log};
 use mesh_portal_serde::version::latest::portal::outlet::Frame;
+use mesh_portal_serde::version::latest::util::unique_id;
 
 pub fn std_logger( log: Log ) {
     println!("{}", log.to_string())
@@ -56,9 +58,10 @@ pub trait ResourceCtrl: Sync+Send {
         Ok(())
     }
 
-    async fn handle(&self, frame: outlet::Frame ) -> Result<Option<Response>,Error> {
-        Ok(Option::None)
+    async fn handle_request( &self, request: Request ) -> ResponseCore {
+        request.core.not_found()
     }
+
 }
 
 pub fn log(message: &str) {
@@ -85,7 +88,7 @@ impl StatusChamber{
     }
 }
 
-pub type Exchanges = Arc<DashMap<ExchangeId, oneshot::Sender<Response>>>;
+pub type Exchanges = Arc<DashMap<String, oneshot::Sender<Response>>>;
 
 #[derive(Clone)]
 pub struct PrePortalSkel {
@@ -159,50 +162,53 @@ println!("Portal received frame: {}", frame.to_string());
 
                         async fn process( skel: PortalSkel,  resources: &mut HashMap<Address,Arc<dyn ResourceCtrl>>, frame: outlet::Frame ) -> Result<(),Error> {
 println!("CLIENT PROCESS");
-                            if let Frame::Assign(assign) = &frame {
-                                let resource_skel = ResourceSkel {
-                                    portal: skel.clone(),
-                                    stub: assign.stub.clone(),
-                                    logger: skel.logger,
-                                };
-                                let resource = skel.ctrl_factory.create(resource_skel)?;
-                                resources.insert( assign.stub.address.clone(), resource.clone() );
-                                let assign = assign.clone();
-                                tokio::spawn( async move {
-println!("CLIENT INIT");
-                                    resource.init().await;
-                                    match skel.assign_exchange.remove( &assign.id ) {
-                                        None => {}
-                                        Some((_,tx)) => {
-                                            tx.send( resource );
+
+                            match frame {
+                                outlet::Frame::Assign(assign) => {
+                                    let resource_skel = ResourceSkel {
+                                        portal: skel.clone(),
+                                        stub: assign.stub.clone(),
+                                        logger: skel.logger,
+                                    };
+                                    let resource = skel.ctrl_factory.create(resource_skel)?;
+                                    resources.insert( assign.stub.address.clone(), resource.clone() );
+                                    let assign = assign.clone();
+                                    tokio::spawn( async move {
+                                        println!("CLIENT INIT");
+                                        resource.init().await;
+                                        match skel.assign_exchange.remove( &assign.id ) {
+                                            None => {}
+                                            Some((_,tx)) => {
+                                                tx.send( resource );
+                                            }
                                         }
-                                    }
-println!("CLIENT INIT COMPLETE");
-                                });
+                                        println!("CLIENT INIT COMPLETE");
+                                    });
 
-
-println!("CLIENT RTN OK");
-                                return Ok(());
-                            }
-
-                            if let Frame::Response(response)= &frame {
-println!("RECEIVE RESPONSE");
-                                if let Option::Some((id,tx)) = skel.exchanges.remove(&response.response_to) {
-println!("... EXchange Id {}", id);
-                                    tx.send(response.clone());
-                                    return Ok(())
                                 }
-                            } else {
-                                eprintln!("could not find exchange for response: ")
-                            }
-println!("Client outlet::Frame{}",frame.to_string());
-                            let to = frame.to().ok_or::<Error>(anyhow!("expected frame to have a to"))?;
-                            let resource = resources.get(&to).ok_or(anyhow!("expected to find resource for address"))?;
-
-                            println!("SSS SEnding to outlet_frame....");
-                            if let Option::Some(response) = resource.handle(frame).await? {
-                                println!("GGG GOT a response !");
-                                skel.inlet.inlet_frame(inlet::Frame::Response(response));
+                                outlet::Frame::Request(request) => {
+                                    let resource = resources.get(&request.to ).ok_or(anyhow!("expected to find resource for address '{}'", request.to.to_string()))?;
+                                    let response = resource.handle_request(request.clone()).await;
+                                    let response = Response {
+                                        id: unique_id(),
+                                        from: request.to,
+                                        to: request.from,
+                                        core: response,
+                                        response_to: request.id
+                                    };
+                                    skel.inlet.inlet_frame(inlet::Frame::Response(response));
+                                }
+                                outlet::Frame::Response(response) => {
+                                    if let Some((_,tx)) = skel.exchanges.remove(&response.response_to)
+                                    {
+                                        tx.send( response );
+                                    }
+                                }
+                                outlet::Frame::Artifact(_) => {
+                                    unimplemented!()
+                                }
+                                outlet::Frame::Close(_) => {
+                                }
                             }
 
                             Ok(())
@@ -233,6 +239,10 @@ println!("Client outlet::Frame{}",frame.to_string());
        self.skel.assign_exchange.insert( request.id.clone(), tx );
        self.skel.inlet.inlet_frame(inlet::Frame::AssignRequest(request) );
        Ok(rx.await?)
+    }
+
+    pub async fn request( &self, request: Request ) -> Response {
+        self.skel.api().exchange(request).await
     }
 }
 
