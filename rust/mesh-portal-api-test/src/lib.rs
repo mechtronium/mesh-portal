@@ -52,7 +52,6 @@ mod tests {
     use mesh_portal_serde::version::latest::config::{Assign, Config, ResourceConfigBody};
     use mesh_portal_serde::version::latest::entity::request::select::{Select, SelectIntoPayload, SelectionKind};
     use mesh_portal_serde::version::latest::entity::response::ResponseCore;
-    use mesh_portal_serde::version::latest::entity::response::PayloadResponse;
     use mesh_portal_serde::version::latest::frame::PrimitiveFrame;
     use mesh_portal_serde::version::latest::portal::initout::Frame;
 
@@ -122,7 +121,7 @@ mod tests {
             let server = server.clone();
             tokio::spawn(async move {
                 let (listen_tx, listen_rx) = tokio::sync::oneshot::channel();
-                server.send(TcpServerCall::ListenEvents(listen_tx)).await;
+                server.send(TcpServerCall::GetServerEvents(listen_tx)).await;
                 let mut broadcast_rx = listen_rx.await.unwrap();
                 while let Result::Ok(event) = broadcast_rx.recv().await {
 

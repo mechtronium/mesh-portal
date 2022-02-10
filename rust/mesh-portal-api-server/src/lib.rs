@@ -34,6 +34,47 @@ use mesh_portal_serde::version::latest::config::{Assign, Config, ConfigBody, Por
 use mesh_portal_serde::version::latest::portal::inlet::{AssignRequest, Log};
 use mesh_portal_serde::version::latest::portal::outlet::Frame;
 
+#[derive(Debug,Clone)]
+pub struct PortalApi {
+    pub info: PortalInfo,
+    tx: mpsc::Sender<PortalCall>
+}
+
+impl PortalApi {
+    pub async fn handle_request( &self, request: Request ) -> Response {
+        let (tx,rx) = oneshot::channel();
+        self.tx.send( PortalCall::Request { request: request.clone(), tx }).await;
+        match tokio::time::timeout(Duration::from_secs(60), rx ).await {
+            Ok(Ok(response)) => {
+                response
+            }
+            _ => {
+                request.fail("timeout".to_string() )
+            }
+        }
+    }
+
+    pub fn assign(&self, assign: Assign)  {
+        let tx = self.tx.clone();
+        tokio::spawn(async move  {
+            tx.send( PortalCall::Assign(assign)).await;
+        });
+    }
+}
+
+#[derive(Clone)]
+pub enum PortalEvent {
+    PortalAdded(PortalApi),
+    PortalRemoved(String),
+    ResourceAdded(ResourceApi),
+    ResourceRemoved(Address)
+}
+
+enum PortalCall {
+  Request{ request: Request, tx: oneshot::Sender<Response>},
+  Assign(Assign),
+}
+
 #[derive(Clone, Eq, PartialEq, Hash)]
 pub enum PortalStatus {
     None,
@@ -54,6 +95,8 @@ pub struct Portal {
     outlet_tx: mpsc::Sender<outlet::Frame>,
     exchanges: Arc<DashMap<String,oneshot::Sender<Response>>>,
     pub log: fn(log: Log),
+    tx: mpsc::Sender<PortalCall>,
+    broadcast_tx: broadcast::Sender<PortalEvent>
 }
 
 impl Portal {
@@ -62,10 +105,48 @@ impl Portal {
         config: PortalConfig,
         outlet_tx: mpsc::Sender<outlet::Frame>,
         request_handler: Arc<dyn PortalRequestHandler>,
+        broadcast_tx: broadcast::Sender<PortalEvent>,
         logger: fn(log: Log),
     ) -> (Self,mpsc::Sender<inlet::Frame>) {
         let (inlet_tx,mut inlet_rx) = mpsc::channel(1024);
         let exchanges: Arc<DashMap<String,oneshot::Sender<Response>>> = Arc::new( DashMap::new() );
+        let (tx,mut rx) = mpsc::channel(1024);
+        let portal_api = PortalApi {
+          tx: tx.clone(),
+          info: info.clone()
+        };
+        {
+            let config = config.clone();
+            let exchanges = exchanges.clone();
+            let outlet_tx = outlet_tx.clone();
+            let portal_api = portal_api.clone();
+            let broadcast_tx = broadcast_tx.clone();
+            tokio::spawn(async move {
+               while let Some(call) = rx.recv().await {
+                   match call {
+                       PortalCall::Request { request, tx } => {
+                           let exchanges = exchanges.clone();
+                           let outlet_tx = outlet_tx.clone();
+                           tokio::spawn( async move {
+                               exchanges.insert( request.id.clone(), tx );
+                               outlet_tx.send( outlet::Frame::Request(request.clone()) ).await;
+                           });
+                       }
+                       PortalCall::Assign(assign) => {
+                           let portal_api = portal_api.clone();
+                           let assign = Exchanger::new(assign);
+                           let stub = assign.stub.clone();
+                           outlet_tx.send(outlet::Frame::Assign(assign)).await;
+                           let resource_api = ResourceApi {
+                               stub,
+                               portal_api: portal_api
+                           };
+                           broadcast_tx.send( PortalEvent::ResourceAdded(resource_api));
+                       }
+                   }
+               }
+            });
+        }
 
         {
             let request_handler = request_handler.clone();
@@ -97,7 +178,6 @@ impl Portal {
                                 inlet::Frame::Request(request) => {
                                     let request_handler = request_handler.clone();
                                     let outlet_tx = outlet_tx.clone();
-                                    let exchanges = exchanges.clone();
                                     tokio::spawn(async move {
                                         match tokio::time::timeout(Duration::from_secs(portal_config.response_timeout ), request_handler.route_to_mesh(request.clone()) ).await {
                                             Ok(response) => {
@@ -117,8 +197,20 @@ impl Portal {
                                         (logger)(Log::new( "Portal", "response had no listening request" ));
                                     }
                                 }
-                                inlet::Frame::Artifact(_) => {
-                                    // not implemented
+                                inlet::Frame::Artifact(request) => {
+                                    let request_handler = request_handler.clone();
+                                    let outlet_tx = outlet_tx.clone();
+                                    tokio::spawn( async move {
+                                        match request_handler.handle_artifact_request(request.item.clone()).await {
+                                            Ok(response ) => {
+                                                let response = request.with(response);
+                                                outlet_tx.send( outlet::Frame::Artifact(response)).await;
+                                            }
+                                            Err(err) => {
+                                                (logger)(Log::new( "Portal", err.to_string().as_str() ));
+                                            }
+                                        }
+                                    });
                                 }
                                 inlet::Frame::Status(_) => {
                                     // not implemented
@@ -143,9 +235,18 @@ impl Portal {
             log: logger,
             exchanges,
             outlet_tx,
+            broadcast_tx,
+            tx
         },inlet_tx)
     }
 
+
+    pub fn api(&self) -> PortalApi {
+        PortalApi {
+            info: self.info.clone(),
+            tx: self.tx.clone()
+        }
+    }
 
     pub async fn handle_request(&self, request: Request ) -> Response {
         let (tx,rx) = oneshot::channel();
@@ -178,7 +279,7 @@ impl Portal {
 }
 
 #[async_trait]
-pub trait PortalRequestHandler: Send + Sync + Debug {
+pub trait PortalRequestHandler: Send + Sync {
 
     async fn route_to_mesh(&self, request: Request ) -> Response;
 
@@ -203,4 +304,17 @@ pub trait PortalRequestHandler: Send + Sync + Debug {
     ) -> Result<ArtifactResponse, Error> {
         Err(anyhow!("request handler does not handle configs"))
     }
+}
+
+
+#[derive(Debug,Clone)]
+pub struct ResourceApi {
+   portal_api: PortalApi,
+   pub stub: ResourceStub
+}
+
+impl ResourceApi {
+   pub async fn handle_request( &self, request: Request ) -> Response {
+       self.portal_api.handle_request(request).await
+   }
 }
