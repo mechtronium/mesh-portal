@@ -612,6 +612,38 @@ pub mod id {
         }
     }
 
+    impl ToString for CaptureAddress {
+        fn to_string(&self) -> String {
+            let mut rtn = String::new();
+
+            match &self.route {
+                RouteSegment::Resource => {}
+                RouteSegment::Domain(domain) => {
+                    rtn.push_str(format!("{}::", domain).as_str());
+                }
+                RouteSegment::Tag(tag) => {
+                    rtn.push_str(format!("[{}]::", tag).as_str());
+                }
+                RouteSegment::Mesh(mesh) => {
+                    rtn.push_str(format!("<<{}>>::", mesh).as_str());
+                }
+            }
+
+            if self.segments.is_empty() {
+                "[root]".to_string()
+            }
+            else {
+                for (i, segment) in self.segments.iter().enumerate() {
+                    rtn.push_str(segment.to_string().as_str());
+                    if i != self.segments.len() - 1 {
+                        rtn.push_str(segment.terminating_delim());
+                    }
+                }
+                rtn.to_string()
+            }
+        }
+    }
+
     #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
     pub struct KindParts {
         pub resource_type: ResourceType,
@@ -828,7 +860,7 @@ pub mod pattern {
     use crate::error::Error;
 
     use crate::version::v0_0_1::id::{Address, AddressSegment, ResourceKind, ResourceType, RouteSegment, Specific, Tks, Version};
-    use crate::version::v0_0_1::parse::{address, camel_case_to_string, consume_address_kind_path, file_chars, path, path_regex, Res};
+    use crate::version::v0_0_1::parse::{address, camel_case_to_string, capture_address, consume_address_kind_path, file_chars, path, path_regex, Res};
     use crate::version::v0_0_1::pattern::parse::{address_kind_pattern, pattern};
     use crate::version::v0_0_1::pattern::specific::{
         ProductPattern, VariantPattern, VendorPattern,
@@ -1983,7 +2015,7 @@ println!("address_kind_path.to_string() {}", address_kind_path.to_string() );
     }
 
     pub fn call(input: &str) -> Res<&str, Call> {
-        tuple((address, preceded(tag("^"), call_kind)))(input)
+        tuple((capture_address, preceded(tag("^"), call_kind)))(input)
             .map(|(next, (address, kind))| (next, Call { address, kind }))
     }
 
@@ -3063,7 +3095,7 @@ pub mod payload {
 
     use crate::error::Error;
     use crate::version::v0_0_1::bin::Bin;
-    use crate::version::v0_0_1::id::{Address, ResourceKind, Meta, PayloadClaim, ResourceType};
+    use crate::version::v0_0_1::id::{Address, ResourceKind, Meta, PayloadClaim, ResourceType, CaptureAddress};
     use crate::version::v0_0_1::pattern::TksPattern;
     use std::str::FromStr;
     use std::sync::Arc;
@@ -3583,7 +3615,7 @@ pub mod payload {
 
     #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
     pub struct Call {
-        pub address: Address,
+        pub address: CaptureAddress,
         pub kind: CallKind,
     }
 
