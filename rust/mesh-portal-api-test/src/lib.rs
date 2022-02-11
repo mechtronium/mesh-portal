@@ -31,15 +31,14 @@ mod tests {
     use tokio::task::yield_now;
     use tokio::time::Duration;
 
-    use mesh_portal_api_client::{client, InletApi, ResourceCtrl, PortalSkel, ResourceCtrlFactory, ResourceSkel};
-    use mesh_portal_api_server::{MuxCall, Portal, PortalMuxer, Router, PortalAssignRequestHandler, DefaultPortalRequestHandler};
+    use mesh_portal_api_client::{client, InletApi, ResourceCtrl, PortalSkel, ResourceCtrlFactory, ResourceSkel, PrePortalSkel};
+    use mesh_portal_api_server::{ Portal,  PortalRequestHandler };
     use mesh_portal_serde::mesh;
-    use mesh_portal_serde::version::latest::entity::request::{Msg, Rc, RcCommand, ReqEntity};
     use mesh_portal_serde::version::latest::entity::response;
     use mesh_portal_serde::version::latest::id::{Address, ResourceKind, KindParts};
-    use mesh_portal_serde::version::latest::messaging::{Exchange, Message, Request, Response};
+    use mesh_portal_serde::version::latest::messaging::{ Message, Request, Response};
     use mesh_portal_serde::version::latest::payload::{Payload, Primitive, PrimitiveList, PrimitiveType};
-    use mesh_portal_serde::version::latest::portal::{inlet, outlet};
+    use mesh_portal_serde::version::latest::portal::{initin, initout, inlet, outlet};
     use mesh_portal_serde::version::latest::resource::Status;
     use mesh_portal_serde::version::latest::resource::ResourceStub;
     use mesh_portal_serde::version::latest::resource::Archetype;
@@ -47,14 +46,14 @@ mod tests {
     use mesh_portal_tcp_common::{
         FrameReader, FrameWriter, PrimitiveFrameReader, PrimitiveFrameWriter,
     };
-    use mesh_portal_tcp_server::{TcpServerCall, Event, PortalServer, PortalTcpServer, ClientIdent};
+    use mesh_portal_tcp_server::{TcpServerCall, PortalServerEvent, PortalServer, PortalTcpServer, PortalAuth};
     use mesh_portal_serde::version::latest::pattern::AddressKindPattern;
     use mesh_portal_serde::version::latest::util::unique_id;
     use mesh_portal_serde::version::latest::config::{Assign, Config, ResourceConfigBody};
     use mesh_portal_serde::version::latest::entity::request::select::{Select, SelectIntoPayload, SelectionKind};
-    use mesh_portal_serde::version::latest::entity::response::RespEntity;
-    use mesh_portal_serde::version::latest::entity::response::PayloadResponse;
+    use mesh_portal_serde::version::latest::entity::response::ResponseCore;
     use mesh_portal_serde::version::latest::frame::PrimitiveFrame;
+    use mesh_portal_serde::version::latest::portal::initout::Frame;
 
     lazy_static! {
     static ref GLOBAL_TX : tokio::sync::broadcast::Sender<GlobalEvent> = {
@@ -122,30 +121,30 @@ mod tests {
             let server = server.clone();
             tokio::spawn(async move {
                 let (listen_tx, listen_rx) = tokio::sync::oneshot::channel();
-                server.send(TcpServerCall::ListenEvents(listen_tx)).await;
+                server.send(TcpServerCall::GetServerEvents(listen_tx)).await;
                 let mut broadcast_rx = listen_rx.await.unwrap();
                 while let Result::Ok(event) = broadcast_rx.recv().await {
 
                 yield_now().await;
-                if let Event::Status(status) = &event {
+                if let PortalServerEvent::Status(status) = &event {
                         println!("event: Status({})", status.to_string());
                     } else {
                         println!("event: {}", event.to_string());
                     }
                     match event {
                         // fix this: it should not be Unknown (but Done isn't working)
-                        Event::Status(Status::Unknown) => {
+                        PortalServerEvent::Status(Status::Unknown) => {
                         }
-                        Event::Status(Status::Panic(error)) => {
+                        PortalServerEvent::Status(Status::Panic(error)) => {
                             eprintln!("PANIC: {}", error);
                         }
 
-                        Event::ClientConnected => {}
-                        Event::FlavorNegotiation(_) => {}
-                        Event::Authorization(_) => {}
-                        Event::ResourceCtrl(_) => {}
-                        Event::Shutdown => {}
-                        Event::Status(_) => {}
+                        PortalServerEvent::ClientConnected => {}
+                        PortalServerEvent::FlavorNegotiation(_) => {}
+                        PortalServerEvent::Authorization(_) => {}
+                        PortalServerEvent::ResourceAssigned(_) => {}
+                        PortalServerEvent::Shutdown => {}
+                        PortalServerEvent::Status(_) => {}
                     }
                     yield_now().await;
                 }
@@ -175,7 +174,7 @@ println!("created client: fred TCP client");
 
     pub struct TestRouter {}
 
-    impl Router for TestRouter {
+    impl MeshRouter for TestRouter {
         fn route(&self, message: Message) {
             todo!()
         }
@@ -183,7 +182,7 @@ println!("created client: fred TCP client");
 
     pub struct TestPortalServer {
         pub atomic: AtomicU32,
-        pub request_handler: Arc<dyn PortalAssignRequestHandler>
+        pub request_handler: Arc<dyn PortalRequestHandler>
     }
 
     impl TestPortalServer {
@@ -233,12 +232,13 @@ println!("created client: fred TCP client");
             test_logger
         }
 
-        fn router_factory(&self, mux_tx: Sender<MuxCall>) -> Box<dyn Router> {
-            Box::new(InYourFaceRouter { mux_tx })
+
+        fn portal_request_handler(&self) -> Arc<dyn PortalRequestHandler> {
+            self.request_handler.clone()
         }
 
-        fn portal_request_handler(&self) -> Arc<dyn PortalAssignRequestHandler> {
-            self.request_handler.clone()
+        fn add_portal(&self, portal: Portal) {
+            todo!()
         }
     }
 
@@ -256,7 +256,11 @@ println!("created client: fred TCP client");
     }
 
     #[async_trait]
-    impl PortalAssignRequestHandler for TestPortalRequestHandler {
+    impl PortalRequestHandler for TestPortalRequestHandler {
+        async fn route_to_mesh(&self, request: Request) -> Response {
+            todo!()
+        }
+
         async fn default_assign(&self) -> Result<Assign, Error> {
             let index = self.seq.fetch_add(1, Ordering::Relaxed );
             let address = Address::from_str( format!("space:resource-{}",index).as_str() )?;
@@ -281,14 +285,14 @@ println!("created client: fred TCP client");
     pub struct InYourFaceRouter {
         mux_tx: Sender<MuxCall>,
     }
-    impl Router for InYourFaceRouter {
+    impl MeshRouter for InYourFaceRouter {
         fn route(&self, message: Message) {
 
             let mux_tx = self.mux_tx.clone();
             tokio::spawn(async move {
                match message.clone() {
                     Message::Request(request) => {
-                        match &request.entity{
+                        match &request.core {
                             ReqEntity::Rc(rc) => {
                                 match &rc.command{
                                     RcCommand::Select(select) => {
@@ -308,7 +312,7 @@ println!("created client: fred TCP client");
                                                     id: unique_id(),
                                                     to: request.from.clone(),
                                                     from: request.to.clone(),
-                                                    entity: RespEntity::Msg(PayloadResponse::Ok(Payload::List(list))),
+                                                    core: ResponseCore::Msg(PayloadResponse::Ok(Payload::List(list))),
                                                     response_to: request.id.clone()
                                                 };
 
@@ -357,31 +361,23 @@ println!("created client: fred TCP client");
             return "test".to_string();
         }
 
-        async fn auth(
-            &self,
-            reader: &mut PrimitiveFrameReader,
-            writer: &mut PrimitiveFrameWriter,
-        ) -> Result<(), Error> {
-            let client_ident = ClientIdent {
+        fn auth(&self) -> PortalAuth {
+            PortalAuth {
                 user: self.user.clone(),
                 portal_key: None
-            };
-            let frame = bincode::serialize(&client_ident )?;
-            let frame : PrimitiveFrame = From::from(frame);
-            writer.write(frame).await?;
-            Ok(())
+            }
         }
 
-
-        fn resource_ctrl_factory(&self) ->Arc<dyn ResourceCtrlFactory> {
-            Arc::new(FriendlyResourceCtrlFactory{name: self.user.clone()})
-        }
 
         fn logger(&self) -> fn(m: &str) {
             fn logger(message: &str) {
                 println!("{}", message);
             }
             logger
+        }
+
+        async fn init(&self, reader: &mut FrameReader<initout::Frame>, writer: &mut FrameWriter<initin::Frame>, skel: PrePortalSkel) -> Result<Arc<dyn ResourceCtrlFactory>, Error> {
+            todo!()
         }
     }
 
@@ -445,8 +441,8 @@ println!("created client: fred TCP client");
 
 self.log(format!("Select... from: {} to: {}", self.skel.stub.address.to_string(), self.skel.stub.address.parent().expect("expected a parent").to_string() ));
             match self.skel.portal.api().exchange(request).await {
-                Ok(response) => match response.entity {
-                    RespEntity::Msg(PayloadResponse::Ok(Payload::List(resources))) => {
+                Ok(response) => match response.core {
+                    ResponseCore::Msg(PayloadResponse::Ok(Payload::List(resources))) => {
 self.log(format!("Ok({} Stubs)",resources.list.len()));
                         for resource in resources.iter() {
                             if let Primitive::Stub(resource) = resource {
@@ -473,8 +469,8 @@ self.log(format!("Received Response<Msg<Greet>>"));
                                     match result {
                                         Ok(response) => {
 self.log(format!("Extracted RespEntity"));
-                                            match &response.entity {
-                                                response::RespEntity::Msg(PayloadResponse::Ok(Payload::Primitive(Primitive::Text(response)))) => {
+                                            match &response.core {
+                                                response::ResponseCore::Msg(PayloadResponse::Ok(Payload::Primitive(Primitive::Text(response)))) => {
 self.log(format!("Got Ok Response!"));
                                                     println!("got response: {}", response);
                                                     GLOBAL_TX.send(GlobalEvent::Ok(self.name.clone()));
@@ -509,7 +505,7 @@ self.log(format!("Received Request<Msg<Greet>>"));
                     from: self.skel.stub.address.clone(),
                     to: request.from,
                     response_to: request.id,
-                    entity: RespEntity::Msg(PayloadResponse::Ok(Payload::Primitive(Primitive::Text("Hello".to_string()))))
+                    core: ResponseCore::Msg(PayloadResponse::Ok(Payload::Primitive(Primitive::Text("Hello".to_string()))))
                 };
                 GLOBAL_TX.send(GlobalEvent::Progress("Responding to hello message".to_string()));
 self.log_str("Sending To Response<Msg<Greet>>");

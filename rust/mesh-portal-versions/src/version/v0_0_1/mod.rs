@@ -12,6 +12,10 @@ use crate::version::v0_0_1::bin::Bin;
 
 pub type State = HashMap<String, Bin>;
 
+extern "C" {
+    pub fn mesh_portal_unique_id() -> String;
+}
+
 pub mod artifact {
     use crate::version::v0_0_1::bin::Bin;
     use crate::version::v0_0_1::id::Address;
@@ -26,13 +30,12 @@ pub mod artifact {
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct ArtifactRequest {
         pub address: Address,
-        pub from: Address,
     }
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
-    pub struct ArtifactResponse<B> {
+    pub struct ArtifactResponse {
         pub to: Address,
-        pub payload: B,
+        pub payload: Bin,
     }
 }
 
@@ -609,6 +612,38 @@ pub mod id {
         }
     }
 
+    impl ToString for CaptureAddress {
+        fn to_string(&self) -> String {
+            let mut rtn = String::new();
+
+            match &self.route {
+                RouteSegment::Resource => {}
+                RouteSegment::Domain(domain) => {
+                    rtn.push_str(format!("{}::", domain).as_str());
+                }
+                RouteSegment::Tag(tag) => {
+                    rtn.push_str(format!("[{}]::", tag).as_str());
+                }
+                RouteSegment::Mesh(mesh) => {
+                    rtn.push_str(format!("<<{}>>::", mesh).as_str());
+                }
+            }
+
+            if self.segments.is_empty() {
+                "[root]".to_string()
+            }
+            else {
+                for (i, segment) in self.segments.iter().enumerate() {
+                    rtn.push_str(segment.to_string().as_str());
+                    if i != self.segments.len() - 1 {
+                        rtn.push_str(segment.terminating_delim());
+                    }
+                }
+                rtn.to_string()
+            }
+        }
+    }
+
     #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
     pub struct KindParts {
         pub resource_type: ResourceType,
@@ -825,7 +860,7 @@ pub mod pattern {
     use crate::error::Error;
 
     use crate::version::v0_0_1::id::{Address, AddressSegment, ResourceKind, ResourceType, RouteSegment, Specific, Tks, Version};
-    use crate::version::v0_0_1::parse::{address, camel_case_to_string, consume_address_kind_path, file_chars, path, path_regex, Res};
+    use crate::version::v0_0_1::parse::{address, camel_case_to_string, capture_address, consume_address_kind_path, file_chars, path, path_regex, Res};
     use crate::version::v0_0_1::pattern::parse::{address_kind_pattern, pattern};
     use crate::version::v0_0_1::pattern::specific::{
         ProductPattern, VariantPattern, VendorPattern,
@@ -845,7 +880,7 @@ pub mod pattern {
     use std::collections::HashMap;
     use nom_supreme::parser_ext::FromStrParser;
     use regex::Regex;
-    use crate::version::v0_0_1::entity::request::{Http, Msg, Rc, RcCommandType, ReqEntity};
+    use crate::version::v0_0_1::entity::request::{Action, Rc, RcCommandType, RequestCore};
 
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1748,50 +1783,46 @@ println!("address_kind_path.to_string() {}", address_kind_path.to_string() );
         Http(HttpPattern),
     }
 
-    impl ValueMatcher<ReqEntity> for EntityPattern {
-        fn is_match(&self, entity: &ReqEntity) -> Result<(), Error> {
-            match entity {
-                ReqEntity::Rc(found) => {
-                    if let EntityPattern::Rc(pattern) = self {
-                        if pattern.command.matches(&found.command.get_type()) {
-                            Ok(())
+    impl ValueMatcher<RequestCore> for EntityPattern {
+        fn is_match(&self, core: &RequestCore) -> Result<(), Error> {
+                match &core.action {
+                    Action::Rc(found) => {
+                        if let EntityPattern::Rc(pattern) = self {
+                            pattern.is_match(core )
                         } else {
-                            Err("no match".into())
+                            Err(format!(
+                                "Entity pattern mismatch. expected: '{}' found: '{}'",
+                                self.to_string(),
+                                found.to_string()
+                            )
+                                .into())
                         }
-                    } else {
-                        Err(format!(
-                            "Entity pattern mismatch. expected: '{}' found: '{}'",
-                            self.to_string(),
-                            found.to_string()
-                        )
-                        .into())
+                    }
+                    Action::Msg(found) => {
+                        if let EntityPattern::Msg(pattern) = self {
+                            pattern.is_match(core)
+                        } else {
+                            Err(format!(
+                                "Entity pattern mismatch. expected: '{}' found: '{}'",
+                                self.to_string(),
+                                found.to_string()
+                            )
+                                .into())
+                        }
+                    }
+                    Action::Http(found) => {
+                        if let EntityPattern::Http(pattern) = self {
+                            pattern.is_match(core)
+                        } else {
+                            Err(format!(
+                                "Entity pattern mismatch. expected: '{}' found: '{}'",
+                                self.to_string(),
+                                found.to_string()
+                            )
+                                .into())
+                        }
                     }
                 }
-                ReqEntity::Msg(found) => {
-                    if let EntityPattern::Msg(pattern) = self {
-                        pattern.is_match(found)
-                    } else {
-                        Err(format!(
-                            "Entity pattern mismatch. expected: '{}' found: '{}'",
-                            self.to_string(),
-                            found.to_string()
-                        )
-                        .into())
-                    }
-                }
-                ReqEntity::Http(found) => {
-                    if let EntityPattern::Http(pattern) = self {
-                        pattern.is_match(found)
-                    } else {
-                        Err(format!(
-                            "Entity pattern mismatch. expected: '{}' found: '{}'",
-                            self.to_string(),
-                            found.to_string()
-                        )
-                        .into())
-                    }
-                }
-            }
         }
     }
 
@@ -1810,10 +1841,14 @@ println!("address_kind_path.to_string() {}", address_kind_path.to_string() );
         pub command: Pattern<RcCommandType>,
     }
 
-    impl ValueMatcher<Rc> for RcPattern {
-        fn is_match(&self, rc: &Rc) -> Result<(), Error> {
-            if self.command.matches(&rc.command.get_type() ) {
-                Ok(())
+    impl ValueMatcher<RequestCore> for RcPattern {
+        fn is_match(&self, core: &RequestCore) -> Result<(), Error> {
+            if let Action::Rc(rc) = &core.action {
+                if self.command.matches(&rc.get_type()) {
+                    Ok(())
+                } else {
+                    Err("no match".into())
+                }
             } else {
                 Err("no match".into())
             }
@@ -1839,18 +1874,22 @@ println!("address_kind_path.to_string() {}", address_kind_path.to_string() );
         }
     }
 
-    impl ValueMatcher<Msg> for MsgPattern {
-        fn is_match(&self, found: &Msg) -> Result<(), Error> {
-            self.action.is_match(&found.action)?;
-            let matches = found.path.matches(&self.path_regex);
-            if matches.count() > 0 {
-                Ok(())
+    impl ValueMatcher<RequestCore> for MsgPattern {
+        fn is_match(&self, core: &RequestCore) -> Result<(), Error> {
+            if let Action::Msg(action) = &core.action {
+                self.action.is_match(action)?;
+                let matches = core.path.matches(&self.path_regex);
+                if matches.count() > 0 {
+                    Ok(())
+                } else {
+                    Err(format!(
+                        "Could not match Msg path: '{}' with: '{}'",
+                        core.path, self.path_regex
+                    )
+                        .into())
+                }
             } else {
-                Err(format!(
-                    "Could not match Msg path: '{}' with: '{}'",
-                    found.path, self.path_regex
-                )
-                .into())
+                Err("not a Msg Action".into())
             }
         }
     }
@@ -1867,20 +1906,26 @@ println!("address_kind_path.to_string() {}", address_kind_path.to_string() );
         }
     }
 
-    impl ValueMatcher<Http> for HttpPattern {
-        fn is_match(&self, found: &Http) -> Result<(), Error> {
-            self.method.is_match(&found.method)?;
+    impl ValueMatcher<RequestCore> for HttpPattern {
+        fn is_match(&self, found: &RequestCore) -> Result<(), Error> {
 
-            let regex = Regex::new(self.path_regex.as_str() )?;
+            if let Action::Http(method) = &found.action {
+                self.method.is_match(&method)?;
 
-            if regex.is_match(found.path.as_str() ) {
-                Ok(())
-            } else {
-                Err(format!(
-                    "Could not match Msg path: '{}' with: '{}'",
-                    found.path, self.path_regex
-                )
-                .into())
+                let regex = Regex::new(self.path_regex.as_str())?;
+
+                if regex.is_match(found.path.as_str()) {
+                    Ok(())
+                } else {
+                    Err(format!(
+                        "Could not match Msg path: '{}' with: '{}'",
+                        found.path, self.path_regex
+                    )
+                        .into())
+                }
+            }
+            else {
+                Err("action does not match".into())
             }
         }
     }
@@ -1927,10 +1972,13 @@ println!("address_kind_path.to_string() {}", address_kind_path.to_string() );
         parse_from_str(alpha1).parse(input)
     }
 
+    /*
     pub fn rc_call_kind(input: &str) -> Res<&str, CallKind> {
         delimited(tag("Rc<"), rc_command, tag(">"))(input)
             .map(|(next, rc_command)| (next, CallKind::Rc(rc_command)))
     }
+
+     */
 
     pub fn msg_call(input: &str) -> Res<&str, CallKind> {
         tuple((
@@ -1963,11 +2011,11 @@ println!("address_kind_path.to_string() {}", address_kind_path.to_string() );
     }
 
     pub fn call_kind(input: &str) -> Res<&str, CallKind> {
-        alt((rc_call_kind, msg_call, http_call))(input)
+        alt((msg_call, http_call))(input)
     }
 
     pub fn call(input: &str) -> Res<&str, Call> {
-        tuple((address, preceded(tag("^"), call_kind)))(input)
+        tuple((capture_address, preceded(tag("^"), call_kind)))(input)
             .map(|(next, (address, kind))| (next, Call { address, kind }))
     }
 
@@ -2802,78 +2850,60 @@ pub mod messaging {
     use serde::{Deserialize, Serialize};
 
     use crate::error::Error;
-    use crate::version::v0_0_1::entity::request::ReqEntity;
-    use crate::version::v0_0_1::entity::response::RespEntity;
+    use crate::version::v0_0_1::entity::request::RequestCore;
+    use crate::version::v0_0_1::entity::response::ResponseCore;
     use crate::version::v0_0_1::id::Address;
-    use crate::version::v0_0_1::payload::Payload;
+    use crate::version::v0_0_1::payload::{Errors, Payload, Primitive};
     use crate::version::v0_0_1::util::unique_id;
-
-    pub type ExchangeId = String;
-
-    #[derive(Debug, Clone, Serialize, Deserialize)]
-    pub enum ExchangeType {
-        Notification,
-        RequestResponse,
-    }
-
-    #[derive(Debug, Clone, Serialize, Deserialize)]
-    pub enum Exchange {
-        Notification,
-        RequestResponse(ExchangeId),
-    }
-
-    impl Exchange {
-        pub fn requires_response(&self) -> bool {
-            match self {
-                Exchange::Notification => false,
-                Exchange::RequestResponse(_) => true,
-            }
-        }
-    }
-
-    impl TryInto<ExchangeId> for Exchange {
-        type Error = Error;
-
-        fn try_into(self) -> Result<ExchangeId, Self::Error> {
-            match self {
-                Exchange::Notification => Err(
-                    "Exchange Notification cannot be converted into a RequestResponse Exchange"
-                        .into(),
-                ),
-                Exchange::RequestResponse(id) => Ok(id),
-            }
-        }
-    }
-
-    impl Into<ExchangeType> for Exchange {
-        fn into(self) -> ExchangeType {
-            match self {
-                Exchange::Notification => ExchangeType::Notification,
-                Exchange::RequestResponse(_) => ExchangeType::RequestResponse,
-            }
-        }
-    }
 
     #[derive(Debug,Clone,Serialize,Deserialize)]
     pub struct Request {
         pub id: String,
         pub from: Address,
         pub to: Address,
-        pub entity: ReqEntity
+        pub core: RequestCore
     }
 
     impl Request {
-        pub fn new( entity: ReqEntity, from: Address, to: Address ) -> Self {
+        pub fn new(core: RequestCore, from: Address, to: Address ) -> Self {
             Self {
                 id: unique_id(),
                 from,
                 to,
-                entity
+                core
             }
         }
 
-        pub fn respond( self, entity: RespEntity ) -> ProtoResponse {
-            ProtoResponse::new( self.from, entity, self.id)
+        pub fn ok( self ) -> Response {
+            let core = ResponseCore {
+                headers: Default::default(),
+                code: 200,
+                body: Payload::Empty
+            };
+            let response = Response {
+                id: unique_id(),
+                from: self.to,
+                to: self.from,
+                core,
+                response_to: self.id
+            };
+            response
+        }
+
+        pub fn fail( self, error: &str) -> Response {
+            let core = ResponseCore {
+                headers: Default::default(),
+                code: 500,
+                body: Payload::Primitive(Primitive::Errors(Errors::default(error.to_string().as_str())))
+            };
+            let response = Response {
+                id: unique_id(),
+                from: self.to,
+                to: self.from,
+                core,
+                response_to: self.id
+            };
+            response
         }
     }
 
@@ -2881,7 +2911,7 @@ pub mod messaging {
     pub struct ProtoRequest {
         pub id: String,
         pub to: Option<Address>,
-        pub entity: Option<ReqEntity>
+        pub core: Option<RequestCore>
     }
 
     impl ProtoRequest {
@@ -2889,16 +2919,33 @@ pub mod messaging {
             Self {
                 id: unique_id(),
                 to: Option::None,
-                entity: Option::None
+                core: Option::None
             }
+        }
+
+        pub fn validate(&self) -> Result<(),Error> {
+            self.to.as_ref().ok_or("request.to must be set" )?;
+            Ok(())
         }
 
         pub fn to( &mut self, to: Address ) {
             self.to = Option::Some(to);
         }
 
-        pub fn entity( &mut self, entity: ReqEntity ) {
-            self.entity = Option::Some(entity);
+        pub fn core( &mut self, core: RequestCore) {
+            self.core= Option::Some(core);
+        }
+
+        pub fn into_request(self, from: Address ) -> Result<Request,Error> {
+            self.validate()?;
+            let core = self.core.or(Option::Some(Default::default())).expect("expected RequestCore");
+            let request = Request {
+                id: self.id,
+                from,
+                to: self.to.expect("expected to address"),
+                core
+            };
+            Ok(request)
         }
     }
 
@@ -2907,23 +2954,30 @@ pub mod messaging {
         pub id: String,
         pub from: Address,
         pub to: Address,
-        pub entity: RespEntity,
+        pub core: ResponseCore,
         pub response_to: String
     }
 
-    #[derive(Debug,Clone)]
-    pub struct ProtoResponse {
-        pub to: Address,
-        pub entity: RespEntity,
-        pub response_to: String
-    }
-
-    impl ProtoResponse{
-        pub fn new(  to: Address, entity: RespEntity, response_to: String ) -> Self {
+    impl Response {
+        pub fn new( core: ResponseCore, from: Address, to: Address, response_to: String ) -> Self {
             Self {
+                id: unique_id(),
                 to,
-                entity,
+                from,
+                core,
                 response_to
+            }
+        }
+
+        pub fn ok_or(self) -> Result<Self,Error> {
+            if self.core.code >= 200 && self.core.code <= 299 {
+                Ok(self)
+            } else {
+                if let Payload::Primitive(Primitive::Text(error)) = self.core.body {
+                    Err(error.into())
+                } else {
+                    Err(format!("error code: {}", self.core.code).into())
+                }
             }
         }
     }
@@ -2936,13 +2990,13 @@ pub mod messaging {
 
     impl Message{
 
-        pub fn payload(&self) -> Result<Payload,Error> {
+        pub fn payload(&self) -> Payload {
             match self {
                 Message::Request(request) => {
-                    Ok(request.entity.payload().clone())
+                    request.core.body.clone()
                 }
                 Message::Response(response) => {
-                    response.entity.payload()
+                    response.core.body.clone()
                 }
             }
         }
@@ -2973,36 +3027,7 @@ pub mod messaging {
 
 }
 
-pub mod log {
-    use serde::{Deserialize, Serialize};
 
-    #[derive(Debug, Clone, Serialize, Deserialize)]
-    pub enum Log {
-        Warn(String),
-        Info(String),
-        Error(String),
-        Fatal(String),
-    }
-
-    impl ToString for Log {
-        fn to_string(&self) -> String {
-            match self {
-                Log::Warn(message) => {
-                    format!("WARN: {}", message)
-                }
-                Log::Info(message) => {
-                    format!("INFO: {}", message)
-                }
-                Log::Error(message) => {
-                    format!("ERROR: {}", message)
-                }
-                Log::Fatal(message) => {
-                    format!("FATAL: {}", message)
-                }
-            }
-        }
-    }
-}
 
 pub mod frame {
     use std::convert::TryInto;
@@ -3070,11 +3095,11 @@ pub mod payload {
 
     use crate::error::Error;
     use crate::version::v0_0_1::bin::Bin;
-    use crate::version::v0_0_1::id::{Address, ResourceKind, Meta, PayloadClaim, ResourceType};
+    use crate::version::v0_0_1::id::{Address, ResourceKind, Meta, PayloadClaim, ResourceType, CaptureAddress};
     use crate::version::v0_0_1::pattern::TksPattern;
     use std::str::FromStr;
     use std::sync::Arc;
-    use crate::version::v0_0_1::entity::request::RcCommandType;
+    use crate::version::v0_0_1::entity::request::{Action, Rc, RcCommandType, RequestCore};
     use crate::version::v0_0_1::resource::{Resource, ResourceStub, Status};
     use crate::version::v0_0_1::util::{ValueMatcher, ValuePattern};
 
@@ -3207,6 +3232,48 @@ pub mod payload {
         }
     }
 
+    #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
+    pub struct Errors{
+        map: HashMap<String,String>
+    }
+
+    impl Errors{
+        pub fn empty()->Self {
+            Self {
+                map: HashMap::new()
+            }
+        }
+
+        pub fn default( message: &str ) -> Self {
+            let mut map = HashMap::new();
+            map.insert("default".to_string(), message.to_string() );
+            Self {
+                map
+            }
+        }
+    }
+
+    impl ToString for Errors {
+        fn to_string(&self) -> String {
+            let mut rtn = String::new();
+            for (index,(_,value)) in self.iter().enumerate() {
+                rtn.push_str(value.as_str() );
+                if index == self.len()-1 {
+                    rtn.push_str("\n");
+                }
+            }
+            rtn
+        }
+    }
+
+    impl Deref for Errors {
+        type Target = HashMap<String,String>;
+
+        fn deref(&self) -> &Self::Target {
+            &self.map
+        }
+    }
+
     #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, strum_macros::Display)]
     pub enum Primitive {
         Text(String),
@@ -3218,6 +3285,7 @@ pub mod payload {
         Int(i64),
         Status(Status),
         Resource(Resource),
+        Errors(Errors)
     }
 
     impl Primitive {
@@ -3232,6 +3300,7 @@ pub mod payload {
                 Primitive::Int(_) => PrimitiveType::Int,
                 Primitive::Status(_) => PrimitiveType::Status,
                 Primitive::Resource(_) => PrimitiveType::Resource,
+                Primitive::Errors(_) => PrimitiveType::Errors,
             }
         }
 
@@ -3266,6 +3335,9 @@ pub mod payload {
                 }
                 Primitive::Resource(resource) => {
                     Ok(Arc::new(bincode::serialize(&resource)?))
+                }
+                Primitive::Errors(errors) => {
+                    Ok(Arc::new(bincode::serialize(&errors)?))
                 }
             }
         }
@@ -3379,7 +3451,8 @@ pub mod payload {
         Stub,
         Status,
         Resource,
-    }
+        Errors,
+   }
 
     impl FromStr for PrimitiveType {
         type Err = Error;
@@ -3542,15 +3615,37 @@ pub mod payload {
 
     #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
     pub struct Call {
-        pub address: Address,
+        pub address: CaptureAddress,
         pub kind: CallKind,
     }
 
     #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
     pub enum CallKind {
-        Rc(RcCommandType),
         Msg(MsgCall),
         Http(HttpCall),
+    }
+
+    impl CallKind {
+        pub fn core_with_body(self, body: Payload) -> RequestCore {
+            match self {
+                CallKind::Msg(msg) => {
+                    RequestCore {
+                        headers: Default::default(),
+                        action: Action::Msg(msg.action),
+                        path: msg.path,
+                        body
+                    }
+                }
+                CallKind::Http(http) => {
+                    RequestCore {
+                        headers: Default::default(),
+                        action: Action::Http(http.method),
+                        path: http.path,
+                        body
+                    }
+                }
+            }
+        }
     }
 
     impl ToString for Call {
@@ -3564,6 +3659,8 @@ pub mod payload {
         pub path: String,
         pub action: String,
     }
+
+
 
     impl MsgCall {
         pub fn new(action: String, path: String) -> Self {
@@ -3655,9 +3752,6 @@ pub mod payload {
     impl ToString for CallKind {
         fn to_string(&self) -> String {
             match self {
-                CallKind::Rc(command) => {
-                    format!("Rc<{}>", command.to_string())
-                }
                 CallKind::Msg(msg) => msg.to_string(),
                 CallKind::Http(http) => http.to_string(),
             }
@@ -3749,6 +3843,13 @@ pub mod payload {
                         Ok(())
                     } else {
                         Err("expected Resource primitive".into())
+                    }
+                }
+                Primitive::Errors(errors) => {
+                    if *self == Self::Errors{
+                        Ok(())
+                    } else {
+                        Err("expected Errors primitive".into())
                     }
                 }
             }
@@ -4087,21 +4188,122 @@ pub mod command {
 
 }
 
+pub mod msg {
+    use crate::error::Error;
+    use crate::version::v0_0_1::entity::request::{Action, RequestCore};
+    use crate::version::v0_0_1::entity::response::ResponseCore;
+    use crate::version::v0_0_1::id::Meta;
+    use crate::version::v0_0_1::payload::{Errors, Payload, Primitive};
+    use serde::{Serialize,Deserialize};
+
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub struct MsgRequest{
+        pub action: String,
+        pub headers: Meta,
+        pub path: String,
+        pub body: Payload
+    }
+
+    impl MsgRequest {
+        pub fn ok(&self, payload: Payload) -> ResponseCore {
+            ResponseCore {
+                headers: Default::default(),
+                code: 200,
+                body: payload
+            }
+        }
+
+        pub fn fail(&self, error: &str) -> ResponseCore {
+            let errors = Errors::default(error);
+            ResponseCore {
+                headers: Default::default(),
+                code: 500,
+                body: Payload::Primitive(Primitive::Errors(errors))
+            }
+        }
+    }
+
+    impl TryFrom<RequestCore> for MsgRequest {
+        type Error = Error;
+
+        fn try_from(core: RequestCore) -> Result<Self, Self::Error> {
+            if let Action::Msg(action) = core.action {
+                Ok(Self {
+                    action,
+                    headers: core.headers,
+                    path: core.path,
+                    body: core.body
+                })
+            } else {
+                Err("expected Msg".into())
+            }
+        }
+    }
+}
+
 pub mod http {
     use std::collections::HashMap;
+    use std::sync::Arc;
 
     use serde::{Deserialize, Serialize};
+    use crate::error::Error;
 
     use crate::version::v0_0_1::Bin;
+    use crate::version::v0_0_1::entity::request::{Action, RequestCore};
+    use crate::version::v0_0_1::entity::response::ResponseCore;
     use crate::version::v0_0_1::id::Meta;
-    use crate::version::v0_0_1::payload::{HttpMethod, Payload};
+    use crate::version::v0_0_1::payload::{Errors, HttpMethod, Payload, Primitive};
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct HttpRequest {
         pub method: HttpMethod,
         pub headers: Meta,
         pub path: String,
-        pub body: Payload
+        pub body: Bin
+    }
+
+    impl HttpRequest {
+        pub fn ok(&self, html: &str) -> ResponseCore {
+            ResponseCore::ok_html(html)
+        }
+
+        pub fn fail(&self, error: &str) -> ResponseCore {
+            let errors = Errors::default(error);
+            ResponseCore {
+                headers: Default::default(),
+                code: 500,
+                body: Payload::Primitive(Primitive::Errors(errors))
+            }
+        }
+    }
+
+
+    impl TryFrom<RequestCore> for HttpRequest {
+        type Error = Error;
+
+        fn try_from(core: RequestCore) -> Result<Self, Self::Error> {
+            if let Action::Http(method) = core.action {
+                Ok(Self {
+                    method,
+                    headers: core.headers,
+                    path: core.path,
+                    body: core.body.to_bin()?
+                })
+            } else {
+                Err("expected Http".into())
+            }
+        }
+    }
+
+    impl Into<RequestCore> for HttpRequest {
+        fn into(self) -> RequestCore {
+            RequestCore {
+                action: Action::Http(self.method),
+                headers: self.headers,
+                path: self.path,
+                body: Payload::Primitive(Primitive::Bin(self.body))
+            }
+        }
     }
 
     impl ToString for HttpRequest {
@@ -4114,7 +4316,7 @@ pub mod http {
     pub struct HttpResponse {
         pub code: u32,
         pub headers: HashMap<String, String>,
-        pub body: Payload
+        pub body: Bin
     }
 
     impl HttpResponse {
@@ -4122,7 +4324,7 @@ pub mod http {
             Self {
                 headers: Default::default(),
                 code: 500,
-                body: Payload::Empty,
+                body: Arc::new(vec![])
             }
         }
     }
@@ -4135,7 +4337,6 @@ pub mod config {
     use serde::{Deserialize, Serialize};
 
     use crate::version::v0_0_1::config::bind::BindConfig;
-    use crate::version::v0_0_1::config::mechtron::MechtronConfig;
     use crate::version::v0_0_1::id::{Address, ResourceKind};
     use crate::version::v0_0_1::resource;
     use crate::version::v0_0_1::resource::ResourceStub;
@@ -4203,24 +4404,12 @@ pub mod config {
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub enum ConfigBody {
         Bind(BindConfig),
-        Mechtron(MechtronConfig),
     }
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub enum ResourceConfigBody {
         Control,
-        Mechtron(MechtronConfig),
-    }
-
-    pub mod mechtron {
-        use crate::version::v0_0_1::id::Address;
-        use serde::{Deserialize, Serialize};
-
-        #[derive(Debug, Clone, Serialize, Deserialize)]
-        pub struct MechtronConfig {
-            pub wasm: Address,
-            pub name: String,
-        }
+        Named(String),
     }
 
     pub mod bind {
@@ -4232,8 +4421,7 @@ pub mod config {
         use crate::version::v0_0_1::util::{ValueMatcher, ValuePattern};
         use serde::{Deserialize, Serialize};
         use std::convert::TryInto;
-        use crate::version::v0_0_1::entity::request::{Http, Msg, Rc, ReqEntity};
-        use crate::version::v0_0_1::http::HttpRequest;
+        use crate::version::v0_0_1::entity::request::{Rc, RequestCore};
         use crate::version::v0_0_1::id::CaptureAddress;
         use crate::version::v0_0_1::payload::PayloadType::Primitive;
 
@@ -4319,7 +4507,7 @@ pub mod config {
         }
 
         impl<T> Scope<T,Selector<HttpPattern>> {
-            pub fn find_match( &self, m: &HttpRequest ) -> Result<Selector<HttpPattern>,Error> {
+            pub fn find_match( &self, m: &RequestCore) -> Result<Selector<HttpPattern>,Error> {
                 for e in &self.elements {
                     if e.is_match(m).is_ok() {
                         return Ok(e.clone());
@@ -4330,7 +4518,7 @@ pub mod config {
         }
 
         impl<T> Scope<T,Selector<MsgPattern>> {
-            pub fn find_match( &self, m: &Msg ) -> Result<Selector<MsgPattern>,Error> {
+            pub fn find_match( &self, m: &RequestCore ) -> Result<Selector<MsgPattern>,Error> {
                 for e in &self.elements {
                     if e.is_match(m).is_ok() {
                         return Ok(e.clone());
@@ -4406,28 +4594,28 @@ pub mod config {
         }
 
         impl Selector<EntityPattern> {
-            pub fn is_match(&self, m: &ReqEntity) -> Result<(), Error> {
+            pub fn is_match(&self, m: &RequestCore) -> Result<(), Error> {
                 self.pattern.is_match(m)
             }
         }
 
 
         impl Selector<MsgPattern> {
-            pub fn is_match(&self, m: &Msg ) -> Result<(), Error> {
+            pub fn is_match(&self, m: &RequestCore)  -> Result<(), Error> {
                 self.pattern.is_match(m)
             }
         }
 
         impl Selector<RcPattern> {
-            pub fn is_match(&self, m: &Rc ) -> Result<(), Error> {
+            pub fn is_match(&self, m: &RequestCore) -> Result<(), Error> {
                 self.pattern.is_match(m)
             }
         }
 
 
         impl Selector<HttpPattern> {
-            pub fn is_match(&self, m: &Http ) -> Result<(), Error> {
-                self.pattern.is_match(m)
+            pub fn is_match(&self, m: &RequestCore) -> Result<(), Error> {
+                    self.pattern.is_match(m)
             }
         }
 
@@ -4697,150 +4885,99 @@ pub mod entity {
         use crate::version::v0_0_1::entity::request::query::Query;
         use crate::version::v0_0_1::entity::request::select::Select;
         use crate::version::v0_0_1::entity::request::update::Update;
-        use crate::version::v0_0_1::entity::response::{PayloadResponse, RespEntity};
         use crate::version::v0_0_1::fail::{BadRequest, Fail, NotFound};
         use crate::version::v0_0_1::id::{Address, ResourceKind, Meta, PayloadClaim, ResourceType};
         use crate::version::v0_0_1::pattern::TksPattern;
-        use crate::version::v0_0_1::payload::{HttpMethod, Payload};
+        use crate::version::v0_0_1::payload::{Errors, HttpMethod, Payload, Primitive};
         use crate::version::v0_0_1::util::ValueMatcher;
         use serde::{Serialize,Deserialize};
         use crate::error::Error;
         use crate::version::v0_0_1::entity::request::get::Get;
         use crate::version::v0_0_1::entity::request::set::Set;
+        use crate::version::v0_0_1::entity::response::ResponseCore;
         use crate::version::v0_0_1::fail;
         use crate::version::v0_0_1::http::HttpResponse;
 
-
         #[derive(Debug, Clone, Serialize, Deserialize)]
-        pub enum ReqEntity {
+        pub enum Action {
             Rc(Rc),
-            Msg(Msg),
-            Http(Http),
+            Http(HttpMethod),
+            Msg(String)
         }
 
-        impl ReqEntity {
-
-            pub fn payload(&self) -> &Payload {
-                match self {
-                    ReqEntity::Rc(_) => {&Payload::Empty}
-                    ReqEntity::Msg(msg) => {&msg.payload}
-                    ReqEntity::Http(http) => {&http.body}
+        impl Into<RequestCore> for Action {
+            fn into(self) -> RequestCore {
+                RequestCore {
+                    headers: Default::default(),
+                    action: self,
+                    path: "/".to_string(),
+                    body: Payload::Empty
                 }
             }
+        }
 
-            pub fn path(&self) -> String {
-                match self {
-                    ReqEntity::Rc(_) => {"".to_string()}
-                    ReqEntity::Msg(msg) => {
-                        msg.path.clone()
-                    }
-                    ReqEntity::Http(http) => {
-                        http.path.clone()
-                    }
+        #[derive(Debug, Clone, Serialize, Deserialize)]
+        pub struct RequestCore {
+            pub headers: Meta,
+            pub action: Action,
+            pub path: String,
+            pub body: Payload,
+        }
+
+        impl Default for RequestCore {
+            fn default() -> Self {
+                Self {
+                    headers: Default::default(),
+                    action: Action::Msg("Default".to_string()),
+                    path: "/".to_string(),
+                    body: Payload::Empty
                 }
             }
+        }
+
+        impl RequestCore {
 
             pub fn with_new_payload(self, payload: Payload  ) -> Self {
-                match self {
-                    ReqEntity::Rc(_) => {self}
-                    ReqEntity::Msg(mut msg) => {
-                        msg.payload = payload;
-                        Self::Msg(msg)
-                    }
-                    ReqEntity::Http(mut http) => {
-                        http.body = payload;
-                        Self::Http(http)
-                    }
+                Self {
+                    headers: self.headers,
+                    path: self.path,
+                    action: self.action,
+                    body: payload
+                }
+
+            }
+
+            pub fn not_found(&self) -> ResponseCore {
+                ResponseCore{
+                    headers: Default::default(),
+                    code: 404,
+                    body: Payload::Empty
                 }
             }
 
-            pub fn not_found(&self) -> RespEntity {
-                match self {
-                    ReqEntity::Rc(_) => {
-                        RespEntity::Rc(PayloadResponse::Fail(Fail::Resource(fail::resource::Fail::BadRequest(BadRequest::NotFound(NotFound::Any)))))
-                    }
-                    ReqEntity::Msg(_) => {
-                        RespEntity::Msg(PayloadResponse::Fail(Fail::Resource(fail::resource::Fail::BadRequest(BadRequest::NotFound(NotFound::Any)))))
-                    }
-                    ReqEntity::Http(_) => {
-                        RespEntity::Http(HttpResponse {
-                            code: 404,
-                            headers: Default::default(),
-                            body: Payload::Empty
-                        })
-                    }
+            pub fn ok(&self, payload: Payload) -> ResponseCore {
+                ResponseCore{
+                    headers: Default::default(),
+                    code: 200,
+                    body: payload
                 }
             }
 
-            pub fn ok(&self, payload: Payload) -> Result<RespEntity,Error> {
-                match self {
-                    ReqEntity::Rc(_) => {
-                        Ok(RespEntity::Rc(PayloadResponse::new(payload)))
-                    }
-                    ReqEntity::Msg(_) => {
-                        Ok(RespEntity::Msg(PayloadResponse::new(payload)))
-                    }
-                    ReqEntity::Http(_) => {
-                        Ok(RespEntity::Http( HttpResponse {
-                            code: 200,
-                            headers: Default::default(),
-                            body: payload
-                        } ))
-
-                    }
-                }
-            }
-
-
-            pub fn fail(&self, fail: Fail) -> Result<RespEntity,Error> {
-                match self {
-                    ReqEntity::Rc(_) => {
-                        Ok(RespEntity::Rc(PayloadResponse::Fail(fail)))
-                    }
-                    ReqEntity::Msg(_) => {
-                        Ok(RespEntity::Msg(PayloadResponse::Fail(fail)))
-                    }
-                    ReqEntity::Http(_) => {
-                        Ok(RespEntity::Http( HttpResponse {
-                            code: 500,
-                            headers: Default::default(),
-                            body: Payload::Empty
-                        } ))
-                    }
+            pub fn fail(&self, error: &str ) -> ResponseCore {
+                let errors = Errors::default(error);
+                ResponseCore {
+                    headers: Default::default(),
+                    code: 500,
+                    body: Payload::Primitive(Primitive::Errors(errors))
                 }
             }
         }
+
+
 
 
         #[derive(Debug, Clone, Serialize, Deserialize)]
-        pub struct Rc{
-            pub command: RcCommand,
-            pub payload: Payload,
-        }
-
-        impl Rc {
-            pub fn empty_payload(command: RcCommand) ->Self {
-                Self{ command, payload: Payload::Empty }
-            }
-
-            pub fn with_payload(
-                command: RcCommand,
-                payload: Payload,
-            ) -> Self {
-                Self { command, payload }
-            }
-
-            pub fn new(command: RcCommand) -> Self {
-                Self {
-                    command,
-                    payload: Payload::Empty,
-                }
-            }
-        }
-
-
-        #[derive(Debug, Clone, strum_macros::Display, Serialize, Deserialize)]
-        pub enum RcCommand {
+        pub enum Rc {
             Create(Create),
             Select(Select),
             Update(Update),
@@ -4850,15 +4987,15 @@ pub mod entity {
         }
 
 
-        impl RcCommand {
+        impl Rc {
             pub fn get_type(&self) -> RcCommandType {
                 match self {
-                    RcCommand::Create(_) => RcCommandType::Create,
-                    RcCommand::Select(_) => RcCommandType::Select,
-                    RcCommand::Update(_) => RcCommandType::Update,
-                    RcCommand::Query(_) => RcCommandType::Query,
-                    RcCommand::Get(_) => RcCommandType::Get,
-                    RcCommand::Set(_) => RcCommandType::Set
+                    Rc::Create(_) => RcCommandType::Create,
+                    Rc::Select(_) => RcCommandType::Select,
+                    Rc::Update(_) => RcCommandType::Update,
+                    Rc::Query(_) => RcCommandType::Query,
+                    Rc::Get(_) => RcCommandType::Get,
+                    Rc::Set(_) => RcCommandType::Set
                 }
             }
         }
@@ -4882,12 +5019,12 @@ pub mod entity {
             Set
         }
 
-        impl ValueMatcher<RcCommand>
-        for RcCommand
+        impl ValueMatcher<Rc>
+        for Rc
         {
             fn is_match(
                 &self,
-                x: &RcCommand,
+                x: &Rc,
             ) -> Result<(), crate::error::Error> {
                 if self.get_type() == x.get_type() {
                     Ok(())
@@ -4904,24 +5041,9 @@ pub mod entity {
 
         impl ToString for Rc {
             fn to_string(&self) -> String {
-                format!("Rc<{}>", self.command.to_string())
+                format!("Rc<{}>", self.get_type().to_string())
             }
         }
-
-        #[derive(Debug, Clone, Serialize, Deserialize)]
-        pub struct Msg {
-            pub action: String,
-            pub path: String,
-            pub payload: Payload,
-        }
-
-        impl ToString for Msg {
-            fn to_string(&self) -> String {
-                format!("Msg<{}>{}", self.action, self.path)
-            }
-        }
-
-        pub type Http=crate::version::v0_0_1::http::HttpRequest;
 
 
 
@@ -5278,7 +5400,7 @@ pub mod entity {
             use serde::{Deserialize, Serialize};
 
             use crate::error::Error;
-            use crate::version::v0_0_1::entity::request::RcCommand;
+            use crate::version::v0_0_1::entity::request::Rc;
             use crate::version::v0_0_1::pattern::AddressKindPath;
 
             #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -5316,9 +5438,9 @@ pub mod entity {
                 }
             }
 
-            impl Into<RcCommand> for Query {
-                fn into(self) -> RcCommand {
-                    RcCommand::Query(self)
+            impl Into<Rc> for Query {
+                fn into(self) -> Rc {
+                    Rc::Query(self)
                 }
             }
         }
@@ -5327,170 +5449,93 @@ pub mod entity {
     }
 
     pub mod response {
+        use std::sync::Arc;
         use crate::error::Error;
         use crate::version::v0_0_1::fail;
-        use crate::version::v0_0_1::id::{Address, ResourceKind};
-        use crate::version::v0_0_1::payload::Payload;
+        use crate::version::v0_0_1::id::{Address, Meta, ResourceKind};
+        use crate::version::v0_0_1::payload::{Errors, Payload, Primitive};
         use serde::{Serialize,Deserialize};
-        use crate::version::v0_0_1::entity::request::{Msg, ReqEntity};
+        use crate::version::v0_0_1::entity::request::{RequestCore};
         use crate::version::v0_0_1::fail::Fail;
         use crate::version::v0_0_1::http::HttpResponse;
         use crate::version::v0_0_1::messaging::Response;
+        use crate::version::v0_0_1::util::unique_id;
 
-        #[derive(Debug, Clone, Serialize, Deserialize, strum_macros::Display)]
-        pub enum RespEntity {
-            Rc(PayloadResponse),
-            Msg(PayloadResponse),
-            Http(HttpResponse),
+        #[derive(Debug, Clone, Serialize, Deserialize)]
+        pub struct ResponseCore {
+            pub headers: Meta,
+            pub code: u32,
+            pub body: Payload
         }
 
-        impl RespEntity {
+        impl ResponseCore {
 
-            pub fn with_new_payload( self, payload: Payload  ) -> RespEntity{
-                match self {
-                    RespEntity::Rc(_) => {
-                        RespEntity::Rc( PayloadResponse::Ok(payload))
-                    }
-                    RespEntity::Msg(_) => {
-                        RespEntity::Msg( PayloadResponse::Ok(payload))
-                    }
-                    RespEntity::Http(mut http) => {
-                        http.body = payload;
-                        RespEntity::Http(http)
-                    }
+            pub fn ok_html(html: &str) -> Self {
+                let bin = Arc::new( html.to_string().into_bytes() );
+                ResponseCore::ok(Payload::Primitive(Primitive::Bin(bin)))
+            }
+
+            pub fn ok(body: Payload)-> Self {
+                Self {
+                    headers: Meta::new(),
+                    code: 200,
+                    body
                 }
             }
 
-
-            pub fn http(&self) -> Result<HttpResponse,Error> {
-                match self {
-                    RespEntity::Http(response) => {
-                        Ok(response.clone())
-                    }
-                    _ => Err("mismatch response".into())
+            pub fn server_error()-> Self {
+                Self {
+                    headers: Meta::new(),
+                    code: 500,
+                    body: Payload::Empty
                 }
             }
 
-            pub fn payload(&self) -> Result<Payload,Error> {
-                match self {
-                    RespEntity::Rc(response) => {
-                        response.payload()
-                    }
-                    RespEntity::Msg(response) => {
-                        response.payload()
-                    }
-                    RespEntity::Http(http) => {
-                        Ok(http.body.clone())
-                    }
+            pub fn fail(message: &str)-> Self {
+                let errors = Errors::default(message.clone());
+                Self {
+                    headers: Meta::new(),
+                    code: 500,
+                    body: Payload::Primitive(Primitive::Errors(errors))
                 }
             }
 
-            pub fn is_fail(&self) -> bool {
-                match self {
-                    RespEntity::Rc(resp) => {
-                        resp.is_fail()
-                    }
-                    RespEntity::Msg(resp) => {
-                        resp.is_fail()
-                    }
-                    RespEntity::Http(_) => false
+            pub fn with_new_payload( self, payload: Payload  ) -> Self {
+                Self {
+                    headers: self.headers,
+                    code: self.code,
+                    body: payload
                 }
             }
-        }
 
-        impl TryInto<Result<Payload,Error>> for RespEntity {
-            type Error = Error;
+            pub fn is_ok(&self) -> bool {
+                return self.code >= 200 && self.code <= 299;
+            }
 
-            fn try_into(self) -> Result<Result<Payload, Error>,Self::Error> {
-                match self {
-                    RespEntity::Rc(response) => {
-                        Ok(response.into())
-                    }
-                    RespEntity::Msg(response) => {
-                        Ok(response.into())
-                    }
-                    RespEntity::Http(_) => {
-                        Err("mismatch response".into())
-                    }
+            pub fn into_response( self, from: Address, to: Address, response_to: String ) -> Response {
+                Response {
+                    id: unique_id(),
+                    from,
+                    to,
+                    core: self,
+                    response_to
                 }
             }
         }
 
-
-        impl TryInto<HttpResponse> for RespEntity {
+        impl TryInto<HttpResponse> for ResponseCore {
             type Error = Error;
 
             fn try_into(self) -> Result<HttpResponse, Self::Error> {
-                if let Self::Http(response) = self {
-                    Ok(response)
-                } else {
-                    Err("response mismatch".into())
-                }
+                Ok(HttpResponse {
+                    code: self.code,
+                    headers: self.headers,
+                    body: self.body.to_bin()?
+                })
             }
         }
 
-        impl TryInto<PayloadResponse> for RespEntity {
-            type Error = Error;
 
-            fn try_into(self) -> Result<PayloadResponse, Self::Error> {
-                match self {
-                    RespEntity::Rc(response) => {
-                        Ok(response)
-                    }
-                    RespEntity::Msg(response) => {
-                        Ok(response)
-                    }
-                    RespEntity::Http(_) => {
-                        Err("response mismatch".into())
-                    }
-                }
-
-            }
-        }
-
-        #[derive(Debug, Clone, Serialize, Deserialize, strum_macros::Display)]
-        pub enum PayloadResponse {
-            Ok(Payload),
-            Fail(fail::Fail),
-        }
-
-        impl PayloadResponse {
-            pub fn new( payload: Payload ) -> Self {
-                Self::Ok(payload)
-            }
-
-            pub fn payload(&self) -> Result<Payload,Error> {
-                match self {
-                    Self::Ok( payload ) => Ok(payload.clone()),
-                    Self::Fail(fail) => Err(fail.clone().into())
-                }
-            }
-
-            pub fn is_fail(&self) -> bool {
-                match self {
-                    PayloadResponse::Ok(_) => false,
-                    PayloadResponse::Fail(_) => true
-                }
-            }
-        }
-
-        impl Into<Result<Payload,fail::Fail>> for PayloadResponse {
-            fn into(self) -> Result<Payload, fail::Fail> {
-                match self {
-                    PayloadResponse::Ok(payload) => Ok(payload),
-                    PayloadResponse::Fail(fail) => Err(fail)
-                }
-            }
-        }
-
-        impl Into<Result<Payload,Error>> for PayloadResponse {
-            fn into(self) -> Result<Payload, Error> {
-                match self {
-                    PayloadResponse::Ok(payload) => Ok(payload),
-                    PayloadResponse::Fail(fail) => Err(fail.into())
-                }
-            }
-        }
 
     }
 }
@@ -5734,7 +5779,6 @@ pub mod portal {
         use crate::version::v0_0_1::artifact::ArtifactRequest;
         use crate::version::v0_0_1::frame::{CloseReason, PrimitiveFrame};
         use crate::version::v0_0_1::id::{Address, ResourceKind, ResourceType};
-        use crate::version::v0_0_1::log::Log;
         use crate::version::v0_0_1::messaging::{Request, Response};
         use crate::version::v0_0_1::pattern::TksPattern;
         use crate::version::v0_0_1::payload::Payload;
@@ -5744,6 +5788,26 @@ pub mod portal {
         use crate::version::v0_0_1::util::unique_id;
         use serde::{Serialize,Deserialize};
 
+        #[derive(Debug, Clone, Serialize, Deserialize)]
+        pub struct Log {
+            pub src: String,
+            pub message: String
+        }
+
+        impl Log {
+            pub fn new( src: &str, message: &str ) -> Self {
+                Self {
+                    src: src.to_string(),
+                    message: message.to_string()
+                }
+            }
+        }
+
+        impl ToString for Log {
+            fn to_string(&self) -> String {
+                format!("{}: {}", self.src, self.message )
+            }
+        }
 
         #[derive(Debug, Clone, Serialize, Deserialize, strum_macros::Display)]
         pub enum Frame {
@@ -5752,7 +5816,6 @@ pub mod portal {
             Request(Request),
             Response(Response),
             Artifact(Exchanger<ArtifactRequest>), // portal inlet will cache and return artifact
-            Config(Exchanger<ArtifactRequest>), // portal inlet will cache, parse and return artifact config
             Status(StatusUpdate),
             Close(CloseReason),
         }
@@ -5766,8 +5829,7 @@ pub mod portal {
                         // Response will need a from field for it to work within Ports
                         Option::None
                     }
-                    Frame::Artifact(artifact) => Option::Some(artifact.from.clone()),
-                    Frame::Config(config) => Option::Some(config.from.clone()),
+                    Frame::Artifact(artifact) => Option::None,
                     Frame::Status(status) => Option::Some(status.from.clone()),
                     Frame::Close(_) => Option::None,
                     Frame::AssignRequest(_) => Option::None,
@@ -5816,11 +5878,11 @@ pub mod portal {
 
         #[derive(Debug, Clone, Serialize, Deserialize, strum_macros::Display)]
         pub enum Frame {
+            Init,
             Assign(Exchanger<Assign>),
             Request(Request),
             Response(Response),
-            Artifact(Exchanger<ArtifactResponse<Artifact>>),
-            Config(Exchanger<ArtifactResponse<Config<ConfigBody>>>),
+            Artifact(Exchanger<ArtifactResponse>),
             Close(CloseReason),
         }
 
@@ -5831,8 +5893,8 @@ pub mod portal {
                     Frame::Request(request) => Option::Some(request.to.clone()),
                     Frame::Response(response) => Option::Some(response.to.clone()),
                     Frame::Artifact(artifact) => Option::Some(artifact.to.clone()),
-                    Frame::Config(config) => Option::Some(config.to.clone()),
                     Frame::Close(_) => Option::None,
+                    Frame::Init => Option::None
                 }
             }
         }
@@ -5850,7 +5912,80 @@ pub mod portal {
             }
         }
 
+        impl TryFrom<PrimitiveFrame> for Frame {
+            type Error = Error;
 
+            fn try_from(value: PrimitiveFrame) -> Result<Self, Self::Error> {
+                Ok(bincode::deserialize(value.data.as_slice())?)
+            }
+        }
+    }
+
+    pub mod initin {
+        use crate::error::Error;
+        use crate::version::v0_0_1::artifact::{Artifact, ArtifactRequest, ArtifactResponse};
+        use crate::version::v0_0_1::frame::PrimitiveFrame;
+        use crate::version::v0_0_1::portal::Exchanger;
+        use serde::{Serialize,Deserialize};
+
+        #[derive(Debug,Clone,Serialize,Deserialize)]
+        pub struct PortalAuth {
+            pub user: String,
+            pub portal_key: Option<String>
+        }
+
+        #[derive(Debug, Clone, Serialize, Deserialize, strum_macros::Display)]
+        pub enum Frame {
+            Flavor(String),
+            Auth(PortalAuth),
+            Artifact(Exchanger<ArtifactRequest>),
+            Ok,
+            Ready
+        }
+
+        impl TryInto<PrimitiveFrame>
+        for Frame
+        {
+            type Error = Error;
+
+            fn try_into(self) -> Result<PrimitiveFrame, Self::Error> {
+                Ok(PrimitiveFrame {
+                    data: bincode::serialize(&self)?,
+                })
+            }
+        }
+
+        impl TryFrom<PrimitiveFrame> for Frame {
+            type Error = Error;
+
+            fn try_from(value: PrimitiveFrame) -> Result<Self, Self::Error> {
+                Ok(bincode::deserialize(value.data.as_slice())?)
+            }
+        }
+    }
+    pub mod initout {
+        use crate::error::Error;
+        use crate::version::v0_0_1::artifact::{Artifact, ArtifactResponse};
+        use crate::version::v0_0_1::frame::PrimitiveFrame;
+        use crate::version::v0_0_1::portal::Exchanger;
+        use serde::{Serialize,Deserialize};
+
+        #[derive(Debug, Clone, Serialize, Deserialize, strum_macros::Display)]
+        pub enum Frame {
+            Ok,
+            Artifact(Exchanger<ArtifactResponse>),
+        }
+        impl TryInto<PrimitiveFrame>
+        for Frame
+        {
+            type Error = Error;
+
+            fn try_into(self) -> Result<PrimitiveFrame, Self::Error> {
+                Ok(PrimitiveFrame {
+                    data: bincode::serialize(&self)?,
+                })
+            }
+        }
 
         impl TryFrom<PrimitiveFrame> for Frame {
             type Error = Error;
@@ -5865,9 +6000,9 @@ pub mod portal {
 
 pub mod util {
     use serde::{Deserialize, Serialize};
-    use uuid::Uuid;
 
     use crate::error::Error;
+    use crate::version::v0_0_1::mesh_portal_unique_id;
 
     #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
     pub enum ValuePattern<T> {
@@ -5991,7 +6126,8 @@ pub mod util {
      */
 
     pub fn unique_id() -> String {
-        Uuid::new_v4().to_string()
+//        Uuid::new_v4().to_string()
+        unsafe { mesh_portal_unique_id() }
     }
 }
 
@@ -6023,6 +6159,8 @@ pub mod fail {
             Http(http::Error),
         }
     }
+
+
 
     pub mod http {
         use serde::{Deserialize, Serialize};
@@ -7132,8 +7270,8 @@ pub mod parse {
     }
 
 
-    pub fn property_value_not_space(input: &str) -> Res<&str,&str> {
-        not_space(input)
+    pub fn property_value_not_space_or_comma(input: &str) -> Res<&str,&str> {
+        is_not(" \n\r\t,")(input)
     }
 
     pub fn property_value_single_quotes(input: &str) -> Res<&str,&str> {
@@ -7145,7 +7283,7 @@ pub mod parse {
     }
 
     pub fn property_value(input: &str) -> Res<&str,&str> {
-        alt( (property_value_single_quotes,property_value_double_quotes,property_value_not_space) )(input)
+        alt( (property_value_single_quotes, property_value_double_quotes, property_value_not_space_or_comma) )(input)
     }
 
     pub fn unset_property_mod(input: &str) -> Res<&str, PropertyMod> {
@@ -7159,7 +7297,7 @@ pub mod parse {
     }
 
     pub fn set_properties(input: &str) -> Res<&str, SetProperties> {
-        many0(tuple((multispace0,property_mod,multispace1)))(input).map( |(next, properties)| {
+        separated_list0(tag(","),tuple((multispace0,property_mod,multispace0)))(input).map( |(next, properties)| {
             let mut set_properties = SetProperties::new();
             for (_,property,_) in properties {
                 set_properties.push(property);
@@ -7295,7 +7433,7 @@ pub mod test {
     use regex::Regex;
     use crate::version::v0_0_1::config::bind::parse::{bind, http_section, http_selector, pipeline, pipeline_step, pipeline_stop};
     use crate::version::v0_0_1::config::bind::Section;
-    use crate::version::v0_0_1::http::HttpRequest;
+    use crate::version::v0_0_1::entity::request::{Action, RequestCore};
     use crate::version::v0_0_1::pattern::parse::version;
     use crate::version::v0_0_1::pattern::parse::address_kind_pattern;
     use crate::version::v0_0_1::pattern::{http_pattern, http_pattern_scoped, upload_step};
@@ -7462,22 +7600,22 @@ println!("{}", addy.last_segment().unwrap().to_string() );
         let get_some_star_pattern = all_consuming( http_pattern )("Http<Get>^/some/*")?.1;
         let get_some_capture_pattern = all_consuming( http_pattern )("Http<Get>^/some/(.*)")?.1;
 
-        let get_some = crate::version::v0_0_1::http::HttpRequest {
-            method: HttpMethod::Get,
+        let get_some = RequestCore {
+            action: Action::Http(HttpMethod::Get),
             headers: Default::default(),
             path: "/some".to_string(),
             body: Payload::Empty
         };
 
-        let get_some_plus = crate::version::v0_0_1::http::HttpRequest {
-            method: HttpMethod::Get,
+        let get_some_plus = RequestCore {
+            action: Action::Http(HttpMethod::Get),
             headers: Default::default(),
             path: "/some/plus".to_string(),
             body: Payload::Empty
         };
 
-        let post_some = crate::version::v0_0_1::http::HttpRequest {
-            method: HttpMethod::Post,
+        let post_some = RequestCore {
+            action: Action::Http(HttpMethod::Post),
             headers: Default::default(),
             path: "/some".to_string(),
             body: Payload::Empty
@@ -7500,22 +7638,22 @@ println!("{}", addy.last_segment().unwrap().to_string() );
 
     #[test]
     pub fn test_selector() -> Result<(),Error> {
-        let get_some = crate::version::v0_0_1::http::HttpRequest {
-            method: HttpMethod::Get,
+        let get_some = RequestCore {
+            action: Action::Http(HttpMethod::Get),
             headers: Default::default(),
             path: "/some".to_string(),
             body: Payload::Empty
         };
 
-        let get_some_plus = crate::version::v0_0_1::http::HttpRequest {
-            method: HttpMethod::Get,
+        let get_some_plus = RequestCore {
+            action: Action::Http(HttpMethod::Get),
             headers: Default::default(),
             path: "/some/plus".to_string(),
             body: Payload::Empty
         };
 
-        let post_some = crate::version::v0_0_1::http::HttpRequest {
-            method: HttpMethod::Post,
+        let post_some = RequestCore {
+            action: Action::Http(HttpMethod::Post),
             headers: Default::default(),
             path: "/some".to_string(),
             body: Payload::Empty
@@ -7533,29 +7671,29 @@ println!("{}", addy.last_segment().unwrap().to_string() );
     }
     #[test]
     pub fn test_scope() -> Result<(),Error> {
-        let get_some = crate::version::v0_0_1::http::HttpRequest {
-            method: HttpMethod::Get,
+        let get_some = RequestCore {
+            action: Action::Http(HttpMethod::Get),
             headers: Default::default(),
             path: "/some".to_string(),
             body: Payload::Empty
         };
 
-        let get_some_plus = crate::version::v0_0_1::http::HttpRequest {
-            method: HttpMethod::Get,
+        let get_some_plus = RequestCore {
+            action: Action::Http(HttpMethod::Get),
             headers: Default::default(),
             path: "/some/plus".to_string(),
             body: Payload::Empty
         };
 
-        let post_some = crate::version::v0_0_1::http::HttpRequest {
-            method: HttpMethod::Post,
+        let post_some = RequestCore {
+            action: Action::Http(HttpMethod::Post),
             headers: Default::default(),
             path: "/some".to_string(),
             body: Payload::Empty
         };
 
-        let delete_some = crate::version::v0_0_1::http::HttpRequest {
-            method: HttpMethod::Delete,
+        let delete_some = RequestCore {
+            action: Action::Http(HttpMethod::Delete),
             headers: Default::default(),
             path: "/some".to_string(),
             body: Payload::Empty

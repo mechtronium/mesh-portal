@@ -19,33 +19,36 @@ use std::prelude::rust_2021::TryFrom;
 use std::ops::Deref;
 use std::collections::HashMap;
 use tokio::sync::watch::Receiver;
-use mesh_portal_serde::std_logger;
 use mesh_portal_serde::version::latest::http::{HttpRequest, HttpResponse};
 use mesh_portal_serde::version::latest::portal::{Exchanger, inlet, outlet};
 use mesh_portal_serde::version::latest::resource::{ResourceStub, Status};
-use mesh_portal_serde::version::latest::log::Log;
 use mesh_portal_serde::version::latest::{portal, entity};
 use std::convert::TryInto;
 use dashmap::mapref::one::Ref;
 use tokio::sync::oneshot::Sender;
 use tokio::task::yield_now;
-use mesh_portal_serde::version::latest::config::{Config, PortalConfig, ResourceConfigBody};
+use mesh_portal_serde::version::latest::config::{Assign, Config, PortalConfig, ResourceConfigBody};
+use mesh_portal_serde::version::latest::entity::response::ResponseCore;
 use mesh_portal_serde::version::latest::id::Address;
-use mesh_portal_serde::version::latest::messaging::{Exchange, ExchangeId, Request, Response};
-use mesh_portal_serde::version::latest::portal::inlet::AssignRequest;
+use mesh_portal_serde::version::latest::messaging::{Request, Response};
+use mesh_portal_serde::version::latest::portal::inlet::{AssignRequest, Log};
 use mesh_portal_serde::version::latest::portal::outlet::Frame;
+use mesh_portal_serde::version::latest::util::unique_id;
 
+pub fn std_logger( log: Log ) {
+    println!("{}", log.to_string())
+}
 
 #[derive(Clone)]
 pub struct ResourceSkel {
+  pub assign: Assign,
   pub portal: PortalSkel,
-  pub stub: ResourceStub,
   pub logger: fn(message: &str),
 }
 
 pub trait ResourceCtrlFactory: Sync+Send {
     fn matches(&self,config:Config<ResourceConfigBody>) -> bool;
-    fn create(&self, skel: ResourceSkel) -> Result<Arc<dyn ResourceCtrl>, Error>;
+    fn create(&self, skel: ResourceSkel ) -> Result<Arc<dyn ResourceCtrl>, Error>;
 }
 
 #[async_trait]
@@ -55,9 +58,10 @@ pub trait ResourceCtrl: Sync+Send {
         Ok(())
     }
 
-    async fn outlet_frame(&self, frame: outlet::Frame ) -> Result<Option<Response>,Error> {
-        Ok(Option::None)
+    async fn handle_request( &self, request: Request ) -> ResponseCore {
+        request.core.not_found()
     }
+
 }
 
 pub fn log(message: &str) {
@@ -84,30 +88,37 @@ impl StatusChamber{
     }
 }
 
-pub type Exchanges = Arc<DashMap<ExchangeId, oneshot::Sender<Response>>>;
-
-
+pub type Exchanges = Arc<DashMap<String, oneshot::Sender<Response>>>;
 
 #[derive(Clone)]
-pub struct PortalSkel {
+pub struct PrePortalSkel {
     pub config: PortalConfig,
     pub inlet: Arc<dyn Inlet>,
     pub logger: fn(message: &str),
     pub exchanges: Exchanges,
     pub assign_exchange: Arc<DashMap<String, oneshot::Sender<Arc<dyn ResourceCtrl>>>>,
-    pub tx: mpsc::Sender<outlet::Frame>,
-    pub ctrl_factory: Arc<dyn ResourceCtrlFactory>,
 }
-
-
-impl PortalSkel {
+impl PrePortalSkel {
 
     pub fn api(&self) -> InletApi {
         InletApi::new( self.config.clone(), self.inlet.clone(), self.exchanges.clone(), std_logger )
     }
 
 }
+#[derive(Clone)]
+pub struct PortalSkel {
+    pub pre: PrePortalSkel,
+    pub tx: mpsc::Sender<outlet::Frame>,
+    pub ctrl_factory: Arc<dyn ResourceCtrlFactory>,
+}
 
+impl Deref for PortalSkel {
+    type Target = PrePortalSkel;
+
+    fn deref(&self) -> &Self::Target {
+        &self.pre
+    }
+}
 
 pub enum ResourceCommand {
     Add{address: Address, resource: Arc<dyn ResourceCtrl> },
@@ -122,23 +133,15 @@ pub struct Portal {
 
 impl Portal {
     pub async fn new(
-        config: PortalConfig,
-        inlet: Box<dyn Inlet>,
+        pre: PrePortalSkel,
         outlet_tx: mpsc::Sender<outlet::Frame>,
         mut outlet_rx: mpsc::Receiver<outlet::Frame>,
         ctrl_factory: Arc<dyn ResourceCtrlFactory>,
         logger: fn(message: &str)
     ) -> Result<Arc<Portal>, Error> {
 
-        let inlet :Arc<dyn Inlet>= inlet.into();
-        let exchanges = Arc::new(DashMap::new());
-        let assign_exchange = Arc::new(DashMap::new());
         let skel =  PortalSkel {
-            config,
-            inlet,
-            logger,
-            exchanges,
-            assign_exchange,
+            pre,
             tx: outlet_tx,
             ctrl_factory,
         };
@@ -159,50 +162,61 @@ println!("Portal received frame: {}", frame.to_string());
 
                         async fn process( skel: PortalSkel,  resources: &mut HashMap<Address,Arc<dyn ResourceCtrl>>, frame: outlet::Frame ) -> Result<(),Error> {
 println!("CLIENT PROCESS");
-                            if let Frame::Assign(assign) = &frame {
-                                let resource_skel = ResourceSkel {
-                                    portal: skel.clone(),
-                                    stub: assign.stub.clone(),
-                                    logger: skel.logger,
-                                };
-                                let resource = skel.ctrl_factory.create(resource_skel)?;
-                                resources.insert( assign.stub.address.clone(), resource.clone() );
-                                let assign = assign.clone();
-                                tokio::spawn( async move {
-println!("CLIENT INIT");
-                                    resource.init().await;
-                                    match skel.assign_exchange.remove( &assign.id ) {
-                                        None => {}
-                                        Some((_,tx)) => {
-                                            tx.send( resource );
-                                        }
-                                    }
-println!("CLIENT INIT COMPLETE");
-                                });
 
+                            match &frame {
+                                outlet::Frame::Init => {
 
-println!("CLIENT RTN OK");
-                                return Ok(());
-                            }
-
-                            if let Frame::Response(response)= &frame {
-println!("RECEIVE RESPONSE");
-                                if let Option::Some((id,tx)) = skel.exchanges.remove(&response.response_to) {
-println!("... EXchange Id {}", id);
-                                    tx.send(response.clone());
-                                    return Ok(())
                                 }
-                            } else {
-                                eprintln!("could not find exchange for response: ")
-                            }
-println!("Client outlet::Frame{}",frame.to_string());
-                            let to = frame.to().ok_or::<Error>(anyhow!("expected frame to have a to"))?;
-                            let resource = resources.get(&to).ok_or(anyhow!("expected to find resource for address"))?;
+                                outlet::Frame::Assign(assign) => {
+                                    let resource_skel = ResourceSkel {
+                                        assign: assign.item.clone(),
+                                        portal: skel.clone(),
+                                        logger: skel.logger,
+                                    };
+                                    let resource = skel.ctrl_factory.create(resource_skel)?;
+                                    resources.insert( assign.stub.address.clone(), resource.clone() );
+                                    let assign = assign.clone();
+                                    let skel = skel.clone();
+                                    let frame = frame.clone();
+                                    tokio::spawn( async move {
+                                        println!("CLIENT INIT");
+                                        resource.init().await;
+                                        match skel.assign_exchange.remove( &assign.id ) {
+                                            None => {
+                                                println!("could not find exchange for {}",assign.id);
+                                            }
+                                            Some((_,tx)) => {
+                                                tx.send( resource );
+                                            }
+                                        }
+                                        println!("CLIENT INIT COMPLETE");
+                                    });
 
-                            println!("SSS SEnding to outlet_frame....");
-                            if let Option::Some(response) = resource.outlet_frame(frame).await? {
-                                println!("GGG GOT a response !");
-                                skel.inlet.inlet_frame(inlet::Frame::Response(response));
+                                }
+                                outlet::Frame::Request(request) => {
+                                    let request = request.clone();
+                                    let resource = resources.get(&request.to ).ok_or(anyhow!("expected to find resource for address '{}'", request.to.to_string()))?;
+                                    let response = resource.handle_request(request.clone()).await;
+                                    let response = Response {
+                                        id: unique_id(),
+                                        from: request.to,
+                                        to: request.from,
+                                        core: response,
+                                        response_to: request.id
+                                    };
+                                    skel.inlet.inlet_frame(inlet::Frame::Response(response));
+                                }
+                                outlet::Frame::Response(response) => {
+                                    if let Some((_,tx)) = skel.exchanges.remove(&response.response_to)
+                                    {
+                                        tx.send( response.clone() );
+                                    }
+                                }
+                                outlet::Frame::Artifact(_) => {
+                                    unimplemented!()
+                                }
+                                outlet::Frame::Close(_) => {
+                                }
                             }
 
                             Ok(())
@@ -233,6 +247,10 @@ println!("Client outlet::Frame{}",frame.to_string());
        self.skel.assign_exchange.insert( request.id.clone(), tx );
        self.skel.inlet.inlet_frame(inlet::Frame::AssignRequest(request) );
        Ok(rx.await?)
+    }
+
+    pub async fn request( &self, request: Request ) -> Response {
+        self.skel.api().exchange(request).await
     }
 }
 
@@ -269,14 +287,18 @@ impl InletApi {
     pub async fn exchange(
         &mut self,
         request: Request
-    ) -> Result<Response, Error> {
+    ) -> Response {
 
         let (tx,rx) = oneshot::channel();
         self.exchanges.insert(request.id.clone(), tx);
-        self.inlet.inlet_frame(inlet::Frame::Request(request));
+        self.inlet.inlet_frame(inlet::Frame::Request(request.clone()));
 
         let result = tokio::time::timeout(Duration::from_secs(self.config.response_timeout.clone()),rx).await;
-        Ok(result??)
+        match result {
+            Ok(Ok(response)) => response,
+            Ok(Err(error)) => request.fail(error.to_string().as_str()),
+            Err(error) => request.fail(error.to_string().as_str())
+        }
     }
 
     pub fn send_response(&self, response: Response ) {
@@ -335,7 +357,6 @@ pub mod example {
     use std::collections::HashMap;
     use mesh_portal_serde::version::latest::payload::{Payload, Primitive};
     use mesh_portal_serde::version::latest::entity;
-    use mesh_portal_serde::version::latest::entity::request::Msg;
 
     pub struct HelloCtrl {
         pub skel: Arc<PortalSkel>,

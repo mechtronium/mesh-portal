@@ -17,7 +17,7 @@ pub mod artifact {
     use mesh_portal_versions::version::v0_0_1 as current;
     pub type Artifact = current::artifact::Artifact;
     pub type ArtifactRequest = current::artifact::ArtifactRequest;
-    pub type ArtifactResponse<B> = current::artifact::ArtifactResponse<B>;
+    pub type ArtifactResponse = current::artifact::ArtifactResponse;
 }
 
 
@@ -91,18 +91,9 @@ pub mod messaging {
     pub type Request = current::messaging::Request;
     pub type Response= current::messaging::Response;
     pub type ProtoRequest= current::messaging::ProtoRequest;
-    pub type ProtoResponse= current::messaging::ProtoResponse;
-    pub type ExchangeId = current::messaging::ExchangeId;
-    pub type ExchangeType = current::messaging::ExchangeType;
-    pub type Exchange = current::messaging::Exchange;
     pub type Message = current::messaging::Message;
 }
 
-pub mod log {
-    use mesh_portal_versions::version::v0_0_1 as current;
-
-    pub type Log = current::log::Log;
-}
 
 pub mod frame {
     use mesh_portal_versions::version::v0_0_1 as current;
@@ -126,6 +117,7 @@ pub mod payload {
     pub type PrimitiveList = current::payload::PrimitiveList;
     pub type PrimitiveType = current::payload::PrimitiveType;
     pub type PayloadType = current::payload::PayloadType;
+    pub type Errors = current::payload::Errors;
     pub type ListPattern = current::payload::ListPattern;
     pub type Range = current::payload::Range;
     pub type PayloadTypePattern = current::payload::PayloadTypePattern;
@@ -158,6 +150,11 @@ pub mod command {
         pub type SetRegistry = current::command::common::SetRegistry;
     }
 }
+pub mod msg {
+    use mesh_portal_versions::version::v0_0_1 as current;
+
+    pub type MsgRequest = current::msg::MsgRequest;
+}
 
 pub mod http {
     use mesh_portal_versions::version::v0_0_1 as current;
@@ -177,11 +174,6 @@ pub mod config {
     pub type ConfigBody = current::config::ConfigBody;
     pub type ResourceConfigBody = current::config::ResourceConfigBody;
 
-    pub mod mechtron {
-        use mesh_portal_versions::version::v0_0_1 as current;
-
-        pub type MechtronConfig = current::config::mechtron::MechtronConfig;
-    }
 
     pub mod bind {
         use mesh_portal_versions::version::v0_0_1 as current;
@@ -211,12 +203,10 @@ pub mod entity {
     pub mod request {
         use mesh_portal_versions::version::v0_0_1 as current;
 
-        pub type ReqEntity = current::entity::request::ReqEntity;
-        pub type RcCommand = current::entity::request::RcCommand;
-        pub type RcCommandType = current::entity::request::RcCommandType;
+        pub type Action = current::entity::request::Action;
+        pub type RequestCore= current::entity::request::RequestCore;
         pub type Rc = current::entity::request::Rc;
-        pub type Msg = current::entity::request::Msg;
-        pub type Http = current::entity::request::Http;
+        pub type RcCommandType = current::entity::request::RcCommandType;
 
         pub mod create {
             use mesh_portal_versions::version::v0_0_1 as current;
@@ -266,8 +256,7 @@ pub mod entity {
     pub mod response {
         use mesh_portal_versions::version::v0_0_1 as current;
 
-        pub type RespEntity = current::entity::response::RespEntity;
-        pub type PayloadResponse= current::entity::response::PayloadResponse;
+        pub type ResponseCore = current::entity::response::ResponseCore;
     }
 }
 
@@ -293,6 +282,7 @@ pub mod portal {
     pub mod inlet {
         use mesh_portal_versions::version::v0_0_1 as current;
 
+        pub type Log = current::portal::inlet::Log;
         pub type Frame = current::portal::inlet::Frame;
         pub type AssignRequest = current::portal::inlet::AssignRequest;
     }
@@ -301,6 +291,17 @@ pub mod portal {
         use mesh_portal_versions::version::v0_0_1 as current;
 
         pub type Frame = current::portal::outlet::Frame;
+    }
+
+    pub mod initin {
+        use mesh_portal_versions::version::v0_0_1 as current;
+        pub type Frame = current::portal::initin::Frame;
+        pub type PortalAuth = current::portal::initin::PortalAuth;
+    }
+
+    pub mod initout{
+        use mesh_portal_versions::version::v0_0_1 as current;
+        pub type Frame = current::portal::initout::Frame;
     }
 }
 

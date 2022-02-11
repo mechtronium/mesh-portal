@@ -11,7 +11,7 @@ use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use std::marker::PhantomData;
 use std::time::Duration;
 use mesh_portal_serde::version::latest::frame::{PrimitiveFrame, CloseReason};
-use mesh_portal_serde::version::latest::portal::{outlet, inlet};
+use mesh_portal_serde::version::latest::portal::{outlet, inlet, initin, initout};
 
 #[cfg(test)]
 mod tests {
@@ -33,6 +33,10 @@ impl <FRAME> FrameWriter<FRAME> where FRAME: TryInto<PrimitiveFrame>  {
             stream,
             phantom: PhantomData
         }
+    }
+
+    pub fn done(self) -> PrimitiveFrameWriter {
+        self.stream
     }
 }
 
@@ -61,7 +65,27 @@ impl FrameWriter<inlet::Frame> {
     }
 }
 
+impl FrameWriter<initin::Frame> {
 
+    pub async fn write( &mut self, frame: initin::Frame ) -> Result<(),Error> {
+        let frame = frame.try_into()?;
+        self.stream.write(frame).await
+    }
+
+    pub async fn close( &mut self, reason: CloseReason ) {
+    }
+}
+
+impl FrameWriter<initout::Frame> {
+
+    pub async fn write( &mut self, frame: initout::Frame ) -> Result<(),Error> {
+        let frame = frame.try_into()?;
+        self.stream.write(frame).await
+    }
+
+    pub async fn close( &mut self, reason: CloseReason ) {
+    }
+}
 pub struct FrameReader<FRAME> {
     stream: PrimitiveFrameReader,
     phantom: PhantomData<FRAME>
@@ -73,6 +97,24 @@ impl <FRAME> FrameReader<FRAME>  {
             stream,
             phantom: PhantomData
         }
+    }
+
+    pub fn done(self) -> PrimitiveFrameReader {
+        self.stream
+    }
+}
+
+impl FrameReader<initin::Frame> {
+    pub async fn read( &mut self ) -> Result<initin::Frame,Error> {
+        let frame = self.stream.read().await?;
+        Ok(initin::Frame::try_from(frame)?)
+    }
+}
+
+impl FrameReader<initout::Frame> {
+    pub async fn read( &mut self ) -> Result<initout::Frame,Error> {
+        let frame = self.stream.read().await?;
+        Ok(initout::Frame::try_from(frame)?)
     }
 }
 
@@ -146,4 +188,6 @@ impl PrimitiveFrameWriter {
         self.write(frame).await
     }
 }
+
+
 
