@@ -88,7 +88,6 @@ pub mod pattern {
 pub mod messaging {
     use mesh_portal_versions::version::v0_0_1 as current;
 
-    pub type RequestExchange = current::messaging::RequestExchange;
     pub type Request = current::messaging::Request;
     pub type Response= current::messaging::Response;
     pub type ProtoRequest= current::messaging::ProtoRequest;
@@ -150,6 +149,11 @@ pub mod command {
         pub type PropertyMod = current::command::common::PropertyMod;
         pub type SetRegistry = current::command::common::SetRegistry;
     }
+}
+pub mod msg {
+    use mesh_portal_versions::version::v0_0_1 as current;
+
+    pub type MsgRequest = current::msg::MsgRequest;
 }
 
 pub mod http {

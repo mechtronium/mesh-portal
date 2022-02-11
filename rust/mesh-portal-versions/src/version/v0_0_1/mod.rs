@@ -2812,30 +2812,13 @@ pub mod messaging {
     use std::convert::TryInto;
 
     use serde::{Deserialize, Serialize};
-    use tokio::sync::oneshot;
 
     use crate::error::Error;
     use crate::version::v0_0_1::entity::request::RequestCore;
     use crate::version::v0_0_1::entity::response::ResponseCore;
     use crate::version::v0_0_1::id::Address;
-    use crate::version::v0_0_1::payload::{Payload, Primitive};
+    use crate::version::v0_0_1::payload::{Errors, Payload, Primitive};
     use crate::version::v0_0_1::util::unique_id;
-
-    pub struct RequestExchange {
-        pub request: Request,
-        pub tx: oneshot::Sender<Response>
-    }
-
-    impl RequestExchange {
-        pub fn new(request: Request) -> (Self,oneshot::Receiver<Response>) {
-            let (tx, rx) = oneshot::channel();
-            let exchange = Self {
-                request,
-                tx
-            };
-            (exchange,rx)
-        }
-    }
 
     #[derive(Debug,Clone,Serialize,Deserialize)]
     pub struct Request {
@@ -2871,11 +2854,11 @@ pub mod messaging {
             response
         }
 
-        pub fn fail( self, error: String ) -> Response {
+        pub fn fail( self, error: &str) -> Response {
             let core = ResponseCore {
                 headers: Default::default(),
                 code: 500,
-                body: Payload::Primitive(Primitive::Text(error))
+                body: Payload::Primitive(Primitive::Errors(Errors::default(error.to_string().as_str())))
             };
             let response = Response {
                 id: unique_id(),
@@ -4169,16 +4152,71 @@ pub mod command {
 
 }
 
+pub mod msg {
+    use crate::error::Error;
+    use crate::version::v0_0_1::entity::request::{Action, RequestCore};
+    use crate::version::v0_0_1::entity::response::ResponseCore;
+    use crate::version::v0_0_1::id::Meta;
+    use crate::version::v0_0_1::payload::{Errors, Payload, Primitive};
+    use serde::{Serialize,Deserialize};
+
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub struct MsgRequest{
+        pub action: String,
+        pub headers: Meta,
+        pub path: String,
+        pub body: Payload
+    }
+
+    impl MsgRequest {
+        pub fn ok(&self, payload: Payload) -> ResponseCore {
+            ResponseCore {
+                headers: Default::default(),
+                code: 200,
+                body: payload
+            }
+        }
+
+        pub fn fail(&self, error: &str) -> ResponseCore {
+            let errors = Errors::default(error);
+            ResponseCore {
+                headers: Default::default(),
+                code: 500,
+                body: Payload::Primitive(Primitive::Errors(errors))
+            }
+        }
+    }
+
+    impl TryFrom<RequestCore> for MsgRequest {
+        type Error = Error;
+
+        fn try_from(core: RequestCore) -> Result<Self, Self::Error> {
+            if let Action::Msg(action) = core.action {
+                Ok(Self {
+                    action,
+                    headers: core.headers,
+                    path: core.path,
+                    body: core.body
+                })
+            } else {
+                Err("expected Msg".into())
+            }
+        }
+    }
+}
+
 pub mod http {
     use std::collections::HashMap;
     use std::sync::Arc;
 
     use serde::{Deserialize, Serialize};
+    use crate::error::Error;
 
     use crate::version::v0_0_1::Bin;
     use crate::version::v0_0_1::entity::request::{Action, RequestCore};
+    use crate::version::v0_0_1::entity::response::ResponseCore;
     use crate::version::v0_0_1::id::Meta;
-    use crate::version::v0_0_1::payload::{HttpMethod, Payload, Primitive};
+    use crate::version::v0_0_1::payload::{Errors, HttpMethod, Payload, Primitive};
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct HttpRequest {
@@ -4186,6 +4224,39 @@ pub mod http {
         pub headers: Meta,
         pub path: String,
         pub body: Bin
+    }
+
+    impl HttpRequest {
+        pub fn ok(&self, html: &str) -> ResponseCore {
+            ResponseCore::ok_html(html)
+        }
+
+        pub fn fail(&self, error: &str) -> ResponseCore {
+            let errors = Errors::default(error);
+            ResponseCore {
+                headers: Default::default(),
+                code: 500,
+                body: Payload::Primitive(Primitive::Errors(errors))
+            }
+        }
+    }
+
+
+    impl TryFrom<RequestCore> for HttpRequest {
+        type Error = Error;
+
+        fn try_from(core: RequestCore) -> Result<Self, Self::Error> {
+            if let Action::Http(method) = core.action {
+                Ok(Self {
+                    method,
+                    headers: core.headers,
+                    path: core.path,
+                    body: core.body.to_bin()?
+                })
+            } else {
+                Err("expected Http".into())
+            }
+        }
     }
 
     impl Into<RequestCore> for HttpRequest {
@@ -4781,7 +4852,7 @@ pub mod entity {
         use crate::version::v0_0_1::fail::{BadRequest, Fail, NotFound};
         use crate::version::v0_0_1::id::{Address, ResourceKind, Meta, PayloadClaim, ResourceType};
         use crate::version::v0_0_1::pattern::TksPattern;
-        use crate::version::v0_0_1::payload::{HttpMethod, Payload};
+        use crate::version::v0_0_1::payload::{Errors, HttpMethod, Payload, Primitive};
         use crate::version::v0_0_1::util::ValueMatcher;
         use serde::{Serialize,Deserialize};
         use crate::error::Error;
@@ -4853,6 +4924,15 @@ pub mod entity {
                     headers: Default::default(),
                     code: 200,
                     body: payload
+                }
+            }
+
+            pub fn fail(&self, error: &str ) -> ResponseCore {
+                let errors = Errors::default(error);
+                ResponseCore {
+                    headers: Default::default(),
+                    code: 500,
+                    body: Payload::Primitive(Primitive::Errors(errors))
                 }
             }
         }
@@ -5333,10 +5413,11 @@ pub mod entity {
     }
 
     pub mod response {
+        use std::sync::Arc;
         use crate::error::Error;
         use crate::version::v0_0_1::fail;
         use crate::version::v0_0_1::id::{Address, Meta, ResourceKind};
-        use crate::version::v0_0_1::payload::Payload;
+        use crate::version::v0_0_1::payload::{Errors, Payload, Primitive};
         use serde::{Serialize,Deserialize};
         use crate::version::v0_0_1::entity::request::{RequestCore};
         use crate::version::v0_0_1::fail::Fail;
@@ -5352,6 +5433,36 @@ pub mod entity {
         }
 
         impl ResponseCore {
+
+            pub fn ok_html(html: &str) -> Self {
+                let bin = Arc::new( html.to_string().into_bytes() );
+                ResponseCore::ok(Payload::Primitive(Primitive::Bin(bin)))
+            }
+
+            pub fn ok(body: Payload)-> Self {
+                Self {
+                    headers: Meta::new(),
+                    code: 200,
+                    body
+                }
+            }
+
+            pub fn server_error()-> Self {
+                Self {
+                    headers: Meta::new(),
+                    code: 500,
+                    body: Payload::Empty
+                }
+            }
+
+            pub fn fail(message: &str)-> Self {
+                let errors = Errors::default(message.clone());
+                Self {
+                    headers: Meta::new(),
+                    code: 500,
+                    body: Payload::Primitive(Primitive::Errors(errors))
+                }
+            }
 
             pub fn with_new_payload( self, payload: Payload  ) -> Self {
                 Self {
@@ -6011,6 +6122,8 @@ pub mod fail {
             Http(http::Error),
         }
     }
+
+
 
     pub mod http {
         use serde::{Deserialize, Serialize};

@@ -21,7 +21,7 @@ use mesh_portal_serde::version::latest::entity::response;
 use mesh_portal_serde::version::latest::fail;
 use mesh_portal_serde::version::latest::frame::CloseReason;
 use mesh_portal_serde::version::latest::id::Address;
-use mesh_portal_serde::version::latest::messaging::{Message, Request, RequestExchange, Response};
+use mesh_portal_serde::version::latest::messaging::{Message, Request,  Response};
 use mesh_portal_serde::version::latest::pattern::AddressKindPattern;
 use mesh_portal_serde::version::latest::portal::{Exchanger, inlet, outlet};
 use mesh_portal_serde::version::latest::resource::ResourceStub;
@@ -49,7 +49,7 @@ impl PortalApi {
                 response
             }
             _ => {
-                request.fail("timeout".to_string() )
+                request.fail("timeout".to_string().as_str() )
             }
         }
     }
@@ -184,7 +184,7 @@ impl Portal {
                                                 outlet_tx.send( outlet::Frame::Response(response)).await;
                                             }
                                             _ => {
-                                                let response = request.fail("timeout".to_string());
+                                                let response = request.fail("timeout".to_string().as_str());
                                                 outlet_tx.send( outlet::Frame::Response(response)).await;
                                             }
                                         }
@@ -257,7 +257,7 @@ impl Portal {
                 response
             }
             _ => {
-                let response = request.fail("timeout".to_string() );
+                let response = request.fail("timeout".to_string().as_str() );
                 response
             }
         }

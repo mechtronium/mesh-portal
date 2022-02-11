@@ -291,8 +291,8 @@ impl InletApi {
         let result = tokio::time::timeout(Duration::from_secs(self.config.response_timeout.clone()),rx).await;
         match result {
             Ok(Ok(response)) => response,
-            Ok(Err(error)) => request.fail(error.to_string()),
-            Err(error) => request.fail(error.to_string())
+            Ok(Err(error)) => request.fail(error.to_string().as_str()),
+            Err(error) => request.fail(error.to_string().as_str())
         }
     }
 
