@@ -25,7 +25,7 @@ use mesh_portal_serde::version::latest::frame::CloseReason;
 use mesh_portal_serde::version::latest::messaging::Request;
 use mesh_portal_serde::version::latest::messaging::{Message, Response};
 use mesh_portal_serde::version::latest::portal::initin::PortalAuth;
-use mesh_portal_serde::version::latest::portal::inlet::Log;
+use mesh_portal_serde::version::latest::portal::inlet::{Frame, Log};
 use mesh_portal_serde::version::latest::portal::{initin, initout, inlet, outlet, Exchanger};
 use mesh_portal_serde::version::latest::resource::Code;
 use mesh_portal_serde::version::latest::resource::{ResourceStub, Status};
@@ -232,14 +232,31 @@ impl PortalTcpServer {
         writer.write(initout::Frame::Ok).await?;
         yield_now().await;
 
-        if let initin::Frame::Auth(client_ident) = reader.read().await? {
+        if let initin::Frame::Auth(portal_auth) = reader.read().await? {
             self.server_event_broadcaster_tx
                 .send(PortalServerEvent::Authorization(EventResult::Ok(
-                    client_ident.user.clone(),
+                    portal_auth.user.clone(),
                 )))
                 .unwrap_or_default();
             tokio::time::sleep(Duration::from_secs(0)).await;
             writer.write(initout::Frame::Ok).await?;
+
+            loop {
+                match reader.read().await? {
+                    initin::Frame::Artifact(request) => {
+                        let response = self.server.portal_request_handler().handle_artifact_request(request.item.clone()).await?;
+                        let response = request.with(response);
+                        writer.write(initout::Frame::Artifact(response)).await?;
+println!("portal server: wrote initout::Frame::Artifact");
+                    }
+                    initin::Frame::Ready => {
+                        break;
+                    }
+                    _ => {
+                        return Err(anyhow!("portal server: illegal initin::Frame encountered during client init process") )
+                    }
+                }
+            }
 
             let mut reader: FrameReader<inlet::Frame> = FrameReader::new(reader.done());
             let mut writer: FrameWriter<outlet::Frame> = FrameWriter::new(writer.done());
@@ -250,7 +267,7 @@ impl PortalTcpServer {
                 println!("{}", log.to_string());
             }
 
-            let portal_key = match client_ident.portal_key {
+            let portal_key = match portal_auth.portal_key {
                 None => uuid::Uuid::new_v4().to_string(),
                 Some(portal_key) => portal_key,
             };
@@ -275,17 +292,20 @@ impl PortalTcpServer {
                 let logger = self.server.logger();
                 tokio::spawn(async move {
                     loop {
-                        if let Result::Ok(frame) = reader.read().await {
-                            println!("server TCP READ FRAME: {}", frame.to_string());
-                            let result = inlet_tx.send(frame).await;
-                            yield_now().await;
-                            if result.is_err() {
-                                (logger)("FATAL: cannot send frame to portal inlet_tx");
-                                return;
+                        match  reader.read().await {
+                            Ok(frame) => {
+                                println!("server TCP READ FRAME: {}", frame.to_string());
+                                let result = inlet_tx.send(frame).await;
+                                yield_now().await;
+                                if result.is_err() {
+                                    (logger)("FATAL: cannot send frame to portal inlet_tx");
+                                    return;
+                                }
                             }
-                        } else {
-                            println!("TCP Reader end...");
-                            break;
+                            Err(err) => {
+                                eprintln!("portal server: TCP Reader end... {}",err.to_string());
+                                break;
+                            }
                         }
                     }
                 });
@@ -302,8 +322,8 @@ impl PortalTcpServer {
                             );
                             writer.write(frame).await;
                         }
+                        println!("server: outlet_rx complete.");
                     });
-                    println!("server: outlet_rx complete.");
                 });
                 task.await?;
             }

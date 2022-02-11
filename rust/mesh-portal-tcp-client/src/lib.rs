@@ -41,7 +41,7 @@ impl PortalTcpClient {
         writer.write(initin::Frame::Flavor(client.flavor())).await?;
 
         if let initout::Frame::Ok = reader.read().await? {
-
+println!("client: Flavor negotiaion Ok");
         } else {
             let message = "FLAVOR NEGOTIATION FAILED".to_string();
             (client.logger())(message.as_str());
@@ -52,7 +52,7 @@ impl PortalTcpClient {
         writer.write( initin::Frame::Auth(auth)).await?;
 
         if let initout::Frame::Ok = reader.read().await? {
-
+println!("client: auth Ok.");
         } else {
             let message = "AUTH FAILED".to_string();
             (client.logger())(message.as_str());
@@ -75,11 +75,17 @@ impl PortalTcpClient {
             assign_exchange: Arc::new(DashMap::new() ),
         };
 
+println!("client: init client pre");
         let factory = client.init( &mut reader, &mut writer, skel.clone() ).await?;
+
+println!("client: init client post");
+        writer.write( initin::Frame::Ready ).await?;
+println!("client: signaled ready");
 
         let mut reader : FrameReader<outlet::Frame> = FrameReader::new(reader.done() );
         let mut writer : FrameWriter<inlet::Frame>  = FrameWriter::new(writer.done() );
 
+println!("client: transitioned to portal frames.");
 
         let (close_tx,_) = broadcast::channel(128 );
 
@@ -92,11 +98,13 @@ impl PortalTcpClient {
                         Ok(_) => {}
                         Err(err) => {
                             (logger)("FATAL: writer disconnected");
+                            eprintln!("client: FATAL! writer disconnected.");
                             break;
                         }
                     }
                     yield_now().await;
                 }
+println!("client: inlet_rx complete.");
                 close_tx.send(0);
             });
         }
@@ -108,18 +116,20 @@ impl PortalTcpClient {
             let close_tx = close_tx.clone();
             tokio::spawn(async move {
                 while let Result::Ok(frame) = reader.read().await {
-println!("reading frame: {}",frame.to_string());
+println!("client reading frame: {}",frame.to_string());
                     match outlet_tx.send( frame ).await {
                         Result::Ok(_) => {
 
                         }
                         Result::Err(err) => {
                             (logger)("FATAL: reader disconnected");
+                            eprintln!("client: FATAL! reader disconnected.");
                             break;
                         }
                     }
                     yield_now().await;
                 }
+println!("client reader.read() complete.");
                 close_tx.send(0);
             });
         }

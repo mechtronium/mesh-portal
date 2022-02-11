@@ -12,6 +12,10 @@ use crate::version::v0_0_1::bin::Bin;
 
 pub type State = HashMap<String, Bin>;
 
+extern "C" {
+    pub fn mesh_portal_unique_id() -> String;
+}
+
 pub mod artifact {
     use crate::version::v0_0_1::bin::Bin;
     use crate::version::v0_0_1::id::Address;
@@ -5964,9 +5968,9 @@ pub mod portal {
 
 pub mod util {
     use serde::{Deserialize, Serialize};
-    use uuid::Uuid;
 
     use crate::error::Error;
+    use crate::version::v0_0_1::mesh_portal_unique_id;
 
     #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
     pub enum ValuePattern<T> {
@@ -6090,7 +6094,8 @@ pub mod util {
      */
 
     pub fn unique_id() -> String {
-        Uuid::new_v4().to_string()
+//        Uuid::new_v4().to_string()
+        unsafe { mesh_portal_unique_id() }
     }
 }
 
@@ -7233,8 +7238,8 @@ pub mod parse {
     }
 
 
-    pub fn property_value_not_space(input: &str) -> Res<&str,&str> {
-        not_space(input)
+    pub fn property_value_not_space_or_comma(input: &str) -> Res<&str,&str> {
+        is_not(" \n\r\t,")(input)
     }
 
     pub fn property_value_single_quotes(input: &str) -> Res<&str,&str> {
@@ -7246,7 +7251,7 @@ pub mod parse {
     }
 
     pub fn property_value(input: &str) -> Res<&str,&str> {
-        alt( (property_value_single_quotes,property_value_double_quotes,property_value_not_space) )(input)
+        alt( (property_value_single_quotes, property_value_double_quotes, property_value_not_space_or_comma) )(input)
     }
 
     pub fn unset_property_mod(input: &str) -> Res<&str, PropertyMod> {
@@ -7260,7 +7265,7 @@ pub mod parse {
     }
 
     pub fn set_properties(input: &str) -> Res<&str, SetProperties> {
-        many0(tuple((multispace0,property_mod,multispace1)))(input).map( |(next, properties)| {
+        separated_list0(tag(","),tuple((multispace0,property_mod,multispace0)))(input).map( |(next, properties)| {
             let mut set_properties = SetProperties::new();
             for (_,property,_) in properties {
                 set_properties.push(property);
