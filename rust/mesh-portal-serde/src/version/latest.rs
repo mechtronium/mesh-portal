@@ -92,7 +92,6 @@ pub mod messaging {
     pub type Request = current::messaging::Request;
     pub type Response= current::messaging::Response;
     pub type ProtoRequest= current::messaging::ProtoRequest;
-    pub type ProtoResponse = current::messaging::ProtoResponse;
     pub type Message = current::messaging::Message;
 }
 
@@ -119,6 +118,7 @@ pub mod payload {
     pub type PrimitiveList = current::payload::PrimitiveList;
     pub type PrimitiveType = current::payload::PrimitiveType;
     pub type PayloadType = current::payload::PayloadType;
+    pub type Errors = current::payload::Errors;
     pub type ListPattern = current::payload::ListPattern;
     pub type Range = current::payload::Range;
     pub type PayloadTypePattern = current::payload::PayloadTypePattern;

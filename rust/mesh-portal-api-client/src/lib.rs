@@ -30,7 +30,7 @@ use tokio::task::yield_now;
 use mesh_portal_serde::version::latest::config::{Config, PortalConfig, ResourceConfigBody};
 use mesh_portal_serde::version::latest::entity::response::ResponseCore;
 use mesh_portal_serde::version::latest::id::Address;
-use mesh_portal_serde::version::latest::messaging::{ProtoResponse, Request, Response};
+use mesh_portal_serde::version::latest::messaging::{Request, Response};
 use mesh_portal_serde::version::latest::portal::inlet::{AssignRequest, Log};
 use mesh_portal_serde::version::latest::portal::outlet::Frame;
 use mesh_portal_serde::version::latest::util::unique_id;
@@ -164,6 +164,9 @@ println!("Portal received frame: {}", frame.to_string());
 println!("CLIENT PROCESS");
 
                             match frame {
+                                outlet::Frame::Init => {
+
+                                }
                                 outlet::Frame::Assign(assign) => {
                                     let resource_skel = ResourceSkel {
                                         portal: skel.clone(),

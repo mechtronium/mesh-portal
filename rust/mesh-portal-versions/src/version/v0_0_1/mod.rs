@@ -2855,8 +2855,20 @@ pub mod messaging {
             }
         }
 
-        pub fn respond(self, core: ResponseCore) -> ProtoResponse {
-            ProtoResponse::new( core )
+        pub fn ok( self ) -> Response {
+            let core = ResponseCore {
+                headers: Default::default(),
+                code: 200,
+                body: Payload::Empty
+            };
+            let response = Response {
+                id: unique_id(),
+                from: self.to,
+                to: self.from,
+                core,
+                response_to: self.id
+            };
+            response
         }
 
         pub fn fail( self, error: String ) -> Response {
@@ -2880,7 +2892,7 @@ pub mod messaging {
     pub struct ProtoRequest {
         pub id: String,
         pub to: Option<Address>,
-        pub entity: Option<RequestCore>
+        pub core: Option<RequestCore>
     }
 
     impl ProtoRequest {
@@ -2888,16 +2900,33 @@ pub mod messaging {
             Self {
                 id: unique_id(),
                 to: Option::None,
-                entity: Option::None
+                core: Option::None
             }
+        }
+
+        pub fn validate(&self) -> Result<(),Error> {
+            self.to.as_ref().ok_or("request.to must be set" )?;
+            Ok(())
         }
 
         pub fn to( &mut self, to: Address ) {
             self.to = Option::Some(to);
         }
 
-        pub fn entity( &mut self, entity: RequestCore) {
-            self.entity = Option::Some(entity);
+        pub fn core( &mut self, core: RequestCore) {
+            self.core= Option::Some(core);
+        }
+
+        pub fn into_request(self, from: Address ) -> Result<Request,Error> {
+            self.validate()?;
+            let core = self.core.or(Option::Some(Default::default())).expect("expected RequestCore");
+            let request = Request {
+                id: self.id,
+                from,
+                to: self.to.expect("expected to address"),
+                core
+            };
+            Ok(request)
         }
     }
 
@@ -2930,19 +2959,6 @@ pub mod messaging {
                 } else {
                     Err(format!("error code: {}", self.core.code).into())
                 }
-            }
-        }
-    }
-
-    #[derive(Debug,Clone)]
-    pub struct ProtoResponse {
-        pub core: ResponseCore,
-    }
-
-    impl ProtoResponse{
-        pub fn new( core: ResponseCore) -> Self {
-            Self {
-                core,
             }
         }
     }
@@ -3197,6 +3213,48 @@ pub mod payload {
         }
     }
 
+    #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
+    pub struct Errors{
+        map: HashMap<String,String>
+    }
+
+    impl Errors{
+        pub fn empty()->Self {
+            Self {
+                map: HashMap::new()
+            }
+        }
+
+        pub fn default( message: &str ) -> Self {
+            let mut map = HashMap::new();
+            map.insert("default".to_string(), message.to_string() );
+            Self {
+                map
+            }
+        }
+    }
+
+    impl ToString for Errors {
+        fn to_string(&self) -> String {
+            let mut rtn = String::new();
+            for (index,(_,value)) in self.iter().enumerate() {
+                rtn.push_str(value.as_str() );
+                if index == self.len()-1 {
+                    rtn.push_str("\n");
+                }
+            }
+            rtn
+        }
+    }
+
+    impl Deref for Errors {
+        type Target = HashMap<String,String>;
+
+        fn deref(&self) -> &Self::Target {
+            &self.map
+        }
+    }
+
     #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, strum_macros::Display)]
     pub enum Primitive {
         Text(String),
@@ -3208,6 +3266,7 @@ pub mod payload {
         Int(i64),
         Status(Status),
         Resource(Resource),
+        Errors(Errors)
     }
 
     impl Primitive {
@@ -3222,6 +3281,7 @@ pub mod payload {
                 Primitive::Int(_) => PrimitiveType::Int,
                 Primitive::Status(_) => PrimitiveType::Status,
                 Primitive::Resource(_) => PrimitiveType::Resource,
+                Primitive::Errors(_) => PrimitiveType::Errors,
             }
         }
 
@@ -3256,6 +3316,9 @@ pub mod payload {
                 }
                 Primitive::Resource(resource) => {
                     Ok(Arc::new(bincode::serialize(&resource)?))
+                }
+                Primitive::Errors(errors) => {
+                    Ok(Arc::new(bincode::serialize(&errors)?))
                 }
             }
         }
@@ -3369,7 +3432,8 @@ pub mod payload {
         Stub,
         Status,
         Resource,
-    }
+        Errors,
+   }
 
     impl FromStr for PrimitiveType {
         type Err = Error;
@@ -3760,6 +3824,13 @@ pub mod payload {
                         Ok(())
                     } else {
                         Err("expected Resource primitive".into())
+                    }
+                }
+                Primitive::Errors(errors) => {
+                    if *self == Self::Errors{
+                        Ok(())
+                    } else {
+                        Err("expected Errors primitive".into())
                     }
                 }
             }
@@ -5271,6 +5342,7 @@ pub mod entity {
         use crate::version::v0_0_1::fail::Fail;
         use crate::version::v0_0_1::http::HttpResponse;
         use crate::version::v0_0_1::messaging::Response;
+        use crate::version::v0_0_1::util::unique_id;
 
         #[derive(Debug, Clone, Serialize, Deserialize)]
         pub struct ResponseCore {
@@ -5291,6 +5363,16 @@ pub mod entity {
 
             pub fn is_ok(&self) -> bool {
                 return self.code >= 200 && self.code <= 299;
+            }
+
+            pub fn into_response( self, from: Address, to: Address, response_to: String ) -> Response {
+                Response {
+                    id: unique_id(),
+                    from,
+                    to,
+                    core: self,
+                    response_to
+                }
             }
         }
 
@@ -5649,6 +5731,7 @@ pub mod portal {
 
         #[derive(Debug, Clone, Serialize, Deserialize, strum_macros::Display)]
         pub enum Frame {
+            Init,
             Assign(Exchanger<Assign>),
             Request(Request),
             Response(Response),
@@ -5664,6 +5747,7 @@ pub mod portal {
                     Frame::Response(response) => Option::Some(response.to.clone()),
                     Frame::Artifact(artifact) => Option::Some(artifact.to.clone()),
                     Frame::Close(_) => Option::None,
+                    Frame::Init => Option::None
                 }
             }
         }
