@@ -152,7 +152,6 @@ pub trait PortalClient: Send+Sync {
     fn flavor(&self) -> String;
     fn auth( &self ) -> PortalAuth;
     fn logger(&self) -> fn(message: &str);
-
     async fn init( &self, reader: & mut FrameReader<initout::Frame>, writer: & mut FrameWriter<initin::Frame>, skel: PrePortalSkel ) -> Result<Arc< dyn ResourceCtrlFactory >,Error>;
 
 }

@@ -27,7 +27,7 @@ use std::convert::TryInto;
 use dashmap::mapref::one::Ref;
 use tokio::sync::oneshot::Sender;
 use tokio::task::yield_now;
-use mesh_portal_serde::version::latest::config::{Config, PortalConfig, ResourceConfigBody};
+use mesh_portal_serde::version::latest::config::{Assign, Config, PortalConfig, ResourceConfigBody};
 use mesh_portal_serde::version::latest::entity::response::ResponseCore;
 use mesh_portal_serde::version::latest::id::Address;
 use mesh_portal_serde::version::latest::messaging::{Request, Response};
@@ -41,14 +41,14 @@ pub fn std_logger( log: Log ) {
 
 #[derive(Clone)]
 pub struct ResourceSkel {
+  pub assign: Assign,
   pub portal: PortalSkel,
-  pub stub: ResourceStub,
   pub logger: fn(message: &str),
 }
 
 pub trait ResourceCtrlFactory: Sync+Send {
     fn matches(&self,config:Config<ResourceConfigBody>) -> bool;
-    fn create(&self, skel: ResourceSkel) -> Result<Arc<dyn ResourceCtrl>, Error>;
+    fn create(&self, skel: ResourceSkel ) -> Result<Arc<dyn ResourceCtrl>, Error>;
 }
 
 #[async_trait]
@@ -163,24 +163,28 @@ println!("Portal received frame: {}", frame.to_string());
                         async fn process( skel: PortalSkel,  resources: &mut HashMap<Address,Arc<dyn ResourceCtrl>>, frame: outlet::Frame ) -> Result<(),Error> {
 println!("CLIENT PROCESS");
 
-                            match frame {
+                            match &frame {
                                 outlet::Frame::Init => {
 
                                 }
                                 outlet::Frame::Assign(assign) => {
                                     let resource_skel = ResourceSkel {
+                                        assign: assign.item.clone(),
                                         portal: skel.clone(),
-                                        stub: assign.stub.clone(),
                                         logger: skel.logger,
                                     };
                                     let resource = skel.ctrl_factory.create(resource_skel)?;
                                     resources.insert( assign.stub.address.clone(), resource.clone() );
                                     let assign = assign.clone();
+                                    let skel = skel.clone();
+                                    let frame = frame.clone();
                                     tokio::spawn( async move {
                                         println!("CLIENT INIT");
                                         resource.init().await;
                                         match skel.assign_exchange.remove( &assign.id ) {
-                                            None => {}
+                                            None => {
+                                                println!("could not find exchange for {}",assign.id);
+                                            }
                                             Some((_,tx)) => {
                                                 tx.send( resource );
                                             }
@@ -190,6 +194,7 @@ println!("CLIENT PROCESS");
 
                                 }
                                 outlet::Frame::Request(request) => {
+                                    let request = request.clone();
                                     let resource = resources.get(&request.to ).ok_or(anyhow!("expected to find resource for address '{}'", request.to.to_string()))?;
                                     let response = resource.handle_request(request.clone()).await;
                                     let response = Response {
@@ -204,7 +209,7 @@ println!("CLIENT PROCESS");
                                 outlet::Frame::Response(response) => {
                                     if let Some((_,tx)) = skel.exchanges.remove(&response.response_to)
                                     {
-                                        tx.send( response );
+                                        tx.send( response.clone() );
                                     }
                                 }
                                 outlet::Frame::Artifact(_) => {
