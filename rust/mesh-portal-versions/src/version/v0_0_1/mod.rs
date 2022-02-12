@@ -860,7 +860,7 @@ pub mod pattern {
     use crate::error::Error;
 
     use crate::version::v0_0_1::id::{Address, AddressSegment, ResourceKind, ResourceType, RouteSegment, Specific, Tks, Version};
-    use crate::version::v0_0_1::parse::{address, camel_case_to_string, capture_address, consume_address_kind_path, file_chars, path, path_regex, Res};
+    use crate::version::v0_0_1::parse::{address, camel_case_to_string, capture_address, consume_address_kind_path, file_chars, path, path_regex, capture_path, Res};
     use crate::version::v0_0_1::pattern::parse::{address_kind_pattern, pattern};
     use crate::version::v0_0_1::pattern::specific::{
         ProductPattern, VariantPattern, VendorPattern,
@@ -1983,7 +1983,7 @@ println!("address_kind_path.to_string() {}", address_kind_path.to_string() );
     pub fn msg_call(input: &str) -> Res<&str, CallKind> {
         tuple((
             delimited(tag("Msg<"), alphanumeric1, tag(">")),
-            opt(recognize(path)),
+            opt(recognize(capture_path)),
         ))(input)
         .map(|(next, (action, path))| {
             let path = match path {
@@ -2000,7 +2000,7 @@ println!("address_kind_path.to_string() {}", address_kind_path.to_string() );
     pub fn http_call(input: &str) -> Res<&str, CallKind> {
         tuple((
             delimited(tag("Http<"), parse_from_str(alphanumeric1), tag(">")),
-            path,
+            capture_path,
         ))(input)
         .map(|(next, (method, path))| {
             (
@@ -5475,6 +5475,14 @@ pub mod entity {
                 ResponseCore::ok(Payload::Primitive(Primitive::Bin(bin)))
             }
 
+            pub fn new() -> Self {
+                ResponseCore {
+                    headers: Meta::new(),
+                    code: 200,
+                    body: Payload::Empty
+                }
+            }
+
             pub fn ok(body: Payload)-> Self {
                 Self {
                     headers: Meta::new(),
@@ -7055,6 +7063,10 @@ pub mod parse {
 
     pub fn path(input: &str) -> Res<&str, &str> {
         recognize(tuple((tag("/"), opt(filepath_chars))))(input)
+    }
+
+    pub fn capture_path(input: &str) -> Res<&str, &str> {
+        recognize(tuple((tag("/"), opt(file_chars_plus_capture))))(input)
     }
 
     pub fn consume_path(input: &str) -> Res<&str, &str> {
