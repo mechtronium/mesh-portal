@@ -1,14 +1,14 @@
 [package]
 name = "mesh-portal-tcp-server"
-version = "0.0.1"
+version = "0.2.0-rc1"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-mesh-portal = { path = "../mesh-portal", version= "0.0.1"}
-mesh-portal-api-server = { path = "../mesh-portal-api-server", version= "0.0.1"}
-mesh-portal-tcp-common = { path = "../mesh-portal-tcp-common", version= "0.0.1"}
+mesh-portal = "0.2.0-rc1"
+mesh-portal-api-server = "0.2.0-rc1"
+mesh-portal-tcp-common = "0.2.0-rc1"
 anyhow = "1.0.44"
 tokio = { version = "1.15.0", features = ["full"] }
 async-trait = "0.1.48"
