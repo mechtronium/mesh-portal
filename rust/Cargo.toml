@@ -1,14 +1,12 @@
 [workspace]
 members = [
-    "mesh-portal-serde",
-    "mesh-portal-api",
+    "mesh-portal",
     "mesh-portal-api-client",
     "mesh-portal-api-server",
     "mesh-portal-tcp-common",
     "mesh-portal-tcp-client",
     "mesh-portal-tcp-server",
     "mesh-portal-api-test",
-    "mesh-portal-parse",
     "mesh-portal-versions",
 ]
 

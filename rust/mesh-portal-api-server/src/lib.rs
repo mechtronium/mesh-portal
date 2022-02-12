@@ -16,23 +16,23 @@ use futures::{FutureExt, SinkExt};
 use tokio::sync::mpsc::error::{SendError, SendTimeoutError, TryRecvError};
 use tokio::sync::{broadcast, mpsc, oneshot};
 
-use mesh_portal_serde::version::latest;
-use mesh_portal_serde::version::latest::entity::response;
-use mesh_portal_serde::version::latest::fail;
-use mesh_portal_serde::version::latest::frame::CloseReason;
-use mesh_portal_serde::version::latest::id::Address;
-use mesh_portal_serde::version::latest::messaging::{Message, Request,  Response};
-use mesh_portal_serde::version::latest::pattern::AddressKindPattern;
-use mesh_portal_serde::version::latest::portal::{Exchanger, inlet, outlet};
-use mesh_portal_serde::version::latest::resource::ResourceStub;
-use mesh_portal_serde::version::latest::resource::Status;
+use mesh_portal::version::latest;
+use mesh_portal::version::latest::entity::response;
+use mesh_portal::version::latest::fail;
+use mesh_portal::version::latest::frame::CloseReason;
+use mesh_portal::version::latest::id::Address;
+use mesh_portal::version::latest::messaging::{Message, Request,  Response};
+use mesh_portal::version::latest::pattern::AddressKindPattern;
+use mesh_portal::version::latest::portal::{Exchanger, inlet, outlet};
+use mesh_portal::version::latest::resource::ResourceStub;
+use mesh_portal::version::latest::resource::Status;
 use std::fmt::Debug;
 use dashmap::DashMap;
 use tokio::task::yield_now;
-use mesh_portal_serde::version::latest::artifact::{Artifact, ArtifactRequest, ArtifactResponse};
-use mesh_portal_serde::version::latest::config::{Assign, Config, ConfigBody, PortalConfig};
-use mesh_portal_serde::version::latest::portal::inlet::{AssignRequest, Log};
-use mesh_portal_serde::version::latest::portal::outlet::Frame;
+use mesh_portal::version::latest::artifact::{Artifact, ArtifactRequest, ArtifactResponse};
+use mesh_portal::version::latest::config::{Assign, Config, ConfigBody, PortalConfig};
+use mesh_portal::version::latest::portal::inlet::{AssignRequest, Log};
+use mesh_portal::version::latest::portal::outlet::Frame;
 
 #[derive(Debug,Clone)]
 pub struct PortalApi {

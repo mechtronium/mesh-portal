@@ -6,8 +6,7 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-mesh-portal-serde = { path = "../mesh-portal-serde", version= "0.0.1"}
-mesh-portal-api= { path = "../mesh-portal-api", version= "0.0.1"}
+mesh-portal = { path = "../mesh-portal", version= "0.0.1"}
 mesh-portal-tcp-common = { path = "../mesh-portal-tcp-common", version= "0.0.1"}
 mesh-portal-api-client = { path = "../mesh-portal-api-client", version= "0.0.1"}
 anyhow = "1.0.44"

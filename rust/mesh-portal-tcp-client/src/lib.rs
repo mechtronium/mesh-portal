@@ -11,14 +11,14 @@ use std::sync::Arc;
 use dashmap::DashMap;
 use tokio::net::TcpStream;
 use tokio::sync::{broadcast, mpsc};
-use mesh_portal_serde::version::latest::portal;
+use mesh_portal::version::latest::portal;
 use tokio::sync::mpsc::error::TrySendError;
 use tokio::task::yield_now;
-use mesh_portal_serde::version;
+use mesh_portal::version;
 use tokio::time::Duration;
-use mesh_portal_serde::version::latest::portal::{outlet, inlet, Exchanger, initin, initout};
-use mesh_portal_serde::version::latest::portal::initin::PortalAuth;
-use mesh_portal_serde::version::latest::portal::inlet::AssignRequest;
+use mesh_portal::version::latest::portal::{outlet, inlet, Exchanger, initin, initout};
+use mesh_portal::version::latest::portal::initin::PortalAuth;
+use mesh_portal::version::latest::portal::inlet::AssignRequest;
 
 pub struct PortalTcpClient {
     pub host: String,

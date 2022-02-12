@@ -33,27 +33,27 @@ mod tests {
 
     use mesh_portal_api_client::{client, InletApi, ResourceCtrl, PortalSkel, ResourceCtrlFactory, ResourceSkel, PrePortalSkel};
     use mesh_portal_api_server::{ Portal,  PortalRequestHandler };
-    use mesh_portal_serde::mesh;
-    use mesh_portal_serde::version::latest::entity::response;
-    use mesh_portal_serde::version::latest::id::{Address, ResourceKind, KindParts};
-    use mesh_portal_serde::version::latest::messaging::{ Message, Request, Response};
-    use mesh_portal_serde::version::latest::payload::{Payload, Primitive, PrimitiveList, PrimitiveType};
-    use mesh_portal_serde::version::latest::portal::{initin, initout, inlet, outlet};
-    use mesh_portal_serde::version::latest::resource::Status;
-    use mesh_portal_serde::version::latest::resource::ResourceStub;
-    use mesh_portal_serde::version::latest::resource::Archetype;
+    use mesh_portal::mesh;
+    use mesh_portal::version::latest::entity::response;
+    use mesh_portal::version::latest::id::{Address, ResourceKind, KindParts};
+    use mesh_portal::version::latest::messaging::{ Message, Request, Response};
+    use mesh_portal::version::latest::payload::{Payload, Primitive, PrimitiveList, PrimitiveType};
+    use mesh_portal::version::latest::portal::{initin, initout, inlet, outlet};
+    use mesh_portal::version::latest::resource::Status;
+    use mesh_portal::version::latest::resource::ResourceStub;
+    use mesh_portal::version::latest::resource::Archetype;
     use mesh_portal_tcp_client::{PortalClient, PortalTcpClient};
     use mesh_portal_tcp_common::{
         FrameReader, FrameWriter, PrimitiveFrameReader, PrimitiveFrameWriter,
     };
     use mesh_portal_tcp_server::{TcpServerCall, PortalServerEvent, PortalServer, PortalTcpServer, PortalAuth};
-    use mesh_portal_serde::version::latest::pattern::AddressKindPattern;
-    use mesh_portal_serde::version::latest::util::unique_id;
-    use mesh_portal_serde::version::latest::config::{Assign, Config, ResourceConfigBody};
-    use mesh_portal_serde::version::latest::entity::request::select::{Select, SelectIntoPayload, SelectionKind};
-    use mesh_portal_serde::version::latest::entity::response::ResponseCore;
-    use mesh_portal_serde::version::latest::frame::PrimitiveFrame;
-    use mesh_portal_serde::version::latest::portal::initout::Frame;
+    use mesh_portal::version::latest::pattern::AddressKindPattern;
+    use mesh_portal::version::latest::util::unique_id;
+    use mesh_portal::version::latest::config::{Assign, Config, ResourceConfigBody};
+    use mesh_portal::version::latest::entity::request::select::{Select, SelectIntoPayload, SelectionKind};
+    use mesh_portal::version::latest::entity::response::ResponseCore;
+    use mesh_portal::version::latest::frame::PrimitiveFrame;
+    use mesh_portal::version::latest::portal::initout::Frame;
 
     lazy_static! {
     static ref GLOBAL_TX : tokio::sync::broadcast::Sender<GlobalEvent> = {
