@@ -19,21 +19,21 @@ use std::prelude::rust_2021::TryFrom;
 use std::ops::Deref;
 use std::collections::HashMap;
 use tokio::sync::watch::Receiver;
-use mesh_portal_serde::version::latest::http::{HttpRequest, HttpResponse};
-use mesh_portal_serde::version::latest::portal::{Exchanger, inlet, outlet};
-use mesh_portal_serde::version::latest::resource::{ResourceStub, Status};
-use mesh_portal_serde::version::latest::{portal, entity};
+use mesh_portal::version::latest::http::{HttpRequest, HttpResponse};
+use mesh_portal::version::latest::portal::{Exchanger, inlet, outlet};
+use mesh_portal::version::latest::resource::{ResourceStub, Status};
+use mesh_portal::version::latest::{portal, entity};
 use std::convert::TryInto;
 use dashmap::mapref::one::Ref;
 use tokio::sync::oneshot::Sender;
 use tokio::task::yield_now;
-use mesh_portal_serde::version::latest::config::{Assign, Config, PortalConfig, ResourceConfigBody};
-use mesh_portal_serde::version::latest::entity::response::ResponseCore;
-use mesh_portal_serde::version::latest::id::Address;
-use mesh_portal_serde::version::latest::messaging::{Request, Response};
-use mesh_portal_serde::version::latest::portal::inlet::{AssignRequest, Log};
-use mesh_portal_serde::version::latest::portal::outlet::Frame;
-use mesh_portal_serde::version::latest::util::unique_id;
+use mesh_portal::version::latest::config::{Assign, Config, PortalConfig, ResourceConfigBody};
+use mesh_portal::version::latest::entity::response::ResponseCore;
+use mesh_portal::version::latest::id::Address;
+use mesh_portal::version::latest::messaging::{Request, Response};
+use mesh_portal::version::latest::portal::inlet::{AssignRequest, Log};
+use mesh_portal::version::latest::portal::outlet::Frame;
+use mesh_portal::version::latest::util::unique_id;
 
 pub fn std_logger( log: Log ) {
     println!("{}", log.to_string())
@@ -309,9 +309,9 @@ impl InletApi {
 pub mod client {
     use std::ops::Deref;
     use anyhow::Error;
-    use mesh_portal_serde::version::latest::portal::outlet;
-    use mesh_portal_serde::version::latest::id::{Address};
-    use mesh_portal_serde::version::latest::http::HttpRequest;
+    use mesh_portal::version::latest::portal::outlet;
+    use mesh_portal::version::latest::id::{Address};
+    use mesh_portal::version::latest::http::HttpRequest;
 
     /*
     #[derive(Clone)]
@@ -355,8 +355,8 @@ pub mod example {
 
     use crate::{InletApi, ResourceCtrl, PortalSkel, inlet};
     use std::collections::HashMap;
-    use mesh_portal_serde::version::latest::payload::{Payload, Primitive};
-    use mesh_portal_serde::version::latest::entity;
+    use mesh_portal::version::latest::payload::{Payload, Primitive};
+    use mesh_portal::version::latest::entity;
 
     pub struct HelloCtrl {
         pub skel: Arc<PortalSkel>,
