@@ -860,8 +860,8 @@ pub mod pattern {
     use crate::error::Error;
 
     use crate::version::v0_0_1::id::{Address, AddressSegment, ResourceKind, ResourceType, RouteSegment, Specific, Tks, Version};
-    use crate::version::v0_0_1::parse::{address, camel_case_to_string, capture_address, consume_address_kind_path, file_chars, path, path_regex, capture_path, Res};
-    use crate::version::v0_0_1::pattern::parse::{address_kind_pattern, pattern};
+    use crate::version::v0_0_1::parse::{address, camel_case_to_string_matcher, capture_address, consume_address_kind_path, file_chars, path, path_regex, capture_path, Res, camel_case};
+    use crate::version::v0_0_1::pattern::parse::{address_kind_pattern, pattern, value_pattern};
     use crate::version::v0_0_1::pattern::specific::{
         ProductPattern, VariantPattern, VendorPattern,
     };
@@ -872,12 +872,13 @@ pub mod pattern {
     use nom::bytes::complete::tag;
     use nom::character::complete::{alpha1, alphanumeric1, digit1, multispace0};
     use nom::combinator::{all_consuming, opt, recognize};
-    use nom::error::{ErrorKind, VerboseError};
+    use nom::error::{context, ErrorKind, ParseError, VerboseError};
     use nom::multi::separated_list0;
     use nom::sequence::{delimited, preceded, terminated, tuple};
-    use nom::{AsChar, InputTakeAtPosition, Parser};
+    use nom::{AsChar, InputTakeAtPosition, IResult, Parser};
     use nom_supreme::{parse_from_str, ParserExt};
     use std::collections::HashMap;
+    use nom_supreme::error::ErrorTree;
     use nom_supreme::parser_ext::FromStrParser;
     use regex::Regex;
     use crate::version::v0_0_1::entity::request::{Action, Rc, RcCommandType, RequestCore};
@@ -1286,10 +1287,10 @@ println!("address_kind_path.to_string() {}", address_kind_path.to_string() );
         use nom::bytes::complete::tag;
         use nom::character::complete::{alpha1, digit1};
         use nom::combinator::{all_consuming, opt, recognize};
-        use nom::error::{context, ParseError, VerboseError};
+        use nom::error::{context, ContextError, ParseError, VerboseError};
         use nom::multi::{many1, many0};
         use nom::sequence::{delimited, preceded, terminated, tuple};
-        use nom::Parser;
+        use nom::{Compare, InputIter, InputLength, InputTake, Parser, UnspecializedInput};
         use nom::{Err, IResult};
 
         use crate::error::Error;
@@ -1301,6 +1302,7 @@ println!("address_kind_path.to_string() {}", address_kind_path.to_string() );
         use crate::version::v0_0_1::pattern::{AddressKindPattern, ExactSegment, Hop, KindPattern, Pattern, ResourceTypePattern, SegmentPattern, SpecificPattern, TksPattern, VersionReq};
         use crate::version::v0_0_1::util::ValuePattern;
         use nom_supreme::{parse_from_str,ParserExt};
+        use nom_supreme::error::ErrorTree;
 
         fn any_segment(input: &str) -> Res<&str, SegmentPattern> {
             tag("*")(input).map(|(next, _)| (next, SegmentPattern::Any))
@@ -1409,7 +1411,69 @@ println!("address_kind_path.to_string() {}", address_kind_path.to_string() );
             }
         }
 
-        fn value_pattern<P>(
+        /*
+        pub fn context<I: Clone, E: ContextError<I>, F, O>(
+            context: &'static str,
+            mut f: F,
+        ) -> impl FnMut(I) -> IResult<I, O, E>
+            where
+                F: Parser<I, O, E>,
+        {
+            move |i: I| match f.parse(i.clone()) {
+                Ok(o) => Ok(o),
+                Err(Err::Incomplete(i)) => Err(Err::Incomplete(i)),
+                Err(Err::Error(e)) => Err(Err::Error(E::add_context(i, context, e))),
+                Err(Err::Failure(e)) => Err(Err::Failure(E::add_context(i, context, e))),
+            }
+        }
+
+         */
+        pub fn value_pattern<I:Clone, O, E: ParseError<I>, F>(mut f: F) -> impl FnMut(I) -> IResult<I, ValuePattern<O>, E>
+            where
+                I: InputLength+InputTake + Compare<&'static str>,
+                F: Parser<I, O, E>,
+                E: nom::error::ContextError<I>
+        {
+            move |input: I| {
+                match tag::<&'static str,I,E>("*")(input.clone()) {
+                    Ok((next,_)) => {
+                        Ok((next,ValuePattern::Any))
+                    }
+                    Err(err) => {
+                        match f.parse(input.clone()) {
+                            Ok((next,res)) => {
+                                Ok((next,ValuePattern::Pattern(res)))
+                            }
+                            Err(Err::Incomplete(i)) => Err(Err::Incomplete(i)),
+                            Err(Err::Error(e)) => Err(Err::Error(E::add_context(input.clone(), "value_pattern", e))),
+                            Err(Err::Failure(e)) => Err(Err::Failure(E::add_context(input.clone(), "value_pattern", e))),
+                        }
+                    }
+                }
+            }
+        }
+        /*
+        pub fn value_pattern<E,F,O>(
+            mut f: F
+        ) -> impl Fn(&str) -> IResult<&str, ValuePattern<O>, E>
+        where F: Parser<&'static str,O,E>, E: ContextError<&'static str> {
+            move |input: &str| match tag::<&str,&'static str,ErrorTree<&'static str>>("*")(input) {
+                Ok((next, _)) => Ok((next, ValuePattern::Any)),
+                Err(err) => {
+                    match f.parse(input.clone()) {
+                        Ok((input,output)) => {Ok((input,ValuePattern::Pattern(output)))}
+                        Err(Err::Incomplete(i)) => Err(Err::Incomplete(i)),
+                        Err(Err::Error(e)) => Err(Err::Error(E::add_context(input.clone(), "value_pattern", e))),
+                        Err(Err::Failure(e)) => Err(Err::Failure(E::add_context(input.clone(), "value_pattern", e))),
+                    }
+                }
+            }
+        }
+
+         */
+
+        /*
+        pub fn value_pattern<P>(
             parse: fn(input: &str) -> Res<&str, P>,
         ) -> impl Fn(&str) -> Res<&str, ValuePattern<P>> {
             move |input: &str| match tag::<&str, &str, VerboseError<&str>>("*")(input) {
@@ -1421,6 +1485,7 @@ println!("address_kind_path.to_string() {}", address_kind_path.to_string() );
                 }
             }
         }
+         */
 
         fn version_req(input: &str) -> Res<&str, VersionReq> {
             parse_from_str(version_req_chars).parse(input)
@@ -2221,28 +2286,39 @@ println!("address_kind_path.to_string() {}", address_kind_path.to_string() );
         })
     }*/
 
+    /*
     pub fn value_pattern<V>(
         input: &str,
         parser: fn(&str) -> Res<&str, V>,
     ) -> Res<&str, ValuePattern<V>> {
-        let result = parser(input);
-        match result {
+        let result = context( "value_pattern",parser)(input);
+        let result = match result {
             Ok((next, v)) => {
                 return Ok((next, ValuePattern::Pattern(v)));
             }
-            Err(error) => {
-                // do nothing
+            Err(err) => {
+println!("ERRROR!");
+                IResult::Err(err)
+            }
+        };
+        let pattern_result = context("value_pattern",alt((nom_supreme::tag::complete::tag("*"), nom_supreme::tag::complete::tag("!"))))(input);
+        match pattern_result {
+            Ok((next,tag)) => {
+                match tag {
+                    "*" => Ok((next,ValuePattern::Any)),
+                    "!" => Ok((next,ValuePattern::None)),
+                    _ => {
+                        return result;
+                    }
+                }
+            }
+            Err(err) => {
+                Err(Err::Error(E::add_context(i, "value_pattern", err)))
             }
         }
-
-        alt((tag("*"), multispace0))(input).map(|(next, tag)| {
-            let rtn = match tag {
-                "*" => ValuePattern::Any,
-                _ => ValuePattern::None,
-            };
-            (next, rtn)
-        })
     }
+
+     */
 
     /*
     pub fn value_pattern_wrapper<'a,'b,V,F>( mut parser: F ) -> impl FnMut(&'a str) -> Res<&'b str,ValuePattern<V>>
@@ -2294,11 +2370,11 @@ println!("address_kind_path.to_string() {}", address_kind_path.to_string() );
      */
 
     pub fn value_constrained_map_pattern(input: &str) -> Res<&str, ValuePattern<MapPattern>> {
-        value_pattern(input, map_pattern)
+        value_pattern(map_pattern)(input)
     }
 
     pub fn msg_action(input: &str) -> Res<&str, ValuePattern<StringMatcher>> {
-        value_pattern(input, camel_case_to_string)
+        value_pattern( camel_case_to_string_matcher)(input)
     }
 
     pub fn msg_pattern_scoped(input: &str) -> Res<&str, MsgPattern> {
@@ -2335,11 +2411,11 @@ println!("address_kind_path.to_string() {}", address_kind_path.to_string() );
     }
 
     pub fn http_method(input: &str) -> Res<&str, HttpMethod> {
-        parse_from_str(alpha1).parse(input)
+        context( "http_method", parse_from_str(camel_case )).parse(input)
     }
 
     pub fn http_method_pattern(input: &str) -> Res<&str, ValuePattern<HttpMethod>> {
-        value_pattern(input, http_method)
+        value_pattern(http_method)(input)
     }
 
     pub fn http_pattern_scoped(input: &str) -> Res<&str, HttpPattern> {
@@ -2449,7 +2525,7 @@ println!("address_kind_path.to_string() {}", address_kind_path.to_string() );
     }
 
     pub fn payload_pattern(input: &str) -> Res<&str, ValuePattern<PayloadPattern>> {
-        value_pattern(input, payload_structure_with_validation)
+        value_pattern(payload_structure_with_validation)(input)
             .map(|(next, payload_pattern)| (next, payload_pattern))
     }
 
@@ -3701,6 +3777,7 @@ pub mod payload {
     Deserialize,
     Hash,
     strum_macros::Display,
+    strum_macros::EnumString,
     )]
     pub enum HttpMethod {
         Get,
@@ -3714,6 +3791,7 @@ pub mod payload {
         Trace,
     }
 
+    /*
     impl FromStr for HttpMethod {
         type Err = Error;
 
@@ -3733,6 +3811,8 @@ pub mod payload {
             }
         }
     }
+
+     */
 
     impl ValueMatcher<HttpMethod> for HttpMethod {
         fn is_match(&self, found: &HttpMethod) -> Result<(), crate::error::Error> {
@@ -7021,13 +7101,13 @@ pub mod parse {
     }
     pub fn camel_case(input: &str) -> Res<&str, &str> {
         recognize(tuple((
-            is_a("ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"),
+            is_a("ABCDEFGHIJKLMNOPQRSTUVWXYZ"),
             alpha0,
         )))(input)
         //recognize(alpha1)(input)
     }
 
-    pub fn camel_case_to_string(input: &str) -> Res<&str, StringMatcher> {
+    pub fn camel_case_to_string_matcher(input: &str) -> Res<&str, StringMatcher> {
         camel_case(input).map(|(next, camel)| (next, StringMatcher::new(camel.to_string())))
     }
 
@@ -7382,7 +7462,7 @@ pub mod test {
 
     use crate::error::Error;
     use crate::version::v0_0_1::id::{AddressSegment, RouteSegment};
-    use crate::version::v0_0_1::parse::{address, camel_case, route_segment, version_address_segment, skewer_chars, base_address_segment, rec_skewer, address_template, create, publish, capture_address, file_address_capture_segment};
+    use crate::version::v0_0_1::parse::{address, camel_case, route_segment, version_address_segment, skewer_chars, base_address_segment, rec_skewer, address_template, create, publish, capture_address, file_address_capture_segment, Res};
     use nom::Err;
     use nom::error::VerboseError;
     use regex::Regex;
@@ -7391,7 +7471,7 @@ pub mod test {
     use crate::version::v0_0_1::entity::request::{Action, RequestCore};
     use crate::version::v0_0_1::pattern::parse::version;
     use crate::version::v0_0_1::pattern::parse::address_kind_pattern;
-    use crate::version::v0_0_1::pattern::{http_pattern, http_pattern_scoped, upload_step};
+    use crate::version::v0_0_1::pattern::{http_method, http_method_pattern, http_pattern, http_pattern_scoped, upload_step};
     use crate::version::v0_0_1::payload::{HttpMethod, Payload};
     use crate::version::v0_0_1::util::ValueMatcher;
 
@@ -7675,4 +7755,29 @@ println!("{}", addy.last_segment().unwrap().to_string() );
 
         Ok(())
     }
+
+    #[test]
+    pub fn test_http_method() -> Result<(),Error> {
+        http_method("Get")?;
+        http_method("Bad")?;
+        Ok(())
+    }
+
+
+    #[test]
+    pub fn test_http_method_pattern() -> Result<(),Error> {
+        http_method_pattern("*")?;
+        http_method_pattern("Bad")?;
+/*        match http_method_pattern("Bad") {
+            Ok(_) => {}
+            Err(err) => {
+                err.context
+            }
+        }
+
+ */
+        Ok(())
+    }
+
+
 }
