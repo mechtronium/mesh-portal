@@ -5,6 +5,7 @@ use std::string::FromUtf8Error;
 use nom::error::VerboseError;
 use semver::{ReqParseError, SemVerError};
 use std::num::ParseIntError;
+use nom_supreme::error::ErrorTree;
 
 #[derive(Debug,Eq,PartialEq)]
 pub struct Error {
@@ -64,6 +65,15 @@ impl From<nom::Err<VerboseError<&str>>> for Error {
         }
     }
 }
+
+impl From<nom::Err<ErrorTree<&str>>> for Error {
+    fn from(error: nom::Err<ErrorTree<&str>>) -> Self {
+        Self {
+            message: error.to_string()
+        }
+    }
+}
+
 
 impl From<ReqParseError> for Error {
     fn from(error: ReqParseError) -> Self {

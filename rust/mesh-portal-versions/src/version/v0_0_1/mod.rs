@@ -1716,7 +1716,7 @@ println!("address_kind_path.to_string() {}", address_kind_path.to_string() );
 
     pub fn skewer<T>(i: T) -> Res<T, T>
     where
-        T: InputTakeAtPosition,
+        T: InputTakeAtPosition+ nom::InputLength,
         <T as InputTakeAtPosition>::Item: AsChar,
     {
         i.split_at_position1_complete(
@@ -1732,7 +1732,7 @@ println!("address_kind_path.to_string() {}", address_kind_path.to_string() );
 
     fn not_quote<T>(i: T) -> Res<T, T>
     where
-        T: InputTakeAtPosition,
+        T: InputTakeAtPosition+ nom::InputLength,
         <T as InputTakeAtPosition>::Item: AsChar,
     {
         i.split_at_position1_complete(
@@ -1746,7 +1746,7 @@ println!("address_kind_path.to_string() {}", address_kind_path.to_string() );
 
     fn filename<T>(i: T) -> Res<T, T>
     where
-        T: InputTakeAtPosition,
+        T: InputTakeAtPosition+ nom::InputLength,
         <T as InputTakeAtPosition>::Item: AsChar,
     {
         i.split_at_position1_complete(
@@ -5559,6 +5559,9 @@ pub mod resource {
     use nom::error::{ErrorKind, ParseError, VerboseError};
     use nom::sequence::{delimited, tuple};
     use nom::CompareResult::Incomplete;
+    use nom_supreme::error::ErrorTree;
+    use nom_supreme::{parse_from_str, ParserExt};
+    use nom::Parser;
     use serde::{Deserialize, Serialize};
 
     use crate::error::Error;
@@ -5572,17 +5575,17 @@ pub mod resource {
         pub status: Status,
     }
 
-    #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
+    #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, strum_macros::Display, strum_macros::EnumString )]
     pub enum Status {
         Unknown,                // initial status or when we status cannot be determined
         Pending,                // resource is now registered but not assigned to a host
         Assigning,              // resource is being assigned to at least one host
-        Initializing(Progress), // assigned to a host and undergoing custom initialization...This resource can send requests but not receive requests.  The String gives a progress indication like 2/10 (step 2 of 10) or 7/? when the number of steps are not known.
+        Initializing, // assigned to a host and undergoing custom initialization...This resource can send requests but not receive requests.  The String gives a progress indication like 2/10 (step 2 of 10) or 7/? when the number of steps are not known.
         Ready,                  // ready to take requests
-        Paused(Address), // can not receive requests (probably because it is waiting for some other resource to make updates)... String should be some form of meaningful identifier of which resource Paused this resource
-        Resuming(Progress), // like Initializing but triggered after a pause is lifted, the resource may be doing something before it is ready to accept requests again.  String is a progress indication just like Initializing.
-        Panic(String), // something is wrong... all requests are blocked and responses are cancelled. String is a hopefully  meaningful message describing why the Resource has Panic
-        Done(Code), // this resource had a life span and has now completed succesfully it can no longer receive requests. String is a hopefully meaningful or useful Status message that is returned
+        Paused, // can not receive requests (probably because it is waiting for some other resource to make updates)... String should be some form of meaningful identifier of which resource Paused this resource
+        Resuming, // like Initializing but triggered after a pause is lifted, the resource may be doing something before it is ready to accept requests again.  String is a progress indication just like Initializing.
+        Panic, // something is wrong... all requests are blocked and responses are cancelled. String is a hopefully  meaningful message describing why the Resource has Panic
+        Done, // this resource had a life span and has now completed succesfully it can no longer receive requests. String is a hopefully meaningful or useful Status message that is returned
     }
 
     #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
@@ -5614,35 +5617,6 @@ pub mod resource {
         }
     }
 
-    impl ToString for Status {
-        fn to_string(&self) -> String {
-            match self {
-                Status::Unknown => "Unknown".to_string(),
-                Status::Pending => "Pending".to_string(),
-                Status::Assigning => "Assigning".to_string(),
-                Status::Initializing(progress) => format!("Initializing({})", progress.to_string()),
-                Status::Ready => "Ready".to_string(),
-                Status::Paused(address) => format!("Paused({})", address.to_string()),
-                Status::Resuming(progress) => format!("Resuming({})", progress.to_string()),
-                Status::Panic(message) => format!("Panic('{}')", message),
-                Status::Done(code) => format!("Done({})", code.to_string()),
-            }
-        }
-    }
-
-    pub fn delim_progress(input: &str) -> Result<Progress, Error> {
-        let (_, (step, _, total)) =
-            delimited(tag("("), tuple((digit1, tag("/"), digit1)), tag(")"))(input)?;
-        let step = step.parse()?;
-        let total = total.parse()?;
-        Ok(Progress { step, total })
-    }
-
-    pub fn delim_address(input: &str) -> Result<Address, Error> {
-        let (_, address) = delimited(tag("("), address, tag(")"))(input)?;
-        Ok(address)
-    }
-
     pub fn ok_code(input: &str) -> Res<&str, Code> {
         tag("Ok")(input).map(|(next, code)| (next, Code::Ok))
     }
@@ -5654,7 +5628,7 @@ pub mod resource {
             Code::Error(match err_code.parse() {
                 Ok(i) => i,
                 Err(err) => {
-                    return Err(nom::Err::Error(VerboseError::from_error_kind(
+                    return Err(nom::Err::Error(ErrorTree::from_error_kind(
                         input,
                         ErrorKind::Tag,
                     )))
@@ -5667,40 +5641,8 @@ pub mod resource {
         alt((error_code, ok_code))(input)
     }
 
-    pub fn delim_code(input: &str) -> Result<Code, Error> {
-        let (_, code) = delimited(tag("("), code, tag(")"))(input)?;
-        Ok(code)
-    }
-
-    pub fn delim_panic(input: &str) -> Result<String, Error> {
-        let (_, panic) = delimited(tag("("), recognize(not(is_a(")"))), tag(")"))(input)?;
-        Ok(panic.to_string())
-    }
-
-    pub fn status(input: &str) -> Result<Status, Error> {
-        let (next, status) = alpha1(input)?;
-        Ok(match status {
-            "Unknown" => Status::Unknown,
-            "Pending" => Status::Pending,
-            "Assigning" => Status::Assigning,
-            "Initializing" => Status::Initializing(delim_progress(next)?),
-            "Ready" => Status::Ready,
-            "Paused" => Status::Paused(delim_address(next)?),
-            "Resuming" => Status::Resuming(delim_progress(next)?),
-            "Panic" => Status::Panic(delim_panic(next)?),
-            "Done" => Status::Done(delim_code(next)?),
-            what => {
-                return Err(format!("unknown status {}", what).into());
-            }
-        })
-    }
-
-    impl FromStr for Status {
-        type Err = Error;
-
-        fn from_str(s: &str) -> Result<Self, Self::Err> {
-            Ok(status(s)?)
-        }
+    pub fn status(input: &str) -> Res<&str, Status> {
+        parse_from_str( alpha1 ).parse(input)
     }
 
 
@@ -6343,6 +6285,7 @@ pub mod parse {
     use crate::version::v0_0_1::id::{Address, AddressSegment, CaptureAddress, RouteSegment, Version};
     use crate::version::v0_0_1::pattern::parse::{address_kind_pattern, delim_kind, kind, resource_type, specific, specific_pattern, version};
     use nom::bytes::complete::take;
+    use nom_supreme::error::ErrorTree;
     use crate::version::v0_0_1::entity::request::create::{Create, AddressSegmentTemplate, AddressTemplate, KindTemplate, Template, Strategy, AddressTemplateSegment, CreateOp, Require};
     use crate::version::v0_0_1::command::common::{PropertyMod, SetProperties, StateSrc};
     use crate::version::v0_0_1::config::bind::parse::pipeline_step;
@@ -6365,11 +6308,11 @@ pub mod parse {
         }
     }
 
-    pub type Res<I, O> = IResult<I, O, VerboseError<I>>;
+    pub type Res<I, O> = IResult<I, O, ErrorTree<I>>;
 
     fn any_resource_path_segment<T>(i: T) -> Res<T, T>
     where
-        T: InputTakeAtPosition,
+        T: InputTakeAtPosition+ nom::InputLength,
         <T as InputTakeAtPosition>::Item: AsChar,
     {
         i.split_at_position1_complete(
@@ -6387,7 +6330,7 @@ pub mod parse {
 
     fn mesh_route_chars<T>(i: T) -> Res<T, T>
     where
-        T: InputTakeAtPosition,
+        T: InputTakeAtPosition+ nom::InputLength,
         <T as InputTakeAtPosition>::Item: AsChar,
     {
         i.split_at_position1_complete(
@@ -6709,7 +6652,7 @@ pub mod parse {
 
     pub fn asterisk<T, E: nom::error::ParseError<T>>(input: T) -> IResult<T, T, E>
     where
-        T: InputTakeAtPosition,
+        T: InputTakeAtPosition+nom::InputLength,
         <T as InputTakeAtPosition>::Item: AsChar,
     {
         input.split_at_position_complete(|item| item.as_char() != '*')
@@ -6717,7 +6660,7 @@ pub mod parse {
 
     pub fn upper<T, E: nom::error::ParseError<T>>(input: T) -> IResult<T, T, E>
     where
-        T: InputTakeAtPosition,
+        T: InputTakeAtPosition+nom::InputLength,
         <T as InputTakeAtPosition>::Item: AsChar,
     {
         input.split_at_position_complete(|item| {
@@ -6729,7 +6672,7 @@ pub mod parse {
 
     /*    fn any_resource_path_segment<T>(i: T) -> Res<T, T>
            where
-               T: InputTakeAtPosition,
+               T: InputTakeAtPosition+nom::InputLength,
                <T as InputTakeAtPosition>::Item: AsChar,
        {
            i.split_at_position1_complete(
@@ -6749,7 +6692,7 @@ pub mod parse {
 
     pub fn in_double_quotes<T>(i: T) -> Res<T, T>
     where
-        T: InputTakeAtPosition,
+        T: InputTakeAtPosition+nom::InputLength,
         <T as InputTakeAtPosition>::Item: AsChar,
     {
         i.split_at_position1_complete(
@@ -6762,7 +6705,7 @@ pub mod parse {
     }
     pub fn skewer_dot<T>(i: T) -> Res<T, T>
         where
-            T: InputTakeAtPosition,
+            T: InputTakeAtPosition+nom::InputLength,
             <T as InputTakeAtPosition>::Item: AsChar,
     {
         i.split_at_position1_complete(
@@ -6779,7 +6722,7 @@ pub mod parse {
 
     pub fn domain<T>(i: T) -> Res<T, T>
     where
-        T: InputTakeAtPosition,
+        T: InputTakeAtPosition+nom::InputLength,
         <T as InputTakeAtPosition>::Item: AsChar,
     {
         i.split_at_position1_complete(
@@ -6796,7 +6739,7 @@ pub mod parse {
 
     pub fn address_segment_chars<T>(i: T) -> Res<T, T>
     where
-        T: InputTakeAtPosition,
+        T: InputTakeAtPosition+nom::InputLength,
         <T as InputTakeAtPosition>::Item: AsChar,
     {
         i.split_at_position1_complete(
@@ -6813,7 +6756,7 @@ pub mod parse {
 
     pub fn version_chars<T>(i: T) -> Res<T, T>
         where
-            T: InputTakeAtPosition,
+            T: InputTakeAtPosition+nom::InputLength,
             <T as InputTakeAtPosition>::Item: AsChar,
     {
         i.split_at_position1_complete(
@@ -6831,7 +6774,7 @@ pub mod parse {
 
     pub fn version_req_chars<T>(i: T) -> Res<T, T>
     where
-        T: InputTakeAtPosition,
+        T: InputTakeAtPosition+nom::InputLength,
         <T as InputTakeAtPosition>::Item: AsChar,
     {
         i.split_at_position1_complete(
@@ -6853,7 +6796,7 @@ pub mod parse {
 
     pub fn lowercase1<T>(i: T) -> Res<T, T>
         where
-            T: InputTakeAtPosition,
+            T: InputTakeAtPosition+nom::InputLength,
             <T as InputTakeAtPosition>::Item: AsChar,
     {
         i.split_at_position1_complete(
@@ -6882,7 +6825,7 @@ pub mod parse {
 
     pub fn skewer_chars<T>(i: T) -> Res<T, T>
     where
-        T: InputTakeAtPosition,
+        T: InputTakeAtPosition+nom::InputLength,
         <T as InputTakeAtPosition>::Item: AsChar,
     {
         i.split_at_position1_complete(
@@ -6899,7 +6842,7 @@ pub mod parse {
 
     pub fn skewer_chars_plus_capture<T>(i: T) -> Res<T, T>
         where
-            T: InputTakeAtPosition,
+            T: InputTakeAtPosition+nom::InputLength,
             <T as InputTakeAtPosition>::Item: AsChar,
     {
         i.split_at_position1_complete(
@@ -6916,7 +6859,7 @@ pub mod parse {
 
     pub fn skewer_chars_template<T>(i: T) -> Res<T, T>
         where
-            T: InputTakeAtPosition,
+            T: InputTakeAtPosition+nom::InputLength,
             <T as InputTakeAtPosition>::Item: AsChar,
     {
         i.split_at_position1_complete(
@@ -6933,7 +6876,7 @@ pub mod parse {
 
     pub fn space_chars<T>(i: T) -> Res<T, T>
     where
-        T: InputTakeAtPosition,
+        T: InputTakeAtPosition+nom::InputLength,
         <T as InputTakeAtPosition>::Item: AsChar,
     {
         i.split_at_position1_complete(
@@ -6950,7 +6893,7 @@ pub mod parse {
 
     pub fn space_chars_plus_capture<T>(i: T) -> Res<T, T>
         where
-            T: InputTakeAtPosition,
+            T: InputTakeAtPosition+nom::InputLength,
             <T as InputTakeAtPosition>::Item: AsChar,
     {
         i.split_at_position1_complete(
@@ -6969,7 +6912,7 @@ pub mod parse {
 
     pub fn domain_chars<T>(i: T) -> Res<T, T>
     where
-        T: InputTakeAtPosition,
+        T: InputTakeAtPosition+nom::InputLength,
         <T as InputTakeAtPosition>::Item: AsChar,
     {
         i.split_at_position1_complete(
@@ -6986,7 +6929,7 @@ pub mod parse {
 
     pub fn filepath_chars<T>(i: T) -> Res<T, T>
     where
-        T: InputTakeAtPosition,
+        T: InputTakeAtPosition+nom::InputLength,
         <T as InputTakeAtPosition>::Item: AsChar,
     {
         i.split_at_position1_complete(
@@ -7005,7 +6948,7 @@ pub mod parse {
 
     pub fn file_chars_plus_capture<T>(i: T) -> Res<T, T>
         where
-            T: InputTakeAtPosition,
+            T: InputTakeAtPosition+nom::InputLength,
             <T as InputTakeAtPosition>::Item: AsChar,
     {
         i.split_at_position1_complete(
@@ -7023,7 +6966,7 @@ pub mod parse {
 
     pub fn file_chars<T>(i: T) -> Res<T, T>
     where
-        T: InputTakeAtPosition,
+        T: InputTakeAtPosition+nom::InputLength,
         <T as InputTakeAtPosition>::Item: AsChar,
     {
         i.split_at_position1_complete(
@@ -7040,7 +6983,7 @@ pub mod parse {
 
     pub fn file_chars_template<T>(i: T) -> Res<T, T>
         where
-            T: InputTakeAtPosition,
+            T: InputTakeAtPosition+nom::InputLength,
             <T as InputTakeAtPosition>::Item: AsChar,
     {
         i.split_at_position1_complete(
@@ -7139,7 +7082,7 @@ pub mod parse {
         for (index,segment) in bases.iter().enumerate() {
             if segment.is_wildcard() {
                 if  index != bases.len()-1 {
-                    return Err(nom::Err::Error(VerboseError::from_error_kind( input, ErrorKind::Tag, )))
+                    return Err(nom::Err::Error(ErrorTree::from_error_kind( input, ErrorKind::Tag, )))
                 } else {
                     base_wildcard = true;
                 }
@@ -7147,18 +7090,18 @@ pub mod parse {
         }
 
         if base_wildcard && version.is_some() {
-            return Err(nom::Err::Error(VerboseError::from_error_kind( input, ErrorKind::Tag, )))
+            return Err(nom::Err::Error(ErrorTree::from_error_kind( input, ErrorKind::Tag, )))
         }
 
         if base_wildcard && root.is_some() {
-            return Err(nom::Err::Error(VerboseError::from_error_kind( input, ErrorKind::Tag, )))
+            return Err(nom::Err::Error(ErrorTree::from_error_kind( input, ErrorKind::Tag, )))
         }
 
         let mut files_wildcard = false;
         for (index,segment) in files.iter().enumerate() {
             if segment.is_wildcard() {
                 if  index != files.len()-1 {
-                    return Err(nom::Err::Error(VerboseError::from_error_kind( input, ErrorKind::Tag, )))
+                    return Err(nom::Err::Error(ErrorTree::from_error_kind( input, ErrorKind::Tag, )))
                 } else {
                     files_wildcard = true;
                 }
@@ -7391,14 +7334,14 @@ pub mod parse {
 
         let parent = match address.parent() {
             None => {
-                return Err(nom::Err::Error(VerboseError::from_error_kind( input, ErrorKind::Tag, )));
+                return Err(nom::Err::Error(ErrorTree::from_error_kind( input, ErrorKind::Tag, )));
             }
             Some(parent) => {parent}
         };
 
         let last = match address.last_segment() {
             None => {
-                return Err(nom::Err::Error(VerboseError::from_error_kind( input, ErrorKind::Tag, )));
+                return Err(nom::Err::Error(ErrorTree::from_error_kind( input, ErrorKind::Tag, )));
             }
             Some(last) => {last}
         };
@@ -7460,11 +7403,13 @@ pub mod test {
             }
             Err(_) => {}
         }
+        /*
         assert_eq!( rec_skewer("hello1"), Ok(("","hello1")) );
         assert_eq!( all_consuming(rec_skewer)("hello-kitty"), Ok(("","hello-kitty")) );
         assert_eq!( all_consuming(rec_skewer)("hello-kitty123"), Ok(("","hello-kitty123")) );
         assert_eq!( rec_skewer("hello-kitty.1.2.3"), Ok((".1.2.3","hello-kitty")) );
         assert_eq!( rec_skewer("skewer-takes-no-Caps"), Ok(("Caps","skewer-takes-no-")) );
+         */
         Ok(())
     }
 
