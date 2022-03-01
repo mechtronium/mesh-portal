@@ -42,15 +42,15 @@ pub mod artifact {
 pub type Port = String;
 
 pub mod id {
+    use nom::bytes::complete::tag;
+    use nom::combinator::{all_consuming, opt};
+    use nom::sequence::{delimited, tuple};
+    use regex::Captures;
     use std::collections::HashMap;
     use std::convert::TryInto;
     use std::fmt::Formatter;
     use std::ops::Deref;
     use std::str::FromStr;
-    use nom::bytes::complete::tag;
-    use nom::combinator::{all_consuming, opt};
-    use nom::sequence::{delimited, tuple};
-    use regex::Captures;
 
     use semver::SemVerError;
     use serde::de::Visitor;
@@ -78,16 +78,16 @@ pub mod id {
 
     impl ToString for AddressAndKind {
         fn to_string(&self) -> String {
-            format!("{}<{}>", self.address.to_string(), self.kind.to_string() )
+            format!("{}<{}>", self.address.to_string(), self.kind.to_string())
         }
     }
 
-    impl  FromStr for AddressAndKind{
+    impl FromStr for AddressAndKind {
         type Err = Error;
 
         fn from_str(s: &str) -> Result<Self, Self::Err> {
             let address_and_kind = match all_consuming(address_and_kind)(s) {
-                Ok((_,address_and_kind)) => address_and_kind,
+                Ok((_, address_and_kind)) => address_and_kind,
                 Err(err) => {
                     return Err("could not parse AddressAndKind".into());
                 }
@@ -95,7 +95,6 @@ pub mod id {
             Ok(address_and_kind)
         }
     }
-
 
     #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
     pub struct AddressAndType {
@@ -185,8 +184,7 @@ pub mod id {
     }
 
     /// Stands for "Type, Kind, Specific"
-    pub trait Tks
-    {
+    pub trait Tks {
         fn resource_type(&self) -> ResourceType;
         fn kind_to_string(&self) -> Option<String>;
         fn specific(&self) -> Option<Specific>;
@@ -224,12 +222,12 @@ pub mod id {
     impl TryInto<SpecificPattern> for Specific {
         type Error = Error;
 
-        fn try_into(self) -> Result<SpecificPattern,Self::Error> {
-            Ok(SpecificPattern{
+        fn try_into(self) -> Result<SpecificPattern, Self::Error> {
+            Ok(SpecificPattern {
                 vendor: Pattern::Exact(self.vendor),
                 product: Pattern::Exact(self.product),
                 variant: Pattern::Exact(self.variant),
-                version: VersionReq::from_str( self.version.to_string().as_str() )?
+                version: VersionReq::from_str(self.version.to_string().as_str())?,
             })
         }
     }
@@ -269,41 +267,38 @@ pub mod id {
     }
 
     impl AddressSegment {
-
-        pub fn apply_captures( self, captures: &Captures ) -> Result<Self,Error> {
+        pub fn apply_captures(self, captures: &Captures) -> Result<Self, Error> {
             match self {
                 AddressSegment::Root => Ok(AddressSegment::Root),
-                AddressSegment::Space(replacement) =>  {
+                AddressSegment::Space(replacement) => {
                     let mut dst = String::new();
-                    captures.expand( replacement.as_str(), & mut dst );
+                    captures.expand(replacement.as_str(), &mut dst);
                     Ok(AddressSegment::Space(dst))
                 }
                 AddressSegment::Base(replacement) => {
                     let mut dst = String::new();
-                    captures.expand( replacement.as_str(), & mut dst );
+                    captures.expand(replacement.as_str(), &mut dst);
                     Ok(AddressSegment::Base(dst))
                 }
                 AddressSegment::FilesystemRootDir => Ok(AddressSegment::FilesystemRootDir),
                 AddressSegment::Dir(replacement) => {
                     let mut dst = String::new();
-                    captures.expand( replacement.as_str(), & mut dst );
+                    captures.expand(replacement.as_str(), &mut dst);
                     Ok(AddressSegment::Dir(dst))
                 }
                 AddressSegment::File(replacement) => {
                     let mut dst = String::new();
-                    captures.expand( replacement.as_str(), & mut dst );
+                    captures.expand(replacement.as_str(), &mut dst);
                     Ok(AddressSegment::File(dst))
                 }
-                AddressSegment::Version(version) => {
-                    Ok(AddressSegment::Version(version))
-                }
+                AddressSegment::Version(version) => Ok(AddressSegment::Version(version)),
             }
         }
 
         pub fn is_version(&self) -> bool {
             match self {
                 AddressSegment::Version(_) => true,
-                _ => false
+                _ => false,
             }
         }
 
@@ -312,14 +307,14 @@ pub mod id {
                 AddressSegment::Dir(_) => true,
                 AddressSegment::FilesystemRootDir => true,
                 AddressSegment::File(_) => true,
-                _ => false
+                _ => false,
             }
         }
 
         pub fn is_file(&self) -> bool {
             match self {
                 AddressSegment::File(_) => true,
-                _ => false
+                _ => false,
             }
         }
 
@@ -327,11 +322,9 @@ pub mod id {
             match self {
                 AddressSegment::Dir(_) => true,
                 AddressSegment::FilesystemRootDir => true,
-                _ => false
+                _ => false,
             }
         }
-
-
 
         pub fn terminating_delim(&self) -> &str {
             match self {
@@ -341,7 +334,7 @@ pub mod id {
                 AddressSegment::File(_) => "",
                 AddressSegment::Version(_) => ":",
                 AddressSegment::FilesystemRootDir => "",
-                AddressSegment::Root => ""
+                AddressSegment::Root => "",
             }
         }
 
@@ -353,7 +346,7 @@ pub mod id {
                 AddressSegment::File(_) => true,
                 AddressSegment::Version(_) => false,
                 AddressSegment::FilesystemRootDir => true,
-                AddressSegment::Root => false
+                AddressSegment::Root => false,
             }
         }
     }
@@ -367,7 +360,7 @@ pub mod id {
                 AddressSegment::File(file) => file.clone(),
                 AddressSegment::Version(version) => version.to_string(),
                 AddressSegment::FilesystemRootDir => "/".to_string(),
-                AddressSegment::Root => "".to_string()
+                AddressSegment::Root => "".to_string(),
             }
         }
     }
@@ -379,8 +372,7 @@ pub mod id {
     }
 
     impl Address {
-
-        pub fn to_bundle(self) -> Result<Address,Error> {
+        pub fn to_bundle(self) -> Result<Address, Error> {
             if self.segments.is_empty() {
                 return Err("Address does not contain a bundle".into());
             }
@@ -389,7 +381,7 @@ pub mod id {
                 return Ok(self);
             }
 
-            return self.parent().expect("expected parent").to_bundle()
+            return self.parent().expect("expected parent").to_bundle();
         }
 
         pub fn to_safe_filename(&self) -> String {
@@ -406,7 +398,7 @@ pub mod id {
         }
 
         pub fn is_artifact(&self) -> bool {
-            if let Option::Some(segment) =  self.last_segment() {
+            if let Option::Some(segment) = self.last_segment() {
                 if self.is_artifact_bundle_part() && segment.is_file() {
                     true
                 } else {
@@ -418,7 +410,7 @@ pub mod id {
         }
 
         pub fn is_artifact_bundle(&self) -> bool {
-            if let Option::Some(segment) =  self.last_segment() {
+            if let Option::Some(segment) = self.last_segment() {
                 segment.is_version()
             } else {
                 false
@@ -431,9 +423,7 @@ pub mod id {
             } else {
                 let last = self.last_segment().expect("expected last segment");
                 let address = match last {
-                    AddressSegment::Root => {
-                        segment
-                    }
+                    AddressSegment::Root => segment,
                     AddressSegment::Space(_) => {
                         format!("{}:{}", self.to_string(), segment)
                     }
@@ -441,20 +431,20 @@ pub mod id {
                         format!("{}:{}", self.to_string(), segment)
                     }
                     AddressSegment::FilesystemRootDir => {
-                        format!("{}{}",self.to_string(),segment)
+                        format!("{}{}", self.to_string(), segment)
                     }
                     AddressSegment::Dir(_) => {
-                        format!("{}{}",self.to_string(),segment)
+                        format!("{}{}", self.to_string(), segment)
                     }
                     AddressSegment::Version(_) => {
                         if segment != "/" {
-                            return Err("Root filesystem artifact dir required after version".into());
+                            return Err(
+                                "Root filesystem artifact dir required after version".into()
+                            );
                         }
-                        format!("{}:/",self.to_string())
+                        format!("{}:/", self.to_string())
                     }
-                    AddressSegment::File(_) => {
-                        return Err("cannot append to a file".into())
-                    }
+                    AddressSegment::File(_) => return Err("cannot append to a file".into()),
                 };
                 Self::from_str(address.as_str())
             }
@@ -465,7 +455,7 @@ pub mod id {
         }
 
         pub fn push_segment(&self, segment: AddressSegment) -> Self {
-           let mut address = self.clone();
+            let mut address = self.clone();
             address.segments.push(segment);
             address
         }
@@ -496,7 +486,6 @@ pub mod id {
                 Some(path)
             }
         }
-
 
         pub fn is_filesystem_ref(&self) -> bool {
             if let Option::Some(last_segment) = self.last_segment() {
@@ -540,8 +529,7 @@ pub mod id {
 
             if self.segments.is_empty() {
                 "[root]".to_string()
-            }
-            else {
+            } else {
                 for (i, segment) in self.segments.iter().enumerate() {
                     rtn.push_str(segment.to_string().as_str());
                     if i != self.segments.len() - 1 {
@@ -559,7 +547,7 @@ pub mod id {
                 return Option::None;
             }
             let mut segments = self.segments.clone();
-            segments.remove(segments.len()-1);
+            segments.remove(segments.len() - 1);
             Option::Some(Self {
                 route: self.route.clone(),
                 segments,
@@ -577,7 +565,7 @@ pub mod id {
             }
         }
 
-        pub fn root_with_route( route: RouteSegment) -> Self {
+        pub fn root_with_route(route: RouteSegment) -> Self {
             Self {
                 route,
                 segments: vec![],
@@ -589,25 +577,25 @@ pub mod id {
         }
     }
 
-    #[derive(Debug, Clone, Serialize, Deserialize,Eq, PartialEq )]
+    #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
     pub struct CaptureAddress {
         pub route: RouteSegment,
         pub segments: Vec<AddressSegment>,
     }
 
     impl CaptureAddress {
-        pub fn to_address( self, captures: Captures ) -> Result<Address,Error> {
+        pub fn to_address(self, captures: Captures) -> Result<Address, Error> {
             let mut segments = vec![];
-            for segment in self.segments  {
-                segments.push( segment.apply_captures(&captures)? )
+            for segment in self.segments {
+                segments.push(segment.apply_captures(&captures)?)
             }
             let address = Address {
                 route: self.route,
-                segments
+                segments,
             };
 
             // to make sure all the regex captures are removed...
-            let address = Address::from_str( address.to_string().as_str() )?;
+            let address = Address::from_str(address.to_string().as_str())?;
             Ok(address)
         }
     }
@@ -631,8 +619,7 @@ pub mod id {
 
             if self.segments.is_empty() {
                 "[root]".to_string()
-            }
-            else {
+            } else {
                 for (i, segment) in self.segments.iter().enumerate() {
                     rtn.push_str(segment.to_string().as_str());
                     if i != self.segments.len() - 1 {
@@ -651,8 +638,7 @@ pub mod id {
         pub specific: Option<Specific>,
     }
 
-    impl ToString for KindParts
-    {
+    impl ToString for KindParts {
         fn to_string(&self) -> String {
             if self.kind.is_some() && self.specific.is_some() {
                 format!(
@@ -685,28 +671,28 @@ pub mod id {
                     tag(">"),
                 )),
             )))(s)
-                .map(|(next, (resource_type, rest))| {
-                    let mut rtn = KindParts {
-                        resource_type,
-                        kind: Option::None,
-                        specific: Option::None,
-                    };
+            .map(|(next, (resource_type, rest))| {
+                let mut rtn = KindParts {
+                    resource_type,
+                    kind: Option::None,
+                    specific: Option::None,
+                };
 
-                    match rest {
-                        Some((kind, specific)) => {
-                            rtn.kind = Option::Some(kind.to_string());
-                            match specific {
-                                Some(specific) => {
-                                    rtn.specific = Option::Some(specific);
-                                }
-                                None => {}
+                match rest {
+                    Some((kind, specific)) => {
+                        rtn.kind = Option::Some(kind.to_string());
+                        match specific {
+                            Some(specific) => {
+                                rtn.specific = Option::Some(specific);
                             }
+                            None => {}
                         }
-                        None => {}
                     }
+                    None => {}
+                }
 
-                    (next, rtn)
-                })?;
+                (next, rtn)
+            })?;
             Ok(kind)
         }
     }
@@ -723,12 +709,9 @@ pub mod id {
                 specific,
             }
         }
-
-
     }
 
-    impl Tks for KindParts
-    {
+    impl Tks for KindParts {
         fn resource_type(&self) -> ResourceType {
             self.resource_type.clone()
         }
@@ -746,8 +729,6 @@ pub mod id {
                 && self.kind == tks.kind_to_string()
                 && self.specific == tks.specific()
         }
-
-
     }
 }
 
@@ -859,13 +840,23 @@ pub mod pattern {
 
     use crate::error::Error;
 
-    use crate::version::v0_0_1::id::{Address, AddressSegment, ResourceKind, ResourceType, RouteSegment, Specific, Tks, Version};
-    use crate::version::v0_0_1::parse::{address, camel_case_to_string_matcher, capture_address, consume_address_kind_path, file_chars, path, path_regex, capture_path, Res, camel_case};
+    use crate::version::v0_0_1::entity::request::{Action, Rc, RcCommandType, RequestCore};
+    use crate::version::v0_0_1::id::{
+        Address, AddressSegment, ResourceKind, ResourceType, RouteSegment, Specific, Tks, Version,
+    };
+    use crate::version::v0_0_1::parse::{
+        address, camel_case, camel_case_to_string_matcher, capture_address, capture_path,
+        consume_address_kind_path, file_chars, path, path_regex, Res,
+    };
     use crate::version::v0_0_1::pattern::parse::{address_kind_pattern, pattern, value_pattern};
     use crate::version::v0_0_1::pattern::specific::{
         ProductPattern, VariantPattern, VendorPattern,
     };
-    use crate::version::v0_0_1::payload::{Call, CallKind, CallWithConfig, HttpCall, HttpMethod, ListPattern, MapPattern, MsgCall, Payload, PayloadFormat, PayloadPattern, PayloadTypePattern, Primitive, PrimitiveType, Range};
+    use crate::version::v0_0_1::payload::{
+        Call, CallKind, CallWithConfig, HttpCall, HttpMethod, ListPattern, MapPattern, MsgCall,
+        Payload, PayloadFormat, PayloadPattern, PayloadTypePattern, Primitive, PrimitiveType,
+        Range,
+    };
     use crate::version::v0_0_1::util::{StringMatcher, ValueMatcher, ValuePattern};
     use crate::{Deserialize, Serialize};
     use nom::branch::alt;
@@ -875,14 +866,12 @@ pub mod pattern {
     use nom::error::{context, ErrorKind, ParseError, VerboseError};
     use nom::multi::separated_list0;
     use nom::sequence::{delimited, preceded, terminated, tuple};
-    use nom::{AsChar, InputTakeAtPosition, IResult, Parser};
-    use nom_supreme::{parse_from_str, ParserExt};
-    use std::collections::HashMap;
+    use nom::{AsChar, IResult, InputTakeAtPosition, Parser};
     use nom_supreme::error::ErrorTree;
     use nom_supreme::parser_ext::FromStrParser;
+    use nom_supreme::{parse_from_str, ParserExt};
     use regex::Regex;
-    use crate::version::v0_0_1::entity::request::{Action, Rc, RcCommandType, RequestCore};
-
+    use std::collections::HashMap;
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct TksPattern {
@@ -891,9 +880,7 @@ pub mod pattern {
         pub specific: ValuePattern<SpecificPattern>,
     }
 
-
-    impl TksPattern
-    {
+    impl TksPattern {
         pub fn new(
             resource_type: ResourceTypePattern,
             kind: KindPattern,
@@ -907,8 +894,8 @@ pub mod pattern {
         }
 
         pub fn matches(&self, kind: &ResourceKind) -> bool
-            where
-                ResourceKind: Eq + PartialEq,
+        where
+            ResourceKind: Eq + PartialEq,
         {
             self.resource_type.matches(&kind.resource_type())
                 && self.kind.matches(kind)
@@ -936,15 +923,13 @@ pub mod pattern {
         type Err = Error;
 
         fn from_str(s: &str) -> Result<Self, Self::Err> {
-            let (_,rtn) = all_consuming(address_kind_pattern)(s)?;
+            let (_, rtn) = all_consuming(address_kind_pattern)(s)?;
             Ok(rtn)
         }
     }
 
     impl AddressKindPattern {
-        fn consume(&self) -> Option<AddressKindPattern>
-
-        {
+        fn consume(&self) -> Option<AddressKindPattern> {
             if self.hops.len() <= 1 {
                 Option::None
             } else {
@@ -957,7 +942,6 @@ pub mod pattern {
         pub fn is_root(&self) -> bool {
             self.hops.is_empty()
         }
-
 
         pub fn is_final(&self) -> bool {
             self.hops.len() == 1
@@ -986,8 +970,7 @@ pub mod pattern {
             }
         }
 
-        pub fn sub_select_hops(&self) -> Vec<Hop>
-        {
+        pub fn sub_select_hops(&self) -> Vec<Hop> {
             let mut hops = self.hops.clone();
             let query_root_segments = self.query_root().segments.len();
             for _ in 0..query_root_segments {
@@ -997,9 +980,9 @@ pub mod pattern {
         }
 
         pub fn matches(&self, address_kind_path: &AddressKindPath) -> bool
-            where
-                ResourceType: Clone,
-                ResourceKind: Clone,
+        where
+            ResourceType: Clone,
+            ResourceKind: Clone,
         {
             if address_kind_path.segments.len() < self.hops.len() {
                 return false;
@@ -1015,7 +998,6 @@ pub mod pattern {
 
             let hop = self.hops.first().expect("hop");
             let seg = address_kind_path.segments.first().expect("segment");
-
 
             if address_kind_path.is_final() && self.is_final() {
                 // this is the final hop & segment if they match, everything matches!
@@ -1045,10 +1027,16 @@ pub mod pattern {
                     self.matches(&address_kind_path.consume().expect("AddressKindPath"))
                 }
             } else if hop.matches(seg) {
-println!("seg {}", seg.to_string() );
-println!("self.hops.len() {}", self.hops.len() );
-println!("address_kind_path.len() {}", address_kind_path.segments.len() );
-println!("address_kind_path.to_string() {}", address_kind_path.to_string() );
+                println!("seg {}", seg.to_string());
+                println!("self.hops.len() {}", self.hops.len());
+                println!(
+                    "address_kind_path.len() {}",
+                    address_kind_path.segments.len()
+                );
+                println!(
+                    "address_kind_path.to_string() {}",
+                    address_kind_path.to_string()
+                );
                 // in a normal match situation, we consume the hop and move to the next one
                 self.consume()
                     .expect("AddressTksPattern")
@@ -1161,8 +1149,7 @@ println!("address_kind_path.to_string() {}", address_kind_path.to_string() );
                     ExactSegment::Version(a) => {
                         if let AddressSegment::Version(b) = segment {
                             *a == *b
-                        } else
-                        {
+                        } else {
                             false
                         }
                     }
@@ -1170,8 +1157,7 @@ println!("address_kind_path.to_string() {}", address_kind_path.to_string() );
                 SegmentPattern::Version(req) => {
                     if let AddressSegment::Version(b) = segment {
                         req.matches(b)
-                    } else
-                    {
+                    } else {
                         false
                     }
                 }
@@ -1288,21 +1274,30 @@ println!("address_kind_path.to_string() {}", address_kind_path.to_string() );
         use nom::character::complete::{alpha1, digit1};
         use nom::combinator::{all_consuming, opt, recognize};
         use nom::error::{context, ContextError, ParseError, VerboseError};
-        use nom::multi::{many1, many0};
+        use nom::multi::{many0, many1};
         use nom::sequence::{delimited, preceded, terminated, tuple};
         use nom::{Compare, InputIter, InputLength, InputTake, Parser, UnspecializedInput};
         use nom::{Err, IResult};
 
         use crate::error::Error;
-        use crate::version::v0_0_1::id::{AddressAndKind, AddressSegment, ResourceKind, KindParts, ResourceType, Specific, Version};
-        use crate::version::v0_0_1::parse::{address_segment_chars, camel_case, domain_chars, skewer_chars, version_req_chars, Res, version_address_segment, version_chars, address, file_chars};
+        use crate::version::v0_0_1::id::{
+            AddressAndKind, AddressSegment, KindParts, ResourceKind, ResourceType, Specific,
+            Version,
+        };
+        use crate::version::v0_0_1::parse::{
+            address, address_segment_chars, camel_case, domain_chars, file_chars, skewer_chars,
+            version_address_segment, version_chars, version_req_chars, Res,
+        };
         use crate::version::v0_0_1::pattern::specific::{
             ProductPattern, VariantPattern, VendorPattern,
         };
-        use crate::version::v0_0_1::pattern::{AddressKindPattern, ExactSegment, Hop, KindPattern, Pattern, ResourceTypePattern, SegmentPattern, SpecificPattern, TksPattern, VersionReq};
+        use crate::version::v0_0_1::pattern::{
+            AddressKindPattern, ExactSegment, Hop, KindPattern, Pattern, ResourceTypePattern,
+            SegmentPattern, SpecificPattern, TksPattern, VersionReq,
+        };
         use crate::version::v0_0_1::util::ValuePattern;
-        use nom_supreme::{parse_from_str,ParserExt};
         use nom_supreme::error::ErrorTree;
+        use nom_supreme::{parse_from_str, ParserExt};
 
         fn any_segment(input: &str) -> Res<&str, SegmentPattern> {
             tag("*")(input).map(|(next, _)| (next, SegmentPattern::Any))
@@ -1357,19 +1352,15 @@ println!("address_kind_path.to_string() {}", address_kind_path.to_string() );
         }
 
         fn exact_version_segment(input: &str) -> Res<&str, SegmentPattern> {
-
-            let (next, version): (&str,Version)  = parse_from_str(version_chars).parse(input)?;
+            let (next, version): (&str, Version) = parse_from_str(version_chars).parse(input)?;
 
             Ok((next, SegmentPattern::Exact(ExactSegment::Version(version))))
         }
 
         fn version_req_segment(input: &str) -> Res<&str, SegmentPattern> {
-            delimited( tag("("), version_req, tag(")"))(input).map( |(next,version_req)| {
-                (next, SegmentPattern::Version(version_req) )
-            } )
+            delimited(tag("("), version_req, tag(")"))(input)
+                .map(|(next, version_req)| (next, SegmentPattern::Version(version_req)))
         }
-
-
 
         fn space_segment(input: &str) -> Res<&str, SegmentPattern> {
             alt((recursive_segment, any_segment, exact_space_segment))(input)
@@ -1384,12 +1375,19 @@ println!("address_kind_path.to_string() {}", address_kind_path.to_string() );
         }
 
         fn dir_segment(input: &str) -> Res<&str, SegmentPattern> {
-            terminated(alt((recursive_segment, any_segment, exact_dir_segment)),tag("/"))(input)
+            terminated(
+                alt((recursive_segment, any_segment, exact_dir_segment)),
+                tag("/"),
+            )(input)
         }
 
-
         fn version_segment(input: &str) -> Res<&str, SegmentPattern> {
-            alt((recursive_segment, any_segment, exact_version_segment, version_req_segment))(input)
+            alt((
+                recursive_segment,
+                any_segment,
+                exact_version_segment,
+                version_req_segment,
+            ))(input)
         }
 
         pub fn pattern<'r, O, E: ParseError<&'r str>, V>(
@@ -1428,28 +1426,30 @@ println!("address_kind_path.to_string() {}", address_kind_path.to_string() );
         }
 
          */
-        pub fn value_pattern<I:Clone, O, E: ParseError<I>, F>(mut f: F) -> impl FnMut(I) -> IResult<I, ValuePattern<O>, E>
-            where
-                I: InputLength+InputTake + Compare<&'static str>,
-                F: Parser<I, O, E>,
-                E: nom::error::ContextError<I>
+        pub fn value_pattern<I: Clone, O, E: ParseError<I>, F>(
+            mut f: F,
+        ) -> impl FnMut(I) -> IResult<I, ValuePattern<O>, E>
+        where
+            I: InputLength + InputTake + Compare<&'static str>,
+            F: Parser<I, O, E>,
+            E: nom::error::ContextError<I>,
         {
-            move |input: I| {
-                match tag::<&'static str,I,E>("*")(input.clone()) {
-                    Ok((next,_)) => {
-                        Ok((next,ValuePattern::Any))
-                    }
-                    Err(err) => {
-                        match f.parse(input.clone()) {
-                            Ok((next,res)) => {
-                                Ok((next,ValuePattern::Pattern(res)))
-                            }
-                            Err(Err::Incomplete(i)) => Err(Err::Incomplete(i)),
-                            Err(Err::Error(e)) => Err(Err::Error(E::add_context(input.clone(), "value_pattern", e))),
-                            Err(Err::Failure(e)) => Err(Err::Failure(E::add_context(input.clone(), "value_pattern", e))),
-                        }
-                    }
-                }
+            move |input: I| match tag::<&'static str, I, E>("*")(input.clone()) {
+                Ok((next, _)) => Ok((next, ValuePattern::Any)),
+                Err(err) => match f.parse(input.clone()) {
+                    Ok((next, res)) => Ok((next, ValuePattern::Pattern(res))),
+                    Err(Err::Incomplete(i)) => Err(Err::Incomplete(i)),
+                    Err(Err::Error(e)) => Err(Err::Error(E::add_context(
+                        input.clone(),
+                        "value_pattern",
+                        e,
+                    ))),
+                    Err(Err::Failure(e)) => Err(Err::Failure(E::add_context(
+                        input.clone(),
+                        "value_pattern",
+                        e,
+                    ))),
+                },
             }
         }
         /*
@@ -1564,27 +1564,23 @@ println!("address_kind_path.to_string() {}", address_kind_path.to_string() );
             recognize(kind_parts)(input)
         }
 
-        pub fn kind(input: &str) -> Res<&str, ResourceKind>
-        {
+        pub fn kind(input: &str) -> Res<&str, ResourceKind> {
             parse_from_str(rec_kind)
                 .parse(input)
                 .map(|(next, kind)| (next, kind))
         }
 
-        pub fn delim_kind(input: &str) -> Res<&str, ResourceKind>
-        {
+        pub fn delim_kind(input: &str) -> Res<&str, ResourceKind> {
             delimited(tag("<"), kind, tag(">"))(input)
         }
 
-        pub fn consume_kind(input: &str) -> Result<ResourceKind, Error>
-        {
+        pub fn consume_kind(input: &str) -> Result<ResourceKind, Error> {
             let (_, kind_parts) = all_consuming(kind_parts)(input)?;
 
             Ok(kind_parts.try_into()?)
         }
 
-        pub fn kind_pattern(input: &str) -> Res<&str, KindPattern>
-        {
+        pub fn kind_pattern(input: &str) -> Res<&str, KindPattern> {
             pattern(kind)(input).map(|(next, kind)| (next, kind))
         }
 
@@ -1592,15 +1588,11 @@ println!("address_kind_path.to_string() {}", address_kind_path.to_string() );
             parse_from_str(camel_case).parse(input)
         }
 
-        pub fn resource_type_pattern(
-            input: &str,
-        ) -> Res<&str, ResourceTypePattern> {
+        pub fn resource_type_pattern(input: &str) -> Res<&str, ResourceTypePattern> {
             pattern(resource_type)(input)
         }
 
-        pub fn tks(
-            input: &str,
-        ) -> Res<&str, TksPattern> {
+        pub fn tks(input: &str) -> Res<&str, TksPattern> {
             delimited(
                 tag("<"),
                 tuple((
@@ -1642,9 +1634,7 @@ println!("address_kind_path.to_string() {}", address_kind_path.to_string() );
             })
         }
 
-        fn space_hop(
-            input: &str,
-        ) -> Res<&str, Hop> {
+        fn space_hop(input: &str) -> Res<&str, Hop> {
             tuple((space_segment, opt(tks)))(input).map(|(next, (segment, tks))| {
                 let tks = match tks {
                     None => TksPattern::any(),
@@ -1654,9 +1644,7 @@ println!("address_kind_path.to_string() {}", address_kind_path.to_string() );
             })
         }
 
-        fn base_hop(
-            input: &str,
-        ) -> Res<&str, Hop> {
+        fn base_hop(input: &str) -> Res<&str, Hop> {
             tuple((base_segment, opt(tks)))(input).map(|(next, (segment, tks))| {
                 let tks = match tks {
                     None => TksPattern::any(),
@@ -1666,34 +1654,25 @@ println!("address_kind_path.to_string() {}", address_kind_path.to_string() );
             })
         }
 
-
-        fn file_hop(
-            input: &str,
-        ) -> Res<&str, Hop> {
+        fn file_hop(input: &str) -> Res<&str, Hop> {
             file_segment(input).map(|(next, segment)| {
                 let tks = TksPattern {
                     resource_type: Pattern::Exact("File".to_string()),
                     kind: Pattern::Any,
-                    specific: ValuePattern::Any
+                    specific: ValuePattern::Any,
                 };
                 (next, Hop { segment, tks })
             })
         }
 
-
-        fn dir_hop(
-            input: &str,
-        ) -> Res<&str, Hop> {
+        fn dir_hop(input: &str) -> Res<&str, Hop> {
             dir_segment(input).map(|(next, segment)| {
                 let tks = TksPattern::any();
                 (next, Hop { segment, tks })
             })
         }
 
-
-        fn version_hop(
-            input: &str,
-        ) -> Res<&str, Hop> {
+        fn version_hop(input: &str) -> Res<&str, Hop> {
             tuple((version_segment, opt(tks)))(input).map(|(next, (segment, tks))| {
                 let tks = match tks {
                     None => TksPattern::any(),
@@ -1703,54 +1682,57 @@ println!("address_kind_path.to_string() {}", address_kind_path.to_string() );
             })
         }
 
-
-        pub fn address_kind_pattern(
-            input: &str,
-        ) -> Res<&str, AddressKindPattern> {
-            context( "address_kind_pattern", tuple( (space_hop,many0(preceded(tag(":"),base_hop) ),opt(preceded( tag(":"), version_hop)),opt(preceded(tag(":/"),tuple((many0(dir_hop),opt(file_hop))))))))(input).map( |(next, (space_hop, base_hops, version_hop, filesystem_hops) )| {
-                let mut hops = vec![];
-                hops.push(space_hop);
-                for base_hop in base_hops {
-                    hops.push(base_hop);
-                }
-                if let Option::Some(version_hop) = version_hop {
-                    hops.push( version_hop );
-                }
-                if let Some((dir_hops,file_hop)) = filesystem_hops{
-                    // first push the filesystem root
-                    hops.push( Hop {
-                        segment: SegmentPattern::Exact(ExactSegment::Address(AddressSegment::FilesystemRootDir)),
-                        tks: TksPattern {
-                            resource_type: Pattern::Exact("Dir".to_string()),
-                            kind: Pattern::Any,
-                            specific: ValuePattern::Any
+        pub fn address_kind_pattern(input: &str) -> Res<&str, AddressKindPattern> {
+            context(
+                "address_kind_pattern",
+                tuple((
+                    space_hop,
+                    many0(preceded(tag(":"), base_hop)),
+                    opt(preceded(tag(":"), version_hop)),
+                    opt(preceded(tag(":/"), tuple((many0(dir_hop), opt(file_hop))))),
+                )),
+            )(input)
+            .map(
+                |(next, (space_hop, base_hops, version_hop, filesystem_hops))| {
+                    let mut hops = vec![];
+                    hops.push(space_hop);
+                    for base_hop in base_hops {
+                        hops.push(base_hop);
+                    }
+                    if let Option::Some(version_hop) = version_hop {
+                        hops.push(version_hop);
+                    }
+                    if let Some((dir_hops, file_hop)) = filesystem_hops {
+                        // first push the filesystem root
+                        hops.push(Hop {
+                            segment: SegmentPattern::Exact(ExactSegment::Address(
+                                AddressSegment::FilesystemRootDir,
+                            )),
+                            tks: TksPattern {
+                                resource_type: Pattern::Exact("Dir".to_string()),
+                                kind: Pattern::Any,
+                                specific: ValuePattern::Any,
+                            },
+                        });
+                        for dir_hop in dir_hops {
+                            hops.push(dir_hop);
                         }
-                    });
-                    for dir_hop in dir_hops {
-                        hops.push(dir_hop );
+                        if let Some(file_hop) = file_hop {
+                            hops.push(file_hop);
+                        }
                     }
-                    if let Some(file_hop) = file_hop {
-                        hops.push(file_hop );
-                    }
-                }
 
-                let rtn = AddressKindPattern {
-                    hops
-                };
+                    let rtn = AddressKindPattern { hops };
 
-                (next,rtn)
-            } )
+                    (next, rtn)
+                },
+            )
         }
 
-        pub fn address_and_kind(input: &str) -> Res<&str, AddressAndKind>  {
-            tuple((address,kind))(input).map( |(next,(address,kind))| {
-                (next,AddressAndKind {
-                    address,
-                    kind,
-                })
-            } )
+        pub fn address_and_kind(input: &str) -> Res<&str, AddressAndKind> {
+            tuple((address, kind))(input)
+                .map(|(next, (address, kind))| (next, AddressAndKind { address, kind }))
         }
-
 
         pub fn version(input: &str) -> Res<&str, Version> {
             parse_from_str(version_chars).parse(input)
@@ -1766,22 +1748,21 @@ println!("address_kind_path.to_string() {}", address_kind_path.to_string() );
                 tag(":"),
                 version,
             ))(input)
-                .map(|(next, (vendor, _, product, _, variant, _, version))| {
-                    let specific = Specific {
-                        vendor: vendor.to_string(),
-                        product: product.to_string(),
-                        variant: variant.to_string(),
-                        version,
-                    };
-                    (next, specific)
-                })
+            .map(|(next, (vendor, _, product, _, variant, _, version))| {
+                let specific = Specific {
+                    vendor: vendor.to_string(),
+                    product: product.to_string(),
+                    variant: variant.to_string(),
+                    version,
+                };
+                (next, specific)
+            })
         }
-
     }
 
     pub fn skewer<T>(i: T) -> Res<T, T>
     where
-        T: InputTakeAtPosition+ nom::InputLength,
+        T: InputTakeAtPosition + nom::InputLength,
         <T as InputTakeAtPosition>::Item: AsChar,
     {
         i.split_at_position1_complete(
@@ -1797,7 +1778,7 @@ println!("address_kind_path.to_string() {}", address_kind_path.to_string() );
 
     fn not_quote<T>(i: T) -> Res<T, T>
     where
-        T: InputTakeAtPosition+ nom::InputLength,
+        T: InputTakeAtPosition + nom::InputLength,
         <T as InputTakeAtPosition>::Item: AsChar,
     {
         i.split_at_position1_complete(
@@ -1811,7 +1792,7 @@ println!("address_kind_path.to_string() {}", address_kind_path.to_string() );
 
     fn filename<T>(i: T) -> Res<T, T>
     where
-        T: InputTakeAtPosition+ nom::InputLength,
+        T: InputTakeAtPosition + nom::InputLength,
         <T as InputTakeAtPosition>::Item: AsChar,
     {
         i.split_at_position1_complete(
@@ -1850,44 +1831,44 @@ println!("address_kind_path.to_string() {}", address_kind_path.to_string() );
 
     impl ValueMatcher<RequestCore> for EntityPattern {
         fn is_match(&self, core: &RequestCore) -> Result<(), Error> {
-                match &core.action {
-                    Action::Rc(found) => {
-                        if let EntityPattern::Rc(pattern) = self {
-                            pattern.is_match(core )
-                        } else {
-                            Err(format!(
-                                "Entity pattern mismatch. expected: '{}' found: '{}'",
-                                self.to_string(),
-                                found.to_string()
-                            )
-                                .into())
-                        }
-                    }
-                    Action::Msg(found) => {
-                        if let EntityPattern::Msg(pattern) = self {
-                            pattern.is_match(core)
-                        } else {
-                            Err(format!(
-                                "Entity pattern mismatch. expected: '{}' found: '{}'",
-                                self.to_string(),
-                                found.to_string()
-                            )
-                                .into())
-                        }
-                    }
-                    Action::Http(found) => {
-                        if let EntityPattern::Http(pattern) = self {
-                            pattern.is_match(core)
-                        } else {
-                            Err(format!(
-                                "Entity pattern mismatch. expected: '{}' found: '{}'",
-                                self.to_string(),
-                                found.to_string()
-                            )
-                                .into())
-                        }
+            match &core.action {
+                Action::Rc(found) => {
+                    if let EntityPattern::Rc(pattern) = self {
+                        pattern.is_match(core)
+                    } else {
+                        Err(format!(
+                            "Entity pattern mismatch. expected: '{}' found: '{}'",
+                            self.to_string(),
+                            found.to_string()
+                        )
+                        .into())
                     }
                 }
+                Action::Msg(found) => {
+                    if let EntityPattern::Msg(pattern) = self {
+                        pattern.is_match(core)
+                    } else {
+                        Err(format!(
+                            "Entity pattern mismatch. expected: '{}' found: '{}'",
+                            self.to_string(),
+                            found.to_string()
+                        )
+                        .into())
+                    }
+                }
+                Action::Http(found) => {
+                    if let EntityPattern::Http(pattern) = self {
+                        pattern.is_match(core)
+                    } else {
+                        Err(format!(
+                            "Entity pattern mismatch. expected: '{}' found: '{}'",
+                            self.to_string(),
+                            found.to_string()
+                        )
+                        .into())
+                    }
+                }
+            }
         }
     }
 
@@ -1920,7 +1901,6 @@ println!("address_kind_path.to_string() {}", address_kind_path.to_string() );
         }
     }
 
-
     impl ToString for RcPattern {
         fn to_string(&self) -> String {
             format!("Rc<{}>", self.command.to_string())
@@ -1951,7 +1931,7 @@ println!("address_kind_path.to_string() {}", address_kind_path.to_string() );
                         "Could not match Msg path: '{}' with: '{}'",
                         core.path, self.path_regex
                     )
-                        .into())
+                    .into())
                 }
             } else {
                 Err("not a Msg Action".into())
@@ -1973,7 +1953,6 @@ println!("address_kind_path.to_string() {}", address_kind_path.to_string() );
 
     impl ValueMatcher<RequestCore> for HttpPattern {
         fn is_match(&self, found: &RequestCore) -> Result<(), Error> {
-
             if let Action::Http(method) = &found.action {
                 self.method.is_match(&method)?;
 
@@ -1986,10 +1965,9 @@ println!("address_kind_path.to_string() {}", address_kind_path.to_string() );
                         "Could not match Msg path: '{}' with: '{}'",
                         found.path, self.path_regex
                     )
-                        .into())
+                    .into())
                 }
-            }
-            else {
+            } else {
                 Err("action does not match".into())
             }
         }
@@ -2287,38 +2265,38 @@ println!("address_kind_path.to_string() {}", address_kind_path.to_string() );
     }*/
 
     /*
-    pub fn value_pattern<V>(
-        input: &str,
-        parser: fn(&str) -> Res<&str, V>,
-    ) -> Res<&str, ValuePattern<V>> {
-        let result = context( "value_pattern",parser)(input);
-        let result = match result {
-            Ok((next, v)) => {
-                return Ok((next, ValuePattern::Pattern(v)));
-            }
-            Err(err) => {
-println!("ERRROR!");
-                IResult::Err(err)
-            }
-        };
-        let pattern_result = context("value_pattern",alt((nom_supreme::tag::complete::tag("*"), nom_supreme::tag::complete::tag("!"))))(input);
-        match pattern_result {
-            Ok((next,tag)) => {
-                match tag {
-                    "*" => Ok((next,ValuePattern::Any)),
-                    "!" => Ok((next,ValuePattern::None)),
-                    _ => {
-                        return result;
+        pub fn value_pattern<V>(
+            input: &str,
+            parser: fn(&str) -> Res<&str, V>,
+        ) -> Res<&str, ValuePattern<V>> {
+            let result = context( "value_pattern",parser)(input);
+            let result = match result {
+                Ok((next, v)) => {
+                    return Ok((next, ValuePattern::Pattern(v)));
+                }
+                Err(err) => {
+    println!("ERRROR!");
+                    IResult::Err(err)
+                }
+            };
+            let pattern_result = context("value_pattern",alt((nom_supreme::tag::complete::tag("*"), nom_supreme::tag::complete::tag("!"))))(input);
+            match pattern_result {
+                Ok((next,tag)) => {
+                    match tag {
+                        "*" => Ok((next,ValuePattern::Any)),
+                        "!" => Ok((next,ValuePattern::None)),
+                        _ => {
+                            return result;
+                        }
                     }
                 }
-            }
-            Err(err) => {
-                Err(Err::Error(E::add_context(i, "value_pattern", err)))
+                Err(err) => {
+                    Err(Err::Error(E::add_context(i, "value_pattern", err)))
+                }
             }
         }
-    }
 
-     */
+         */
 
     /*
     pub fn value_pattern_wrapper<'a,'b,V,F>( mut parser: F ) -> impl FnMut(&'a str) -> Res<&'b str,ValuePattern<V>>
@@ -2374,21 +2352,23 @@ println!("ERRROR!");
     }
 
     pub fn msg_action(input: &str) -> Res<&str, ValuePattern<StringMatcher>> {
-        value_pattern( camel_case_to_string_matcher)(input)
+        value_pattern(camel_case_to_string_matcher)(input)
     }
 
     pub fn msg_pattern_scoped(input: &str) -> Res<&str, MsgPattern> {
-        tuple((delimited(tag("<"),msg_action,tag(">")), opt(path_regex)))(input).map(|(next, (action, path_regex))| {
-            let path_regex = match path_regex {
-                None => "*".to_string(),
-                Some(path_regex) => path_regex.to_string(),
-            };
-            let rtn = MsgPattern {
-                action,
-                path_regex: path_regex.to_string(),
-            };
-            (next, rtn)
-        })
+        tuple((delimited(tag("<"), msg_action, tag(">")), opt(path_regex)))(input).map(
+            |(next, (action, path_regex))| {
+                let path_regex = match path_regex {
+                    None => "*".to_string(),
+                    Some(path_regex) => path_regex.to_string(),
+                };
+                let rtn = MsgPattern {
+                    action,
+                    path_regex: path_regex.to_string(),
+                };
+                (next, rtn)
+            },
+        )
     }
 
     pub fn msg_pattern(input: &str) -> Res<&str, MsgPattern> {
@@ -2411,7 +2391,7 @@ println!("ERRROR!");
     }
 
     pub fn http_method(input: &str) -> Res<&str, HttpMethod> {
-        context( "http_method", parse_from_str(camel_case )).parse(input)
+        context("http_method", parse_from_str(camel_case)).parse(input)
     }
 
     pub fn http_method_pattern(input: &str) -> Res<&str, ValuePattern<HttpMethod>> {
@@ -2419,7 +2399,11 @@ println!("ERRROR!");
     }
 
     pub fn http_pattern_scoped(input: &str) -> Res<&str, HttpPattern> {
-        tuple((delimited( tag("<"),http_method_pattern, tag(">")), opt(path_regex)))(input).map(|(next, (method, path_regex))| {
+        tuple((
+            delimited(tag("<"), http_method_pattern, tag(">")),
+            opt(path_regex),
+        ))(input)
+        .map(|(next, (method, path_regex))| {
             let path_regex = match path_regex {
                 None => "*".to_string(),
                 Some(path_regex) => path_regex.to_string(),
@@ -2456,7 +2440,8 @@ println!("ERRROR!");
     }
 
     pub fn rc_pattern_scoped(input: &str) -> Res<&str, RcPattern> {
-        pattern(delimited( tag("<"), rc_command_type, tag(">")))(input).map(|(next, command)| (next, RcPattern { command }))
+        pattern(delimited(tag("<"), rc_command_type, tag(">")))(input)
+            .map(|(next, command)| (next, RcPattern { command }))
     }
 
     pub fn rc_pattern(input: &str) -> Res<&str, RcPattern> {
@@ -2593,7 +2578,7 @@ println!("ERRROR!");
             tuple((multispace0, file_chars, multispace0)),
             tag("]"),
         )(input)
-        .map(|(next, (_, filename,_))| {
+        .map(|(next, (_, filename, _))| {
             (
                 next,
                 Block::Upload(UploadBlock {
@@ -2604,22 +2589,14 @@ println!("ERRROR!");
     }
 
     pub fn upload_step(input: &str) -> Res<&str, UploadBlock> {
-        terminated(
-            upload_pattern_block,
-            tag("->"))
-        (input)
-            .map(|(next, block)| {
-                if let Block::Upload(block) = block {
-                    (
-                        next,
-                        block
-                    )
-                } else {
-                    panic!("it should have been an UploadBlock!");
-                }
-            })
+        terminated(upload_pattern_block, tag("->"))(input).map(|(next, block)| {
+            if let Block::Upload(block) = block {
+                (next, block)
+            } else {
+                panic!("it should have been an UploadBlock!");
+            }
+        })
     }
-
 
     pub fn request_pattern_block(input: &str) -> Res<&str, Block> {
         delimited(
@@ -2648,7 +2625,11 @@ println!("ERRROR!");
     }
 
     pub fn pipeline_block(input: &str) -> Res<&str, Block> {
-        alt((request_pattern_block, response_pattern_block, upload_pattern_block))(input)
+        alt((
+            request_pattern_block,
+            response_pattern_block,
+            upload_pattern_block,
+        ))(input)
     }
 
     pub fn consume_pipeline_block(input: &str) -> Res<&str, Block> {
@@ -2661,12 +2642,8 @@ println!("ERRROR!");
         pub payload: ValuePattern<PayloadPattern>,
     }
 
-
-
-
-
     #[derive(Debug, Clone, Serialize, Deserialize)]
-    pub struct Hop{
+    pub struct Hop {
         pub segment: SegmentPattern,
         pub tks: TksPattern,
     }
@@ -2684,8 +2661,8 @@ println!("ERRROR!");
     }
 
     impl<P> Pattern<P>
-        where
-            P: Eq + PartialEq,
+    where
+        P: Eq + PartialEq,
     {
         pub fn matches(&self, t: &P) -> bool {
             match self {
@@ -2707,8 +2684,8 @@ println!("ERRROR!");
         }
 
         pub fn convert<To>(self) -> Result<Pattern<To>, Error>
-            where
-                P: TryInto<To, Error = Error> + Eq + PartialEq,
+        where
+            P: TryInto<To, Error = Error> + Eq + PartialEq,
         {
             Ok(match self {
                 Pattern::Any => Pattern::Any,
@@ -2742,8 +2719,8 @@ println!("ERRROR!");
     }
 
     impl<P> ToString for Pattern<P>
-        where
-            P: ToString,
+    where
+        P: ToString,
     {
         fn to_string(&self) -> String {
             match self {
@@ -2760,8 +2737,8 @@ println!("ERRROR!");
     }
 
     impl<P> EmptyPattern<P>
-        where
-            P: Eq + PartialEq,
+    where
+        P: Eq + PartialEq,
     {
         pub fn matches(&self, t: &P) -> bool {
             match self {
@@ -2783,8 +2760,8 @@ println!("ERRROR!");
         }
 
         pub fn convert<To>(self) -> Result<EmptyPattern<To>, Error>
-            where
-                P: TryInto<To, Error = Error> + Eq + PartialEq,
+        where
+            P: TryInto<To, Error = Error> + Eq + PartialEq,
         {
             Ok(match self {
                 EmptyPattern::Any => EmptyPattern::Any,
@@ -2803,8 +2780,8 @@ println!("ERRROR!");
     }
 
     impl<P> ToString for EmptyPattern<P>
-        where
-            P: ToString,
+    where
+        P: ToString,
     {
         fn to_string(&self) -> String {
             match self {
@@ -2824,23 +2801,17 @@ println!("ERRROR!");
 
     impl AddressKindPath {
         pub fn new(route: RouteSegment, segments: Vec<AddressKindSegment>) -> Self {
-            Self {
-                route,
-                segments,
-            }
+            Self { route, segments }
         }
 
-        pub fn push(
-            &self,
-            segment: AddressKindSegment,
-        ) -> AddressKindPath
-            where
-                ResourceKind: Clone,
-                ResourceType: Clone,
+        pub fn push(&self, segment: AddressKindSegment) -> AddressKindPath
+        where
+            ResourceKind: Clone,
+            ResourceType: Clone,
         {
-if let AddressSegment::Root = segment.address_segment {
-    println!("pushing ROOT");
-}
+            if let AddressSegment::Root = segment.address_segment {
+                println!("pushing ROOT");
+            }
             let mut segments = self.segments.clone();
             segments.push(segment);
             Self {
@@ -2849,8 +2820,7 @@ if let AddressSegment::Root = segment.address_segment {
             }
         }
 
-        pub fn consume(&self) -> Option<AddressKindPath>
-        {
+        pub fn consume(&self) -> Option<AddressKindPath> {
             if self.segments.len() <= 1 {
                 return Option::None;
             }
@@ -2871,8 +2841,7 @@ if let AddressSegment::Root = segment.address_segment {
         }
     }
 
-    impl ToString for AddressKindPath
-    {
+    impl ToString for AddressKindPath {
         fn to_string(&self) -> String {
             let mut rtn = String::new();
             match &self.route {
@@ -2910,8 +2879,7 @@ if let AddressSegment::Root = segment.address_segment {
         }
     }
 
-    impl FromStr for AddressKindPath
-    {
+    impl FromStr for AddressKindPath {
         type Err = Error;
 
         fn from_str(s: &str) -> Result<Self, Self::Err> {
@@ -2932,62 +2900,64 @@ pub mod messaging {
     use crate::version::v0_0_1::payload::{Errors, Payload, Primitive};
     use crate::version::v0_0_1::util::unique_id;
 
-    #[derive(Debug,Clone,Serialize,Deserialize)]
+    #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct Request {
         pub id: String,
         pub from: Address,
         pub to: Address,
-        pub core: RequestCore
+        pub core: RequestCore,
     }
 
     impl Request {
-        pub fn new(core: RequestCore, from: Address, to: Address ) -> Self {
+        pub fn new(core: RequestCore, from: Address, to: Address) -> Self {
             Self {
                 id: unique_id(),
                 from,
                 to,
-                core
+                core,
             }
         }
 
-        pub fn ok( self ) -> Response {
+        pub fn ok(self) -> Response {
             let core = ResponseCore {
                 headers: Default::default(),
                 code: 200,
-                body: Payload::Empty
+                body: Payload::Empty,
             };
             let response = Response {
                 id: unique_id(),
                 from: self.to,
                 to: self.from,
                 core,
-                response_to: self.id
+                response_to: self.id,
             };
             response
         }
 
-        pub fn fail( self, error: &str) -> Response {
+        pub fn fail(self, error: &str) -> Response {
             let core = ResponseCore {
                 headers: Default::default(),
                 code: 500,
-                body: Payload::Primitive(Primitive::Errors(Errors::default(error.to_string().as_str())))
+                body: Payload::Primitive(Primitive::Errors(Errors::default(
+                    error.to_string().as_str(),
+                ))),
             };
             let response = Response {
                 id: unique_id(),
                 from: self.to,
                 to: self.from,
                 core,
-                response_to: self.id
+                response_to: self.id,
             };
             response
         }
     }
 
-    #[derive(Debug,Clone)]
+    #[derive(Debug, Clone)]
     pub struct ProtoRequest {
         pub id: String,
         pub to: Option<Address>,
-        pub core: Option<RequestCore>
+        pub core: Option<RequestCore>,
     }
 
     impl ProtoRequest {
@@ -2995,57 +2965,60 @@ pub mod messaging {
             Self {
                 id: unique_id(),
                 to: Option::None,
-                core: Option::None
+                core: Option::None,
             }
         }
 
-        pub fn validate(&self) -> Result<(),Error> {
-            self.to.as_ref().ok_or("request.to must be set" )?;
+        pub fn validate(&self) -> Result<(), Error> {
+            self.to.as_ref().ok_or("request.to must be set")?;
             Ok(())
         }
 
-        pub fn to( &mut self, to: Address ) {
+        pub fn to(&mut self, to: Address) {
             self.to = Option::Some(to);
         }
 
-        pub fn core( &mut self, core: RequestCore) {
-            self.core= Option::Some(core);
+        pub fn core(&mut self, core: RequestCore) {
+            self.core = Option::Some(core);
         }
 
-        pub fn into_request(self, from: Address ) -> Result<Request,Error> {
+        pub fn into_request(self, from: Address) -> Result<Request, Error> {
             self.validate()?;
-            let core = self.core.or(Option::Some(Default::default())).expect("expected RequestCore");
+            let core = self
+                .core
+                .or(Option::Some(Default::default()))
+                .expect("expected RequestCore");
             let request = Request {
                 id: self.id,
                 from,
                 to: self.to.expect("expected to address"),
-                core
+                core,
             };
             Ok(request)
         }
     }
 
-    #[derive(Debug,Clone,Serialize,Deserialize)]
+    #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct Response {
         pub id: String,
         pub from: Address,
         pub to: Address,
         pub core: ResponseCore,
-        pub response_to: String
+        pub response_to: String,
     }
 
     impl Response {
-        pub fn new( core: ResponseCore, from: Address, to: Address, response_to: String ) -> Self {
+        pub fn new(core: ResponseCore, from: Address, to: Address, response_to: String) -> Self {
             Self {
                 id: unique_id(),
                 to,
                 from,
                 core,
-                response_to
+                response_to,
             }
         }
 
-        pub fn ok_or(self) -> Result<Self,Error> {
+        pub fn ok_or(self) -> Result<Self, Error> {
             if self.core.code >= 200 && self.core.code <= 299 {
                 Ok(self)
             } else {
@@ -3058,33 +3031,24 @@ pub mod messaging {
         }
     }
 
-    #[derive(Debug,Clone,Serialize,Deserialize)]
+    #[derive(Debug, Clone, Serialize, Deserialize)]
     pub enum Message {
         Request(Request),
-        Response(Response)
+        Response(Response),
     }
 
-    impl Message{
-
+    impl Message {
         pub fn payload(&self) -> Payload {
             match self {
-                Message::Request(request) => {
-                    request.core.body.clone()
-                }
-                Message::Response(response) => {
-                    response.core.body.clone()
-                }
+                Message::Request(request) => request.core.body.clone(),
+                Message::Response(response) => response.core.body.clone(),
             }
         }
 
         pub fn to(&self) -> Address {
             match self {
-                Message::Request(request) => {
-                    request.to.clone()
-                }
-                Message::Response(response) => {
-                    response.to.clone()
-                }
+                Message::Request(request) => request.to.clone(),
+                Message::Response(response) => response.to.clone(),
             }
         }
     }
@@ -3100,10 +3064,7 @@ pub mod messaging {
             Self::Response(response)
         }
     }
-
 }
-
-
 
 pub mod frame {
     use std::convert::TryInto;
@@ -3124,12 +3085,9 @@ pub mod frame {
 
     impl From<Vec<u8>> for PrimitiveFrame {
         fn from(value: Vec<u8>) -> Self {
-            Self {
-                data: value
-            }
+            Self { data: value }
         }
     }
-
 
     impl From<String> for PrimitiveFrame {
         fn from(value: String) -> Self {
@@ -3165,20 +3123,21 @@ pub mod bin {
 }
 
 pub mod payload {
+    use serde::{Deserialize, Serialize};
     use std::collections::HashMap;
     use std::ops::{Deref, DerefMut};
-    use serde::{Deserialize, Serialize};
 
     use crate::error::Error;
     use crate::version::v0_0_1::bin::Bin;
-    use crate::version::v0_0_1::id::{Address, ResourceKind, Meta, PayloadClaim, ResourceType, CaptureAddress};
-    use crate::version::v0_0_1::pattern::TksPattern;
-    use std::str::FromStr;
-    use std::sync::Arc;
     use crate::version::v0_0_1::entity::request::{Action, Rc, RcCommandType, RequestCore};
+    use crate::version::v0_0_1::id::{
+        Address, CaptureAddress, Meta, PayloadClaim, ResourceKind, ResourceType,
+    };
+    use crate::version::v0_0_1::pattern::TksPattern;
     use crate::version::v0_0_1::resource::{Resource, ResourceStub, Status};
     use crate::version::v0_0_1::util::{ValueMatcher, ValuePattern};
-
+    use std::str::FromStr;
+    use std::sync::Arc;
 
     #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, strum_macros::Display)]
     pub enum Payload {
@@ -3197,7 +3156,7 @@ pub mod payload {
             }
         }
 
-        pub fn from_bin( bin: Bin ) -> Self {
+        pub fn from_bin(bin: Bin) -> Self {
             Self::Primitive(Primitive::Bin(bin))
         }
 
@@ -3210,18 +3169,12 @@ pub mod payload {
             }
         }
 
-        pub fn to_bin(self) -> Result<Bin,Error> {
+        pub fn to_bin(self) -> Result<Bin, Error> {
             match self {
-                Payload::Empty => {
-                    Ok(Arc::new(vec![]))
-                }
-                Payload::Primitive(primitive) => { primitive.to_bin() }
-                Payload::List(list) => {
-                    list.to_bin()
-                }
-                Payload::Map(map) => {
-                    map.to_bin()
-                }
+                Payload::Empty => Ok(Arc::new(vec![])),
+                Payload::Primitive(primitive) => primitive.to_bin(),
+                Payload::List(list) => list.to_bin(),
+                Payload::Map(map) => map.to_bin(),
             }
         }
     }
@@ -3231,14 +3184,11 @@ pub mod payload {
 
         fn try_into(self) -> Result<Primitive, Self::Error> {
             match self {
-                Payload::Primitive(primitive) => {
-                    Ok(primitive)
-                }
-                _ => { Err("Payload type must be Primitive".into())}
+                Payload::Primitive(primitive) => Ok(primitive),
+                _ => Err("Payload type must be Primitive".into()),
             }
         }
     }
-
 
     #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
     pub struct PayloadMap {
@@ -3297,7 +3247,7 @@ pub mod payload {
         }
 
          */
-        pub fn to_bin(self) -> Result<Bin,Error>{
+        pub fn to_bin(self) -> Result<Bin, Error> {
             Ok(Arc::new(bincode::serialize(&self)?))
         }
 
@@ -3309,32 +3259,30 @@ pub mod payload {
     }
 
     #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
-    pub struct Errors{
-        map: HashMap<String,String>
+    pub struct Errors {
+        map: HashMap<String, String>,
     }
 
-    impl Errors{
-        pub fn empty()->Self {
+    impl Errors {
+        pub fn empty() -> Self {
             Self {
-                map: HashMap::new()
+                map: HashMap::new(),
             }
         }
 
-        pub fn default( message: &str ) -> Self {
+        pub fn default(message: &str) -> Self {
             let mut map = HashMap::new();
-            map.insert("default".to_string(), message.to_string() );
-            Self {
-                map
-            }
+            map.insert("default".to_string(), message.to_string());
+            Self { map }
         }
     }
 
     impl ToString for Errors {
         fn to_string(&self) -> String {
             let mut rtn = String::new();
-            for (index,(_,value)) in self.iter().enumerate() {
-                rtn.push_str(value.as_str() );
-                if index == self.len()-1 {
+            for (index, (_, value)) in self.iter().enumerate() {
+                rtn.push_str(value.as_str());
+                if index == self.len() - 1 {
                     rtn.push_str("\n");
                 }
             }
@@ -3343,7 +3291,7 @@ pub mod payload {
     }
 
     impl Deref for Errors {
-        type Target = HashMap<String,String>;
+        type Target = HashMap<String, String>;
 
         fn deref(&self) -> &Self::Target {
             &self.map
@@ -3361,7 +3309,7 @@ pub mod payload {
         Int(i64),
         Status(Status),
         Resource(Resource),
-        Errors(Errors)
+        Errors(Errors),
     }
 
     impl Primitive {
@@ -3380,41 +3328,27 @@ pub mod payload {
             }
         }
 
-        pub fn to_bin(self) -> Result<Bin,Error> {
+        pub fn to_bin(self) -> Result<Bin, Error> {
             match self {
                 Primitive::Text(text) => {
                     let text = text.into_bytes();
-                    Ok(Arc::new( text ))
+                    Ok(Arc::new(text))
                 }
                 Primitive::Address(address) => {
                     let address = address.to_string().into_bytes();
-                    Ok(Arc::new( address ))
+                    Ok(Arc::new(address))
                 }
-                Primitive::Stub(stub) => {
-                    Ok(Arc::new(bincode::serialize(&stub)?))
-                }
-                Primitive::Meta(meta) => {
-                    Ok(Arc::new(bincode::serialize(&meta)?))
-                }
-                Primitive::Bin(bin) => {
-                    Ok(bin)
-                }
-                Primitive::Boolean(flag) => {
-                    Ok(Arc::new(flag.to_string().into_bytes()))
-                }
-                Primitive::Int(int) => {
-                    Ok(Arc::new(int.to_string().into_bytes()))
-                }
+                Primitive::Stub(stub) => Ok(Arc::new(bincode::serialize(&stub)?)),
+                Primitive::Meta(meta) => Ok(Arc::new(bincode::serialize(&meta)?)),
+                Primitive::Bin(bin) => Ok(bin),
+                Primitive::Boolean(flag) => Ok(Arc::new(flag.to_string().into_bytes())),
+                Primitive::Int(int) => Ok(Arc::new(int.to_string().into_bytes())),
                 Primitive::Status(status) => {
                     let status = status.to_string().into_bytes();
-                    Ok(Arc::new( status ) )
+                    Ok(Arc::new(status))
                 }
-                Primitive::Resource(resource) => {
-                    Ok(Arc::new(bincode::serialize(&resource)?))
-                }
-                Primitive::Errors(errors) => {
-                    Ok(Arc::new(bincode::serialize(&errors)?))
-                }
+                Primitive::Resource(resource) => Ok(Arc::new(bincode::serialize(&resource)?)),
+                Primitive::Errors(errors) => Ok(Arc::new(bincode::serialize(&errors)?)),
             }
         }
     }
@@ -3424,12 +3358,8 @@ pub mod payload {
 
         fn try_into(self) -> Result<Bin, Self::Error> {
             match self {
-                Primitive::Bin(bin) => {
-                    Ok(bin)
-                }
-                _ => {
-                    Err("Primitive must be of type Bin".into())
-                }
+                Primitive::Bin(bin) => Ok(bin),
+                _ => Err("Primitive must be of type Bin".into()),
             }
         }
     }
@@ -3439,16 +3369,11 @@ pub mod payload {
 
         fn try_into(self) -> Result<String, Self::Error> {
             match self {
-                Primitive::Text(text) => {
-                    Ok(text)
-                }
-                _ => {
-                    Err("Primitive must be of type Text".into())
-                }
+                Primitive::Text(text) => Ok(text),
+                _ => Err("Primitive must be of type Text".into()),
             }
         }
     }
-
 
     #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
     pub struct PrimitiveList {
@@ -3456,16 +3381,13 @@ pub mod payload {
         pub list: Vec<Primitive>,
     }
 
-
-    impl ToString for PrimitiveList
-    {
+    impl ToString for PrimitiveList {
         fn to_string(&self) -> String {
             format!("{}[]", self.primitive_type.to_string())
         }
     }
 
-    impl PrimitiveList
-    {
+    impl PrimitiveList {
         pub fn new(primitive_type: PrimitiveType) -> Self {
             Self {
                 primitive_type,
@@ -3480,19 +3402,18 @@ pub mod payload {
                         self.primitive_type.to_string(),
                         primitive.primitive_type().to_string()
                     )
-                        .into());
+                    .into());
                 }
             }
             Ok(())
         }
 
-        pub fn to_bin(self) -> Result<Bin,Error>{
+        pub fn to_bin(self) -> Result<Bin, Error> {
             Ok(Arc::new(bincode::serialize(&self)?))
         }
     }
 
-    impl Deref for PrimitiveList
-    {
+    impl Deref for PrimitiveList {
         type Target = Vec<Primitive>;
 
         fn deref(&self) -> &Self::Target {
@@ -3500,22 +3421,12 @@ pub mod payload {
         }
     }
 
-    impl DerefMut for PrimitiveList
-    {
+    impl DerefMut for PrimitiveList {
         fn deref_mut(&mut self) -> &mut Self::Target {
             &mut self.list
         }
     }
-   #[derive(
-        Debug,
-        Clone,
-        strum_macros::Display,
-        Eq,
-        PartialEq,
-        Hash,
-        Serialize,
-        Deserialize,
-    )]
+    #[derive(Debug, Clone, strum_macros::Display, Eq, PartialEq, Hash, Serialize, Deserialize)]
     pub enum PrimitiveType {
         Address,
         Text,
@@ -3528,7 +3439,7 @@ pub mod payload {
         Status,
         Resource,
         Errors,
-   }
+    }
 
     impl FromStr for PrimitiveType {
         type Err = Error;
@@ -3545,20 +3456,20 @@ pub mod payload {
                 "Stub" => Self::Stub,
                 "Status" => Self::Status,
                 "Resource" => Self::Resource,
-                what => return Err(format!("unrecognized PrimitiveType: {}",what).into())
+                what => return Err(format!("unrecognized PrimitiveType: {}", what).into()),
             })
         }
     }
 
     #[derive(
-    Debug,
-    Clone,
-    Serialize,
-    Deserialize,
-    Eq,
-    PartialEq,
-    strum_macros::Display,
-    strum_macros::EnumString,
+        Debug,
+        Clone,
+        Serialize,
+        Deserialize,
+        Eq,
+        PartialEq,
+        strum_macros::Display,
+        strum_macros::EnumString,
     )]
     pub enum PayloadType {
         Empty,
@@ -3582,7 +3493,7 @@ pub mod payload {
                         self.primitive.to_string(),
                         i.primitive_type().to_string()
                     )
-                        .into());
+                    .into());
                 }
             }
 
@@ -3616,7 +3527,7 @@ pub mod payload {
                             "Payload expected: Empty found: {}",
                             payload.payload_type().to_string()
                         )
-                            .into())
+                        .into())
                     }
                 }
                 PayloadTypePattern::Primitive(expected) => {
@@ -3629,7 +3540,7 @@ pub mod payload {
                                 expected.to_string(),
                                 found.primitive_type().to_string()
                             )
-                                .into())
+                            .into())
                         }
                     } else {
                         Err(format!(
@@ -3637,7 +3548,7 @@ pub mod payload {
                             expected.to_string(),
                             payload.payload_type().to_string()
                         )
-                            .into())
+                        .into())
                     }
                 }
                 PayloadTypePattern::List(expected) => {
@@ -3648,7 +3559,7 @@ pub mod payload {
                             "Payload expected: List found: {}",
                             payload.payload_type().to_string()
                         )
-                            .into())
+                        .into())
                     }
                 }
                 PayloadTypePattern::Map(expected) => {
@@ -3660,7 +3571,7 @@ pub mod payload {
                             expected.to_string(),
                             payload.payload_type().to_string()
                         )
-                            .into())
+                        .into())
                     }
                 }
             }
@@ -3704,22 +3615,18 @@ pub mod payload {
     impl CallKind {
         pub fn core_with_body(self, body: Payload) -> RequestCore {
             match self {
-                CallKind::Msg(msg) => {
-                    RequestCore {
-                        headers: Default::default(),
-                        action: Action::Msg(msg.action),
-                        path: msg.path,
-                        body
-                    }
-                }
-                CallKind::Http(http) => {
-                    RequestCore {
-                        headers: Default::default(),
-                        action: Action::Http(http.method),
-                        path: http.path,
-                        body
-                    }
-                }
+                CallKind::Msg(msg) => RequestCore {
+                    headers: Default::default(),
+                    action: Action::Msg(msg.action),
+                    path: msg.path,
+                    body,
+                },
+                CallKind::Http(http) => RequestCore {
+                    headers: Default::default(),
+                    action: Action::Http(http.method),
+                    path: http.path,
+                    body,
+                },
             }
         }
     }
@@ -3735,8 +3642,6 @@ pub mod payload {
         pub path: String,
         pub action: String,
     }
-
-
 
     impl MsgCall {
         pub fn new(action: String, path: String) -> Self {
@@ -3769,15 +3674,15 @@ pub mod payload {
     }
 
     #[derive(
-    Debug,
-    Clone,
-    Eq,
-    PartialEq,
-    Serialize,
-    Deserialize,
-    Hash,
-    strum_macros::Display,
-    strum_macros::EnumString,
+        Debug,
+        Clone,
+        Eq,
+        PartialEq,
+        Serialize,
+        Deserialize,
+        Hash,
+        strum_macros::Display,
+        strum_macros::EnumString,
     )]
     pub enum HttpMethod {
         Get,
@@ -3824,7 +3729,7 @@ pub mod payload {
                     self.to_string(),
                     found.to_string()
                 )
-                    .into())
+                .into())
             }
         }
     }
@@ -3839,14 +3744,14 @@ pub mod payload {
     }
 
     #[derive(
-    Debug,
-    Clone,
-    Eq,
-    PartialEq,
-    strum_macros::Display,
-    strum_macros::EnumString,
-    Serialize,
-    Deserialize,
+        Debug,
+        Clone,
+        Eq,
+        PartialEq,
+        strum_macros::Display,
+        strum_macros::EnumString,
+        Serialize,
+        Deserialize,
     )]
     pub enum PayloadFormat {
         #[strum(serialize = "json")]
@@ -3856,11 +3761,7 @@ pub mod payload {
     }
 
     impl PrimitiveType {
-        pub fn is_match(
-            &self,
-            primitive: &Primitive,
-        ) -> Result<(), Error>
-        {
+        pub fn is_match(&self, primitive: &Primitive) -> Result<(), Error> {
             match primitive {
                 Primitive::Text(_) => {
                     if *self == Self::Text {
@@ -3926,7 +3827,7 @@ pub mod payload {
                     }
                 }
                 Primitive::Errors(errors) => {
-                    if *self == Self::Errors{
+                    if *self == Self::Errors {
                         Ok(())
                     } else {
                         Err("expected Errors primitive".into())
@@ -3990,7 +3891,7 @@ pub mod payload {
                                 "key: '{}' not required or allowed by Map constraints",
                                 key
                             )
-                                .into());
+                            .into());
                         }
                         ValuePattern::Pattern(pattern) => {
                             pattern.is_match(payload)?;
@@ -4006,7 +3907,7 @@ pub mod payload {
                         "missing required key : '{}' defined in Map constraints",
                         key
                     )
-                        .into());
+                    .into());
                 }
                 constraint.is_match(
                     &map.get(key)
@@ -4114,7 +4015,6 @@ pub mod payload {
         Ref(PAYLOAD_REF),
     }
 
-
     /*
     impl<FromPayload, FromPayloadRef> PayloadDelivery<FromPayload, FromPayloadRef> {
         pub fn convert<ToPayload, ToPayloadRef>(
@@ -4133,8 +4033,6 @@ pub mod payload {
         }
     }
      */
-
-
 }
 
 pub mod command {
@@ -4178,20 +4076,23 @@ pub mod command {
 
         #[derive(Debug, Clone, Serialize, Deserialize)]
         pub enum PropertyMod {
-            Set{ key:String, value: String, lock: bool },
-            UnSet(String)
+            Set {
+                key: String,
+                value: String,
+                lock: bool,
+            },
+            UnSet(String),
         }
-
 
         #[derive(Debug, Clone, Serialize, Deserialize)]
         pub struct SetProperties {
-            pub map: HashMap<String,PropertyMod>
+            pub map: HashMap<String, PropertyMod>,
         }
 
         impl Default for SetProperties {
             fn default() -> Self {
                 Self {
-                    map: Default::default()
+                    map: Default::default(),
                 }
             }
         }
@@ -4199,36 +4100,35 @@ pub mod command {
         impl SetProperties {
             pub fn new() -> Self {
                 Self {
-                    map: HashMap::new()
+                    map: HashMap::new(),
                 }
             }
 
-            pub fn append( &mut self, properties: SetProperties ) {
-                for (_,property) in properties.map.into_iter() {
-                    self.push( property );
+            pub fn append(&mut self, properties: SetProperties) {
+                for (_, property) in properties.map.into_iter() {
+                    self.push(property);
                 }
             }
 
-            pub fn push( &mut self, property: PropertyMod ) {
+            pub fn push(&mut self, property: PropertyMod) {
                 match &property {
-                    PropertyMod::Set { key, value,lock } => {
-                        self.map.insert(key.clone(),property);
+                    PropertyMod::Set { key, value, lock } => {
+                        self.map.insert(key.clone(), property);
                     }
                     PropertyMod::UnSet(key) => {
-                        self.map.insert(key.clone(),property);
+                        self.map.insert(key.clone(), property);
                     }
                 }
             }
         }
 
         impl Deref for SetProperties {
-            type Target = HashMap<String,PropertyMod>;
+            type Target = HashMap<String, PropertyMod>;
 
             fn deref(&self) -> &Self::Target {
                 &self.map
             }
         }
-
 
         #[derive(Debug, Clone, Serialize, Deserialize, strum_macros::Display)]
         pub enum SetLabel {
@@ -4264,8 +4164,6 @@ pub mod command {
             }
         }
     }
-
-
 }
 
 pub mod msg {
@@ -4274,14 +4172,14 @@ pub mod msg {
     use crate::version::v0_0_1::entity::response::ResponseCore;
     use crate::version::v0_0_1::id::Meta;
     use crate::version::v0_0_1::payload::{Errors, Payload, Primitive};
-    use serde::{Serialize,Deserialize};
+    use serde::{Deserialize, Serialize};
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
-    pub struct MsgRequest{
+    pub struct MsgRequest {
         pub action: String,
         pub headers: Meta,
         pub path: String,
-        pub body: Payload
+        pub body: Payload,
     }
 
     impl MsgRequest {
@@ -4289,7 +4187,7 @@ pub mod msg {
             ResponseCore {
                 headers: Default::default(),
                 code: 200,
-                body: payload
+                body: payload,
             }
         }
 
@@ -4298,7 +4196,7 @@ pub mod msg {
             ResponseCore {
                 headers: Default::default(),
                 code: 500,
-                body: Payload::Primitive(Primitive::Errors(errors))
+                body: Payload::Primitive(Primitive::Errors(errors)),
             }
         }
     }
@@ -4312,7 +4210,7 @@ pub mod msg {
                     action,
                     headers: core.headers,
                     path: core.path,
-                    body: core.body
+                    body: core.body,
                 })
             } else {
                 Err("expected Msg".into())
@@ -4325,21 +4223,21 @@ pub mod http {
     use std::collections::HashMap;
     use std::sync::Arc;
 
-    use serde::{Deserialize, Serialize};
     use crate::error::Error;
+    use serde::{Deserialize, Serialize};
 
-    use crate::version::v0_0_1::Bin;
     use crate::version::v0_0_1::entity::request::{Action, RequestCore};
     use crate::version::v0_0_1::entity::response::ResponseCore;
     use crate::version::v0_0_1::id::Meta;
     use crate::version::v0_0_1::payload::{Errors, HttpMethod, Payload, Primitive};
+    use crate::version::v0_0_1::Bin;
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct HttpRequest {
         pub method: HttpMethod,
         pub headers: Meta,
         pub path: String,
-        pub body: Bin
+        pub body: Bin,
     }
 
     impl HttpRequest {
@@ -4352,11 +4250,10 @@ pub mod http {
             ResponseCore {
                 headers: Default::default(),
                 code: 500,
-                body: Payload::Primitive(Primitive::Errors(errors))
+                body: Payload::Primitive(Primitive::Errors(errors)),
             }
         }
     }
-
 
     impl TryFrom<RequestCore> for HttpRequest {
         type Error = Error;
@@ -4367,7 +4264,7 @@ pub mod http {
                     method,
                     headers: core.headers,
                     path: core.path,
-                    body: core.body.to_bin()?
+                    body: core.body.to_bin()?,
                 })
             } else {
                 Err("expected Http".into())
@@ -4381,7 +4278,7 @@ pub mod http {
                 action: Action::Http(self.method),
                 headers: self.headers,
                 path: self.path,
-                body: Payload::Primitive(Primitive::Bin(self.body))
+                body: Payload::Primitive(Primitive::Bin(self.body)),
             }
         }
     }
@@ -4396,7 +4293,7 @@ pub mod http {
     pub struct HttpResponse {
         pub code: u32,
         pub headers: HashMap<String, String>,
-        pub body: Bin
+        pub body: Bin,
     }
 
     impl HttpResponse {
@@ -4404,7 +4301,7 @@ pub mod http {
             Self {
                 headers: Default::default(),
                 code: 500,
-                body: Arc::new(vec![])
+                body: Arc::new(vec![]),
             }
         }
     }
@@ -4473,7 +4370,7 @@ pub mod config {
         pub body: Body,
     }
 
-    impl <Body> Deref for Config<Body> {
+    impl<Body> Deref for Config<Body> {
         type Target = Body;
 
         fn deref(&self) -> &Self::Target {
@@ -4494,19 +4391,21 @@ pub mod config {
 
     pub mod bind {
         use crate::error::Error;
+        use crate::version::v0_0_1::entity::request::{Rc, RequestCore};
         use crate::version::v0_0_1::entity::EntityType;
-        use crate::version::v0_0_1::pattern::{Block, EntityPattern, HttpPattern, MsgPattern, RcPattern};
+        use crate::version::v0_0_1::id::CaptureAddress;
+        use crate::version::v0_0_1::pattern::{
+            Block, EntityPattern, HttpPattern, MsgPattern, RcPattern,
+        };
         use crate::version::v0_0_1::payload::Call;
+        use crate::version::v0_0_1::payload::PayloadType::Primitive;
         use crate::version::v0_0_1::payload::{Payload, PayloadPattern};
         use crate::version::v0_0_1::util::{ValueMatcher, ValuePattern};
         use serde::{Deserialize, Serialize};
         use std::convert::TryInto;
-        use crate::version::v0_0_1::entity::request::{Rc, RequestCore};
-        use crate::version::v0_0_1::id::CaptureAddress;
-        use crate::version::v0_0_1::payload::PayloadType::Primitive;
 
         pub struct ProtoBind {
-            pub sections: Vec<Section>,
+            pub sections: Vec<PipelinesSubScope>,
         }
 
         impl TryInto<BindConfig> for ProtoBind {
@@ -4519,19 +4418,19 @@ pub mod config {
 
                 for section in self.sections {
                     match section {
-                        Section::Msg(msg) => {
+                        PipelinesSubScope::Msg(msg) => {
                             if opt_msg.is_some() {
                                 return Err("multiple Msg sections not allowed.".into());
                             }
                             opt_msg = Some(msg);
                         }
-                        Section::Http(http) => {
+                        PipelinesSubScope::Http(http) => {
                             if opt_http.is_some() {
                                 return Err("multiple Http sections not allowed.".into());
                             }
                             opt_http = Some(http);
                         }
-                        Section::Rc(rc) => {
+                        PipelinesSubScope::Rc(rc) => {
                             if opt_rc.is_some() {
                                 return Err("multiple Rc sections not allowed.".into());
                             }
@@ -4570,7 +4469,6 @@ pub mod config {
             }
         }
 
-
         #[derive(Debug, Clone, Serialize, Deserialize)]
         pub struct Scope<T, E> {
             pub scope_type: T,
@@ -4586,8 +4484,8 @@ pub mod config {
             }
         }
 
-        impl<T> Scope<T,Selector<HttpPattern>> {
-            pub fn find_match( &self, m: &RequestCore) -> Result<Selector<HttpPattern>,Error> {
+        impl<T> Scope<T, Selector<HttpPattern>> {
+            pub fn find_match(&self, m: &RequestCore) -> Result<Selector<HttpPattern>, Error> {
                 for e in &self.elements {
                     if e.is_match(m).is_ok() {
                         return Ok(e.clone());
@@ -4597,8 +4495,8 @@ pub mod config {
             }
         }
 
-        impl<T> Scope<T,Selector<MsgPattern>> {
-            pub fn find_match( &self, m: &RequestCore ) -> Result<Selector<MsgPattern>,Error> {
+        impl<T> Scope<T, Selector<MsgPattern>> {
+            pub fn find_match(&self, m: &RequestCore) -> Result<Selector<MsgPattern>, Error> {
                 for e in &self.elements {
                     if e.is_match(m).is_ok() {
                         return Ok(e.clone());
@@ -4607,7 +4505,6 @@ pub mod config {
                 Err("no match".into())
             }
         }
-
 
         #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
         pub struct Pipeline {
@@ -4621,9 +4518,9 @@ pub mod config {
 
             pub fn consume(&mut self) -> Option<PipelineSegment> {
                 if self.segments.is_empty() {
-                   Option::None
+                    Option::None
                 } else {
-                   Option::Some(self.segments.remove(0))
+                    Option::Some(self.segments.remove(0))
                 }
             }
         }
@@ -4658,7 +4555,7 @@ pub mod config {
             Internal,
             Call(Call),
             Return,
-            CaptureAddress(CaptureAddress)
+            CaptureAddress(CaptureAddress),
         }
 
         #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -4679,9 +4576,8 @@ pub mod config {
             }
         }
 
-
         impl Selector<MsgPattern> {
-            pub fn is_match(&self, m: &RequestCore)  -> Result<(), Error> {
+            pub fn is_match(&self, m: &RequestCore) -> Result<(), Error> {
                 self.pattern.is_match(m)
             }
         }
@@ -4692,13 +4588,11 @@ pub mod config {
             }
         }
 
-
         impl Selector<HttpPattern> {
             pub fn is_match(&self, m: &RequestCore) -> Result<(), Error> {
-                    self.pattern.is_match(m)
+                self.pattern.is_match(m)
             }
         }
-
 
         pub enum Whitelist {
             Any,
@@ -4723,7 +4617,7 @@ pub mod config {
             Response,
         }
 
-        pub enum Section {
+        pub enum PipelinesSubScope {
             Msg(Scope<EntityType, Selector<MsgPattern>>),
             Http(Scope<EntityType, Selector<HttpPattern>>),
             Rc(Scope<EntityType, Selector<RcPattern>>),
@@ -4737,36 +4631,52 @@ pub mod config {
         }
 
         pub mod parse {
+            use std::borrow::Borrow;
             use crate::version::v0_0_1::config::bind::{
-                Pipeline, PipelineSegment, PipelineStep, PipelineStop, ProtoBind, Scope, Section,
-                Selector, StepKind,
+                Pipeline, PipelineSegment, PipelineStep, PipelineStop, PipelinesSubScope,
+                ProtoBind, Scope, Selector, StepKind,
             };
             use crate::version::v0_0_1::entity::EntityType;
             use crate::version::v0_0_1::parse::{capture_address, Res};
-            use crate::version::v0_0_1::pattern::{call, entity_pattern, http_pattern_scoped, msg_pattern_scoped, pipeline_block, rc_pattern_scoped, EntityPattern, HttpPattern, MsgPattern, RcPattern, http_pattern};
+            use crate::version::v0_0_1::pattern::{
+                call, entity_pattern, http_pattern, http_pattern_scoped, msg_pattern_scoped,
+                pipeline_block, rc_pattern_scoped, EntityPattern, HttpPattern, MsgPattern,
+                RcPattern,
+            };
             use nom::branch::alt;
             use nom::bytes::complete::tag;
             use nom::character::complete::multispace0;
-            use nom::combinator::{all_consuming, opt};
-            use nom::error::context;
+            use nom::combinator::{all_consuming, fail, opt, success};
+            use nom::error::{context, ContextError, ParseError};
             use nom::multi::{many0, many1};
             use nom::sequence::{delimited, tuple};
+            use nom::{AsChar, Compare, IResult, InputIter, InputLength, InputTake, Parser, UnspecializedInput, InputTakeAtPosition};
+            use nom_supreme::error::ErrorTree;
+            use nom_supreme::final_parser::final_parser;
+            use nom_supreme::ParserExt;
+
+            pub fn final_bind(input: &str) -> Result<ProtoBind,ErrorTree<&str>>
+            {
+                final_parser(bind)(input)
+            }
 
             pub fn bind(input: &str) -> Res<&str, ProtoBind> {
-                context( "bind",
-                delimited(
-                    multispace0,
-                    tuple((
-                        tag("Bind"),
+                context(
+                    "Bind",
+                    delimited(
                         multispace0,
-                        delimited(
-                            tag("{"),
-                            delimited(multispace0, sections, multispace0),
-                            tag("}"),
-                        ),
-                    )),
-                    multispace0,
-                ))(input)
+                        tuple((
+                            context("expected 'Bind'", tag("Bind")),
+                            multispace0,
+                            delimited(
+                                context("expected '{' (open Bind scope)", tag("{")),
+                                delimited(multispace0, pipelines_scope, multispace0),
+                                context("expected '}' (close Bind scope)", tag("}")),
+                            ),
+                        )),
+                        multispace0,
+                    ),
+                )(input)
                 .map(|(next, (_, _, sections))| {
                     let bind = ProtoBind { sections };
 
@@ -4774,74 +4684,123 @@ pub mod config {
                 })
             }
 
-            pub fn sections(input: &str) -> Res<&str, Vec<Section>> {
-                delimited(
-                    multispace0,
-                    many0(delimited(multispace0, section, multispace0)),
-                    multispace0,
+            fn scope<I,E, F, O>(
+                object: &'static str,
+                mut f: F,
+            ) -> impl FnMut(I) -> IResult<I, O, E>
+            where
+                I: Clone+InputTake+InputLength+InputIter+ Compare<&'static str>+InputTakeAtPosition,
+                <I as InputIter>::Item: AsChar,
+                <I as InputIter>::Item: Clone,
+                <I as InputTakeAtPosition>::Item: AsChar + Clone,
+                F: Parser<I, O, E>,
+                E: ParseError<I> + ContextError<I>,
+            {
+                let parser = move |i: I| {
+
+                    let (next,_) = context("expect-scope-selector",tag(object))(i)?;
+                    let (next,_) = multispace0(next)?;
+                    let (next,_) = context( "expected: '{' (open scope)", tag("{"), )(next)?;
+                    let (next, rtn ) = f.parse(next)?;
+                    let (next,_) = context( "expected: '}' (close scope)", tag("}"), )(next)?;
+                    Ok( (next, rtn))
+                };
+
+                context(object, parser )
+            }
+
+            pub fn pipelines_scope(input: &str) -> Res<&str, Vec<PipelinesSubScope>> {
+                scope("Pipelines", many0(pipelines_sub_scope))(input)
+            }
+
+            pub fn pipelines_sub_scope(input: &str) -> Res<&str, PipelinesSubScope> {
+                alt((
+                    msg_section,
+                    http_section,
+                    rc_section,
+                    context("expected: 'Rc', 'Msg' or 'Http' (PipelinesSubScope)", fail),
+                ))(input)
+            }
+
+            pub fn msg_section(input: &str) -> Res<&str, PipelinesSubScope> {
+                context(
+                    "Msg",
+                    tuple((
+                        tag("Msg"),
+                        multispace0,
+                        delimited(
+                            context("expected: '{' (open Msg scope)", tag("{")),
+                            delimited(multispace0, msg_selectors, multispace0),
+                            context("expected: '}' (close Msg scope)", tag("}")),
+                        ),
+                    )),
                 )(input)
-            }
-
-            pub fn section(input: &str) -> Res<&str, Section> {
-                alt((msg_section, http_section, rc_section))(input)
-            }
-
-            pub fn msg_section(input: &str) -> Res<&str, Section> {
-                tuple((
-                    tag("Msg"),
-                    multispace0,
-                    delimited(
-                        tag("{"),
-                        delimited(multispace0, msg_selectors, multispace0),
-                        tag("}"),
-                    ),
-                ))(input)
                 .map(|(next, (_, _, selectors))| {
-                    (next, Section::Msg(Scope::new(EntityType::Msg, selectors)))
+                    (
+                        next,
+                        PipelinesSubScope::Msg(Scope::new(EntityType::Msg, selectors)),
+                    )
                 })
             }
 
-            pub fn http_section(input: &str) -> Res<&str, Section> {
-                tuple((
-                    tag("Http"),
-                    multispace0,
-                    delimited(
-                        tag("{"),
-                        delimited(multispace0, http_selectors, multispace0),
-                        tag("}"),
-                    ),
-                ))(input)
+            pub fn http_section(input: &str) -> Res<&str, PipelinesSubScope> {
+                context(
+                    "Http",
+                    tuple((
+                        tag("Http"),
+                        multispace0,
+                        delimited(
+                            context("expected: '{' (open Http scope)", tag("{")),
+                            delimited(multispace0, http_selectors, multispace0),
+                            context("expected: '}' (close Http scope)", tag("}")),
+                        ),
+                    )),
+                )(input)
                 .map(|(next, (_, _, selectors))| {
-                    (next, Section::Http(Scope::new(EntityType::Http, selectors)))
+                    (
+                        next,
+                        PipelinesSubScope::Http(Scope::new(EntityType::Http, selectors)),
+                    )
                 })
             }
 
-            pub fn rc_section(input: &str) -> Res<&str, Section> {
-                tuple((
-                    tag("Rc"),
-                    multispace0,
-                    delimited(
-                        tag("{"),
-                        delimited(multispace0, rc_selectors, multispace0),
-                        tag("}"),
-                    ),
-                ))(input)
+            pub fn rc_section(input: &str) -> Res<&str, PipelinesSubScope> {
+                context(
+                    "Rc",
+                    tuple((
+                        tag("Rc"),
+                        multispace0,
+                        delimited(
+                            context("expected: '{' (open Rc scope)", tag("{")),
+                            delimited(multispace0, rc_selectors, multispace0),
+                            context("expected: '}' (close Rc scope)", tag("{")),
+                        ),
+                    )),
+                )(input)
                 .map(|(next, (_, _, selectors))| {
-                    (next, Section::Rc(Scope::new(EntityType::Rc, selectors)))
+                    (
+                        next,
+                        PipelinesSubScope::Rc(Scope::new(EntityType::Rc, selectors)),
+                    )
                 })
             }
 
             pub fn pipeline_step(input: &str) -> Res<&str, PipelineStep> {
-                tuple((many0(pipeline_block), alt((tag("->"), tag("=>")))))(input).map(
-                    |(next, (blocks, kind))| {
-                        let kind = match kind {
-                            "->" => StepKind::Request,
-                            "=>" => StepKind::Response,
-                            _ => panic!("nom parse rules should have selected -> or =>"),
-                        };
-                        (next, PipelineStep { kind, blocks })
-                    },
-                )
+                tuple((
+                    many0(pipeline_block),
+                    context(
+                        "expected '->' or '=>' (Request or Response operator)",
+                        alt((tag("->"), tag("=>"))),
+                    ),
+                ))(input)
+                .map(|(next, (blocks, kind))| {
+                    let kind = match kind {
+                        "->" => StepKind::Request,
+                        "=>" => StepKind::Response,
+                        _ => panic!("nom parse rules should have selected -> or =>"),
+                    };
+                    (next, PipelineStep { kind, blocks })
+                })
             }
 
             pub fn inner_pipeline_stop(input: &str) -> Res<&str, PipelineStop> {
@@ -4862,7 +4821,8 @@ pub mod config {
             }
 
             pub fn capture_address_pipeline_stop(input: &str) -> Res<&str, PipelineStop> {
-                capture_address(input).map(|(next, address)| (next, PipelineStop::CaptureAddress(address)))
+                capture_address(input)
+                    .map(|(next, address)| (next, PipelineStop::CaptureAddress(address)))
             }
 
             pub fn pipeline_stop(input: &str) -> Res<&str, PipelineStop> {
@@ -4870,7 +4830,7 @@ pub mod config {
                     inner_pipeline_stop,
                     return_pipeline_stop,
                     call_pipeline_stop,
-                    capture_address_pipeline_stop
+                    capture_address_pipeline_stop,
                 ))(input)
             }
 
@@ -4960,29 +4920,29 @@ pub mod entity {
     }
 
     pub mod request {
+        use crate::error::Error;
         use crate::version::v0_0_1::bin::Bin;
         use crate::version::v0_0_1::entity::request::create::Create;
+        use crate::version::v0_0_1::entity::request::get::Get;
         use crate::version::v0_0_1::entity::request::query::Query;
         use crate::version::v0_0_1::entity::request::select::Select;
+        use crate::version::v0_0_1::entity::request::set::Set;
         use crate::version::v0_0_1::entity::request::update::Update;
+        use crate::version::v0_0_1::entity::response::ResponseCore;
+        use crate::version::v0_0_1::fail;
         use crate::version::v0_0_1::fail::{BadRequest, Fail, NotFound};
-        use crate::version::v0_0_1::id::{Address, ResourceKind, Meta, PayloadClaim, ResourceType};
+        use crate::version::v0_0_1::http::HttpResponse;
+        use crate::version::v0_0_1::id::{Address, Meta, PayloadClaim, ResourceKind, ResourceType};
         use crate::version::v0_0_1::pattern::TksPattern;
         use crate::version::v0_0_1::payload::{Errors, HttpMethod, Payload, Primitive};
         use crate::version::v0_0_1::util::ValueMatcher;
-        use serde::{Serialize,Deserialize};
-        use crate::error::Error;
-        use crate::version::v0_0_1::entity::request::get::Get;
-        use crate::version::v0_0_1::entity::request::set::Set;
-        use crate::version::v0_0_1::entity::response::ResponseCore;
-        use crate::version::v0_0_1::fail;
-        use crate::version::v0_0_1::http::HttpResponse;
+        use serde::{Deserialize, Serialize};
 
         #[derive(Debug, Clone, Serialize, Deserialize)]
         pub enum Action {
             Rc(Rc),
             Http(HttpMethod),
-            Msg(String)
+            Msg(String),
         }
 
         impl Into<RequestCore> for Action {
@@ -4991,7 +4951,7 @@ pub mod entity {
                     headers: Default::default(),
                     action: self,
                     path: "/".to_string(),
-                    body: Payload::Empty
+                    body: Payload::Empty,
                 }
             }
         }
@@ -5010,51 +4970,46 @@ pub mod entity {
                     headers: Default::default(),
                     action: Action::Msg("Default".to_string()),
                     path: "/".to_string(),
-                    body: Payload::Empty
+                    body: Payload::Empty,
                 }
             }
         }
 
         impl RequestCore {
-
-            pub fn with_new_payload(self, payload: Payload  ) -> Self {
+            pub fn with_new_payload(self, payload: Payload) -> Self {
                 Self {
                     headers: self.headers,
                     path: self.path,
                     action: self.action,
-                    body: payload
+                    body: payload,
                 }
-
             }
 
             pub fn not_found(&self) -> ResponseCore {
-                ResponseCore{
+                ResponseCore {
                     headers: Default::default(),
                     code: 404,
-                    body: Payload::Empty
+                    body: Payload::Empty,
                 }
             }
 
             pub fn ok(&self, payload: Payload) -> ResponseCore {
-                ResponseCore{
+                ResponseCore {
                     headers: Default::default(),
                     code: 200,
-                    body: payload
+                    body: payload,
                 }
             }
 
-            pub fn fail(&self, error: &str ) -> ResponseCore {
+            pub fn fail(&self, error: &str) -> ResponseCore {
                 let errors = Errors::default(error);
                 ResponseCore {
                     headers: Default::default(),
                     code: 500,
-                    body: Payload::Primitive(Primitive::Errors(errors))
+                    body: Payload::Primitive(Primitive::Errors(errors)),
                 }
             }
         }
-
-
-
 
         #[derive(Debug, Clone, Serialize, Deserialize)]
         pub enum Rc {
@@ -5063,9 +5018,8 @@ pub mod entity {
             Update(Update),
             Query(Query),
             Get(Get),
-            Set(Set)
+            Set(Set),
         }
-
 
         impl Rc {
             pub fn get_type(&self) -> RcCommandType {
@@ -5075,20 +5029,20 @@ pub mod entity {
                     Rc::Update(_) => RcCommandType::Update,
                     Rc::Query(_) => RcCommandType::Query,
                     Rc::Get(_) => RcCommandType::Get,
-                    Rc::Set(_) => RcCommandType::Set
+                    Rc::Set(_) => RcCommandType::Set,
                 }
             }
         }
 
         #[derive(
-        Debug,
-        Clone,
-        Eq,
-        PartialEq,
-        strum_macros::Display,
-        strum_macros::EnumString,
-        Serialize,
-        Deserialize,
+            Debug,
+            Clone,
+            Eq,
+            PartialEq,
+            strum_macros::Display,
+            strum_macros::EnumString,
+            Serialize,
+            Deserialize,
         )]
         pub enum RcCommandType {
             Create,
@@ -5096,16 +5050,11 @@ pub mod entity {
             Update,
             Query,
             Get,
-            Set
+            Set,
         }
 
-        impl ValueMatcher<Rc>
-        for Rc
-        {
-            fn is_match(
-                &self,
-                x: &Rc,
-            ) -> Result<(), crate::error::Error> {
+        impl ValueMatcher<Rc> for Rc {
+            fn is_match(&self, x: &Rc) -> Result<(), crate::error::Error> {
                 if self.get_type() == x.get_type() {
                     Ok(())
                 } else {
@@ -5114,7 +5063,7 @@ pub mod entity {
                         self.to_string(),
                         x.to_string()
                     )
-                        .into())
+                    .into())
                 }
             }
         }
@@ -5125,38 +5074,35 @@ pub mod entity {
             }
         }
 
-
-
         pub mod set {
             use crate::version::v0_0_1::command::common::SetProperties;
             use crate::version::v0_0_1::id::Address;
-            use serde::{Serialize,Deserialize};
+            use serde::{Deserialize, Serialize};
 
-            #[derive(Debug, Clone,Serialize, Deserialize)]
+            #[derive(Debug, Clone, Serialize, Deserialize)]
             pub struct Set {
                 pub address: Address,
                 pub properties: SetProperties,
             }
         }
 
-        pub mod get{
+        pub mod get {
             use crate::version::v0_0_1::command::common::SetProperties;
             use crate::version::v0_0_1::id::Address;
-            use serde::{Serialize,Deserialize};
+            use serde::{Deserialize, Serialize};
 
-            #[derive(Debug, Clone,Serialize, Deserialize)]
+            #[derive(Debug, Clone, Serialize, Deserialize)]
             pub struct Get {
                 pub address: Address,
-                pub op: GetOp
+                pub op: GetOp,
             }
 
-            #[derive(Debug, Clone,Serialize, Deserialize)]
-            pub enum GetOp{
+            #[derive(Debug, Clone, Serialize, Deserialize)]
+            pub enum GetOp {
                 State,
-                Properties(Vec<String>)
+                Properties(Vec<String>),
             }
         }
-
 
         pub mod create {
             use std::convert::TryInto;
@@ -5173,14 +5119,14 @@ pub mod entity {
 
             pub enum AddressTemplateSegment {
                 AddressSegment(AddressSegment),
-                Wildcard(String)
+                Wildcard(String),
             }
 
             impl AddressTemplateSegment {
                 pub fn is_wildcard(&self) -> bool {
                     match self {
-                        AddressTemplateSegment::AddressSegment(_) => {false}
-                        AddressTemplateSegment::Wildcard(_) => {true}
+                        AddressTemplateSegment::AddressSegment(_) => false,
+                        AddressTemplateSegment::Wildcard(_) => true,
                     }
                 }
             }
@@ -5214,20 +5160,20 @@ pub mod entity {
                     Ok(ResourceKind {
                         resource_type: self.resource_type,
                         kind: self.kind,
-                        specific: None
+                        specific: None,
                     })
                 }
             }
 
             #[derive(Debug, Clone, Serialize, Deserialize)]
             pub enum Require {
-                File(String)
+                File(String),
             }
 
             #[derive(Debug, Clone, Serialize, Deserialize)]
             pub enum Fulfillment {
-                File{ name: String, content: Bin },
-                Complete
+                File { name: String, content: Bin },
+                Complete,
             }
 
             pub struct CreateOp {
@@ -5240,13 +5186,13 @@ pub mod entity {
             }
 
             impl CreateOp {
-                pub fn fulfillment( mut self, bin: Bin) -> Create {
+                pub fn fulfillment(mut self, bin: Bin) -> Create {
                     Create {
                         template: self.template,
                         state: StateSrc::StatefulDirect(Payload::Primitive(Primitive::Bin(bin))),
                         properties: self.properties,
                         strategy: self.strategy,
-                        registry: self.registry
+                        registry: self.registry,
                     }
                 }
             }
@@ -5258,11 +5204,10 @@ pub mod entity {
                         state: self.state,
                         properties: self.properties,
                         strategy: self.strategy,
-                        registry: self.registry
+                        registry: self.registry,
                     }
                 }
             }
-
 
             #[derive(Debug, Clone, Serialize, Deserialize)]
             pub struct Create {
@@ -5286,11 +5231,11 @@ pub mod entity {
             }
 
             #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
-            pub enum Strategy{
+            pub enum Strategy {
                 Create,
                 Apply,
                 Ensure,
-                HostedBy(HostKey)
+                HostedBy(HostKey),
             }
 
             #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -5302,7 +5247,7 @@ pub mod entity {
             #[derive(Debug, Clone, strum_macros::Display, Serialize, Deserialize)]
             pub enum AddressSegmentTemplate {
                 Exact(String),
-                Pattern(String) // must have a '%'
+                Pattern(String), // must have a '%'
             }
         }
 
@@ -5317,7 +5262,9 @@ pub mod entity {
             use crate::version::v0_0_1::fail::{BadCoercion, Fail};
             use crate::version::v0_0_1::id::Address;
             use crate::version::v0_0_1::pattern::{AddressKindPath, AddressKindPattern, Hop};
-            use crate::version::v0_0_1::payload::{MapPattern, Primitive, PrimitiveList, PrimitiveType};
+            use crate::version::v0_0_1::payload::{
+                MapPattern, Primitive, PrimitiveList, PrimitiveType,
+            };
             use crate::version::v0_0_1::resource::ResourceStub;
             use crate::version::v0_0_1::util::ConvertFrom;
 
@@ -5348,7 +5295,7 @@ pub mod entity {
                 pub pattern: AddressKindPattern,
                 pub properties: PropertiesPattern,
                 pub into_payload: SelectIntoPayload,
-                pub kind: SelectKind
+                pub kind: SelectKind,
             }
 
             #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -5360,7 +5307,6 @@ pub mod entity {
                     address_kind_path: AddressKindPath,
                 },
             }
-
 
             impl Select {
                 pub fn sub_select(
@@ -5380,19 +5326,24 @@ pub mod entity {
                 }
             }
 
-            impl TryInto<SubSelect> for Select{
+            impl TryInto<SubSelect> for Select {
                 type Error = Error;
 
                 fn try_into(self) -> Result<SubSelect, Self::Error> {
-                    if let SelectKind::SubSelect { address, hops, address_kind_path } = self.kind {
+                    if let SelectKind::SubSelect {
+                        address,
+                        hops,
+                        address_kind_path,
+                    } = self.kind
+                    {
                         Ok(SubSelect {
                             address,
                             pattern: self.pattern,
                             properties: self.properties,
                             into_payload: self.into_payload,
                             hops: hops,
-                            address_kind_path
-                        } )
+                            address_kind_path,
+                        })
                     } else {
                         Err("Not of kind SubSelector".into())
                     }
@@ -5430,8 +5381,7 @@ pub mod entity {
                     address: Address,
                     hops: Vec<Hop>,
                     address_kind_path: AddressKindPath,
-                ) -> SubSelect
-                {
+                ) -> SubSelect {
                     SubSelect {
                         address,
                         pattern: self.pattern.clone(),
@@ -5471,7 +5421,6 @@ pub mod entity {
                 pub address: Address,
                 pub properties: SetProperties,
             }
-
         }
 
         pub mod query {
@@ -5493,22 +5442,17 @@ pub mod entity {
                 AddressKindPath(AddressKindPath),
             }
 
-            impl TryInto<AddressKindPath>
-            for QueryResult
-            {
+            impl TryInto<AddressKindPath> for QueryResult {
                 type Error = Error;
 
                 fn try_into(self) -> Result<AddressKindPath, Error> {
                     match self {
-                        QueryResult::AddressKindPath(address_kind_path) => {
-                            Ok(address_kind_path)
-                        }
+                        QueryResult::AddressKindPath(address_kind_path) => Ok(address_kind_path),
                     }
                 }
             }
 
-            impl ToString for QueryResult
-            {
+            impl ToString for QueryResult {
                 fn to_string(&self) -> String {
                     match self {
                         QueryResult::AddressKindPath(address_kind_path) => {
@@ -5524,34 +5468,31 @@ pub mod entity {
                 }
             }
         }
-
-
     }
 
     pub mod response {
-        use std::sync::Arc;
         use crate::error::Error;
+        use crate::version::v0_0_1::entity::request::RequestCore;
         use crate::version::v0_0_1::fail;
-        use crate::version::v0_0_1::id::{Address, Meta, ResourceKind};
-        use crate::version::v0_0_1::payload::{Errors, Payload, Primitive};
-        use serde::{Serialize,Deserialize};
-        use crate::version::v0_0_1::entity::request::{RequestCore};
         use crate::version::v0_0_1::fail::Fail;
         use crate::version::v0_0_1::http::HttpResponse;
+        use crate::version::v0_0_1::id::{Address, Meta, ResourceKind};
         use crate::version::v0_0_1::messaging::Response;
+        use crate::version::v0_0_1::payload::{Errors, Payload, Primitive};
         use crate::version::v0_0_1::util::unique_id;
+        use serde::{Deserialize, Serialize};
+        use std::sync::Arc;
 
         #[derive(Debug, Clone, Serialize, Deserialize)]
         pub struct ResponseCore {
             pub headers: Meta,
             pub code: u32,
-            pub body: Payload
+            pub body: Payload,
         }
 
         impl ResponseCore {
-
             pub fn ok_html(html: &str) -> Self {
-                let bin = Arc::new( html.to_string().into_bytes() );
+                let bin = Arc::new(html.to_string().into_bytes());
                 ResponseCore::ok(Payload::Primitive(Primitive::Bin(bin)))
             }
 
@@ -5559,40 +5500,40 @@ pub mod entity {
                 ResponseCore {
                     headers: Meta::new(),
                     code: 200,
-                    body: Payload::Empty
+                    body: Payload::Empty,
                 }
             }
 
-            pub fn ok(body: Payload)-> Self {
+            pub fn ok(body: Payload) -> Self {
                 Self {
                     headers: Meta::new(),
                     code: 200,
-                    body
+                    body,
                 }
             }
 
-            pub fn server_error()-> Self {
+            pub fn server_error() -> Self {
                 Self {
                     headers: Meta::new(),
                     code: 500,
-                    body: Payload::Empty
+                    body: Payload::Empty,
                 }
             }
 
-            pub fn fail(message: &str)-> Self {
+            pub fn fail(message: &str) -> Self {
                 let errors = Errors::default(message.clone());
                 Self {
                     headers: Meta::new(),
                     code: 500,
-                    body: Payload::Primitive(Primitive::Errors(errors))
+                    body: Payload::Primitive(Primitive::Errors(errors)),
                 }
             }
 
-            pub fn with_new_payload( self, payload: Payload  ) -> Self {
+            pub fn with_new_payload(self, payload: Payload) -> Self {
                 Self {
                     headers: self.headers,
                     code: self.code,
-                    body: payload
+                    body: payload,
                 }
             }
 
@@ -5600,13 +5541,18 @@ pub mod entity {
                 return self.code >= 200 && self.code <= 299;
             }
 
-            pub fn into_response( self, from: Address, to: Address, response_to: String ) -> Response {
+            pub fn into_response(
+                self,
+                from: Address,
+                to: Address,
+                response_to: String,
+            ) -> Response {
                 Response {
                     id: unique_id(),
                     from,
                     to,
                     core: self,
-                    response_to
+                    response_to,
                 }
             }
         }
@@ -5618,13 +5564,10 @@ pub mod entity {
                 Ok(HttpResponse {
                     code: self.code,
                     headers: self.headers,
-                    body: self.body.to_bin()?
+                    body: self.body.to_bin()?,
                 })
             }
         }
-
-
-
     }
 }
 
@@ -5639,9 +5582,9 @@ pub mod resource {
     use nom::error::{ErrorKind, ParseError, VerboseError};
     use nom::sequence::{delimited, tuple};
     use nom::CompareResult::Incomplete;
+    use nom::Parser;
     use nom_supreme::error::ErrorTree;
     use nom_supreme::{parse_from_str, ParserExt};
-    use nom::Parser;
     use serde::{Deserialize, Serialize};
 
     use crate::error::Error;
@@ -5655,13 +5598,22 @@ pub mod resource {
         pub status: Status,
     }
 
-    #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, strum_macros::Display, strum_macros::EnumString )]
+    #[derive(
+        Debug,
+        Clone,
+        Serialize,
+        Deserialize,
+        Eq,
+        PartialEq,
+        strum_macros::Display,
+        strum_macros::EnumString,
+    )]
     pub enum Status {
-        Unknown,                // initial status or when we status cannot be determined
-        Pending,                // resource is now registered but not assigned to a host
-        Assigning,              // resource is being assigned to at least one host
+        Unknown,      // initial status or when we status cannot be determined
+        Pending,      // resource is now registered but not assigned to a host
+        Assigning,    // resource is being assigned to at least one host
         Initializing, // assigned to a host and undergoing custom initialization...This resource can send requests but not receive requests.  The String gives a progress indication like 2/10 (step 2 of 10) or 7/? when the number of steps are not known.
-        Ready,                  // ready to take requests
+        Ready,        // ready to take requests
         Paused, // can not receive requests (probably because it is waiting for some other resource to make updates)... String should be some form of meaningful identifier of which resource Paused this resource
         Resuming, // like Initializing but triggered after a pause is lifted, the resource may be doing something before it is ready to accept requests again.  String is a progress indication just like Initializing.
         Panic, // something is wrong... all requests are blocked and responses are cancelled. String is a hopefully  meaningful message describing why the Resource has Panic
@@ -5722,17 +5674,16 @@ pub mod resource {
     }
 
     pub fn status(input: &str) -> Res<&str, Status> {
-        parse_from_str( alpha1 ).parse(input)
+        parse_from_str(alpha1).parse(input)
     }
 
-
-    pub type Properties = HashMap<String,Property>;
+    pub type Properties = HashMap<String, Property>;
 
     #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
-    pub struct Property{
+    pub struct Property {
         pub key: String,
         pub value: String,
-        pub locked: bool
+        pub locked: bool,
     }
 
     #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
@@ -5753,7 +5704,7 @@ pub mod resource {
         pub fn address_and_kind(self) -> AddressAndKind {
             AddressAndKind {
                 address: self.address,
-                kind: self.kind
+                kind: self.kind,
             }
         }
     }
@@ -5763,37 +5714,33 @@ pub mod resource {
         pub stub: ResourceStub,
         pub state: Box<Payload>,
     }
-
 }
 
 pub mod portal {
-    use std::ops::Deref;
     use crate::version::v0_0_1::util::unique_id;
-    use serde::{Serialize,Deserialize};
+    use serde::{Deserialize, Serialize};
+    use std::ops::Deref;
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
-    pub struct Exchanger<T>{
+    pub struct Exchanger<T> {
         pub id: String,
-        pub item: T
+        pub item: T,
     }
 
-    impl <T> Exchanger<T> {
-        pub fn new( item: T ) -> Self {
-            Exchanger{
+    impl<T> Exchanger<T> {
+        pub fn new(item: T) -> Self {
+            Exchanger {
                 id: unique_id(),
-                item
+                item,
             }
         }
 
-        pub fn with<X>(self, item: X ) -> Exchanger<X>{
-            Exchanger{
-                id: self.id,
-                item
-            }
+        pub fn with<X>(self, item: X) -> Exchanger<X> {
+            Exchanger { id: self.id, item }
         }
     }
 
-    impl <T> Deref for Exchanger<T> {
+    impl<T> Deref for Exchanger<T> {
         type Target = T;
 
         fn deref(&self) -> &Self::Target {
@@ -5816,26 +5763,26 @@ pub mod portal {
         use crate::version::v0_0_1::portal::Exchanger;
         use crate::version::v0_0_1::resource::StatusUpdate;
         use crate::version::v0_0_1::util::unique_id;
-        use serde::{Serialize,Deserialize};
+        use serde::{Deserialize, Serialize};
 
         #[derive(Debug, Clone, Serialize, Deserialize)]
         pub struct Log {
             pub src: String,
-            pub message: String
+            pub message: String,
         }
 
         impl Log {
-            pub fn new( src: &str, message: &str ) -> Self {
+            pub fn new(src: &str, message: &str) -> Self {
                 Self {
                     src: src.to_string(),
-                    message: message.to_string()
+                    message: message.to_string(),
                 }
             }
         }
 
         impl ToString for Log {
             fn to_string(&self) -> String {
-                format!("{}: {}", self.src, self.message )
+                format!("{}: {}", self.src, self.message)
             }
         }
 
@@ -5867,14 +5814,14 @@ pub mod portal {
             }
         }
 
-        #[derive(Debug, Clone, Serialize, Deserialize, strum_macros::Display, strum_macros::EnumString)]
+        #[derive(
+            Debug, Clone, Serialize, Deserialize, strum_macros::Display, strum_macros::EnumString,
+        )]
         pub enum AssignRequest {
-            Control
+            Control,
         }
 
-        impl TryInto<PrimitiveFrame>
-        for Frame
-        {
+        impl TryInto<PrimitiveFrame> for Frame {
             type Error = Error;
 
             fn try_into(self) -> Result<PrimitiveFrame, Self::Error> {
@@ -5904,7 +5851,7 @@ pub mod portal {
         use crate::version::v0_0_1::messaging::{Request, Response};
         use crate::version::v0_0_1::payload::Payload;
         use crate::version::v0_0_1::portal::Exchanger;
-        use serde::{Serialize,Deserialize};
+        use serde::{Deserialize, Serialize};
 
         #[derive(Debug, Clone, Serialize, Deserialize, strum_macros::Display)]
         pub enum Frame {
@@ -5924,15 +5871,12 @@ pub mod portal {
                     Frame::Response(response) => Option::Some(response.to.clone()),
                     Frame::Artifact(artifact) => Option::Some(artifact.to.clone()),
                     Frame::Close(_) => Option::None,
-                    Frame::Init => Option::None
+                    Frame::Init => Option::None,
                 }
             }
         }
 
-
-        impl TryInto<PrimitiveFrame>
-        for Frame
-        {
+        impl TryInto<PrimitiveFrame> for Frame {
             type Error = Error;
 
             fn try_into(self) -> Result<PrimitiveFrame, Self::Error> {
@@ -5956,12 +5900,12 @@ pub mod portal {
         use crate::version::v0_0_1::artifact::{Artifact, ArtifactRequest, ArtifactResponse};
         use crate::version::v0_0_1::frame::PrimitiveFrame;
         use crate::version::v0_0_1::portal::Exchanger;
-        use serde::{Serialize,Deserialize};
+        use serde::{Deserialize, Serialize};
 
-        #[derive(Debug,Clone,Serialize,Deserialize)]
+        #[derive(Debug, Clone, Serialize, Deserialize)]
         pub struct PortalAuth {
             pub user: String,
-            pub portal_key: Option<String>
+            pub portal_key: Option<String>,
         }
 
         #[derive(Debug, Clone, Serialize, Deserialize, strum_macros::Display)]
@@ -5970,12 +5914,10 @@ pub mod portal {
             Auth(PortalAuth),
             Artifact(Exchanger<ArtifactRequest>),
             Ok,
-            Ready
+            Ready,
         }
 
-        impl TryInto<PrimitiveFrame>
-        for Frame
-        {
+        impl TryInto<PrimitiveFrame> for Frame {
             type Error = Error;
 
             fn try_into(self) -> Result<PrimitiveFrame, Self::Error> {
@@ -5998,16 +5940,14 @@ pub mod portal {
         use crate::version::v0_0_1::artifact::{Artifact, ArtifactResponse};
         use crate::version::v0_0_1::frame::PrimitiveFrame;
         use crate::version::v0_0_1::portal::Exchanger;
-        use serde::{Serialize,Deserialize};
+        use serde::{Deserialize, Serialize};
 
         #[derive(Debug, Clone, Serialize, Deserialize, strum_macros::Display)]
         pub enum Frame {
             Ok,
             Artifact(Exchanger<ArtifactResponse>),
         }
-        impl TryInto<PrimitiveFrame>
-        for Frame
-        {
+        impl TryInto<PrimitiveFrame> for Frame {
             type Error = Error;
 
             fn try_into(self) -> Result<PrimitiveFrame, Self::Error> {
@@ -6026,7 +5966,6 @@ pub mod portal {
         }
     }
 }
-
 
 pub mod util {
     use serde::{Deserialize, Serialize};
@@ -6156,7 +6095,7 @@ pub mod util {
      */
 
     pub fn unique_id() -> String {
-//        Uuid::new_v4().to_string()
+        //        Uuid::new_v4().to_string()
         unsafe { mesh_portal_unique_id() }
     }
 }
@@ -6190,14 +6129,12 @@ pub mod fail {
         }
     }
 
-
-
     pub mod http {
         use serde::{Deserialize, Serialize};
 
         #[derive(Debug, Clone, Serialize, Deserialize)]
         pub struct Error {
-            pub message: String
+            pub message: String,
         }
     }
 
@@ -6252,7 +6189,6 @@ pub mod fail {
             Conditional(Conditional),
         }
     }
-
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub enum BadRequest {
@@ -6329,7 +6265,7 @@ pub mod fail {
         Mesh(mesh::Fail),
         Resource(resource::Fail),
         Portal(portal::Fail),
-        Error(String)
+        Error(String),
     }
 
     impl ToString for Fail {
@@ -6353,27 +6289,38 @@ pub mod parse {
     use nom::branch::alt;
     use nom::bytes::complete::tag;
     use nom::bytes::complete::{is_a, is_not};
-    use nom::character::complete::{alpha0, alphanumeric1, digit1, alpha1, multispace1,multispace0, space1,space0};
+    use nom::character::complete::{
+        alpha0, alpha1, alphanumeric1, digit1, multispace0, multispace1, space0, space1,
+    };
     use nom::combinator::{all_consuming, not, opt, recognize};
-    use nom::error::{context, ErrorKind, VerboseError, ParseError};
+    use nom::error::{context, ErrorKind, ParseError, VerboseError};
     use nom::multi::{many0, separated_list0, separated_list1};
     use nom::sequence::{delimited, preceded, terminated, tuple};
     use nom::{AsChar, IResult, InputTakeAtPosition};
     use nom_supreme::parse_from_str;
 
     use crate::error::Error;
-    use crate::version::v0_0_1::id::{Address, AddressSegment, CaptureAddress, RouteSegment, Version};
-    use crate::version::v0_0_1::pattern::parse::{address_kind_pattern, delim_kind, kind, resource_type, specific, specific_pattern, version};
-    use nom::bytes::complete::take;
-    use nom_supreme::error::ErrorTree;
-    use crate::version::v0_0_1::entity::request::create::{Create, AddressSegmentTemplate, AddressTemplate, KindTemplate, Template, Strategy, AddressTemplateSegment, CreateOp, Require};
     use crate::version::v0_0_1::command::common::{PropertyMod, SetProperties, StateSrc};
     use crate::version::v0_0_1::config::bind::parse::pipeline_step;
+    use crate::version::v0_0_1::entity::request::create::{
+        AddressSegmentTemplate, AddressTemplate, AddressTemplateSegment, Create, CreateOp,
+        KindTemplate, Require, Strategy, Template,
+    };
     use crate::version::v0_0_1::entity::request::get::{Get, GetOp};
     use crate::version::v0_0_1::entity::request::select::{Select, SelectIntoPayload, SelectKind};
     use crate::version::v0_0_1::entity::request::set::Set;
-    use crate::version::v0_0_1::pattern::{AddressKindPath, AddressKindSegment, skewer, upload_step};
+    use crate::version::v0_0_1::id::{
+        Address, AddressSegment, CaptureAddress, RouteSegment, Version,
+    };
+    use crate::version::v0_0_1::pattern::parse::{
+        address_kind_pattern, delim_kind, kind, resource_type, specific, specific_pattern, version,
+    };
+    use crate::version::v0_0_1::pattern::{
+        skewer, upload_step, AddressKindPath, AddressKindSegment,
+    };
     use crate::version::v0_0_1::util::StringMatcher;
+    use nom::bytes::complete::take;
+    use nom_supreme::error::ErrorTree;
 
     pub struct Parser {}
 
@@ -6392,7 +6339,7 @@ pub mod parse {
 
     fn any_resource_path_segment<T>(i: T) -> Res<T, T>
     where
-        T: InputTakeAtPosition+ nom::InputLength,
+        T: InputTakeAtPosition + nom::InputLength,
         <T as InputTakeAtPosition>::Item: AsChar,
     {
         i.split_at_position1_complete(
@@ -6410,7 +6357,7 @@ pub mod parse {
 
     fn mesh_route_chars<T>(i: T) -> Res<T, T>
     where
-        T: InputTakeAtPosition+ nom::InputLength,
+        T: InputTakeAtPosition + nom::InputLength,
         <T as InputTakeAtPosition>::Item: AsChar,
     {
         i.split_at_position1_complete(
@@ -6463,51 +6410,52 @@ pub mod parse {
     }
 
     pub fn base_address_segment(input: &str) -> Res<&str, AddressSegment> {
-        preceded(tag(":"),rec_skewer)(input).map(|(next, base)| (next, AddressSegment::Base(base.to_string())))
+        preceded(tag(":"), rec_skewer)(input)
+            .map(|(next, base)| (next, AddressSegment::Base(base.to_string())))
     }
 
-
     pub fn filesystem_address_segment(input: &str) -> Res<&str, AddressSegment> {
-        alt((dir_address_segment,file_address_segment ))(input)
+        alt((dir_address_segment, file_address_segment))(input)
     }
 
     pub fn dir_address_segment(input: &str) -> Res<&str, AddressSegment> {
-        context("dir_address_segment",terminated(file_chars, tag("/")))(input)
-            .map(|(next, dir)| (next, AddressSegment::Dir(format!("{}/",dir))))
+        context("dir_address_segment", terminated(file_chars, tag("/")))(input)
+            .map(|(next, dir)| (next, AddressSegment::Dir(format!("{}/", dir))))
     }
 
     pub fn root_dir_address_segment(input: &str) -> Res<&str, AddressSegment> {
-        tag(":/")(input).map( |(next,_)| {
-            (next,AddressSegment::FilesystemRootDir)
-        })
+        tag(":/")(input).map(|(next, _)| (next, AddressSegment::FilesystemRootDir))
     }
 
     pub fn file_address_segment(input: &str) -> Res<&str, AddressSegment> {
-        context("file_address_segment", file_chars)(input).map(|(next, filename)| (next, AddressSegment::File(filename.to_string())))
+        context("file_address_segment", file_chars)(input)
+            .map(|(next, filename)| (next, AddressSegment::File(filename.to_string())))
     }
 
     pub fn version_address_segment(input: &str) -> Res<&str, AddressSegment> {
-        preceded( tag(":"),version)(input).map(|(next, version)| (next, AddressSegment::Version(version)))
+        preceded(tag(":"), version)(input)
+            .map(|(next, version)| (next, AddressSegment::Version(version)))
     }
 
     pub fn root_address(input: &str) -> Res<&str, Address> {
-        tuple( (route_segment, tag("[root]")))(input).map( |(next,(route,_))| {
+        tuple((route_segment, tag("[root]")))(input).map(|(next, (route, _))| {
             let address = Address {
                 route,
-                segments: vec![]
+                segments: vec![],
             };
             (next, address)
-        } )
+        })
     }
     pub fn regular_address(input: &str) -> Res<&str, Address> {
-                 tuple((
-                     tuple((route_segment, space_address_segment)),
-                     many0(base_address_segment),
-                     opt(version_address_segment),
-                     opt( root_dir_address_segment ),
-                     many0(filesystem_address_segment),
-                 ))(input)
-            .map(|(next, ((hub, space), mut bases, version, root, mut files))| {
+        tuple((
+            tuple((route_segment, space_address_segment)),
+            many0(base_address_segment),
+            opt(version_address_segment),
+            opt(root_dir_address_segment),
+            many0(filesystem_address_segment),
+        ))(input)
+        .map(
+            |(next, ((hub, space), mut bases, version, root, mut files))| {
                 let mut segments = vec![];
                 segments.push(space);
                 segments.append(&mut bases);
@@ -6523,18 +6471,18 @@ pub mod parse {
                     segments.append(&mut files);
                 }
 
-
                 let address = Address {
                     route: hub,
                     segments,
                 };
 
                 (next, address)
-            })
+            },
+        )
     }
 
     pub fn address(input: &str) -> Res<&str, Address> {
-        alt((root_address,regular_address) )(input)
+        alt((root_address, regular_address))(input)
     }
 
     pub fn consume_address(input: &str) -> Res<&str, Address> {
@@ -6546,10 +6494,11 @@ pub mod parse {
             tuple((route_segment, space_address_capture_segment)),
             many0(base_address_capture_segment),
             opt(version_address_segment),
-            opt( root_dir_address_segment ),
-            many0(filesystem_address_capture_segment ),
+            opt(root_dir_address_segment),
+            many0(filesystem_address_capture_segment),
         ))(input)
-            .map(|(next, ((hub, space), mut bases, version, root, mut files))| {
+        .map(
+            |(next, ((hub, space), mut bases, version, root, mut files))| {
                 let mut segments = vec![];
                 segments.push(space);
                 segments.append(&mut bases);
@@ -6565,119 +6514,95 @@ pub mod parse {
                     segments.append(&mut files);
                 }
 
-
                 let address = CaptureAddress {
                     route: hub,
                     segments,
                 };
 
                 (next, address)
-            })
+            },
+        )
     }
 
     pub fn space_address_capture_segment(input: &str) -> Res<&str, AddressSegment> {
-        space_chars_plus_capture(input).map(|(next, space)| (next, AddressSegment::Space(space.to_string())))
+        space_chars_plus_capture(input)
+            .map(|(next, space)| (next, AddressSegment::Space(space.to_string())))
     }
 
     pub fn base_address_capture_segment(input: &str) -> Res<&str, AddressSegment> {
-        preceded(tag(":"),rec_skewer_capture)(input).map(|(next, base)| (next, AddressSegment::Base(base.to_string())))
+        preceded(tag(":"), rec_skewer_capture)(input)
+            .map(|(next, base)| (next, AddressSegment::Base(base.to_string())))
     }
 
-
     pub fn filesystem_address_capture_segment(input: &str) -> Res<&str, AddressSegment> {
-        alt((dir_address_capture_segment,file_address_capture_segment ))(input)
+        alt((dir_address_capture_segment, file_address_capture_segment))(input)
     }
 
     pub fn dir_address_capture_segment(input: &str) -> Res<&str, AddressSegment> {
-        context("dir_address_capture_segment",terminated(file_chars_plus_capture, tag("/")))(input)
-            .map(|(next, dir)| (next, AddressSegment::Dir(format!("{}/",dir))))
+        context(
+            "dir_address_capture_segment",
+            terminated(file_chars_plus_capture, tag("/")),
+        )(input)
+        .map(|(next, dir)| (next, AddressSegment::Dir(format!("{}/", dir))))
     }
 
     pub fn file_address_capture_segment(input: &str) -> Res<&str, AddressSegment> {
-        context("file_address_capture_segment", file_chars_plus_capture)(input).map(|(next, filename)| (next, AddressSegment::File(filename.to_string())))
+        context("file_address_capture_segment", file_chars_plus_capture)(input)
+            .map(|(next, filename)| (next, AddressSegment::File(filename.to_string())))
     }
 
-    pub fn space_address_kind_segment(
-        input: &str,
-    ) -> Res<&str, AddressKindSegment>
-    {
-        tuple((space_address_segment, delim_kind))(input).map(
-            |(next, (address_segment, kind))| {
-                (
-                    next,
-                    AddressKindSegment {
-                        address_segment,
-                        kind,
-                    },
-                )
-            },
-        )
+    pub fn space_address_kind_segment(input: &str) -> Res<&str, AddressKindSegment> {
+        tuple((space_address_segment, delim_kind))(input).map(|(next, (address_segment, kind))| {
+            (
+                next,
+                AddressKindSegment {
+                    address_segment,
+                    kind,
+                },
+            )
+        })
     }
 
-    pub fn base_address_kind_segment(
-        input: &str,
-    ) -> Res<&str, AddressKindSegment>
-    {
-        tuple((base_address_segment, delim_kind))(input).map(
-            |(next, (address_segment, kind))| {
-                (
-                    next,
-                    AddressKindSegment {
-                        address_segment,
-                        kind,
-                    },
-                )
-            },
-        )
+    pub fn base_address_kind_segment(input: &str) -> Res<&str, AddressKindSegment> {
+        tuple((base_address_segment, delim_kind))(input).map(|(next, (address_segment, kind))| {
+            (
+                next,
+                AddressKindSegment {
+                    address_segment,
+                    kind,
+                },
+            )
+        })
     }
 
-    pub fn filepath_address_kind_segment(
-        input: &str,
-    ) -> Res<&str, AddressKindSegment>
-    {
-        alt((
-            file_address_kind_segment,
-            dir_address_kind_segment,
-        ))(input)
+    pub fn filepath_address_kind_segment(input: &str) -> Res<&str, AddressKindSegment> {
+        alt((file_address_kind_segment, dir_address_kind_segment))(input)
     }
-    pub fn dir_address_kind_segment(
-        input: &str,
-    ) -> Res<&str, AddressKindSegment>
-    {
-        tuple((dir_address_segment, delim_kind))(input).map(
-            |(next, (address_segment, kind))| {
-                (
-                    next,
-                    AddressKindSegment {
-                        address_segment,
-                        kind,
-                    },
-                )
-            },
-        )
+    pub fn dir_address_kind_segment(input: &str) -> Res<&str, AddressKindSegment> {
+        tuple((dir_address_segment, delim_kind))(input).map(|(next, (address_segment, kind))| {
+            (
+                next,
+                AddressKindSegment {
+                    address_segment,
+                    kind,
+                },
+            )
+        })
     }
 
-    pub fn file_address_kind_segment(
-        input: &str,
-    ) -> Res<&str, AddressKindSegment>
-    {
-        tuple((file_address_segment, delim_kind))(input).map(
-            |(next, (address_segment, kind))| {
-                (
-                    next,
-                    AddressKindSegment {
-                        address_segment,
-                        kind,
-                    },
-                )
-            },
-        )
+    pub fn file_address_kind_segment(input: &str) -> Res<&str, AddressKindSegment> {
+        tuple((file_address_segment, delim_kind))(input).map(|(next, (address_segment, kind))| {
+            (
+                next,
+                AddressKindSegment {
+                    address_segment,
+                    kind,
+                },
+            )
+        })
     }
 
-    pub fn version_address_kind_segment(
-        input: &str,
-    ) -> Res<&str, AddressKindSegment>
-    {
+    pub fn version_address_kind_segment(input: &str) -> Res<&str, AddressKindSegment> {
         tuple((version_address_segment, delim_kind))(input).map(
             |(next, (address_segment, kind))| {
                 (
@@ -6691,23 +6616,14 @@ pub mod parse {
         )
     }
 
-    pub fn consume_address_kind_path(
-        input: &str,
-    ) -> Result<AddressKindPath, Error>
-    {
+    pub fn consume_address_kind_path(input: &str) -> Result<AddressKindPath, Error> {
         let (_, rtn) = all_consuming(address_kind_path)(input)?;
         Ok(rtn)
     }
 
-    pub fn address_kind_path(
-        input: &str,
-    ) -> Res<&str, AddressKindPath>
-    {
+    pub fn address_kind_path(input: &str) -> Res<&str, AddressKindPath> {
         tuple((
-            tuple((
-                route_segment,
-                space_address_kind_segment
-            )),
+            tuple((route_segment, space_address_kind_segment)),
             many0(base_address_kind_segment),
             opt(version_address_kind_segment),
             many0(file_address_kind_segment),
@@ -6732,7 +6648,7 @@ pub mod parse {
 
     pub fn asterisk<T, E: nom::error::ParseError<T>>(input: T) -> IResult<T, T, E>
     where
-        T: InputTakeAtPosition+nom::InputLength,
+        T: InputTakeAtPosition + nom::InputLength,
         <T as InputTakeAtPosition>::Item: AsChar,
     {
         input.split_at_position_complete(|item| item.as_char() != '*')
@@ -6740,7 +6656,7 @@ pub mod parse {
 
     pub fn upper<T, E: nom::error::ParseError<T>>(input: T) -> IResult<T, T, E>
     where
-        T: InputTakeAtPosition+nom::InputLength,
+        T: InputTakeAtPosition + nom::InputLength,
         <T as InputTakeAtPosition>::Item: AsChar,
     {
         input.split_at_position_complete(|item| {
@@ -6772,7 +6688,7 @@ pub mod parse {
 
     pub fn in_double_quotes<T>(i: T) -> Res<T, T>
     where
-        T: InputTakeAtPosition+nom::InputLength,
+        T: InputTakeAtPosition + nom::InputLength,
         <T as InputTakeAtPosition>::Item: AsChar,
     {
         i.split_at_position1_complete(
@@ -6784,9 +6700,9 @@ pub mod parse {
         )
     }
     pub fn skewer_dot<T>(i: T) -> Res<T, T>
-        where
-            T: InputTakeAtPosition+nom::InputLength,
-            <T as InputTakeAtPosition>::Item: AsChar,
+    where
+        T: InputTakeAtPosition + nom::InputLength,
+        <T as InputTakeAtPosition>::Item: AsChar,
     {
         i.split_at_position1_complete(
             |item| {
@@ -6794,7 +6710,7 @@ pub mod parse {
                 !(char_item == '-')
                     && !(char_item == '.')
                     && !((char_item.is_alpha() && char_item.is_lowercase())
-                    || char_item.is_dec_digit())
+                        || char_item.is_dec_digit())
             },
             ErrorKind::AlphaNumeric,
         )
@@ -6802,7 +6718,7 @@ pub mod parse {
 
     pub fn domain<T>(i: T) -> Res<T, T>
     where
-        T: InputTakeAtPosition+nom::InputLength,
+        T: InputTakeAtPosition + nom::InputLength,
         <T as InputTakeAtPosition>::Item: AsChar,
     {
         i.split_at_position1_complete(
@@ -6819,7 +6735,7 @@ pub mod parse {
 
     pub fn address_segment_chars<T>(i: T) -> Res<T, T>
     where
-        T: InputTakeAtPosition+nom::InputLength,
+        T: InputTakeAtPosition + nom::InputLength,
         <T as InputTakeAtPosition>::Item: AsChar,
     {
         i.split_at_position1_complete(
@@ -6833,28 +6749,26 @@ pub mod parse {
         )
     }
 
-
     pub fn version_chars<T>(i: T) -> Res<T, T>
-        where
-            T: InputTakeAtPosition+nom::InputLength,
-            <T as InputTakeAtPosition>::Item: AsChar,
+    where
+        T: InputTakeAtPosition + nom::InputLength,
+        <T as InputTakeAtPosition>::Item: AsChar,
     {
         i.split_at_position1_complete(
             |item| {
                 let char_item = item.as_char();
-                char_item != '.' &&
-                char_item != '-' &&
-                    !char_item.is_digit(10) &&
-                    !(char_item.is_alpha() && char_item.is_lowercase())
+                char_item != '.'
+                    && char_item != '-'
+                    && !char_item.is_digit(10)
+                    && !(char_item.is_alpha() && char_item.is_lowercase())
             },
             ErrorKind::AlphaNumeric,
         )
     }
 
-
     pub fn version_req_chars<T>(i: T) -> Res<T, T>
     where
-        T: InputTakeAtPosition+nom::InputLength,
+        T: InputTakeAtPosition + nom::InputLength,
         <T as InputTakeAtPosition>::Item: AsChar,
     {
         i.split_at_position1_complete(
@@ -6872,83 +6786,73 @@ pub mod parse {
         )
     }
 
-
-
     pub fn lowercase1<T>(i: T) -> Res<T, T>
-        where
-            T: InputTakeAtPosition+nom::InputLength,
-            <T as InputTakeAtPosition>::Item: AsChar,
-    {
-        i.split_at_position1_complete(
-            |item| {
-                let char_item = item.as_char();
-                    !(char_item.is_alpha() && char_item.is_lowercase())
-            },
-            ErrorKind::AlphaNumeric,
-        )
-    }
-
-    pub fn rec_skewer(input: &str)->Res<&str,&str> {
-            recognize(tuple((
-                lowercase1,
-                opt(skewer_chars),
-            )))(input)
-    }
-
-    pub fn rec_skewer_capture(input: &str)->Res<&str,&str> {
-        recognize(tuple((
-            lowercase1,
-            opt(skewer_chars_plus_capture),
-        )))(input)
-    }
-
-
-    pub fn skewer_chars<T>(i: T) -> Res<T, T>
     where
-        T: InputTakeAtPosition+nom::InputLength,
+        T: InputTakeAtPosition + nom::InputLength,
         <T as InputTakeAtPosition>::Item: AsChar,
     {
         i.split_at_position1_complete(
             |item| {
                 let char_item = item.as_char();
-                char_item != '-' &&
-                    !char_item.is_digit(10) &&
-                    !(char_item.is_alpha() && char_item.is_lowercase())
+                !(char_item.is_alpha() && char_item.is_lowercase())
             },
             ErrorKind::AlphaNumeric,
         )
     }
 
+    pub fn rec_skewer(input: &str) -> Res<&str, &str> {
+        recognize(tuple((lowercase1, opt(skewer_chars))))(input)
+    }
 
-    pub fn skewer_chars_plus_capture<T>(i: T) -> Res<T, T>
-        where
-            T: InputTakeAtPosition+nom::InputLength,
-            <T as InputTakeAtPosition>::Item: AsChar,
+    pub fn rec_skewer_capture(input: &str) -> Res<&str, &str> {
+        recognize(tuple((lowercase1, opt(skewer_chars_plus_capture))))(input)
+    }
+
+    pub fn skewer_chars<T>(i: T) -> Res<T, T>
+    where
+        T: InputTakeAtPosition + nom::InputLength,
+        <T as InputTakeAtPosition>::Item: AsChar,
     {
         i.split_at_position1_complete(
             |item| {
                 let char_item = item.as_char();
-                char_item != '-' &&
-                char_item != '$' &&
-                    !char_item.is_digit(10) &&
-                    !(char_item.is_alpha() && char_item.is_lowercase())
+                char_item != '-'
+                    && !char_item.is_digit(10)
+                    && !(char_item.is_alpha() && char_item.is_lowercase())
+            },
+            ErrorKind::AlphaNumeric,
+        )
+    }
+
+    pub fn skewer_chars_plus_capture<T>(i: T) -> Res<T, T>
+    where
+        T: InputTakeAtPosition + nom::InputLength,
+        <T as InputTakeAtPosition>::Item: AsChar,
+    {
+        i.split_at_position1_complete(
+            |item| {
+                let char_item = item.as_char();
+                char_item != '-'
+                    && char_item != '$'
+                    && !char_item.is_digit(10)
+                    && !(char_item.is_alpha() && char_item.is_lowercase())
             },
             ErrorKind::AlphaNumeric,
         )
     }
 
     pub fn skewer_chars_template<T>(i: T) -> Res<T, T>
-        where
-            T: InputTakeAtPosition+nom::InputLength,
-            <T as InputTakeAtPosition>::Item: AsChar,
+    where
+        T: InputTakeAtPosition + nom::InputLength,
+        <T as InputTakeAtPosition>::Item: AsChar,
     {
         i.split_at_position1_complete(
             |item| {
                 let char_item = item.as_char();
-                char_item != '-' &&
-                    char_item.as_char() != '%' &&
-                    !char_item.is_digit(10) &&
-                    !(char_item.is_alpha() && char_item.is_lowercase())
+                char_item != '-'
+                    && char_item.as_char() != '%'
+                    && !char_item.is_digit(10)
+                    && !(char_item.is_alpha() && char_item.is_lowercase())
             },
             ErrorKind::AlphaNumeric,
         )
@@ -6956,7 +6860,7 @@ pub mod parse {
 
     pub fn space_chars<T>(i: T) -> Res<T, T>
     where
-        T: InputTakeAtPosition+nom::InputLength,
+        T: InputTakeAtPosition + nom::InputLength,
         <T as InputTakeAtPosition>::Item: AsChar,
     {
         i.split_at_position1_complete(
@@ -6972,9 +6876,9 @@ pub mod parse {
     }
 
     pub fn space_chars_plus_capture<T>(i: T) -> Res<T, T>
-        where
-            T: InputTakeAtPosition+nom::InputLength,
-            <T as InputTakeAtPosition>::Item: AsChar,
+    where
+        T: InputTakeAtPosition + nom::InputLength,
+        <T as InputTakeAtPosition>::Item: AsChar,
     {
         i.split_at_position1_complete(
             |item| {
@@ -6983,16 +6887,15 @@ pub mod parse {
                     && !(char_item == '.')
                     && !(char_item == '$')
                     && !((char_item.is_alpha() && char_item.is_lowercase())
-                    || char_item.is_dec_digit())
+                        || char_item.is_dec_digit())
             },
             ErrorKind::AlphaNumeric,
         )
     }
 
-
     pub fn domain_chars<T>(i: T) -> Res<T, T>
     where
-        T: InputTakeAtPosition+nom::InputLength,
+        T: InputTakeAtPosition + nom::InputLength,
         <T as InputTakeAtPosition>::Item: AsChar,
     {
         i.split_at_position1_complete(
@@ -7009,7 +6912,7 @@ pub mod parse {
 
     pub fn filepath_chars<T>(i: T) -> Res<T, T>
     where
-        T: InputTakeAtPosition+nom::InputLength,
+        T: InputTakeAtPosition + nom::InputLength,
         <T as InputTakeAtPosition>::Item: AsChar,
     {
         i.split_at_position1_complete(
@@ -7027,9 +6930,9 @@ pub mod parse {
     }
 
     pub fn file_chars_plus_capture<T>(i: T) -> Res<T, T>
-        where
-            T: InputTakeAtPosition+nom::InputLength,
-            <T as InputTakeAtPosition>::Item: AsChar,
+    where
+        T: InputTakeAtPosition + nom::InputLength,
+        <T as InputTakeAtPosition>::Item: AsChar,
     {
         i.split_at_position1_complete(
             |item| {
@@ -7046,7 +6949,7 @@ pub mod parse {
 
     pub fn file_chars<T>(i: T) -> Res<T, T>
     where
-        T: InputTakeAtPosition+nom::InputLength,
+        T: InputTakeAtPosition + nom::InputLength,
         <T as InputTakeAtPosition>::Item: AsChar,
     {
         i.split_at_position1_complete(
@@ -7062,9 +6965,9 @@ pub mod parse {
     }
 
     pub fn file_chars_template<T>(i: T) -> Res<T, T>
-        where
-            T: InputTakeAtPosition+nom::InputLength,
-            <T as InputTakeAtPosition>::Item: AsChar,
+    where
+        T: InputTakeAtPosition + nom::InputLength,
+        <T as InputTakeAtPosition>::Item: AsChar,
     {
         i.split_at_position1_complete(
             |item| {
@@ -7078,7 +6981,6 @@ pub mod parse {
             ErrorKind::AlphaNumeric,
         )
     }
-
 
     pub fn not_space(input: &str) -> Res<&str, &str> {
         is_not(" \n\r\t")(input)
@@ -7100,10 +7002,7 @@ pub mod parse {
         recognize(opt(not_space))(input)
     }
     pub fn camel_case(input: &str) -> Res<&str, &str> {
-        recognize(tuple((
-            is_a("ABCDEFGHIJKLMNOPQRSTUVWXYZ"),
-            alpha0,
-        )))(input)
+        recognize(tuple((is_a("ABCDEFGHIJKLMNOPQRSTUVWXYZ"), alpha0)))(input)
         //recognize(alpha1)(input)
     }
 
@@ -7134,35 +7033,59 @@ pub mod parse {
     }
 
     pub fn base_address_segment_wildcard(input: &str) -> Res<&str, AddressTemplateSegment> {
-        preceded(tag(":"),recognize(tuple((many0(skewer),tag("%"),many0(skewer)))))(input).map(|(next, base)| (next, AddressTemplateSegment::Wildcard(base.to_string())))
+        preceded(
+            tag(":"),
+            recognize(tuple((many0(skewer), tag("%"), many0(skewer)))),
+        )(input)
+        .map(|(next, base)| (next, AddressTemplateSegment::Wildcard(base.to_string())))
     }
 
     pub fn base_address_segment_template(input: &str) -> Res<&str, AddressTemplateSegment> {
-        preceded(tag(":"),rec_skewer)(input).map(|(next, base)| (next, AddressTemplateSegment::AddressSegment(AddressSegment::Base(base.to_string()))))
+        preceded(tag(":"), rec_skewer)(input).map(|(next, base)| {
+            (
+                next,
+                AddressTemplateSegment::AddressSegment(AddressSegment::Base(base.to_string())),
+            )
+        })
     }
 
     pub fn filepath_address_segment_wildcard(input: &str) -> Res<&str, AddressTemplateSegment> {
-        recognize(tuple((many0(filepath_chars),tag("%"),many0(filepath_chars))))(input).map(|(next, base)| (next, AddressTemplateSegment::Wildcard(base.to_string())))
+        recognize(tuple((
+            many0(filepath_chars),
+            tag("%"),
+            many0(filepath_chars),
+        )))(input)
+        .map(|(next, base)| (next, AddressTemplateSegment::Wildcard(base.to_string())))
     }
 
     pub fn filepath_address_segment_template(input: &str) -> Res<&str, AddressTemplateSegment> {
-        filesystem_address_segment(input).map(|(next, segment)| (next, AddressTemplateSegment::AddressSegment(segment)))
+        filesystem_address_segment(input)
+            .map(|(next, segment)| (next, AddressTemplateSegment::AddressSegment(segment)))
     }
 
     pub fn address_template(input: &str) -> Res<&str, AddressTemplate> {
         let (next, ((hub, space), mut bases, version, root, mut files)) = tuple((
             tuple((route_segment, space_address_segment)),
-            many0(alt((base_address_segment_wildcard,base_address_segment_template))),
+            many0(alt((
+                base_address_segment_wildcard,
+                base_address_segment_template,
+            ))),
             opt(version_address_segment),
-            opt( root_dir_address_segment ),
-            many0(alt( (filepath_address_segment_wildcard,filepath_address_segment_template))),
+            opt(root_dir_address_segment),
+            many0(alt((
+                filepath_address_segment_wildcard,
+                filepath_address_segment_template,
+            ))),
         ))(input)?;
 
         let mut base_wildcard = false;
-        for (index,segment) in bases.iter().enumerate() {
+        for (index, segment) in bases.iter().enumerate() {
             if segment.is_wildcard() {
-                if  index != bases.len()-1 {
-                    return Err(nom::Err::Error(ErrorTree::from_error_kind( input, ErrorKind::Tag, )))
+                if index != bases.len() - 1 {
+                    return Err(nom::Err::Error(ErrorTree::from_error_kind(
+                        input,
+                        ErrorKind::Tag,
+                    )));
                 } else {
                     base_wildcard = true;
                 }
@@ -7170,18 +7093,27 @@ pub mod parse {
         }
 
         if base_wildcard && version.is_some() {
-            return Err(nom::Err::Error(ErrorTree::from_error_kind( input, ErrorKind::Tag, )))
+            return Err(nom::Err::Error(ErrorTree::from_error_kind(
+                input,
+                ErrorKind::Tag,
+            )));
         }
 
         if base_wildcard && root.is_some() {
-            return Err(nom::Err::Error(ErrorTree::from_error_kind( input, ErrorKind::Tag, )))
+            return Err(nom::Err::Error(ErrorTree::from_error_kind(
+                input,
+                ErrorKind::Tag,
+            )));
         }
 
         let mut files_wildcard = false;
-        for (index,segment) in files.iter().enumerate() {
+        for (index, segment) in files.iter().enumerate() {
             if segment.is_wildcard() {
-                if  index != files.len()-1 {
-                    return Err(nom::Err::Error(ErrorTree::from_error_kind( input, ErrorKind::Tag, )))
+                if index != files.len() - 1 {
+                    return Err(nom::Err::Error(ErrorTree::from_error_kind(
+                        input,
+                        ErrorKind::Tag,
+                    )));
                 } else {
                     files_wildcard = true;
                 }
@@ -7189,68 +7121,84 @@ pub mod parse {
         }
 
         let mut space_last = false;
-        let last = if !files.is_empty()  {
-            match files.remove(files.len()-1 ) {
-                AddressTemplateSegment::AddressSegment(exact) => {AddressSegmentTemplate::Exact(exact.to_string())}
-                AddressTemplateSegment::Wildcard(pattern) => {AddressSegmentTemplate::Pattern(pattern)}
+        let last = if !files.is_empty() {
+            match files.remove(files.len() - 1) {
+                AddressTemplateSegment::AddressSegment(exact) => {
+                    AddressSegmentTemplate::Exact(exact.to_string())
+                }
+                AddressTemplateSegment::Wildcard(pattern) => {
+                    AddressSegmentTemplate::Pattern(pattern)
+                }
             }
         } else if root.is_some() {
             AddressSegmentTemplate::Exact("/".to_string())
-        } else if let Option::Some(version) = &version  {
+        } else if let Option::Some(version) = &version {
             AddressSegmentTemplate::Exact(version.to_string())
         } else if !bases.is_empty() {
-            match bases.remove(bases.len()-1 ) {
-                AddressTemplateSegment::AddressSegment(exact) => {AddressSegmentTemplate::Exact(exact.to_string())}
-                AddressTemplateSegment::Wildcard(pattern) => {AddressSegmentTemplate::Pattern(pattern)}
+            match bases.remove(bases.len() - 1) {
+                AddressTemplateSegment::AddressSegment(exact) => {
+                    AddressSegmentTemplate::Exact(exact.to_string())
+                }
+                AddressTemplateSegment::Wildcard(pattern) => {
+                    AddressSegmentTemplate::Pattern(pattern)
+                }
             }
         } else {
             space_last = true;
             AddressSegmentTemplate::Exact(space.to_string())
         };
 
-        let mut bases:Vec<AddressSegment> = bases.into_iter().map( |b| match b {
-            AddressTemplateSegment::AddressSegment(seg) => {seg}
-            AddressTemplateSegment::Wildcard(_) => {panic!("should have filtered wildcards already!")}
-        } ).collect();
+        let mut bases: Vec<AddressSegment> = bases
+            .into_iter()
+            .map(|b| match b {
+                AddressTemplateSegment::AddressSegment(seg) => seg,
+                AddressTemplateSegment::Wildcard(_) => {
+                    panic!("should have filtered wildcards already!")
+                }
+            })
+            .collect();
 
-        let mut files:Vec<AddressSegment> = files.into_iter().map( |b| match b {
-            AddressTemplateSegment::AddressSegment(seg) => {seg}
-            AddressTemplateSegment::Wildcard(_) => {panic!("should have filtered wildcards already!")}
-        } ).collect();
-
+        let mut files: Vec<AddressSegment> = files
+            .into_iter()
+            .map(|b| match b {
+                AddressTemplateSegment::AddressSegment(seg) => seg,
+                AddressTemplateSegment::Wildcard(_) => {
+                    panic!("should have filtered wildcards already!")
+                }
+            })
+            .collect();
 
         let mut segments = vec![];
 
-                if !space_last {
-                    segments.push(space);
-                }
+        if !space_last {
+            segments.push(space);
+        }
 
-                segments.append(&mut bases);
+        segments.append(&mut bases);
 
-                match version {
-                    None => {}
-                    Some(version) => {
-                        segments.push(version);
-                    }
-                }
+        match version {
+            None => {}
+            Some(version) => {
+                segments.push(version);
+            }
+        }
 
-                if let Option::Some(root) = root {
-                    segments.push(root);
-                    segments.append(&mut files);
-                }
+        if let Option::Some(root) = root {
+            segments.push(root);
+            segments.append(&mut files);
+        }
 
+        let address = Address {
+            route: hub,
+            segments,
+        };
 
-                let address = Address {
-                    route: hub,
-                    segments,
-                };
+        let address_template = AddressTemplate {
+            parent: address,
+            child_segment_template: last,
+        };
 
-                let address_template = AddressTemplate {
-                    parent: address,
-                    child_segment_template: last
-                };
-
-                Ok((next, address_template))
+        Ok((next, address_template))
     }
 
     pub fn kind_template(input: &str) -> Res<&str, KindTemplate> {
@@ -7258,184 +7206,210 @@ pub mod parse {
             resource_type,
             opt(delimited(
                 tag("<"),
-                tuple((camel_case, opt(delimited(tag("<"), specific_pattern, tag(">"))))),
+                tuple((
+                    camel_case,
+                    opt(delimited(tag("<"), specific_pattern, tag(">"))),
+                )),
                 tag(">"),
             )),
         ))(input)
-            .map(|(next, (resource_type, more))| {
-                let mut parts = KindTemplate{
-                    resource_type,
-                    kind: None,
-                    specific: None,
-                };
+        .map(|(next, (resource_type, more))| {
+            let mut parts = KindTemplate {
+                resource_type,
+                kind: None,
+                specific: None,
+            };
 
-                match more {
-                    Some((kind, specific)) => {
-                        parts.kind = Option::Some(kind.to_string());
-                        parts.specific = specific;
-                    }
-                    None => {}
+            match more {
+                Some((kind, specific)) => {
+                    parts.kind = Option::Some(kind.to_string());
+                    parts.specific = specific;
                 }
+                None => {}
+            }
 
-                (next, parts)
-            })
+            (next, parts)
+        })
     }
 
     pub fn template(input: &str) -> Res<&str, Template> {
-        tuple((address_template,delimited(tag("<"),kind_template, tag(">"))))(input).map( |(next, (address,kind ))| {
-            (next, Template {
-                address,
-                kind
-            })
-        } )
+        tuple((
+            address_template,
+            delimited(tag("<"), kind_template, tag(">")),
+        ))(input)
+        .map(|(next, (address, kind))| (next, Template { address, kind }))
     }
 
     pub fn set_property_mod(input: &str) -> Res<&str, PropertyMod> {
-        tuple((tag("+"),skewer_dot,tag("="),property_value))(input).map( |(next,(_,key,_,value))| {
-            (next,
-            PropertyMod::Set{key: key.to_string(),value: value.to_string(), lock: false})
-        })
+        tuple((tag("+"), skewer_dot, tag("="), property_value))(input).map(
+            |(next, (_, key, _, value))| {
+                (
+                    next,
+                    PropertyMod::Set {
+                        key: key.to_string(),
+                        value: value.to_string(),
+                        lock: false,
+                    },
+                )
+            },
+        )
     }
 
     pub fn set_property_mod_lock(input: &str) -> Res<&str, PropertyMod> {
-        tuple((tag("+@"),skewer_dot,tag("="),property_value))(input).map( |(next,(_,key,_,value))| {
-            (next,
-             PropertyMod::Set{key: key.to_string(),value: value.to_string(), lock: true})
-        })
+        tuple((tag("+@"), skewer_dot, tag("="), property_value))(input).map(
+            |(next, (_, key, _, value))| {
+                (
+                    next,
+                    PropertyMod::Set {
+                        key: key.to_string(),
+                        value: value.to_string(),
+                        lock: true,
+                    },
+                )
+            },
+        )
     }
 
-
-    pub fn property_value_not_space_or_comma(input: &str) -> Res<&str,&str> {
+    pub fn property_value_not_space_or_comma(input: &str) -> Res<&str, &str> {
         is_not(" \n\r\t,")(input)
     }
 
-    pub fn property_value_single_quotes(input: &str) -> Res<&str,&str> {
-        delimited(tag("'"),is_not("'"), tag("'"))(input)
+    pub fn property_value_single_quotes(input: &str) -> Res<&str, &str> {
+        delimited(tag("'"), is_not("'"), tag("'"))(input)
     }
 
-    pub fn property_value_double_quotes(input: &str) -> Res<&str,&str> {
-        delimited(tag("\""),is_not("\""), tag("\""))(input)
+    pub fn property_value_double_quotes(input: &str) -> Res<&str, &str> {
+        delimited(tag("\""), is_not("\""), tag("\""))(input)
     }
 
-    pub fn property_value(input: &str) -> Res<&str,&str> {
-        alt( (property_value_single_quotes, property_value_double_quotes, property_value_not_space_or_comma) )(input)
+    pub fn property_value(input: &str) -> Res<&str, &str> {
+        alt((
+            property_value_single_quotes,
+            property_value_double_quotes,
+            property_value_not_space_or_comma,
+        ))(input)
     }
 
     pub fn unset_property_mod(input: &str) -> Res<&str, PropertyMod> {
-        tuple((tag("!"),skewer_dot))(input).map( |(next,(_,name))| {
-            (next, PropertyMod::UnSet(name.to_string()))
-        })
+        tuple((tag("!"), skewer_dot))(input)
+            .map(|(next, (_, name))| (next, PropertyMod::UnSet(name.to_string())))
     }
 
     pub fn property_mod(input: &str) -> Res<&str, PropertyMod> {
-        alt( (set_property_mod,unset_property_mod) )(input)
+        alt((set_property_mod, unset_property_mod))(input)
     }
 
     pub fn set_properties(input: &str) -> Res<&str, SetProperties> {
-        separated_list0(tag(","),tuple((multispace0,property_mod,multispace0)))(input).map( |(next, properties)| {
-            let mut set_properties = SetProperties::new();
-            for (_,property,_) in properties {
-                set_properties.push(property);
-            }
-            (next, set_properties)
-        } )
+        separated_list0(tag(","), tuple((multispace0, property_mod, multispace0)))(input).map(
+            |(next, properties)| {
+                let mut set_properties = SetProperties::new();
+                for (_, property, _) in properties {
+                    set_properties.push(property);
+                }
+                (next, set_properties)
+            },
+        )
     }
 
     pub fn get_properties(input: &str) -> Res<&str, Vec<String>> {
-        separated_list0( tag(","),tuple((multispace0,skewer,multispace0)))(input).map( |(next, keys)| {
-            let keys: Vec<String> = keys.iter().map( |(_,key,_)|key.to_string()).collect();
-            (next,keys)
-        } )
+        separated_list0(tag(","), tuple((multispace0, skewer, multispace0)))(input).map(
+            |(next, keys)| {
+                let keys: Vec<String> = keys.iter().map(|(_, key, _)| key.to_string()).collect();
+                (next, keys)
+            },
+        )
     }
 
-
     pub fn create(input: &str) -> Res<&str, Create> {
-        tuple((template,opt(delimited(tag("{"),set_properties, tag("}")))))(input).map( |(next, (template, properties))| {
-            let properties = match properties {
-                Some( properties ) => properties,
-                None => SetProperties::new()
-            };
-            let create = Create {
-                template,
-                state: StateSrc::Stateless,
-                properties,
-                strategy: Strategy::Create,
-                registry: Default::default()
-            };
-            (next, create)
-        } )
+        tuple((template, opt(delimited(tag("{"), set_properties, tag("}")))))(input).map(
+            |(next, (template, properties))| {
+                let properties = match properties {
+                    Some(properties) => properties,
+                    None => SetProperties::new(),
+                };
+                let create = Create {
+                    template,
+                    state: StateSrc::Stateless,
+                    properties,
+                    strategy: Strategy::Create,
+                    registry: Default::default(),
+                };
+                (next, create)
+            },
+        )
     }
 
     pub fn set(input: &str) -> Res<&str, Set> {
-        tuple((address,delimited(tag("{"),set_properties, tag("}"))))(input).map( |(next, (address, properties))| {
-            let set = Set {
-                address,
-                properties,
-            };
-            (next, set)
-        } )
+        tuple((address, delimited(tag("{"), set_properties, tag("}"))))(input).map(
+            |(next, (address, properties))| {
+                let set = Set {
+                    address,
+                    properties,
+                };
+                (next, set)
+            },
+        )
     }
-
 
     pub fn get(input: &str) -> Res<&str, Get> {
-        tuple((address,opt(delimited(tag("{"),get_properties, tag("}")))))(input).map( |(next, (address, keys))| {
-            let op = match keys{
-                None => {
-                    GetOp::State
-                }
-                Some(keys) => {
-                    GetOp::Properties(keys)
-                }
-            };
-            let get = Get {
-                address,
-                op
-            };
+        tuple((address, opt(delimited(tag("{"), get_properties, tag("}")))))(input).map(
+            |(next, (address, keys))| {
+                let op = match keys {
+                    None => GetOp::State,
+                    Some(keys) => GetOp::Properties(keys),
+                };
+                let get = Get { address, op };
 
-            (next, get)
-        } )
+                (next, get)
+            },
+        )
     }
 
-
     pub fn select(input: &str) -> Res<&str, Select> {
-        address_kind_pattern(input).map( |(next, address_kind_pattern)| {
+        address_kind_pattern(input).map(|(next, address_kind_pattern)| {
             let select = Select {
                 pattern: address_kind_pattern,
                 properties: Default::default(),
                 into_payload: SelectIntoPayload::Stubs,
-                kind: SelectKind::Initial
+                kind: SelectKind::Initial,
             };
-            (next,select)
-        } )
+            (next, select)
+        })
     }
 
     pub fn publish(input: &str) -> Res<&str, CreateOp> {
-        let (next, (upload,_,address)) = tuple( (upload_step,space1,address) )(input)?;
+        let (next, (upload, _, address)) = tuple((upload_step, space1, address))(input)?;
 
         let parent = match address.parent() {
             None => {
-                return Err(nom::Err::Error(ErrorTree::from_error_kind( input, ErrorKind::Tag, )));
+                return Err(nom::Err::Error(ErrorTree::from_error_kind(
+                    input,
+                    ErrorKind::Tag,
+                )));
             }
-            Some(parent) => {parent}
+            Some(parent) => parent,
         };
 
         let last = match address.last_segment() {
             None => {
-                return Err(nom::Err::Error(ErrorTree::from_error_kind( input, ErrorKind::Tag, )));
+                return Err(nom::Err::Error(ErrorTree::from_error_kind(
+                    input,
+                    ErrorKind::Tag,
+                )));
             }
-            Some(last) => {last}
+            Some(last) => last,
         };
 
         let template = Template {
-            address: AddressTemplate{
+            address: AddressTemplate {
                 parent,
-                child_segment_template: AddressSegmentTemplate::Exact(last.to_string())
+                child_segment_template: AddressSegmentTemplate::Exact(last.to_string()),
             },
             kind: KindTemplate {
                 resource_type: "ArtifactBundle".to_string(),
                 kind: None,
-                specific: None
-            }
+                specific: None,
+            },
         };
 
         let create = CreateOp {
@@ -7444,15 +7418,12 @@ pub mod parse {
             properties: Default::default(),
             strategy: Strategy::Create,
             registry: Default::default(),
-            requirements: vec![Require::File(upload.name)]
+            requirements: vec![Require::File(upload.name)],
         };
 
-        Ok((next,create))
+        Ok((next, create))
     }
-
-
 }
-
 
 #[cfg(test)]
 pub mod test {
@@ -7461,23 +7432,29 @@ pub mod test {
     use nom::combinator::{all_consuming, recognize};
 
     use crate::error::Error;
-    use crate::version::v0_0_1::id::{AddressSegment, RouteSegment};
-    use crate::version::v0_0_1::parse::{address, camel_case, route_segment, version_address_segment, skewer_chars, base_address_segment, rec_skewer, address_template, create, publish, capture_address, file_address_capture_segment, Res};
-    use nom::Err;
-    use nom::error::VerboseError;
-    use regex::Regex;
-    use crate::version::v0_0_1::config::bind::parse::{bind, http_section, http_selector, pipeline, pipeline_step, pipeline_stop};
-    use crate::version::v0_0_1::config::bind::Section;
+    use crate::version::v0_0_1::config::bind::parse::{bind, final_bind, http_section, http_selector, pipeline, pipeline_step, pipeline_stop};
+    use crate::version::v0_0_1::config::bind::PipelinesSubScope;
     use crate::version::v0_0_1::entity::request::{Action, RequestCore};
-    use crate::version::v0_0_1::pattern::parse::version;
+    use crate::version::v0_0_1::id::{AddressSegment, RouteSegment};
+    use crate::version::v0_0_1::parse::{
+        address, address_template, base_address_segment, camel_case, capture_address, create,
+        file_address_capture_segment, publish, rec_skewer, route_segment, skewer_chars,
+        version_address_segment, Res,
+    };
     use crate::version::v0_0_1::pattern::parse::address_kind_pattern;
-    use crate::version::v0_0_1::pattern::{http_method, http_method_pattern, http_pattern, http_pattern_scoped, upload_step};
+    use crate::version::v0_0_1::pattern::parse::version;
+    use crate::version::v0_0_1::pattern::{
+        http_method, http_method_pattern, http_pattern, http_pattern_scoped, upload_step,
+    };
     use crate::version::v0_0_1::payload::{HttpMethod, Payload};
     use crate::version::v0_0_1::util::ValueMatcher;
+    use nom::error::VerboseError;
+    use nom::Err;
+    use regex::Regex;
 
     #[test]
-    pub fn test_skewer_chars() -> Result<(),Error> {
-        match all_consuming(rec_skewer)("317"){
+    pub fn test_skewer_chars() -> Result<(), Error> {
+        match all_consuming(rec_skewer)("317") {
             Ok(ok) => {
                 return Err("should not have parsed 317".into());
             }
@@ -7493,88 +7470,87 @@ pub mod test {
         Ok(())
     }
 
+    #[test]
+    pub fn test_address() -> Result<(), Error> {
+        assert_eq!(
+            ("", RouteSegment::Resource),
+            all_consuming(route_segment)("")?
+        );
 
-   #[test]
-    pub fn test_address () -> Result<(),Error> {
-        assert_eq!(("",RouteSegment::Resource),all_consuming(route_segment)("")?);
+        all_consuming(address)("[root]")?;
+        all_consuming(address)("hello:kitty")?;
+        all_consuming(address)("hello.com:kitty")?;
+        all_consuming(address)("hello:kitty:/file.txt")?;
+        all_consuming(address)("hello.com:kitty:/file.txt")?;
+        all_consuming(address)("hello.com:kitty:/")?;
+        //all_consuming(address)("hello.com:kitty:/greater-glory/file.txt")?;
+        all_consuming(address)("hello.com:kitty:base")?;
 
-         all_consuming(address)("[root]")?;
-         all_consuming(address)("hello:kitty")?;
-         all_consuming(address)("hello.com:kitty")?;
-         all_consuming(address)("hello:kitty:/file.txt")?;
-         all_consuming(address)("hello.com:kitty:/file.txt")?;
-         all_consuming(address)("hello.com:kitty:/")?;
-         //all_consuming(address)("hello.com:kitty:/greater-glory/file.txt")?;
-         all_consuming(address)("hello.com:kitty:base")?;
-
-       all_consuming(version)("1.0.0")?;
-        let (next,version) = all_consuming(version_address_segment)(":1.2.3")?;
-        println!("next: '{}' segment: '{}'", next, version.to_string() );
+        all_consuming(version)("1.0.0")?;
+        let (next, version) = all_consuming(version_address_segment)(":1.2.3")?;
+        println!("next: '{}' segment: '{}'", next, version.to_string());
         all_consuming(address)("hello.com:bundle:1.2.3")?;
         let (next, addy) = all_consuming(address)("hello.com:bundle:1.2.3:/")?;
-println!("{}", addy.last_segment().unwrap().to_string() );
-       let (next, addy) = all_consuming(address)("hello.com:bundle:1.2.3")?;
-//       let (next, addy) = all_consuming(address)("hello.com:bundle:1.2.3:/some/file.txt")?;
-       let (next, addy) = all_consuming(address)("hello.com:bundle:1.2.3:/greater-glory/file.txt")?;
-println!("{}", addy.to_string() );
-println!("{}", addy.parent().unwrap().to_string() );
-println!("{}", addy.last_segment().unwrap().to_string() );
+        println!("{}", addy.last_segment().unwrap().to_string());
+        let (next, addy) = all_consuming(address)("hello.com:bundle:1.2.3")?;
+        //       let (next, addy) = all_consuming(address)("hello.com:bundle:1.2.3:/some/file.txt")?;
+        let (next, addy) =
+            all_consuming(address)("hello.com:bundle:1.2.3:/greater-glory/file.txt")?;
+        println!("{}", addy.to_string());
+        println!("{}", addy.parent().unwrap().to_string());
+        println!("{}", addy.last_segment().unwrap().to_string());
 
-       Ok(())
+        Ok(())
     }
 
     #[test]
-    pub fn test_address_template () -> Result<(),Error> {
+    pub fn test_address_template() -> Result<(), Error> {
         all_consuming(address_template)("hello:kitty")?;
         all_consuming(address_template)("hello:kitty-%")?;
         all_consuming(address_template)("hello:kitty:bob:/some-%-time")?;
         Ok(())
     }
 
-
     #[test]
-    pub fn test_create() -> Result<(),Error> {
+    pub fn test_create() -> Result<(), Error> {
         all_consuming(create)("hello:kitty<App>")?;
         all_consuming(create)("hello:kitty<App>{ +config='some:config:1.0.0:/blah.conf' }")?;
         Ok(())
     }
 
     #[test]
-    pub fn test_publish() -> Result<(),Error> {
-        let (_,block) = all_consuming(upload_step )("^[ bundle.zip ]->")?;
-        assert_eq!( "bundle.zip", block.name.as_str() );
+    pub fn test_publish() -> Result<(), Error> {
+        let (_, block) = all_consuming(upload_step)("^[ bundle.zip ]->")?;
+        assert_eq!("bundle.zip", block.name.as_str());
         all_consuming(publish)("^[ bundle.zip ]-> space.org:hello:1.0.0")?;
         Ok(())
     }
 
     #[test]
-    pub fn test_pipeline_stop() -> Result<(),Error> {
-        pipeline_stop( "apps:my-app^Http<Get>/*")?;
-        Ok(())
-    }
-
-
-    #[test]
-    pub fn test_pipeline() -> Result<(),Error> {
-        pipeline( "-> apps:my-app^Http<Get>/users/$1 => &")?;
-        pipeline( "-> apps:bundle:1.0.0:/html/$1 => &")?;
+    pub fn test_pipeline_stop() -> Result<(), Error> {
+        pipeline_stop("apps:my-app^Http<Get>/*")?;
         Ok(())
     }
 
     #[test]
-    pub fn test_capture_address() -> Result<(),Error> {
+    pub fn test_pipeline() -> Result<(), Error> {
+        pipeline("-> apps:my-app^Http<Get>/users/$1 => &")?;
+        pipeline("-> apps:bundle:1.0.0:/html/$1 => &")?;
+        Ok(())
+    }
 
+    #[test]
+    pub fn test_capture_address() -> Result<(), Error> {
         file_address_capture_segment("$1")?;
 
         let address = all_consuming(capture_address)("apps:bundle:1.0.0:/html/$1")?.1;
-        let regex = Regex::new( "/(.*)" )?;
-        let address = address.to_address(regex.captures("/index.html" ).unwrap() )?;
+        let regex = Regex::new("/(.*)")?;
+        let address = address.to_address(regex.captures("/index.html").unwrap())?;
         Ok(())
     }
 
-
     #[test]
-    pub fn test_address_kind_pattern() -> Result<(),Error> {
+    pub fn test_address_kind_pattern() -> Result<(), Error> {
         all_consuming(address_kind_pattern)("*")?;
         all_consuming(address_kind_pattern)("space")?;
         all_consuming(address_kind_pattern)("space:base")?;
@@ -7591,12 +7567,19 @@ println!("{}", addy.last_segment().unwrap().to_string() );
         Ok(())
     }
 
+    #[test]
+    pub fn test_expect_pipelines_selector() -> Result<(), Error> {
+        final_bind(
+            r#"Bind{Msg{}}"#,
+        )?;
 
+        Ok(())
+    }
 
     #[test]
-    pub fn test_bind() -> Result<(),Error> {
-
-        bind( r#"
+    pub fn test_bind() -> Result<(), Error> {
+        bind(
+            r#"
 
         Bind {
 
@@ -7624,82 +7607,80 @@ println!("{}", addy.last_segment().unwrap().to_string() );
 
             }
 
-        }   "# )?;
+        }   "#,
+        )?;
 
         Ok(())
     }
 
     #[test]
-    pub fn test_http_pattern() -> Result<(),Error>{
-        let any_pattern = all_consuming( http_pattern )("Http<*>")?.1;
-        let get_any_pattern = all_consuming( http_pattern )("Http<Get>")?.1;
-        let get_some_pattern = all_consuming( http_pattern )("Http<Get>^/some$")?.1;
-        let get_some_star_pattern = all_consuming( http_pattern )("Http<Get>^/some/*")?.1;
-        let get_some_capture_pattern = all_consuming( http_pattern )("Http<Get>^/some/(.*)")?.1;
+    pub fn test_http_pattern() -> Result<(), Error> {
+        let any_pattern = all_consuming(http_pattern)("Http<*>")?.1;
+        let get_any_pattern = all_consuming(http_pattern)("Http<Get>")?.1;
+        let get_some_pattern = all_consuming(http_pattern)("Http<Get>^/some$")?.1;
+        let get_some_star_pattern = all_consuming(http_pattern)("Http<Get>^/some/*")?.1;
+        let get_some_capture_pattern = all_consuming(http_pattern)("Http<Get>^/some/(.*)")?.1;
 
         let get_some = RequestCore {
             action: Action::Http(HttpMethod::Get),
             headers: Default::default(),
             path: "/some".to_string(),
-            body: Payload::Empty
+            body: Payload::Empty,
         };
 
         let get_some_plus = RequestCore {
             action: Action::Http(HttpMethod::Get),
             headers: Default::default(),
             path: "/some/plus".to_string(),
-            body: Payload::Empty
+            body: Payload::Empty,
         };
 
         let post_some = RequestCore {
             action: Action::Http(HttpMethod::Post),
             headers: Default::default(),
             path: "/some".to_string(),
-            body: Payload::Empty
+            body: Payload::Empty,
         };
 
-
-        assert_eq!(any_pattern.is_match(&get_some), Ok(()) );
-        assert_eq!(any_pattern.is_match(&post_some), Ok(()) );
-        assert_eq!(get_any_pattern.is_match(&get_some), Ok(()) );
-        assert_eq!(get_any_pattern.is_match(&get_some_plus), Ok(()) );
-        assert_eq!(get_some_pattern.is_match(&get_some), Ok(()) );
-        assert!( get_some_pattern.is_match(&post_some).is_err() );
-        assert!( get_some_pattern.is_match(&get_some_plus ).is_err() );
-        assert!( get_some_star_pattern.is_match(&get_some_plus ).is_ok() );
-        assert!( get_some_capture_pattern.is_match(&get_some_plus ).is_ok() );
-
+        assert_eq!(any_pattern.is_match(&get_some), Ok(()));
+        assert_eq!(any_pattern.is_match(&post_some), Ok(()));
+        assert_eq!(get_any_pattern.is_match(&get_some), Ok(()));
+        assert_eq!(get_any_pattern.is_match(&get_some_plus), Ok(()));
+        assert_eq!(get_some_pattern.is_match(&get_some), Ok(()));
+        assert!(get_some_pattern.is_match(&post_some).is_err());
+        assert!(get_some_pattern.is_match(&get_some_plus).is_err());
+        assert!(get_some_star_pattern.is_match(&get_some_plus).is_ok());
+        assert!(get_some_capture_pattern.is_match(&get_some_plus).is_ok());
 
         Ok(())
     }
 
     #[test]
-    pub fn test_selector() -> Result<(),Error> {
+    pub fn test_selector() -> Result<(), Error> {
         let get_some = RequestCore {
             action: Action::Http(HttpMethod::Get),
             headers: Default::default(),
             path: "/some".to_string(),
-            body: Payload::Empty
+            body: Payload::Empty,
         };
 
         let get_some_plus = RequestCore {
             action: Action::Http(HttpMethod::Get),
             headers: Default::default(),
             path: "/some/plus".to_string(),
-            body: Payload::Empty
+            body: Payload::Empty,
         };
 
         let post_some = RequestCore {
             action: Action::Http(HttpMethod::Post),
             headers: Default::default(),
             path: "/some".to_string(),
-            body: Payload::Empty
+            body: Payload::Empty,
         };
 
         let get_selector = all_consuming(http_selector)("<Get> -> {{}};")?.1;
         let get_some_selector = all_consuming(http_selector)("<Get>^/some -> {{}} => &;")?.1;
         let post_some_selector = all_consuming(http_selector)("<Post>^/some -> {{}} => &;")?.1;
-
 
         assert!(get_selector.is_match(&get_some).is_ok());
         assert!(get_some_selector.is_match(&get_some).is_ok());
@@ -7707,44 +7688,45 @@ println!("{}", addy.last_segment().unwrap().to_string() );
         Ok(())
     }
     #[test]
-    pub fn test_scope() -> Result<(),Error> {
+    pub fn test_scope() -> Result<(), Error> {
         let get_some = RequestCore {
             action: Action::Http(HttpMethod::Get),
             headers: Default::default(),
             path: "/some".to_string(),
-            body: Payload::Empty
+            body: Payload::Empty,
         };
 
         let get_some_plus = RequestCore {
             action: Action::Http(HttpMethod::Get),
             headers: Default::default(),
             path: "/some/plus".to_string(),
-            body: Payload::Empty
+            body: Payload::Empty,
         };
 
         let post_some = RequestCore {
             action: Action::Http(HttpMethod::Post),
             headers: Default::default(),
             path: "/some".to_string(),
-            body: Payload::Empty
+            body: Payload::Empty,
         };
 
         let delete_some = RequestCore {
             action: Action::Http(HttpMethod::Delete),
             headers: Default::default(),
             path: "/some".to_string(),
-            body: Payload::Empty
+            body: Payload::Empty,
         };
 
-
-
-        let section = all_consuming(http_section )(r#"Http {
+        let section = all_consuming(http_section)(
+            r#"Http {
           <Get>^/(.*) -> {{}} => &;
           <Get>^/some -> {{ }} => &;
           <Post>^/some -> {{ }} => &;
-        }"#)?.1;
+        }"#,
+        )?
+        .1;
 
-        if let Section::Http( scope ) = section {
+        if let PipelinesSubScope::Http(scope) = section {
             assert!(scope.find_match(&get_some).is_ok());
             assert!(scope.find_match(&get_some).is_ok());
             assert!(scope.find_match(&post_some).is_ok());
@@ -7757,27 +7739,25 @@ println!("{}", addy.last_segment().unwrap().to_string() );
     }
 
     #[test]
-    pub fn test_http_method() -> Result<(),Error> {
+    pub fn test_http_method() -> Result<(), Error> {
         http_method("Get")?;
-        http_method("Bad")?;
+        assert!(http_method("Bad").is_err());
         Ok(())
     }
-
 
     #[test]
-    pub fn test_http_method_pattern() -> Result<(),Error> {
+    pub fn test_http_method_pattern() -> Result<(), Error> {
         http_method_pattern("*")?;
-        http_method_pattern("Bad")?;
-/*        match http_method_pattern("Bad") {
-            Ok(_) => {}
-            Err(err) => {
-                err.context
-            }
-        }
+        http_method_pattern("Get")?;
+        assert!(http_method_pattern("Bad").is_err());
+        /*        match http_method_pattern("Bad") {
+                   Ok(_) => {}
+                   Err(err) => {
+                       err.context
+                   }
+               }
 
- */
+        */
         Ok(())
     }
-
-
 }

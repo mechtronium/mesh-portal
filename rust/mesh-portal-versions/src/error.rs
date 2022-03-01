@@ -74,6 +74,13 @@ impl From<nom::Err<ErrorTree<&str>>> for Error {
     }
 }
 
+impl From<ErrorTree<&str>> for Error {
+    fn from(error: ErrorTree<&str>) -> Self {
+        Self {
+            message: error.to_string()
+        }
+    }
+}
 
 impl From<ReqParseError> for Error {
     fn from(error: ReqParseError) -> Self {
