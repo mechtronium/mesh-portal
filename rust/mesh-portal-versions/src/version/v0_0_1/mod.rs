@@ -1826,7 +1826,7 @@ pub mod pattern {
     pub enum EntityPattern {
         Rc(RcPattern),
         Msg(MsgPattern),
-        Http(HttpPattern),
+        Http(HttpPipeline),
     }
 
     impl ValueMatcher<RequestCore> for EntityPattern {
@@ -1940,18 +1940,18 @@ pub mod pattern {
     }
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
-    pub struct HttpPattern {
+    pub struct HttpPipeline {
         pub method: ValuePattern<HttpMethod>,
         pub path_regex: String,
     }
 
-    impl ToString for HttpPattern {
+    impl ToString for HttpPipeline {
         fn to_string(&self) -> String {
             format!("Http<{}>{}", self.method.to_string(), self.path_regex)
         }
     }
 
-    impl ValueMatcher<RequestCore> for HttpPattern {
+    impl ValueMatcher<RequestCore> for HttpPipeline {
         fn is_match(&self, found: &RequestCore) -> Result<(), Error> {
             if let Action::Http(method) = &found.action {
                 self.method.is_match(&method)?;
@@ -2391,14 +2391,14 @@ pub mod pattern {
     }
 
     pub fn http_method(input: &str) -> Res<&str, HttpMethod> {
-        context("http_method", parse_from_str(camel_case)).parse(input)
+        context("!expecting: 'Get', 'Post', 'Put', 'Delete' ... (HttpMethod)", parse_from_str(camel_case)).parse(input)
     }
 
     pub fn http_method_pattern(input: &str) -> Res<&str, ValuePattern<HttpMethod>> {
-        value_pattern(http_method)(input)
+        context("!expecting: '*', 'Get', 'Post', 'Put', 'Delete' ... (HttpMethodPattern)",value_pattern(http_method))(input)
     }
 
-    pub fn http_pattern_scoped(input: &str) -> Res<&str, HttpPattern> {
+    pub fn http_pattern_scoped(input: &str) -> Res<&str, HttpPipeline> {
         tuple((
             delimited(tag("<"), http_method_pattern, tag(">")),
             opt(path_regex),
@@ -2408,7 +2408,7 @@ pub mod pattern {
                 None => "*".to_string(),
                 Some(path_regex) => path_regex.to_string(),
             };
-            let rtn = HttpPattern {
+            let rtn = HttpPipeline {
                 method,
                 path_regex: path_regex.to_string(),
             };
@@ -2416,7 +2416,7 @@ pub mod pattern {
         })
     }
 
-    pub fn http_pattern(input: &str) -> Res<&str, HttpPattern> {
+    pub fn http_pattern(input: &str) -> Res<&str, HttpPipeline> {
         tuple((
             tag("Http"),
             delimited(tag("<"), http_method_pattern, tag(">")),
@@ -2427,7 +2427,7 @@ pub mod pattern {
                 None => "*".to_string(),
                 Some(path_regex) => path_regex.to_string(),
             };
-            let rtn = HttpPattern {
+            let rtn = HttpPipeline {
                 method,
                 path_regex: path_regex.to_string(),
             };
@@ -4395,7 +4395,7 @@ pub mod config {
         use crate::version::v0_0_1::entity::EntityType;
         use crate::version::v0_0_1::id::CaptureAddress;
         use crate::version::v0_0_1::pattern::{
-            Block, EntityPattern, HttpPattern, MsgPattern, RcPattern,
+            Block, EntityPattern, HttpPipeline, MsgPattern, RcPattern,
         };
         use crate::version::v0_0_1::payload::Call;
         use crate::version::v0_0_1::payload::PayloadType::Primitive;
@@ -4455,7 +4455,7 @@ pub mod config {
         #[derive(Debug, Clone, Serialize, Deserialize)]
         pub struct BindConfig {
             pub msg: Scope<EntityType, Selector<MsgPattern>>,
-            pub http: Scope<EntityType, Selector<HttpPattern>>,
+            pub http: Scope<EntityType, Selector<HttpPipeline>>,
             pub rc: Scope<EntityType, Selector<RcPattern>>,
         }
 
@@ -4484,8 +4484,8 @@ pub mod config {
             }
         }
 
-        impl<T> Scope<T, Selector<HttpPattern>> {
-            pub fn find_match(&self, m: &RequestCore) -> Result<Selector<HttpPattern>, Error> {
+        impl<T> Scope<T, Selector<HttpPipeline>> {
+            pub fn find_match(&self, m: &RequestCore) -> Result<Selector<HttpPipeline>, Error> {
                 for e in &self.elements {
                     if e.is_match(m).is_ok() {
                         return Ok(e.clone());
@@ -4588,7 +4588,7 @@ pub mod config {
             }
         }
 
-        impl Selector<HttpPattern> {
+        impl Selector<HttpPipeline> {
             pub fn is_match(&self, m: &RequestCore) -> Result<(), Error> {
                 self.pattern.is_match(m)
             }
@@ -4619,7 +4619,7 @@ pub mod config {
 
         pub enum PipelinesSubScope {
             Msg(Scope<EntityType, Selector<MsgPattern>>),
-            Http(Scope<EntityType, Selector<HttpPattern>>),
+            Http(Scope<EntityType, Selector<HttpPipeline>>),
             Rc(Scope<EntityType, Selector<RcPattern>>),
         }
 
@@ -4640,16 +4640,16 @@ pub mod config {
             use crate::version::v0_0_1::parse::{capture_address, Res};
             use crate::version::v0_0_1::pattern::{
                 call, entity_pattern, http_pattern, http_pattern_scoped, msg_pattern_scoped,
-                pipeline_block, rc_pattern_scoped, EntityPattern, HttpPattern, MsgPattern,
+                pipeline_block, rc_pattern_scoped, EntityPattern, HttpPipeline, MsgPattern,
                 RcPattern,
             };
-            use nom::branch::alt;
+            use nom::branch::{alt, Alt};
             use nom::bytes::complete::tag;
             use nom::character::complete::multispace0;
-            use nom::combinator::{all_consuming, fail, opt, success};
-            use nom::error::{context, ContextError, ParseError};
+            use nom::combinator::{all_consuming, fail, opt, peek, success};
+            use nom::error::{context, ContextError, ErrorKind, ParseError};
             use nom::multi::{many0, many1};
-            use nom::sequence::{delimited, tuple};
+            use nom::sequence::{delimited, preceded, tuple};
             use nom::{AsChar, Compare, IResult, InputIter, InputLength, InputTake, Parser, UnspecializedInput, InputTakeAtPosition, FindToken};
             use nom_supreme::error::{ErrorTree, StackContext};
             use nom_supreme::final_parser::final_parser;
@@ -4743,30 +4743,58 @@ pub mod config {
             }
 
             pub fn bind(input: &str) -> Res<&str, ProtoBind> {
-                context(
-                    "Bind",
-                    delimited(
-                        multispace0,
-                        tuple((
-                            context("expected 'Bind'", tag("Bind")),
-                            multispace0,
-                            delimited(
-                                context("expected '{' (open Bind scope)", tag("{")),
-                                delimited(multispace0, pipelines_scope, multispace0),
-                                context("expected '}' (close Bind scope)", tag("}")),
-                            ),
-                        )),
-                        multispace0,
-                    ),
-                )(input)
-                .map(|(next, (_, _, sections))| {
+                selector_scope("Bind", pipelines_scope)(input).map(|(next, sections)| {
                     let bind = ProtoBind { sections };
 
                     (next, bind)
                 })
             }
 
-            fn scope<I,E, F, O>(
+
+
+            pub fn many_until0<I, O, O2, E, F,U>(mut f: F, mut until: U) -> impl FnMut(I) -> IResult<I, Vec<O>, E>
+                where
+                    I: Clone + InputLength,
+                    F: Parser<I, O, E>,
+                    U: Parser<I, O2, E>,
+                    E: ParseError<I>,
+            {
+                move |mut i: I| {
+                    let mut acc = vec![];
+                    loop {
+                        let len = i.input_len();
+                        match f.parse(i.clone()) {
+                            Err(nom::Err::Error(e)) => {
+                                match until.parse(i.clone()) {
+                                    Ok(_) => {
+                                        return Ok((i, acc));
+                                    }
+                                    Err(_) => {
+                                        return Err(nom::Err::Error(e));
+                                    }
+                                }
+                            },
+                            Err(e) => return Err(e),
+                            Ok((i1, o)) => {
+                                // infinite loop check: the parser must always consume
+                                if i1.input_len() == len {
+                                    return Err(nom::Err::Error(E::from_error_kind(i, ErrorKind::Many0)));
+                                }
+                                i = i1;
+                                acc.push(o);
+                            }
+                        }
+                    }
+                }
+            }
+
+            pub fn multi_alt0<I: Clone, O, E: ParseError<I>, List: Alt<I, O, E>>(
+                mut l: List,
+            ) -> impl FnMut(I) -> IResult<I, O, E> {
+                move |i: I| l.choice(i)
+            }
+
+            fn selector_scope<I,E, F, O>(
                 object: &'static str,
                 mut f: F,
             ) -> impl FnMut(I) -> IResult<I, O, E>
@@ -4779,11 +4807,12 @@ pub mod config {
                 E: ParseError<I> + ContextError<I>,
             {
                 let parser = move |i: I| {
-
                     let (next,_) = context("scope:expect-selector",tag(object))(i)?;
                     let (next,_) = multispace0(next)?;
                     let (next,_) = context( "!expected '{' (open scope)", tag("{"), )(next)?;
+                    let (next,_) = multispace0(next)?;
                     let (next, rtn ) = f.parse(next)?;
+                    let (next,_) = multispace0(next)?;
                     let (next,_) = context( "!expected '}' (close scope)", tag("}"), )(next)?;
                     Ok( (next, rtn))
                 };
@@ -4791,33 +4820,86 @@ pub mod config {
                 context(object, parser )
             }
 
+            fn scope<I,E, F, O, O2, O3, Open, Close>(
+                mut open: Open,
+                mut f: F,
+                mut close: Close,
+            ) -> impl FnMut(I) -> IResult<I, O, E>
+                where
+                    I: Clone+InputTake+InputLength+InputIter+ Compare<&'static str>+InputTakeAtPosition,
+                    <I as InputIter>::Item: AsChar,
+                    <I as InputIter>::Item: Clone,
+                    <I as InputTakeAtPosition>::Item: AsChar + Clone,
+                    F: Parser<I, O, E>,
+                    Open: Parser<I, O2, E>,
+                    Close: Parser<I, O3, E>,
+                    E: ParseError<I> + ContextError<I>,
+            {
+                move |i: I| {
+
+                    let (next,_) = open.parse(i)?;
+                    let (next,_) = multispace0(next)?;
+                    let (next, rtn ) = f.parse(next)?;
+                    let (next,_) = multispace0(next)?;
+                    let (next,_) = close.parse(next)?;
+                    Ok( (next, rtn))
+                }
+            }
+
+
+            fn whitespace_until<I,E, F, O>(
+                mut f: F,
+            ) -> impl FnMut(I) -> IResult<I, O, E>
+                where
+                    I: Clone+InputTake+InputLength+InputIter+ Compare<&'static str>+InputTakeAtPosition,
+                    <I as InputIter>::Item: AsChar,
+                    <I as InputIter>::Item: Clone,
+                    <I as InputTakeAtPosition>::Item: AsChar + Clone,
+                    F: Parser<I, O, E>,
+                    E: ParseError<I> + ContextError<I>,
+            {
+                move |i: I| {
+                    let (next,_) = multispace0(i)?;
+                    let (next,rtn) = f.parse(next)?;
+                    Ok( (next, rtn))
+                }
+            }
+
+            fn padded_curly_open<I>(input:I) -> Res<I,I>
+                where
+                    I: Clone+InputTake+InputLength+InputIter+ Compare<&'static str>+InputTakeAtPosition,
+                    <I as InputIter>::Item: AsChar,
+                    <I as InputIter>::Item: Clone,
+                    <I as InputTakeAtPosition>::Item: AsChar + Clone,
+            {
+                delimited(multispace0,context("!expected: '{'",tag("{")),multispace0)(input)
+            }
+
+            fn padded_curly_close<I>(input:I) -> Res<I,I>
+                where
+                    I: Clone+InputTake+InputLength+InputIter+ Compare<&'static str>+InputTakeAtPosition,
+                    <I as InputIter>::Item: AsChar,
+                    <I as InputIter>::Item: Clone,
+                    <I as InputTakeAtPosition>::Item: AsChar + Clone,
+            {
+                preceded(multispace0,context("!expected: '}'",tag("}")))(input)
+            }
+
+
             pub fn pipelines_scope(input: &str) -> Res<&str, Vec<PipelinesSubScope>> {
-                scope("Pipelines", many0(pipelines_sub_scope))(input)
+                selector_scope("Pipelines", context("!expected: 'Rc', 'Msg' or 'Http' (PipelinesSubScope)", many_until0(pipelines_sub_scope, whitespace_until(tag("}")))))(input)
             }
 
             pub fn pipelines_sub_scope(input: &str) -> Res<&str, PipelinesSubScope> {
                 alt((
-                    msg_section,
-                    http_section,
-                    rc_section,
-                    context("expected: 'Rc', 'Msg' or 'Http' (PipelinesSubScope)", fail),
+                    msg_selector_scope,
+                    http_selector_scope,
+                    rec_selector_scope,
                 ))(input)
             }
 
-            pub fn msg_section(input: &str) -> Res<&str, PipelinesSubScope> {
-                context(
-                    "Msg",
-                    tuple((
-                        tag("Msg"),
-                        multispace0,
-                        delimited(
-                            context("expected: '{' (open Msg scope)", tag("{")),
-                            delimited(multispace0, msg_selectors, multispace0),
-                            context("expected: '}' (close Msg scope)", tag("}")),
-                        ),
-                    )),
-                )(input)
-                .map(|(next, (_, _, selectors))| {
+            pub fn msg_selector_scope(input: &str) -> Res<&str, PipelinesSubScope> {
+                selector_scope( "Msg", msg_selectors )(input).map(|(next, selectors)| {
                     (
                         next,
                         PipelinesSubScope::Msg(Scope::new(EntityType::Msg, selectors)),
@@ -4825,20 +4907,8 @@ pub mod config {
                 })
             }
 
-            pub fn http_section(input: &str) -> Res<&str, PipelinesSubScope> {
-                context(
-                    "Http",
-                    tuple((
-                        tag("Http"),
-                        multispace0,
-                        delimited(
-                            context("expected: '{' (open Http scope)", tag("{")),
-                            delimited(multispace0, http_selectors, multispace0),
-                            context("expected: '}' (close Http scope)", tag("}")),
-                        ),
-                    )),
-                )(input)
-                .map(|(next, (_, _, selectors))| {
+            pub fn http_selector_scope(input: &str) -> Res<&str, PipelinesSubScope> {
+                selector_scope("Http", http_pipelines)(input).map(|(next, selectors)| {
                     (
                         next,
                         PipelinesSubScope::Http(Scope::new(EntityType::Http, selectors)),
@@ -4846,7 +4916,7 @@ pub mod config {
                 })
             }
 
-            pub fn rc_section(input: &str) -> Res<&str, PipelinesSubScope> {
+            pub fn rec_selector_scope(input: &str) -> Res<&str, PipelinesSubScope> {
                 context(
                     "Rc",
                     tuple((
@@ -4951,8 +5021,8 @@ pub mod config {
                 many0(delimited(multispace0, msg_selector, multispace0))(input)
             }
 
-            pub fn http_selectors(input: &str) -> Res<&str, Vec<Selector<HttpPattern>>> {
-                many0(delimited(multispace0, http_selector, multispace0))(input)
+            pub fn http_pipelines(input: &str) -> Res<&str, Vec<Selector<HttpPipeline>>> {
+                many_until0(delimited(multispace0, http_pipeline, multispace0), padded_curly_close)(input)
             }
 
             pub fn rc_selectors(input: &str) -> Res<&str, Vec<Selector<RcPattern>>> {
@@ -4971,7 +5041,7 @@ pub mod config {
                 )
             }
 
-            pub fn http_selector(input: &str) -> Res<&str, Selector<HttpPattern>> {
+            pub fn http_pipeline(input: &str) -> Res<&str, Selector<HttpPipeline>> {
                 tuple((http_pattern_scoped, multispace0, pipeline, tag(";")))(input).map(
                     |(next, (pattern, _, pipeline, _))| (next, Selector::new(pattern, pipeline)),
                 )
@@ -7514,7 +7584,7 @@ pub mod test {
     use nom::combinator::{all_consuming, recognize};
 
     use crate::error::Error;
-    use crate::version::v0_0_1::config::bind::parse::{bind, final_bind, http_section, http_selector, pipeline, pipeline_step, pipeline_stop};
+    use crate::version::v0_0_1::config::bind::parse::{bind, final_bind, http_selector_scope, http_pipeline, pipeline, pipeline_step, pipeline_stop};
     use crate::version::v0_0_1::config::bind::{PipelinesSubScope, ProtoBind};
     use crate::version::v0_0_1::entity::request::{Action, RequestCore};
     use crate::version::v0_0_1::id::{AddressSegment, RouteSegment};
@@ -7683,6 +7753,72 @@ pub mod test {
 
     }
 
+    #[test]
+    pub fn test_expect_pipelines_scope_selector_empty() -> Result<(), Error> {
+        match final_bind( r#"Bind{Pipelines{ }}"#) {
+            Ok(_) => {
+                Ok(())
+            }
+            Err(err) => {
+                println!("{}",err);
+                panic!("{}",err)
+            }
+        }
+    }
+
+
+    #[test]
+    pub fn test_expect_pipelines_scope_selector_enumeration() -> Result<(), Error> {
+        match final_bind(
+            r#"Bind{Pipelines{ Blah{ } }}"#,
+        ) {
+            Ok(_) => {
+                panic!("should not be ok")
+            }
+            Err(err) => {
+                println!("{}",err);
+                Ok(())
+            }
+        }
+
+    }
+
+    #[test]
+    pub fn test_expect_pipelines_scope_selector_msg() -> Result<(), Error> {
+        match final_bind(
+            r#"Bind{ Pipelines{ Msg{ } }}"#,
+        ) {
+            Ok(_) => {
+                Ok(())
+            }
+            Err(err) => {
+                panic!("{}",err);
+            }
+        }
+
+    }
+
+    #[test]
+    pub fn test_expect_http_method_pattern() -> Result<(), Error> {
+        match final_bind(
+            r#"Bind{
+    Pipelines{
+        Http {
+            <Bad> -> something;
+        }
+    }
+}"#,
+        ) {
+            Ok(_) => {
+                Ok(())
+            }
+            Err(err) => {
+                panic!("{}",err);
+            }
+        }
+
+    }
+
 
     #[test]
     pub fn test_bind() -> Result<(), Error> {
@@ -7786,9 +7922,9 @@ pub mod test {
             body: Payload::Empty,
         };
 
-        let get_selector = all_consuming(http_selector)("<Get> -> {{}};")?.1;
-        let get_some_selector = all_consuming(http_selector)("<Get>^/some -> {{}} => &;")?.1;
-        let post_some_selector = all_consuming(http_selector)("<Post>^/some -> {{}} => &;")?.1;
+        let get_selector = all_consuming(http_pipeline)("<Get> -> {{}};")?.1;
+        let get_some_selector = all_consuming(http_pipeline)("<Get>^/some -> {{}} => &;")?.1;
+        let post_some_selector = all_consuming(http_pipeline)("<Post>^/some -> {{}} => &;")?.1;
 
         assert!(get_selector.is_match(&get_some).is_ok());
         assert!(get_some_selector.is_match(&get_some).is_ok());
@@ -7825,7 +7961,7 @@ pub mod test {
             body: Payload::Empty,
         };
 
-        let section = all_consuming(http_section)(
+        let section = all_consuming(http_selector_scope)(
             r#"Http {
           <Get>^/(.*) -> {{}} => &;
           <Get>^/some -> {{ }} => &;
