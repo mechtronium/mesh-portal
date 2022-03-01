@@ -4650,14 +4650,96 @@ pub mod config {
             use nom::error::{context, ContextError, ParseError};
             use nom::multi::{many0, many1};
             use nom::sequence::{delimited, tuple};
-            use nom::{AsChar, Compare, IResult, InputIter, InputLength, InputTake, Parser, UnspecializedInput, InputTakeAtPosition};
-            use nom_supreme::error::ErrorTree;
+            use nom::{AsChar, Compare, IResult, InputIter, InputLength, InputTake, Parser, UnspecializedInput, InputTakeAtPosition, FindToken};
+            use nom_supreme::error::{ErrorTree, StackContext};
             use nom_supreme::final_parser::final_parser;
             use nom_supreme::ParserExt;
 
-            pub fn final_bind(input: &str) -> Result<ProtoBind,ErrorTree<&str>>
+            pub fn final_bind(input: &str) -> Result<ProtoBind,String>
             {
-                final_parser(bind)(input)
+                final_parser(bind)(input).map_err( |err| final_result_to_error(err) )
+            }
+
+            pub fn final_result_to_error(error: ErrorTree<&str>) -> String {
+                match error {
+                    ErrorTree::Stack { base, contexts } => {
+                        contexts_to_error(contexts)
+                    }
+                    _ => {
+                        return "unexpected parse error".to_string()
+                    }
+                }
+            }
+
+            fn extract_problem_line( input: &str ) -> String {
+                if input.is_empty() {
+                    return "Problem: \"\"".to_string();
+                }
+
+                if input.len() < 80 {
+                    return format!("Problem: \"{}\"",input.trim_end());
+                }
+
+                format!("Problem: \"{}\"",input[0..80].trim_end())
+            }
+
+            fn contexts_to_error( mut contexts: Vec<(&str,StackContext)>) -> String {
+
+                if contexts.is_empty() {
+                    return "internal parsing error: could not create usable error message because of missing context".to_string();
+                }
+
+                let (input, context) = contexts.remove(0);
+
+                fn parent( contexts: &Vec<(&str,StackContext)>) -> String {
+                    match contexts.first() {
+                        None => {"?"}
+                        Some((_,context)) => {
+                            match context {
+                                StackContext::Kind(_) => {"!"}
+                                StackContext::Context(context) => {context}
+                            }
+                        }
+                    }.to_string()
+                }
+
+                let message = match context {
+                    StackContext::Kind(kind) => {
+                         format!(": parse error: '{}'",kind.description())
+                    }
+                    StackContext::Context(context) => {
+                        if context.starts_with("!") {
+                            context[1..].to_string()
+                        } else if context == "scope:expect-selector" {
+                            format!( "expected '{}' (scope selector)", parent(&contexts) )
+                        } else {
+                            match context {
+                                what => {
+                                    format!("internal parsing error: no parse error handler for context '{}'", what)
+                                }
+                            }
+                        }
+                    }
+                };
+
+                contexts.reverse();
+                let mut hierarchy = String::new();
+                let len = contexts.len();
+                for (index, (_,context)) in contexts.into_iter().enumerate() {
+                    match context {
+                        StackContext::Kind(kind) => {
+                            return format!("{}\n\ninternal parsing error: unexpected kind error when processing context hierarchy: '{}'", extract_problem_line(input),kind.description() );
+                        }
+                        StackContext::Context(context) => {
+                            hierarchy.push_str(context);
+                            if index < len - 1 {
+                                hierarchy.push_str(".");
+                            }
+                        }
+                    }
+                }
+
+                format!("{}\n\n{}: {}", extract_problem_line(input), hierarchy, message )
             }
 
             pub fn bind(input: &str) -> Res<&str, ProtoBind> {
@@ -4698,11 +4780,11 @@ pub mod config {
             {
                 let parser = move |i: I| {
 
-                    let (next,_) = context("expect-scope-selector",tag(object))(i)?;
+                    let (next,_) = context("scope:expect-selector",tag(object))(i)?;
                     let (next,_) = multispace0(next)?;
-                    let (next,_) = context( "expected: '{' (open scope)", tag("{"), )(next)?;
+                    let (next,_) = context( "!expected '{' (open scope)", tag("{"), )(next)?;
                     let (next, rtn ) = f.parse(next)?;
-                    let (next,_) = context( "expected: '}' (close scope)", tag("}"), )(next)?;
+                    let (next,_) = context( "!expected '}' (close scope)", tag("}"), )(next)?;
                     Ok( (next, rtn))
                 };
 
@@ -7433,7 +7515,7 @@ pub mod test {
 
     use crate::error::Error;
     use crate::version::v0_0_1::config::bind::parse::{bind, final_bind, http_section, http_selector, pipeline, pipeline_step, pipeline_stop};
-    use crate::version::v0_0_1::config::bind::PipelinesSubScope;
+    use crate::version::v0_0_1::config::bind::{PipelinesSubScope, ProtoBind};
     use crate::version::v0_0_1::entity::request::{Action, RequestCore};
     use crate::version::v0_0_1::id::{AddressSegment, RouteSegment};
     use crate::version::v0_0_1::parse::{
@@ -7450,6 +7532,8 @@ pub mod test {
     use crate::version::v0_0_1::util::ValueMatcher;
     use nom::error::VerboseError;
     use nom::Err;
+    use nom_supreme::error::ErrorTree;
+    use nom_supreme::final_parser::ExtractContext;
     use regex::Regex;
 
     #[test]
@@ -7568,13 +7652,37 @@ pub mod test {
     }
 
     #[test]
-    pub fn test_expect_pipelines_selector() -> Result<(), Error> {
-        final_bind(
+    pub fn test_expect_pipelines_scope_selector() -> Result<(), Error> {
+        match final_bind(
             r#"Bind{Msg{}}"#,
-        )?;
+        ) {
+            Ok(_) => {
+                panic!("should not be ok")
+            }
+            Err(err) => {
+                println!("{}",err);
+                Ok(())
+           }
+        }
 
-        Ok(())
     }
+
+    #[test]
+    pub fn test_expect_pipelines_scope_selector_open() -> Result<(), Error> {
+        match final_bind(
+            r#"Bind{Pipelines}"#,
+        ) {
+            Ok(_) => {
+                panic!("should not be ok")
+            }
+            Err(err) => {
+                println!("{}",err);
+                Ok(())
+            }
+        }
+
+    }
+
 
     #[test]
     pub fn test_bind() -> Result<(), Error> {
