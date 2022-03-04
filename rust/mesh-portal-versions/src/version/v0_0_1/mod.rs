@@ -861,8 +861,8 @@ pub mod pattern {
     use crate::{Deserialize, Serialize};
     use nom::branch::alt;
     use nom::bytes::complete::tag;
-    use nom::character::complete::{alpha1, alphanumeric1, digit1, multispace0};
-    use nom::combinator::{all_consuming, opt, recognize};
+    use nom::character::complete::{alpha1, alphanumeric1, digit1, multispace0, one_of};
+    use nom::combinator::{all_consuming, fail, opt, recognize};
     use nom::error::{context, ErrorKind, ParseError, VerboseError};
     use nom::multi::separated_list0;
     use nom::sequence::{delimited, preceded, terminated, tuple};
@@ -872,6 +872,7 @@ pub mod pattern {
     use nom_supreme::{parse_from_str, ParserExt};
     use regex::Regex;
     use std::collections::HashMap;
+    use crate::version::v0_0_1::config::bind::parse::{select_block, SelectBlock};
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct TksPattern {
@@ -2387,7 +2388,7 @@ pub mod pattern {
 
     pub fn http_pattern_scoped(input: &str) -> Res<&str, HttpPipeline> {
         tuple((
-            delimited(tag("<"), http_method_pattern, tag(">")),
+            delimited(context("angle_bracket_open",tag("<")), http_method_pattern, context("angle_bracket_close",tag(">"))),
             opt(path_regex),
         ))(input)
         .map(|(next, (method, path_regex))| {
@@ -2497,10 +2498,11 @@ pub mod pattern {
     }
 
     pub fn payload_pattern(input: &str) -> Res<&str, ValuePattern<PayloadPattern>> {
-        value_pattern(payload_structure_with_validation)(input)
+        context("@payload-pattern", value_pattern(payload_structure_with_validation))(input)
             .map(|(next, payload_pattern)| (next, payload_pattern))
     }
 
+    /*
     pub fn payload_patterns(input: &str) -> Res<&str, ValuePattern<PayloadPattern>> {
         alt((tag("*"), recognize(payload_structure_with_validation)))(input).map(|(next, data)| {
             let data = match data {
@@ -2515,6 +2517,8 @@ pub mod pattern {
         })
     }
 
+     */
+
     pub fn pattern_block_empty(input: &str) -> Res<&str, PatternBlock> {
         multispace0(input).map(|(next, _)| (input, PatternBlock::None))
     }
@@ -2526,7 +2530,8 @@ pub mod pattern {
     }
 
     pub fn pattern_block_def(input: &str) -> Res<&str, PatternBlock> {
-        payload_structure_with_validation(input)
+        context( "payload-structure-with-validation",
+        payload_structure_with_validation)(input)
             .map(|(next, pattern)| (next, PatternBlock::Pattern(pattern)))
     }
 
@@ -2586,15 +2591,15 @@ pub mod pattern {
     }
 
     pub fn request_pattern_block(input: &str) -> Res<&str, Block> {
-        delimited(
-            tag("-["),
+        context("request-pattern-block",
+        terminated(
             tuple((
                 multispace0,
-                alt((pattern_block_any, pattern_block_def, pattern_block_empty)),
+                alt((pattern_block_any, pattern_block_def, pattern_block_empty,fail)),
                 multispace0,
             )),
             tag("]"),
-        )(input)
+        ))(input)
         .map(|(next, (_, block, _))| (next, Block::RequestPattern(block)))
     }
 
@@ -2612,11 +2617,14 @@ pub mod pattern {
     }
 
     pub fn pipeline_block(input: &str) -> Res<&str, Block> {
-        alt((
-            request_pattern_block,
-            response_pattern_block,
-            upload_pattern_block,
-        ))(input)
+println!("PIPELINE BLOCK");
+        context( "pipeline-step-block", select_block(vec!(
+            SelectBlock(tag("-["),request_pattern_block),
+/*            SelectBlock(tag("=["),response_pattern_block),
+            SelectBlock(tag("^["),upload_pattern_block),
+
+ */
+        )))(input)
     }
 
     pub fn consume_pipeline_block(input: &str) -> Res<&str, Block> {
@@ -4645,7 +4653,7 @@ pub mod config {
 
             pub fn final_bind(input: &str) -> Result<ProtoBind,String>
             {
-                final_parser(bind)(input).map_err( |err| final_bind_error(err) )
+                final_parser(delimited( multispace0,bind,multispace0 ) )(input).map_err( |err| final_bind_error(err) )
             }
 
             fn final_bind_error(error: ErrorTree<&str>) -> String {
@@ -4683,6 +4691,10 @@ println!("CONTEXT   {}", stack.final_segment().context);
                 match stack.final_segment().context {
                     "http_method" => Ok("expecting valid HttpMethod: 'Get', 'Post', 'Put', 'Delete', etc... (HttpMethod)".to_string()),
                     "@http_method_pattern" => Ok("expecting '*' or valid HttpMethod: 'Get', 'Post', 'Put', 'Delete', etc... (HttpMethodPattern)".to_string()),
+                    "angle_bracket_open" => Ok("expecting: '<' (open angle bracket)".to_string()),
+                    "angle_bracket_close" => Ok("expecting: '>' (close angle bracket)".to_string()),
+                    "!pipeline-step:exit" => Ok("pipeline step exit expecting: '->' (forward request) or '=>' (forward response)".to_string()),
+                    "@payload-pattern" => Ok("expecting '*' or valid Payload: 'Bin', 'Text', 'Stub', 'Address', etc... (Payload)".to_string()),
                     "multi_select_scope" => {
                         match hierarchy.as_str() {
                             "Bind.Pipelines" =>Ok("expecting 'Rc', 'Msg' or 'Http' (pipelines selectors) or '}' (close Pipelines scope)".to_string()),
@@ -4714,13 +4726,19 @@ println!("Segs count: {}", segs.len() );
                         }
                         ErrorTree::Stack { base, contexts } => {
                             //let mut stack = to_error_stack(contexts);
-                            if let StackContext::Context("select") = first_context(contexts)?  {
-diagnose_contexts(contexts);
-println!("find_select_error()");
-                                let mut stack = find_select_error(base.as_ref() )?;
-                                stack.append( & mut to_error_segments(contexts) );
-                                Ok(stack)
-                            } else {
+
+                            if let StackContext::Context(context) = first_context(contexts)?  {
+
+                                if "select" == context {
+                                    let mut stack = find_select_error(base.as_ref() )?;
+                                    stack.append( & mut to_error_segments(contexts) );
+                                    return Ok(stack);
+                                } else if context.starts_with("!") {
+                                    return Ok(to_error_segments(contexts))
+                                }
+                            }
+
+{
 diagnose_contexts(contexts);
 println!("finding error segments: ");
                                 let mut stack = match find_error_segments(base.as_ref() ) {
@@ -4734,8 +4752,11 @@ println!("finding error segments: ");
                         ErrorTree::Alt(alts) => {
 
 println!("alts");
+                            // find the alt with the smallest 'input' (making it the most successful)
+                            let mut least = Option::None;
                             for error in alts {
                                 let error = Box::new(error );
+
                                 match find_error_segments(error.as_ref()) {
                                     Ok(error) => {
                                         return Ok(error);
@@ -4746,6 +4767,56 @@ println!("alts");
                             Err(())
                         }
                     }
+            }
+
+            pub fn find_smallest_error_input<'a>(error: &'a ErrorTree<&str>) -> Result<ErrorSegment<&'a str>,()> {
+                match error {
+                    ErrorTree::Base { location, kind } => {
+                        Err(())
+                    }
+                    ErrorTree::Stack { base, contexts } => {
+                        if let Option::Some((location,context)) = contexts.first() {
+                            if let StackContext::Context(context) = context {
+                                let seg = ErrorSegment {
+                                    location: *location,
+                                    context: *context
+                                };
+                                Ok(seg)
+                            } else {
+                                Err(())
+                            }
+                            Err(())
+                        }
+                    }
+                    ErrorTree::Alt(alts) => {
+                        let mut smallest = Option::None;
+                        let mut even = true;
+                        for alt in alts {
+                            match find_smallest_error_input(alt) {
+                                Ok(alt) => {
+                                    if smallest.is_none() {
+                                        smallest = Option::Some(alt);
+                                    } else {
+                                        let size = match &smallest {
+                                            Some(seg) => { seg.location.len() },
+                                            None => { usize::MAX }
+                                        };
+                                        if size < alt.location.len() {
+                                            smallest = Option::Some(alt);
+                                            even = false;
+                                        }
+                                    }
+                                }
+                                Err(_) => {}
+                            }
+                        }
+                        if even {
+                            Err(())
+                        } else {
+                            Ok(smallest.expect("smallest"))
+                        }
+                    }
+                }
             }
 
             pub fn find_select_error<'a>(error: &'a ErrorTree<&str>) -> Result<Vec<ErrorSegment<&'a str>>,()> {
@@ -4759,14 +4830,18 @@ println!("alts");
                         diagnose_contexts(contexts);
                         println!("find_Select_error::Stack...");
 
-                        if let StackContext::Context("selector") = first_context(contexts)?  {
-                            // if there is an error in the actual selector then this alt is aborted
-                            diagnose_contexts(contexts);
-                            println!("abort...");
+                        if let StackContext::Context(context) = first_context(contexts)?  {
 
-                            Err(())
+                            if "selector" == context {
+                                // if there is an error in the actual selector then this alt is aborted
+                                diagnose_contexts(contexts);
+                                println!("abort...");
+                                return Err(());
+                            } else if context.starts_with("!") {
+                                return Ok(to_error_segments(contexts))
+                            }
                         }
-                        else {
+                        {
                             match base.as_ref() {
                                 ErrorTree::Base {..} => {
                                     Ok(to_error_segments(contexts))
@@ -5036,7 +5111,6 @@ println!("alts");
                                         return Ok((i, acc));
                                     }
                                     Err(e2) => {
-println!("UNTIL PARSE FAIL '{}'", i.to_string() );
                                         return Err(nom::Err::Error(e));
                                     }
                                 }
@@ -5066,8 +5140,60 @@ println!("UNTIL PARSE FAIL '{}'", i.to_string() );
                 context("select",many_until0(f,context("scope:close",until)) )
             }
 
+            /// successfully parse at least one branch or fail
+            /// does not return errors for any branches in a fail
+            pub fn alt_fail<I: Clone, O, E: ParseError<I>, List: Alt<I, O, E>>(
+                mut l: List,
+            ) -> impl FnMut(I) -> IResult<I, O, E> {
+                move |i: I| {
+                    match l.choice(i.clone()) {
+                        Ok(ok) => {Ok(ok)}
+                        Err(_) => {
+                            let e = E::from_error_kind(i,ErrorKind::Alt );
+                            Err(Err::Failure(e))
+                        }
+                    }
+                }
+            }
 
-            fn multi_select_scope<I, E, S,F, O, O2>(
+
+            pub struct SelectBlock<S,F>(pub S,pub F);
+
+            pub fn select_block<I, E, S,F, O, O2>(
+                mut select_blocks: Vec<SelectBlock<S, F>>,
+            ) -> impl FnMut(I) -> IResult<I, O, E>
+                where
+                    I: Clone+InputTake+InputLength+InputIter+ Compare<&'static str>+InputTakeAtPosition+ToString,
+                    <I as InputIter>::Item: AsChar,
+                    <I as InputIter>::Item: Clone,
+                    <I as InputTakeAtPosition>::Item: AsChar + Clone,
+                    F: Parser<I, O, E>,
+                    S: Parser<I, O2, E>,
+                    E: ParseError<I> + ContextError<I>,
+            {
+                let parser = move | i: I | {
+
+                    for mut select_block in select_blocks.iter_mut() {
+                        match select_block.0.parse(i.clone())
+                        {
+                            Ok((i,_)) => {
+                                return select_block.1.parse(i.clone());
+                            }
+                            Err(_) => {}
+                        }
+                    }
+
+                    // if a block hasn't been selected yet then we have an error
+
+                    let e = E::from_error_kind(i.clone(),ErrorKind::Tag);
+                    let e = E::add_context(i, "!select-block", e );
+                    return Err(Err::Failure(e))
+                };
+
+                parser
+            }
+
+            pub fn multi_select_scope<I, E, S,F, O, O2>(
                 mut selectors: S,
                 mut f: F,
             ) -> impl FnMut(I) -> IResult<I, O, E>
@@ -5256,13 +5382,13 @@ println!("multi_select_scope FAILURE");
             }
 
             pub fn pipeline_step(input: &str) -> Res<&str, PipelineStep> {
-                tuple((
-                    many0(pipeline_block),
+                context( "pipeline-step",tuple((
+                    select0(   pipeline_block , alt((tag("->"),tag("=>"))) ),
                     context(
-                        "expected '->' or '=>' (Request or Response operator)",
-                        alt((tag("->"), tag("=>"))),
+                        "!pipeline-step:exit",
+                        alt((tag("->"), tag("=>"), fail )),
                     ),
-                ))(input)
+                )))(input)
                 .map(|(next, (blocks, kind))| {
                     let kind = match kind {
                         "->" => StepKind::Request,
@@ -8042,6 +8168,7 @@ pub mod test {
     pub mod bind{
         use crate::error::Error;
         use crate::version::v0_0_1::config::bind::parse::{bind, final_bind};
+        use crate::version::v0_0_1::config::bind::ProtoBind;
 
         #[test]
         pub fn test_expect_pipelines_scope_selector() -> Result<(), Error> {
@@ -8144,7 +8271,109 @@ Bind.Pipelines.Http: expecting '*' or valid HttpMethod: 'Get', 'Post', 'Put', 'D
         }
 
 
-       // #[test]
+        #[test]
+        pub fn test_good() -> Result<(), Error> {
+            final_bind(
+      r#"
+            Bind{
+                Pipelines{
+                    Http {
+                        <Get> -> something;
+                        <Post>/ -> another:what;
+                    }
+                }
+            }"#)?;
+            Ok(())
+        }
+
+
+        #[test]
+        pub fn test_open_angle_bracket() -> Result<(), Error> {
+            match final_bind(
+                r#"
+            Bind{
+                Pipelines{
+                    Http {
+                        Get -> something;
+                    }
+                }
+            }"#) {
+                Ok(_) => {
+                    panic!("expected failure")
+                }
+                Err(err) => {
+                    println!("{}",err);
+                    Ok(())
+                }
+            }
+        }
+
+        #[test]
+        pub fn test_close_angle_bracket() -> Result<(), Error> {
+            match final_bind(
+                r#"
+            Bind{
+                Pipelines{
+                    Http {
+                        <Get -> something;
+                    }
+                }
+            }"#) {
+                Ok(_) => {
+                    panic!("expected failure")
+                }
+                Err(err) => {
+                    println!("{}",err);
+                    Ok(())
+                }
+            }
+        }
+
+
+        #[test]
+        pub fn test_missing_enter_pipeline_step() -> Result<(), Error> {
+            match final_bind(
+                r#"
+            Bind{
+                Pipelines{
+                    Http {
+                        <Get> > something;
+                    }
+                }
+            }"#) {
+                Ok(_) => {
+                    panic!("expected failure")
+                }
+                Err(err) => {
+                    println!("{}",err);
+                    Ok(())
+                }
+            }
+        }
+
+        #[test]
+        pub fn test_missing_enter_pipeline_step_block() -> Result<(), Error> {
+            match final_bind(
+                r#"
+            Bind{
+                Pipelines{
+                    Http {
+                        <Get> -[ Bad ]-> something;
+                    }
+                }
+            }"#) {
+                Ok(_) => {
+                    panic!("expected failure")
+                }
+                Err(err) => {
+                    println!("{}",err);
+                    Ok(())
+                }
+            }
+        }
+
+
+        // #[test]
         pub fn test_bind() -> Result<(), Error> {
             bind(
                 r#"
