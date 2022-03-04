@@ -1436,20 +1436,7 @@ pub mod pattern {
         {
             move |input: I| match tag::<&'static str, I, E>("*")(input.clone()) {
                 Ok((next, _)) => Ok((next, ValuePattern::Any)),
-                Err(err) => match f.parse(input.clone()) {
-                    Ok((next, res)) => Ok((next, ValuePattern::Pattern(res))),
-                    Err(Err::Incomplete(i)) => Err(Err::Incomplete(i)),
-                    Err(Err::Error(e)) => Err(Err::Error(E::add_context(
-                        input.clone(),
-                        "value_pattern",
-                        e,
-                    ))),
-                    Err(Err::Failure(e)) => Err(Err::Failure(E::add_context(
-                        input.clone(),
-                        "value_pattern",
-                        e,
-                    ))),
-                },
+                Err(err) => f.parse(input.clone()).map( |(next,res)|(next, ValuePattern::Pattern(res))),
             }
         }
         /*
@@ -2391,11 +2378,11 @@ pub mod pattern {
     }
 
     pub fn http_method(input: &str) -> Res<&str, HttpMethod> {
-        context("!expecting: 'Get', 'Post', 'Put', 'Delete' ... (HttpMethod)", parse_from_str(camel_case)).parse(input)
+        context("http_method", parse_from_str(camel_case)).parse(input)
     }
 
     pub fn http_method_pattern(input: &str) -> Res<&str, ValuePattern<HttpMethod>> {
-        context("!expecting: '*', 'Get', 'Post', 'Put', 'Delete' ... (HttpMethodPattern)",value_pattern(http_method))(input)
+        context("@http_method_pattern",value_pattern(http_method))(input)
     }
 
     pub fn http_pattern_scoped(input: &str) -> Res<&str, HttpPipeline> {
@@ -4632,6 +4619,7 @@ pub mod config {
 
         pub mod parse {
             use std::borrow::Borrow;
+            use std::ops::{Deref, DerefMut};
             use crate::version::v0_0_1::config::bind::{
                 Pipeline, PipelineSegment, PipelineStep, PipelineStop, PipelinesSubScope,
                 ProtoBind, Scope, Selector, StepKind,
@@ -4646,41 +4634,319 @@ pub mod config {
             use nom::branch::{alt, Alt};
             use nom::bytes::complete::tag;
             use nom::character::complete::multispace0;
-            use nom::combinator::{all_consuming, fail, opt, peek, success};
+            use nom::combinator::{all_consuming, fail, not, opt, peek, success};
             use nom::error::{context, ContextError, ErrorKind, ParseError};
             use nom::multi::{many0, many1};
             use nom::sequence::{delimited, preceded, tuple};
-            use nom::{AsChar, Compare, IResult, InputIter, InputLength, InputTake, Parser, UnspecializedInput, InputTakeAtPosition, FindToken};
+            use nom::{AsChar, Compare, IResult, InputIter, InputLength, InputTake, Parser, UnspecializedInput, InputTakeAtPosition, FindToken, Err};
             use nom_supreme::error::{ErrorTree, StackContext};
             use nom_supreme::final_parser::final_parser;
             use nom_supreme::ParserExt;
 
             pub fn final_bind(input: &str) -> Result<ProtoBind,String>
             {
-                final_parser(bind)(input).map_err( |err| final_result_to_error(err) )
+                final_parser(bind)(input).map_err( |err| final_bind_error(err) )
             }
 
-            pub fn final_result_to_error(error: ErrorTree<&str>) -> String {
-                match error {
-                    ErrorTree::Stack { base, contexts } => {
-                        contexts_to_error(contexts)
+            fn final_bind_error(error: ErrorTree<&str>) -> String {
+                match find_error_stack(&error) {
+                    Ok(stack) => {
+                        match stack.normalize() {
+                            Ok(normalized) => {
+                                let seg = normalized.final_segment();
+                                let hierarchy = normalized.hierarchy();
+println!("hierarch: {}", hierarchy);
+                                match final_bind_error_message(normalized) {
+                                    Ok(error) => {
+                                        format_error( seg.location,hierarchy, error)
+                                    }
+                                    Err(error) => {
+                                        format_error( seg.location,hierarchy, format!("internal Bind parser error: {} ",error))
+                                    }
+                                }
+                            }
+                            Err(_) => {
+                                return "internal Bind parser error: could not unwrap error stack".to_string()
+                            }
+                        }
                     }
-                    _ => {
-                        return "unexpected parse error".to_string()
+                    Err(_) => {
+                        return "internal Bind parser error: could not find context stack".to_string()
                     }
                 }
             }
 
+            fn final_bind_error_message( stack: ErrorStack<&str> ) -> Result<String,String> {
+                let hierarchy = stack.hierarchy();
+println!("HIERARCHY {}", hierarchy);
+println!("CONTEXT   {}", stack.final_segment().context);
+                match stack.final_segment().context {
+                    "http_method" => Ok("expecting valid HttpMethod: 'Get', 'Post', 'Put', 'Delete', etc... (HttpMethod)".to_string()),
+                    "@http_method_pattern" => Ok("expecting '*' or valid HttpMethod: 'Get', 'Post', 'Put', 'Delete', etc... (HttpMethodPattern)".to_string()),
+                    "multi_select_scope" => {
+                        match hierarchy.as_str() {
+                            "Bind.Pipelines" =>Ok("expecting 'Rc', 'Msg' or 'Http' (pipelines selectors) or '}' (close Pipelines scope)".to_string()),
+                            what => Err(format!("unrecognized hierarchy/context combo: {}/{}", hierarchy, what))
+                        }
+                    }
+                    what => Err(format!("unrecognized parse error context: '{}'",what))
+                }
+            }
+
+            pub fn format_error( input: &str, hierarchy: String, message: String ) -> String {
+               format!("{}\n\n{}: {}", extract_problem_line(input),hierarchy,message )
+            }
+
+            pub fn find_error_stack<'a>(error: &'a ErrorTree<&str>) -> Result<ErrorStack<&'a str>,()> {
+println!("find_error_stack");
+                let mut segs = find_error_segments(error)?;
+println!("Segs count: {}", segs.len() );
+                segs.reverse();
+                let stack = ErrorStack::new(segs)?;
+                Ok(stack)
+            }
+
+            pub fn find_error_segments<'a>(error: &'a ErrorTree<&str>) -> Result<Vec<ErrorSegment<&'a str>>,()> {
+                    match error {
+                        ErrorTree::Base { location, kind } => {
+                            println!("found error kind: {} location: {}", kind.to_string(), location );
+                            Err(())
+                        }
+                        ErrorTree::Stack { base, contexts } => {
+                            //let mut stack = to_error_stack(contexts);
+                            if let StackContext::Context("select") = first_context(contexts)?  {
+diagnose_contexts(contexts);
+println!("find_select_error()");
+                                let mut stack = find_select_error(base.as_ref() )?;
+                                stack.append( & mut to_error_segments(contexts) );
+                                Ok(stack)
+                            } else {
+diagnose_contexts(contexts);
+println!("finding error segments: ");
+                                let mut stack = match find_error_segments(base.as_ref() ) {
+                                    Ok(stack) => stack,
+                                    Err(_) => vec![]
+                                };
+                                stack.append( & mut to_error_segments(contexts) );
+                                Ok(stack)
+                            }
+                        }
+                        ErrorTree::Alt(alts) => {
+
+println!("alts");
+                            for error in alts {
+                                let error = Box::new(error );
+                                match find_error_segments(error.as_ref()) {
+                                    Ok(error) => {
+                                        return Ok(error);
+                                    }
+                                    Err(_) => {}
+                                }
+                            }
+                            Err(())
+                        }
+                    }
+            }
+
+            pub fn find_select_error<'a>(error: &'a ErrorTree<&str>) -> Result<Vec<ErrorSegment<&'a str>>,()> {
+                println!("find_select_error...");
+                match error {
+                    ErrorTree::Base { location, kind } => {
+                        println!("found error kind: {}", kind.to_string() );
+                        Err(())
+                    }
+                    ErrorTree::Stack { base, contexts } => {
+                        diagnose_contexts(contexts);
+                        println!("find_Select_error::Stack...");
+
+                        if let StackContext::Context("selector") = first_context(contexts)?  {
+                            // if there is an error in the actual selector then this alt is aborted
+                            diagnose_contexts(contexts);
+                            println!("abort...");
+
+                            Err(())
+                        }
+                        else {
+                            match base.as_ref() {
+                                ErrorTree::Base {..} => {
+                                    Ok(to_error_segments(contexts))
+                                }
+                                _ => {
+                                    let mut stack = find_error_segments(base)?;
+                                    stack.append( & mut to_error_segments(contexts) );
+                                    Ok(stack)
+                                }
+                            }
+                        }
+                    }
+                    ErrorTree::Alt(alts) => {
+                        for error in alts {
+                            match find_select_error(error) {
+                                Ok(error) => {
+                                    return Ok(error);
+                                }
+                                Err(_) => {}
+                            }
+                        }
+                        Err(())
+                    }
+                }
+            }
+
+            #[derive(Clone)]
+            pub struct ErrorStack<I> where I: Clone{
+                pub list: Vec<ErrorSegment<I>>
+            }
+
+            impl <I> ErrorStack<I> where I:Clone {
+                pub fn new(mut list: Vec<ErrorSegment<I>>)->Result<Self,()> {
+                    if list.is_empty() {
+                        return Err(());
+                    } else {
+                        Ok(Self { list })
+                    }
+                }
+
+                pub fn normalize(&self) -> Result<Self,()> {
+                    let mut list = vec![];
+                    for seg in self.list.iter() {
+                        list.push(seg.clone() );
+                        // @ indicates the context is a wrapper meaning
+                        // all its children will be wrapped in that error message
+                        if seg.context.starts_with("@") {
+                            break;
+                        }
+                    }
+                    Self::new(list)
+                }
+
+                pub fn hierarchy(&self) -> String {
+                    let mut list = vec![];
+                    for seg in self.list.iter() {
+                        if !seg.context.is_empty() {
+                            let c = seg.context.chars().next().expect("expected first character");
+                            if c.is_alpha() && c.is_uppercase() {
+                                list.push(seg.context)
+                            }
+                        }
+                    }
+                    let mut rtn = String::new();
+                    for (index, seg) in list.iter().enumerate() {
+                        rtn.push_str(seg);
+                        if index < list.len()-1 {
+                            rtn.push_str(".")
+                        }
+                    }
+                    rtn
+                }
+
+
+            }
+
+            impl <'a> ErrorStack<&'a str> {
+                pub fn final_segment(&self) -> ErrorSegment<&'a str> {
+                    match self.list.last()  {
+                        None => {
+                            ErrorSegment{
+                                context: "?",
+                                location: "?"
+                            }
+                        }
+                        Some(seg) => {seg.clone()}
+                    }
+                }
+            }
+
+            impl <I> Deref for ErrorStack<I> where I: Clone {
+                type Target = Vec<ErrorSegment<I>>;
+
+                fn deref(&self) -> &Self::Target {
+                    &self.list
+                }
+            }
+
+            impl <I> DerefMut for ErrorStack<I> where I: Clone {
+                fn deref_mut(&mut self) -> &mut Self::Target {
+                    &mut self.list
+                }
+            }
+
+            impl <I> ToString for ErrorStack<I> where I: Clone{
+                fn to_string(&self) -> String {
+                    let mut rtn = String::new();
+                    for (index,seg) in self.list.iter().enumerate() {
+                       rtn.push_str(seg.context);
+                       if index < self.list.len()-1 {
+                           rtn.push_str(".")
+                       }
+                    }
+                    rtn
+                }
+            }
+
+
+
+            #[derive(Clone)]
+            pub struct ErrorSegment<I> where I: Clone{
+                pub context: &'static str,
+                pub location: I
+            }
+
+            fn to_error_segments<I>(contexts: &Vec<(I, StackContext)> ) -> Vec<ErrorSegment<I>> where I: Clone{
+                let mut rtn = vec![];
+                for (location,context) in contexts {
+                    if let StackContext::Context(context) = context {
+                        let seg = ErrorSegment {
+                            location: location.clone(),
+                            context
+                        };
+                        rtn.push(seg);
+                    }
+                }
+                rtn
+            }
+
+
+
+            fn first_context(contexts: &Vec<(&str, StackContext)>) -> Result<StackContext,()> {
+                if contexts.is_empty() {
+                    Err(())
+                } else {
+                    Ok(contexts.first().cloned().unwrap().1)
+                }
+            }
+
+            fn second_context(contexts: &Vec<(&str, StackContext)>) -> Result<StackContext,()> {
+                if contexts.len() < 2 {
+                    Err(())
+                } else {
+                    Ok(contexts.get(1).cloned().unwrap().1)
+                }
+            }
+
+            fn diagnose_contexts(contexts: &Vec<(&str, StackContext)>) {
+                for context in contexts.iter().rev() {
+                    let c = match context.1 {
+                        StackContext::Kind(_) => {"?"}
+                        StackContext::Context(ctx) => {ctx}
+                    };
+                    print!("{}.",c);
+                }
+                println!();
+            }
+
+
+
             fn extract_problem_line( input: &str ) -> String {
-                if input.is_empty() {
+                if input.trim().is_empty() {
                     return "Problem: \"\"".to_string();
                 }
 
                 if input.len() < 80 {
-                    return format!("Problem: \"{}\"",input.trim_end());
+                    return format!("Problem: \"{}\"",input.trim_end().lines().next().expect("line"));
                 }
 
-                format!("Problem: \"{}\"",input[0..80].trim_end())
+                format!("Problem: \"{}\"",input[0..80].trim_end().lines().next().expect("line"))
             }
 
             fn contexts_to_error( mut contexts: Vec<(&str,StackContext)>) -> String {
@@ -4743,7 +5009,7 @@ pub mod config {
             }
 
             pub fn bind(input: &str) -> Res<&str, ProtoBind> {
-                selector_scope("Bind", pipelines_scope)(input).map(|(next, sections)| {
+                select_scope("Bind", select_pipelines)(input).map(|(next, sections)| {
                     let bind = ProtoBind { sections };
 
                     (next, bind)
@@ -4754,7 +5020,7 @@ pub mod config {
 
             pub fn many_until0<I, O, O2, E, F,U>(mut f: F, mut until: U) -> impl FnMut(I) -> IResult<I, Vec<O>, E>
                 where
-                    I: Clone + InputLength,
+                    I: Clone + InputLength+std::fmt::Display,
                     F: Parser<I, O, E>,
                     U: Parser<I, O2, E>,
                     E: ParseError<I>,
@@ -4769,7 +5035,8 @@ pub mod config {
                                     Ok(_) => {
                                         return Ok((i, acc));
                                     }
-                                    Err(_) => {
+                                    Err(e2) => {
+println!("UNTIL PARSE FAIL '{}'", i.to_string() );
                                         return Err(nom::Err::Error(e));
                                     }
                                 }
@@ -4788,14 +5055,75 @@ pub mod config {
                 }
             }
 
-            pub fn multi_alt0<I: Clone, O, E: ParseError<I>, List: Alt<I, O, E>>(
-                mut l: List,
-            ) -> impl FnMut(I) -> IResult<I, O, E> {
-                move |i: I| l.choice(i)
+
+            pub fn select0<I, O, O2, E, F,U>(mut f: F, mut until: U) -> impl FnMut(I) -> IResult<I, Vec<O>, E>
+                where
+                    I: Clone + InputLength+std::fmt::Display,
+                    F: Parser<I, O, E>,
+                    U: Parser<I, O2, E>,
+                    E: ParseError<I>+ContextError<I>,
+            {
+                context("select",many_until0(f,context("scope:close",until)) )
             }
 
-            fn selector_scope<I,E, F, O>(
-                object: &'static str,
+
+            fn multi_select_scope<I, E, S,F, O, O2>(
+                mut selectors: S,
+                mut f: F,
+            ) -> impl FnMut(I) -> IResult<I, O, E>
+                where
+                    I: Clone+InputTake+InputLength+InputIter+ Compare<&'static str>+InputTakeAtPosition+ToString,
+                    <I as InputIter>::Item: AsChar,
+                    <I as InputIter>::Item: Clone,
+                    <I as InputTakeAtPosition>::Item: AsChar + Clone,
+                    F: Parser<I, O, E>,
+                    S: Parser<I, O2, E>,
+                    E: ParseError<I> + ContextError<I>,
+            {
+                let parser = move | i: I | {
+
+                    // first remove any whitespace
+                    let (i,_) = multispace0(i.clone())?;
+
+                    // next if we hit the until condition return Error (instead of Failure)
+                    match not(tag("}"))(i.clone()) {
+                        Ok(_) => {
+                            // do nothing
+                        }
+                        Err(err) => {
+                            return Err(err);
+                        }
+                    }
+
+                    match selectors.parse(i.clone()) {
+                        Ok(_) => {
+println!("multi_select_scope: '{}'", i.to_string() );
+                            f.parse(i)
+                        },
+                        Err(e) => {
+                            match e {
+                                Err::Incomplete(_) => {Err(e)}
+                                Err::Error(e2) => {
+println!("multi_select_scope ERROR :'{}'", i.to_string() );
+                                    Err(Err::Failure(E::add_context(i,"multi_select_scope", e2)))
+//                                    Err(Err::Failure(e2))
+                                }
+                                Err::Failure(e2) => {
+
+println!("multi_select_scope FAILURE");
+
+                                    Err(Err::Failure(E::add_context(i.clone(),"multi_select_scope", e2)))
+                                }
+                            }
+                        },
+                    }
+                };
+
+                parser
+            }
+
+            fn select_scope<I, E, F, O>(
+                selection: &'static str,
                 mut f: F,
             ) -> impl FnMut(I) -> IResult<I, O, E>
             where
@@ -4807,17 +5135,17 @@ pub mod config {
                 E: ParseError<I> + ContextError<I>,
             {
                 let parser = move |i: I| {
-                    let (next,_) = context("scope:expect-selector",tag(object))(i)?;
+                    let (next,_) = context("selector",tag(selection))(i)?;
                     let (next,_) = multispace0(next)?;
-                    let (next,_) = context( "!expected '{' (open scope)", tag("{"), )(next)?;
+                    let (next,_) = context( "scope:open", tag("{"), )(next)?;
                     let (next,_) = multispace0(next)?;
                     let (next, rtn ) = f.parse(next)?;
                     let (next,_) = multispace0(next)?;
-                    let (next,_) = context( "!expected '}' (close scope)", tag("}"), )(next)?;
+                    let (next,_) = context( "scope:close", tag("}"), )(next)?;
                     Ok( (next, rtn))
                 };
 
-                context(object, parser )
+                context(selection, parser )
             }
 
             fn scope<I,E, F, O, O2, O3, Open, Close>(
@@ -4886,20 +5214,22 @@ pub mod config {
             }
 
 
-            pub fn pipelines_scope(input: &str) -> Res<&str, Vec<PipelinesSubScope>> {
-                selector_scope("Pipelines", context("!expected: 'Rc', 'Msg' or 'Http' (PipelinesSubScope)", many_until0(pipelines_sub_scope, whitespace_until(tag("}")))))(input)
+            pub fn select_pipelines(input: &str) -> Res<&str, Vec<PipelinesSubScope>> {
+                select_scope("Pipelines", select0(pipelines, whitespace_until(tag("}"))))(input)
             }
 
-            pub fn pipelines_sub_scope(input: &str) -> Res<&str, PipelinesSubScope> {
-                alt((
-                    msg_selector_scope,
-                    http_selector_scope,
-                    rec_selector_scope,
-                ))(input)
+            pub fn pipelines(input: &str) -> Res<&str, PipelinesSubScope> {
+                multi_select_scope(
+                    alt((tag("Rc"),tag("Msg"),tag("Http"))),
+                    alt((
+                        select_msg_pipelines,
+                        select_http_pipelines,
+                        select_rc_pipelines,
+                )))(input)
             }
 
-            pub fn msg_selector_scope(input: &str) -> Res<&str, PipelinesSubScope> {
-                selector_scope( "Msg", msg_selectors )(input).map(|(next, selectors)| {
+            pub fn select_msg_pipelines(input: &str) -> Res<&str, PipelinesSubScope> {
+                select_scope("Msg", msg_selectors )(input).map(|(next, selectors)| {
                     (
                         next,
                         PipelinesSubScope::Msg(Scope::new(EntityType::Msg, selectors)),
@@ -4907,8 +5237,8 @@ pub mod config {
                 })
             }
 
-            pub fn http_selector_scope(input: &str) -> Res<&str, PipelinesSubScope> {
-                selector_scope("Http", http_pipelines)(input).map(|(next, selectors)| {
+            pub fn select_http_pipelines(input: &str) -> Res<&str, PipelinesSubScope> {
+                select_scope("Http", http_pipelines)(input).map(|(next, selectors)| {
                     (
                         next,
                         PipelinesSubScope::Http(Scope::new(EntityType::Http, selectors)),
@@ -4916,20 +5246,8 @@ pub mod config {
                 })
             }
 
-            pub fn rec_selector_scope(input: &str) -> Res<&str, PipelinesSubScope> {
-                context(
-                    "Rc",
-                    tuple((
-                        tag("Rc"),
-                        multispace0,
-                        delimited(
-                            context("expected: '{' (open Rc scope)", tag("{")),
-                            delimited(multispace0, rc_selectors, multispace0),
-                            context("expected: '}' (close Rc scope)", tag("{")),
-                        ),
-                    )),
-                )(input)
-                .map(|(next, (_, _, selectors))| {
+            pub fn select_rc_pipelines(input: &str) -> Res<&str, PipelinesSubScope> {
+                select_scope("Rc", rc_selectors)(input).map(|(next, selectors)| {
                     (
                         next,
                         PipelinesSubScope::Rc(Scope::new(EntityType::Rc, selectors)),
@@ -5018,15 +5336,15 @@ pub mod config {
             }
 
             pub fn msg_selectors(input: &str) -> Res<&str, Vec<Selector<MsgPattern>>> {
-                many0(delimited(multispace0, msg_selector, multispace0))(input)
+                select0(delimited(multispace0, msg_selector, multispace0),padded_curly_close)(input)
             }
 
             pub fn http_pipelines(input: &str) -> Res<&str, Vec<Selector<HttpPipeline>>> {
-                many_until0(delimited(multispace0, http_pipeline, multispace0), padded_curly_close)(input)
+                select0(delimited(multispace0, http_pipeline, multispace0), padded_curly_close)(input)
             }
 
             pub fn rc_selectors(input: &str) -> Res<&str, Vec<Selector<RcPattern>>> {
-                many0(delimited(multispace0, rc_selector, multispace0))(input)
+                select0(delimited(multispace0, rc_selector, multispace0), padded_curly_close)(input)
             }
 
             pub fn entity_selector(input: &str) -> Res<&str, Selector<EntityPattern>> {
@@ -7584,7 +7902,7 @@ pub mod test {
     use nom::combinator::{all_consuming, recognize};
 
     use crate::error::Error;
-    use crate::version::v0_0_1::config::bind::parse::{bind, final_bind, http_selector_scope, http_pipeline, pipeline, pipeline_step, pipeline_stop};
+    use crate::version::v0_0_1::config::bind::parse::{bind, final_bind, select_http_pipelines, http_pipeline, pipeline, pipeline_step, pipeline_stop};
     use crate::version::v0_0_1::config::bind::{PipelinesSubScope, ProtoBind};
     use crate::version::v0_0_1::entity::request::{Action, RequestCore};
     use crate::version::v0_0_1::id::{AddressSegment, RouteSegment};
@@ -7720,110 +8038,116 @@ pub mod test {
         all_consuming(address_kind_pattern)("space:series:1.0.0:/some/file.txt")?;
         Ok(())
     }
+    #[cfg(test)]
+    pub mod bind{
+        use crate::error::Error;
+        use crate::version::v0_0_1::config::bind::parse::{bind, final_bind};
 
-    #[test]
-    pub fn test_expect_pipelines_scope_selector() -> Result<(), Error> {
-        match final_bind(
-            r#"Bind{Msg{}}"#,
-        ) {
-            Ok(_) => {
-                panic!("should not be ok")
-            }
-            Err(err) => {
-                println!("{}",err);
-                Ok(())
-           }
-        }
-
-    }
-
-    #[test]
-    pub fn test_expect_pipelines_scope_selector_open() -> Result<(), Error> {
-        match final_bind(
-            r#"Bind{Pipelines}"#,
-        ) {
-            Ok(_) => {
-                panic!("should not be ok")
-            }
-            Err(err) => {
-                println!("{}",err);
-                Ok(())
+        #[test]
+        pub fn test_expect_pipelines_scope_selector() -> Result<(), Error> {
+            match final_bind(
+                r#"Bind{Msg{}}"#,
+            ) {
+                Ok(_) => {
+                    panic!("should not be ok")
+                }
+                Err(err) => {
+                    println!("{}", err);
+                    Ok(())
+                }
             }
         }
 
-    }
-
-    #[test]
-    pub fn test_expect_pipelines_scope_selector_empty() -> Result<(), Error> {
-        match final_bind( r#"Bind{Pipelines{ }}"#) {
-            Ok(_) => {
-                Ok(())
-            }
-            Err(err) => {
-                println!("{}",err);
-                panic!("{}",err)
-            }
-        }
-    }
-
-
-    #[test]
-    pub fn test_expect_pipelines_scope_selector_enumeration() -> Result<(), Error> {
-        match final_bind(
-            r#"Bind{Pipelines{ Blah{ } }}"#,
-        ) {
-            Ok(_) => {
-                panic!("should not be ok")
-            }
-            Err(err) => {
-                println!("{}",err);
-                Ok(())
+        #[test]
+        pub fn test_expect_pipelines_scope_selector_open() -> Result<(), Error> {
+            match final_bind(
+                r#"Bind{Pipelines}"#,
+            ) {
+                Ok(_) => {
+                    panic!("should not be ok")
+                }
+                Err(err) => {
+                    println!("{}", err);
+                    Ok(())
+                }
             }
         }
 
-    }
-
-    #[test]
-    pub fn test_expect_pipelines_scope_selector_msg() -> Result<(), Error> {
-        match final_bind(
-            r#"Bind{ Pipelines{ Msg{ } }}"#,
-        ) {
-            Ok(_) => {
-                Ok(())
-            }
-            Err(err) => {
-                panic!("{}",err);
+        #[test]
+        pub fn test_expect_pipelines_scope_selector_empty() -> Result<(), Error> {
+            match final_bind(r#"Bind{Pipelines{ }}"#) {
+                Ok(_) => {
+                    Ok(())
+                }
+                Err(err) => {
+                    println!("{}", err);
+                    panic!("{}", err)
+                }
             }
         }
 
-    }
 
-    #[test]
-    pub fn test_expect_http_method_pattern() -> Result<(), Error> {
-        match final_bind(
-            r#"Bind{
+        #[test]
+        pub fn test_expect_pipelines_scope_selector_enumeration() -> Result<(), Error> {
+            match final_bind(
+                r#"Bind{Pipelines{Blah{ } }}"#,
+            ) {
+                Ok(_) => {
+                    panic!("should not be ok")
+                }
+                Err(err) => {
+                    let expect = r#"Problem: "Blah{ } }}"
+
+Bind.Pipelines: expecting 'Rc', 'Msg' or 'Http' (pipelines selectors) or '}' (close Pipelines scope)"#;
+                    assert_eq!(err, expect);
+                    Ok(())
+                }
+            }
+        }
+
+        #[test]
+        pub fn test_expect_pipelines_scope_selector_msg() -> Result<(), Error> {
+            match final_bind(
+                r#"Bind{ Pipelines{ Msg{ } }}"#,
+            ) {
+                Ok(_) => {
+                    Ok(())
+                }
+                Err(err) => {
+                    panic!("{}", err);
+                }
+            }
+        }
+
+        #[test]
+        pub fn test_expect_http_method_pattern() -> Result<(), Error> {
+            match final_bind(
+                r#"Bind{
     Pipelines{
         Http {
             <Bad> -> something;
         }
     }
 }"#,
-        ) {
-            Ok(_) => {
-                Ok(())
-            }
-            Err(err) => {
-                panic!("{}",err);
+            ) {
+                Ok(_) => {
+                    Ok(())
+                }
+                Err(err) => {
+                    let expected = r#"Problem: "Bad> -> something;"
+
+Bind.Pipelines.Http: expecting '*' or valid HttpMethod: 'Get', 'Post', 'Put', 'Delete', etc... (HttpMethodPattern)"#;
+                    assert_eq!(err, expected);
+                    Ok(())
+                }
             }
         }
 
-    }
 
-
-    #[test]
-    pub fn test_bind() -> Result<(), Error> {
-        bind(
-            r#"
+       // #[test]
+        pub fn test_bind() -> Result<(), Error> {
+            bind(
+                r#"
 
         Bind {
 
@@ -7852,9 +8176,10 @@ pub mod test {
             }
 
         }   "#,
-        )?;
+            )?;
 
-        Ok(())
+            Ok(())
+        }
     }
 
     #[test]
@@ -7961,7 +8286,7 @@ pub mod test {
             body: Payload::Empty,
         };
 
-        let section = all_consuming(http_selector_scope)(
+        let section = all_consuming(select_http_pipelines)(
             r#"Http {
           <Get>^/(.*) -> {{}} => &;
           <Get>^/some -> {{ }} => &;
@@ -8005,3 +8330,4 @@ pub mod test {
         Ok(())
     }
 }
+
