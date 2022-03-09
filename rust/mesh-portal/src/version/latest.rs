@@ -190,7 +190,7 @@ pub mod config {
         pub type CallPattern =current::config::bind::CallPattern;
         pub type PipelineSegment =current::config::bind::PipelineSegment;
         pub type StepKind =current::config::bind::StepKind;
-        pub type Section =current::config::bind::Section;
+        pub type PipelineSubScope =current::config::bind::PipelinesSubScope;
         pub type ScopeType =current::config::bind::ScopeType;
     }
 }
@@ -213,6 +213,7 @@ pub mod entity {
 
             pub type Template = current::entity::request::create::Template;
             pub type KindTemplate = current::entity::request::create::KindTemplate;
+            pub type Fulfillment = current::entity::request::create::Fulfillment;
             pub type Create = current::entity::request::create::Create;
             pub type Strategy = current::entity::request::create::Strategy;
             pub type AddressTemplate = current::entity::request::create::AddressTemplate;
@@ -250,6 +251,13 @@ pub mod entity {
             use mesh_portal_versions::version::v0_0_1 as current;
 
             pub type Get = current::entity::request::get::Get;
+            pub type GetOp = current::entity::request::get::GetOp;
+        }
+
+        pub mod set {
+            use mesh_portal_versions::version::v0_0_1 as current;
+
+            pub type Set = current::entity::request::set::Set;
         }
     }
 

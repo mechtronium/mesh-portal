@@ -1814,7 +1814,7 @@ pub mod pattern {
     pub enum EntityPattern {
         Rc(RcPattern),
         Msg(MsgPattern),
-        Http(HttpPipeline),
+        Http(HttpPattern),
     }
 
     impl ValueMatcher<RequestCore> for EntityPattern {
@@ -1928,18 +1928,18 @@ pub mod pattern {
     }
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
-    pub struct HttpPipeline {
+    pub struct HttpPattern {
         pub method: ValuePattern<HttpMethod>,
         pub path_regex: String,
     }
 
-    impl ToString for HttpPipeline {
+    impl ToString for HttpPattern {
         fn to_string(&self) -> String {
             format!("Http<{}>{}", self.method.to_string(), self.path_regex)
         }
     }
 
-    impl ValueMatcher<RequestCore> for HttpPipeline {
+    impl ValueMatcher<RequestCore> for HttpPattern {
         fn is_match(&self, found: &RequestCore) -> Result<(), Error> {
             if let Action::Http(method) = &found.action {
                 self.method.is_match(&method)?;
@@ -2386,7 +2386,7 @@ pub mod pattern {
         context("@http_method_pattern",value_pattern(http_method))(input)
     }
 
-    pub fn http_pattern_scoped(input: &str) -> Res<&str, HttpPipeline> {
+    pub fn http_pattern_scoped(input: &str) -> Res<&str, HttpPattern> {
         tuple((
             delimited(context("angle_bracket_open",tag("<")), http_method_pattern, context("angle_bracket_close",tag(">"))),
             opt(path_regex),
@@ -2396,7 +2396,7 @@ pub mod pattern {
                 None => "*".to_string(),
                 Some(path_regex) => path_regex.to_string(),
             };
-            let rtn = HttpPipeline {
+            let rtn = HttpPattern {
                 method,
                 path_regex: path_regex.to_string(),
             };
@@ -2404,7 +2404,7 @@ pub mod pattern {
         })
     }
 
-    pub fn http_pattern(input: &str) -> Res<&str, HttpPipeline> {
+    pub fn http_pattern(input: &str) -> Res<&str, HttpPattern> {
         tuple((
             tag("Http"),
             delimited(tag("<"), http_method_pattern, tag(">")),
@@ -2415,7 +2415,7 @@ pub mod pattern {
                 None => "*".to_string(),
                 Some(path_regex) => path_regex.to_string(),
             };
-            let rtn = HttpPipeline {
+            let rtn = HttpPattern {
                 method,
                 path_regex: path_regex.to_string(),
             };
@@ -4390,7 +4390,7 @@ pub mod config {
         use crate::version::v0_0_1::entity::EntityType;
         use crate::version::v0_0_1::id::CaptureAddress;
         use crate::version::v0_0_1::pattern::{
-            Block, EntityPattern, HttpPipeline, MsgPattern, RcPattern,
+            Block, EntityPattern, HttpPattern, MsgPattern, RcPattern,
         };
         use crate::version::v0_0_1::payload::Call;
         use crate::version::v0_0_1::payload::PayloadType::Primitive;
@@ -4450,7 +4450,7 @@ pub mod config {
         #[derive(Debug, Clone, Serialize, Deserialize)]
         pub struct BindConfig {
             pub msg: Scope<EntityType, Selector<MsgPattern>>,
-            pub http: Scope<EntityType, Selector<HttpPipeline>>,
+            pub http: Scope<EntityType, Selector<HttpPattern>>,
             pub rc: Scope<EntityType, Selector<RcPattern>>,
         }
 
@@ -4479,8 +4479,8 @@ pub mod config {
             }
         }
 
-        impl<T> Scope<T, Selector<HttpPipeline>> {
-            pub fn find_match(&self, m: &RequestCore) -> Result<Selector<HttpPipeline>, Error> {
+        impl<T> Scope<T, Selector<HttpPattern>> {
+            pub fn find_match(&self, m: &RequestCore) -> Result<Selector<HttpPattern>, Error> {
                 for e in &self.elements {
                     if e.is_match(m).is_ok() {
                         return Ok(e.clone());
@@ -4583,7 +4583,7 @@ pub mod config {
             }
         }
 
-        impl Selector<HttpPipeline> {
+        impl Selector<HttpPattern> {
             pub fn is_match(&self, m: &RequestCore) -> Result<(), Error> {
                 self.pattern.is_match(m)
             }
@@ -4614,7 +4614,7 @@ pub mod config {
 
         pub enum PipelinesSubScope {
             Msg(Scope<EntityType, Selector<MsgPattern>>),
-            Http(Scope<EntityType, Selector<HttpPipeline>>),
+            Http(Scope<EntityType, Selector<HttpPattern>>),
             Rc(Scope<EntityType, Selector<RcPattern>>),
         }
 
@@ -4636,7 +4636,7 @@ pub mod config {
             use crate::version::v0_0_1::parse::{capture_address, Res};
             use crate::version::v0_0_1::pattern::{
                 call, entity_pattern, http_pattern, http_pattern_scoped, msg_pattern_scoped,
-                pipeline_step_block, rc_pattern_scoped, EntityPattern, HttpPipeline, MsgPattern,
+                pipeline_step_block, rc_pattern_scoped, EntityPattern, HttpPattern, MsgPattern,
                 RcPattern,
             };
             use nom::branch::{alt, Alt};
@@ -4705,6 +4705,9 @@ println!("STACK {}", stack.to_string() );
                     _ => {}
                 }
 
+                if hierarchy.ends_with(".Stop") {
+                    return Ok("expected valid pipeline stop \"{{ }}\" (Core) or valid Address".to_string());
+                }
 
                 match stack.final_segment().context {
                     "http_method" => Ok("expecting valid HttpMethod: 'Get', 'Post', 'Put', 'Delete', etc... (HttpMethod)".to_string()),
@@ -4723,6 +4726,8 @@ println!("STACK {}", stack.to_string() );
                     }
                     what => Err(format!("unrecognized parse error context: '{}'",what))
                 }
+
+
             }
 
             pub fn format_error( input: &str, hierarchy: String, message: String ) -> String {
@@ -5374,12 +5379,12 @@ println!("Segs count: {}", segs.len() );
                 })
             }
 
-            pub fn inner_pipeline_stop(input: &str) -> Res<&str, PipelineStop> {
-                delimited(
+            pub fn core_pipeline_stop(input: &str) -> Res<&str, PipelineStop> {
+                context("Core", delimited(
                     tag("{{"),
                     delimited(multispace0, opt(tag("*")), multispace0),
                     tag("}}"),
-                )(input)
+                ))(input)
                 .map(|(next, _)| (next, PipelineStop::Internal))
             }
 
@@ -5388,21 +5393,21 @@ println!("Segs count: {}", segs.len() );
             }
 
             pub fn call_pipeline_stop(input: &str) -> Res<&str, PipelineStop> {
-                call(input).map(|(next, call)| (next, PipelineStop::Call(call)))
+                context("Call",call)(input).map(|(next, call)| (next, PipelineStop::Call(call)))
             }
 
-            pub fn capture_address_pipeline_stop(input: &str) -> Res<&str, PipelineStop> {
-                capture_address(input)
+            pub fn address_pipeline_stop(input: &str) -> Res<&str, PipelineStop> {
+                context("Address",capture_address)(input)
                     .map(|(next, address)| (next, PipelineStop::CaptureAddress(address)))
             }
 
             pub fn pipeline_stop(input: &str) -> Res<&str, PipelineStop> {
-                alt((
-                    inner_pipeline_stop,
+                context("Stop", alt((
+                    core_pipeline_stop,
                     return_pipeline_stop,
                     call_pipeline_stop,
-                    capture_address_pipeline_stop,
-                ))(input)
+                    address_pipeline_stop,
+                )))(input)
             }
 
             pub fn consume_pipeline_step(input: &str) -> Res<&str, PipelineStep> {
@@ -5426,7 +5431,6 @@ println!("Segs count: {}", segs.len() );
 
             pub fn pipeline(input: &str) -> Res<&str, Pipeline> {
                 context("Pipeline",many_until0(pipeline_segment, tuple((multispace0,tag(";")))))(input).map(|(next, segments)| (next, Pipeline { segments }))
-
             }
 
             pub fn consume_pipeline(input: &str) -> Res<&str, Pipeline> {
@@ -5441,7 +5445,7 @@ println!("Segs count: {}", segs.len() );
                 select0(delimited(multispace0, msg_selector, multispace0),padded_curly_close)(input)
             }
 
-            pub fn http_pipelines(input: &str) -> Res<&str, Vec<Selector<HttpPipeline>>> {
+            pub fn http_pipelines(input: &str) -> Res<&str, Vec<Selector<HttpPattern>>> {
                 select0(delimited(multispace0, http_pipeline, multispace0), padded_curly_close)(input)
             }
 
@@ -5461,7 +5465,7 @@ println!("Segs count: {}", segs.len() );
                 )
             }
 
-            pub fn http_pipeline(input: &str) -> Res<&str, Selector<HttpPipeline>> {
+            pub fn http_pipeline(input: &str) -> Res<&str, Selector<HttpPattern>> {
                 tuple((http_pattern_scoped, multispace0, pipeline, tag(";")))(input).map(
                     |(next, (pattern, _, pipeline, _))| (next, Selector::new(pattern, pipeline)),
                 )
@@ -7062,13 +7066,13 @@ pub mod parse {
     }
 
     pub fn capture_address(input: &str) -> Res<&str, CaptureAddress> {
-        tuple((
+        context( "Address", tuple((
             tuple((route_segment, space_address_capture_segment)),
             many0(base_address_capture_segment),
             opt(version_address_segment),
             opt(root_dir_address_segment),
             many0(filesystem_address_capture_segment),
-        ))(input)
+        )))(input)
         .map(
             |(next, ((hub, space), mut bases, version, root, mut files))| {
                 let mut segments = vec![];
@@ -8259,7 +8263,7 @@ Bind.Pipelines.Http: expecting '*' or valid HttpMethod: 'Get', 'Post', 'Put', 'D
                 Pipelines{
                     Http {
                         <Get> -> something;
-                        <Post> -[ Bin ]-> another:what;
+                        <Post>/(.*) -[ Bin ]-> another:what => &;
                     }
                 }
             }"#)?;
@@ -8282,7 +8286,9 @@ Bind.Pipelines.Http: expecting '*' or valid HttpMethod: 'Get', 'Post', 'Put', 'D
                     panic!("expected failure")
                 }
                 Err(err) => {
-                    println!("{}",err);
+                    assert_eq!(r#"Problem: "Get -> something;"
+
+Bind.Pipelines: expecting: '<' (open angle bracket)"#,err);
                     Ok(())
                 }
             }
@@ -8304,11 +8310,61 @@ Bind.Pipelines.Http: expecting '*' or valid HttpMethod: 'Get', 'Post', 'Put', 'D
                 }
                 Err(err) => {
                     println!("{}",err);
+                    assert_eq!(r#"Problem: " -> something;"
+
+Bind.Pipelines: expecting: '>' (close angle bracket)"#,err);
                     Ok(())
                 }
             }
         }
 
+
+        #[test]
+        pub fn test_missing_pipeline_stop() -> Result<(), Error> {
+            match final_bind(
+                r#"
+            Bind{
+                Pipelines{
+                    Http {
+                        <Get> -> ;
+                    }
+                }
+            }"#) {
+                Ok(_) => {
+                    panic!("expected failure")
+                }
+                Err(err) => {
+                    println!("{}",err);
+                    assert_eq!(r#"Problem: ";"
+
+Bind.Pipelines.Stop: expected valid pipeline stop "{{ }}" (Core) or valid Address"#,err);
+                    Ok(())
+                }
+            }
+        }
+        #[test]
+        pub fn test_invalid_address() -> Result<(), Error> {
+            match final_bind(
+                r#"
+            Bind{
+                Pipelines{
+                    Http {
+                        <Get> -> Bad;
+                    }
+                }
+            }"#) {
+                Ok(_) => {
+                    panic!("expected failure")
+                }
+                Err(err) => {
+                    println!("{}",err);
+                    assert_eq!(r#"Problem: "> something;"
+
+Bind.Pipelines.Http.Pipeline.Step: expected '->' (forward request) or '-[' (RequestPayloadFilter)"#, err);
+                    Ok(())
+                }
+            }
+        }
 
         #[test]
         pub fn test_missing_enter_pipeline_step() -> Result<(), Error> {
@@ -8356,37 +8412,33 @@ Bind.Pipelines.Http.Pipeline.Step: expected '->' (forward request) or '-[' (Requ
         }
 
 
-        // #[test]
+        #[test]
         pub fn test_bind() -> Result<(), Error> {
-            bind(
+            final_bind(
                 r#"
 
         Bind {
+           Pipelines {
+               Msg {
+                   <Tick> -> {{}};
 
-           Msg {
+                   <Ping> -> {{  }} => &;
 
-               <Tick> -> {{}};
+                   <Signup> -[ Map{username<Text>,password<Text>} ]-> strip:passsword:mechtron^Msg<Strip>/blah -[ Map{username<Text>} ]-> {{*}} =[ Text ]=> &;
 
-               <Ping> -> {{  }} => &;
+                   <DoWhateverYouWant> -[ * ]-> {{ * }} =[ * ]=> &;
+               }
 
-               <Signup> -[ Map{username<Text>,password<Text>} ]-> strip:passsword:mechtron^Msg<Strip> -[ Map{username<Text>} ]-> {{*}} =[ Text ]=> &;
+               Http {
+                  <Get>/(.*) -> space:1.0.0:/html/$1 => &;
 
-               <DoWhateverYouWant> -[ * ]-> {{ * }} =[ * ]=> &;
+                  <Get>/some -> {{ }} => &;
 
-               <FormSubmition> -[ Text~json~mechtron-verifier^Msg<ValidateForm> ]-> {{ * }} =[ ]=> &;
+                  <Post>/some -> {{ }} => &;
 
+                  <Get> -> mechtron.io:site-starter:1.0.0:/html/error.html => &;
+                }
            }
-
-           Http {
-
-              <Get>^/(.*) -> space:1.0.0:/html/$1 => &;
-
-              <Get>^/some -> {{ }} => &;
-
-              <Post>^/some -> {{ }} => &;
-
-            }
-
         }   "#,
             )?;
 

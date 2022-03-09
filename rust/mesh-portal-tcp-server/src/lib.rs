@@ -171,14 +171,14 @@ impl PortalTcpServer {
                     (&self).handle(stream).await;
                 }
                 self.server_event_broadcaster_tx
-                    .send(PortalServerEvent::Status(Status::Done(Code::Ok)))
+                    .send(PortalServerEvent::Status(Status::Done))
                     .unwrap_or_default();
             }
             Err(error) => {
                 let message = format!("FATAL: could not setup TcpListener {}", error);
                 (self.server.logger())(message.as_str());
                 self.server_event_broadcaster_tx
-                    .send(PortalServerEvent::Status(Status::Panic(message)))
+                    .send(PortalServerEvent::Status(Status::Panic))
                     .unwrap_or_default();
             }
         }
