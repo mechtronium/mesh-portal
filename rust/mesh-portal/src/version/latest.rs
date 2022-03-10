@@ -211,10 +211,10 @@ pub mod entity {
         pub mod create {
             use mesh_portal_versions::version::v0_0_1 as current;
 
+            pub type Create= current::entity::request::create::Create;
             pub type Template = current::entity::request::create::Template;
             pub type KindTemplate = current::entity::request::create::KindTemplate;
             pub type Fulfillment = current::entity::request::create::Fulfillment;
-            pub type Create = current::entity::request::create::Create;
             pub type Strategy = current::entity::request::create::Strategy;
             pub type AddressTemplate = current::entity::request::create::AddressTemplate;
             pub type AddressSegmentTemplate = current::entity::request::create::AddressSegmentTemplate;

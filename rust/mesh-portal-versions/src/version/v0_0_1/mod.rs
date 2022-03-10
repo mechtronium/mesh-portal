@@ -857,7 +857,7 @@ pub mod pattern {
         Payload, PayloadFormat, PayloadPattern, PayloadTypePattern, Primitive, PrimitiveType,
         Range,
     };
-    use crate::version::v0_0_1::util::{StringMatcher, ValueMatcher, ValuePattern};
+    use crate::version::v0_0_1::util::{MethodPattern, StringMatcher, ValueMatcher, ValuePattern};
     use crate::{Deserialize, Serialize};
     use nom::branch::alt;
     use nom::bytes::complete::tag;
@@ -866,7 +866,7 @@ pub mod pattern {
     use nom::error::{context, ErrorKind, ParseError, VerboseError};
     use nom::multi::separated_list0;
     use nom::sequence::{delimited, preceded, terminated, tuple};
-    use nom::{AsChar, IResult, InputTakeAtPosition, Parser};
+    use nom::{AsChar, IResult, InputTakeAtPosition, Parser, InputLength, InputTake, Compare};
     use nom_supreme::error::ErrorTree;
     use nom_supreme::parser_ext::FromStrParser;
     use nom_supreme::{parse_from_str, ParserExt};
@@ -1929,7 +1929,7 @@ pub mod pattern {
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct HttpPattern {
-        pub method: ValuePattern<HttpMethod>,
+        pub method: MethodPattern,
         pub path_regex: String,
     }
 
@@ -2382,8 +2382,22 @@ pub mod pattern {
         context("http_method", parse_from_str(camel_case)).parse(input)
     }
 
-    pub fn http_method_pattern(input: &str) -> Res<&str, ValuePattern<HttpMethod>> {
-        context("@http_method_pattern",value_pattern(http_method))(input)
+    pub fn http_method_pattern(input: &str) -> Res<&str, MethodPattern> {
+        context("@http_method_pattern",method_pattern(http_method))(input)
+    }
+
+    pub fn method_pattern<I: Clone, E: ParseError<I>, F>(
+        mut f: F,
+    ) -> impl FnMut(I) -> IResult<I, MethodPattern, E>
+        where
+            I: InputLength + InputTake + Compare<&'static str>,
+            F: Parser<I, HttpMethod, E>,
+            E: nom::error::ContextError<I>,
+    {
+        move |input: I| match tag::<&'static str, I, E>("*")(input.clone()) {
+            Ok((next, _)) => Ok((next, MethodPattern::Any)),
+            Err(err) => f.parse(input.clone()).map( |(next,res)|(next, MethodPattern::Pattern(res))),
+        }
     }
 
     pub fn http_pattern_scoped(input: &str) -> Res<&str, HttpPattern> {
@@ -2887,6 +2901,7 @@ pub mod messaging {
     use std::convert::TryInto;
 
     use serde::{Deserialize, Serialize};
+    use http::StatusCode;
 
     use crate::error::Error;
     use crate::version::v0_0_1::entity::request::RequestCore;
@@ -2913,11 +2928,55 @@ pub mod messaging {
             }
         }
 
+        pub fn result<E>(self, result: Result<ResponseCore,E> ) -> Response where E: ToString {
+            match result {
+                Ok(core) => {
+                    Response {
+                        id: unique_id(),
+                        to: self.from,
+                        from: self.to,
+                        core,
+                        response_to: self.id
+                    }
+                }
+                Err(err) => {
+                    self.fail(err.to_string().as_str())
+                }
+            }
+        }
+
+        pub fn payload_result<E>(self, result: Result<Payload,E> ) -> Response where E: ToString {
+            match result {
+                Ok(payload) => {
+                    self.ok_payload(payload)
+                }
+                Err(err) => {
+                    self.fail(err.to_string().as_str())
+                }
+            }
+        }
+
         pub fn ok(self) -> Response {
             let core = ResponseCore {
                 headers: Default::default(),
-                code: 200,
+                status: StatusCode::from_u16(200u16 ).unwrap(),
                 body: Payload::Empty,
+            };
+            let response = Response {
+                id: unique_id(),
+                from: self.to,
+                to: self.from,
+                core,
+                response_to: self.id,
+            };
+            response
+        }
+
+        pub fn ok_payload(self, payload: Payload) -> Response {
+            let core = ResponseCore {
+                headers: Default::default(),
+                status: StatusCode::from_u16(200u16).unwrap(),
+                body: payload
             };
             let response = Response {
                 id: unique_id(),
@@ -2932,7 +2991,7 @@ pub mod messaging {
         pub fn fail(self, error: &str) -> Response {
             let core = ResponseCore {
                 headers: Default::default(),
-                code: 500,
+                status: StatusCode::from_u16(500u16).unwrap(),
                 body: Payload::Primitive(Primitive::Errors(Errors::default(
                     error.to_string().as_str(),
                 ))),
@@ -2945,6 +3004,28 @@ pub mod messaging {
                 response_to: self.id,
             };
             response
+        }
+
+        pub fn status(self, status: u16 ) -> Response {
+            fn process(request: &Request, status: u16) -> Result<Response,http::status::InvalidStatusCode> {
+                let core = ResponseCore {
+                    headers: Default::default(),
+                    status: StatusCode::from_u16(status)?,
+                    body: Payload::Empty
+                };
+                let response = Response {
+                    id: unique_id(),
+                    from: request.to.clone(),
+                    to: request.from.clone(),
+                    core,
+                    response_to: request.id.clone(),
+                };
+                Ok(response)
+            }
+            match process(&self, status) {
+                Ok(response) => response,
+                Err(err) => self.fail(format!("bad status: {}", status).as_str() )
+            }
         }
     }
 
@@ -3014,13 +3095,13 @@ pub mod messaging {
         }
 
         pub fn ok_or(self) -> Result<Self, Error> {
-            if self.core.code >= 200 && self.core.code <= 299 {
+            if self.core.status.is_success() {
                 Ok(self)
             } else {
                 if let Payload::Primitive(Primitive::Text(error)) = self.core.body {
                     Err(error.into())
                 } else {
-                    Err(format!("error code: {}", self.core.code).into())
+                    Err(format!("error code: {}", self.core.status).into())
                 }
             }
         }
@@ -3133,6 +3214,7 @@ pub mod payload {
     use crate::version::v0_0_1::util::{ValueMatcher, ValuePattern};
     use std::str::FromStr;
     use std::sync::Arc;
+    use http::Method;
 
     #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, strum_macros::Display)]
     pub enum Payload {
@@ -3170,6 +3252,40 @@ pub mod payload {
                 Payload::Primitive(primitive) => primitive.to_bin(),
                 Payload::List(list) => list.to_bin(),
                 Payload::Map(map) => map.to_bin(),
+            }
+        }
+    }
+
+    impl TryInto<HashMap<String,Payload>> for Payload {
+        type Error = Error;
+
+        fn try_into(self) -> Result<HashMap<String,Payload>, Self::Error> {
+            match self {
+                Payload::Map(map) => Ok(map.map),
+                _ => Err("Payload type must a Map".into()),
+            }
+        }
+    }
+
+    impl TryInto<String> for Payload {
+        type Error = Error;
+
+        fn try_into(self) -> Result<String, Self::Error> {
+            match self {
+                Payload::Primitive(Primitive::Text(text)) => Ok(text),
+                _ => Err("Payload type must an Text".into()),
+            }
+        }
+    }
+
+
+    impl TryInto<Address> for Payload {
+        type Error = Error;
+
+        fn try_into(self) -> Result<Address, Self::Error> {
+            match self {
+                Payload::Primitive(Primitive::Address(address)) => Ok(address),
+                _ => Err("Payload type must an Address".into()),
             }
         }
     }
@@ -3653,6 +3769,8 @@ pub mod payload {
     #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
     pub struct HttpCall {
         pub path: String,
+
+        #[serde(with = "http_serde::method")]
         pub method: HttpMethod,
     }
 
@@ -3668,6 +3786,7 @@ pub mod payload {
         }
     }
 
+    /*
     #[derive(
         Debug,
         Clone,
@@ -3690,6 +3809,9 @@ pub mod payload {
         Options,
         Trace,
     }
+     */
+
+    pub type HttpMethod = Method;
 
     /*
     impl FromStr for HttpMethod {
@@ -3698,10 +3820,10 @@ pub mod payload {
         fn from_str(s: &str) -> Result<Self, Self::Err> {
             let input = s.to_uppercase();
             match input.as_str() {
-                "GET" => Ok(HttpMethod::Get),
-                "POST" => Ok(HttpMethod::Post),
+                "GET" => Ok(HttpMethod::GET),
+                "POST" => Ok(HttpMethod::POST),
                 "PUT" => Ok(HttpMethod::Put),
-                "DELETE" => Ok(HttpMethod::Delete),
+                "DELETE" => Ok(HttpMethod::DELETE),
                 "PATCH" => Ok(HttpMethod::Patch),
                 "HEAD" => Ok(HttpMethod::Head),
                 "CONNECT" => Ok(HttpMethod::Connect),
@@ -4079,6 +4201,30 @@ pub mod command {
             UnSet(String),
         }
 
+        impl PropertyMod {
+            pub fn set_or<E>( &self, err: E) -> Result<String,E> {
+                match self {
+                    Self::Set { key, value, lock } => {
+                        Ok(value.clone())
+                    },
+                    Self::UnSet(_) => {
+                        Err(err)
+                    }
+                }
+            }
+
+            pub fn opt(&self) -> Option<String> {
+                match self {
+                    Self::Set { key, value, lock } => {
+                        Some(value.clone())
+                    },
+                    Self::UnSet(_) => {
+                        None
+                    }
+                }
+            }
+        }
+
         #[derive(Debug, Clone, Serialize, Deserialize)]
         pub struct SetProperties {
             pub map: HashMap<String, PropertyMod>,
@@ -4168,11 +4314,14 @@ pub mod msg {
     use crate::version::v0_0_1::id::Meta;
     use crate::version::v0_0_1::payload::{Errors, Payload, Primitive};
     use serde::{Deserialize, Serialize};
+    use http::{HeaderMap, StatusCode};
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct MsgRequest {
         pub action: String,
-        pub headers: Meta,
+
+        #[serde(with = "http_serde::header_map")]
+        pub headers: HeaderMap,
         pub path: String,
         pub body: Payload,
     }
@@ -4181,7 +4330,7 @@ pub mod msg {
         pub fn ok(&self, payload: Payload) -> ResponseCore {
             ResponseCore {
                 headers: Default::default(),
-                code: 200,
+                status: StatusCode::from_u16(200u16).unwrap(),
                 body: payload,
             }
         }
@@ -4190,7 +4339,7 @@ pub mod msg {
             let errors = Errors::default(error);
             ResponseCore {
                 headers: Default::default(),
-                code: 500,
+                status: StatusCode::from_u16(500u16).unwrap(),
                 body: Payload::Primitive(Primitive::Errors(errors)),
             }
         }
@@ -4220,6 +4369,7 @@ pub mod http {
 
     use crate::error::Error;
     use serde::{Deserialize, Serialize};
+    use http::{HeaderMap, StatusCode};
 
     use crate::version::v0_0_1::entity::request::{Action, RequestCore};
     use crate::version::v0_0_1::entity::response::ResponseCore;
@@ -4229,8 +4379,12 @@ pub mod http {
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct HttpRequest {
+
+        #[serde(with = "http_serde::method")]
         pub method: HttpMethod,
-        pub headers: Meta,
+
+        #[serde(with = "http_serde::header_map")]
+        pub headers: HeaderMap,
         pub path: String,
         pub body: Bin,
     }
@@ -4244,7 +4398,7 @@ pub mod http {
             let errors = Errors::default(error);
             ResponseCore {
                 headers: Default::default(),
-                code: 500,
+                status: StatusCode::from_u16(500u16).unwrap(),
                 body: Payload::Primitive(Primitive::Errors(errors)),
             }
         }
@@ -4286,8 +4440,10 @@ pub mod http {
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct HttpResponse {
-        pub code: u32,
-        pub headers: HashMap<String, String>,
+        #[serde(with = "http_serde::status_code")]
+        pub code: StatusCode,
+        #[serde(with = "http_serde::header_map")]
+        pub headers: HeaderMap,
         pub body: Bin,
     }
 
@@ -4295,7 +4451,7 @@ pub mod http {
         pub fn server_side_error() -> Self {
             Self {
                 headers: Default::default(),
-                code: 500,
+                code: StatusCode::from_u16(500u16).unwrap(),
                 body: Arc::new(vec![]),
             }
         }
@@ -5496,6 +5652,7 @@ pub mod entity {
     }
 
     pub mod request {
+        use http::{HeaderMap, StatusCode};
         use crate::error::Error;
         use crate::version::v0_0_1::bin::Bin;
         use crate::version::v0_0_1::entity::request::create::Create;
@@ -5517,7 +5674,8 @@ pub mod entity {
         #[derive(Debug, Clone, Serialize, Deserialize)]
         pub enum Action {
             Rc(Rc),
-            Http(HttpMethod),
+
+            Http(#[serde(with = "http_serde::method")]HttpMethod),
             Msg(String),
         }
 
@@ -5534,7 +5692,8 @@ pub mod entity {
 
         #[derive(Debug, Clone, Serialize, Deserialize)]
         pub struct RequestCore {
-            pub headers: Meta,
+            #[serde(with = "http_serde::header_map")]
+            pub headers: HeaderMap,
             pub action: Action,
             pub path: String,
             pub body: Payload,
@@ -5564,7 +5723,7 @@ pub mod entity {
             pub fn not_found(&self) -> ResponseCore {
                 ResponseCore {
                     headers: Default::default(),
-                    code: 404,
+                    status: StatusCode::from_u16(404u16).unwrap(),
                     body: Payload::Empty,
                 }
             }
@@ -5572,7 +5731,7 @@ pub mod entity {
             pub fn ok(&self, payload: Payload) -> ResponseCore {
                 ResponseCore {
                     headers: Default::default(),
-                    code: 200,
+                    status: StatusCode::from_u16(200u16).unwrap(),
                     body: payload,
                 }
             }
@@ -5581,7 +5740,7 @@ pub mod entity {
                 let errors = Errors::default(error);
                 ResponseCore {
                     headers: Default::default(),
-                    code: 500,
+                    status: StatusCode::from_u16(500u16).unwrap(),
                     body: Payload::Primitive(Primitive::Errors(errors)),
                 }
             }
@@ -5609,6 +5768,22 @@ pub mod entity {
                 }
             }
         }
+
+        /*
+        impl Rc {
+            pub fn command_handler(&self, request_to: &Address) -> Result<Address,Error> {
+                match self {
+                    Rc::Create(create) => { Ok(create.template.address.parent.clone()) }
+                    Rc::Select(select) => { Ok(select.pattern.query_root()) }
+                    Rc::Update(_) => {request_to.clone()}
+                    Rc::Query(_) => { request_to.clone()}
+                    Rc::GET(_) => {request_to.parent().as_ref().ok_or("expected parent for get request").clone()}
+                    Rc::Set(_) => {request_to.parent().as_ref().ok_or("expected parent for set request").clone()}
+                }
+            }
+        }
+
+         */
 
         #[derive(
             Debug,
@@ -5991,11 +6166,11 @@ pub mod entity {
             use crate::error::Error;
             use crate::version::v0_0_1::command::common::SetProperties;
             use crate::version::v0_0_1::id::Address;
+            use crate::version::v0_0_1::payload::Payload;
 
             #[derive(Debug, Clone, Serialize, Deserialize)]
             pub struct Update {
-                pub address: Address,
-                pub properties: SetProperties,
+                pub payload: Payload
             }
         }
 
@@ -6058,11 +6233,16 @@ pub mod entity {
         use crate::version::v0_0_1::util::unique_id;
         use serde::{Deserialize, Serialize};
         use std::sync::Arc;
+        use http::{HeaderMap, StatusCode};
 
         #[derive(Debug, Clone, Serialize, Deserialize)]
         pub struct ResponseCore {
-            pub headers: Meta,
-            pub code: u32,
+            #[serde(with = "http_serde::header_map")]
+            pub headers: HeaderMap,
+
+            #[serde(with = "http_serde::status_code")]
+            pub status: StatusCode,
+
             pub body: Payload,
         }
 
@@ -6074,24 +6254,24 @@ pub mod entity {
 
             pub fn new() -> Self {
                 ResponseCore {
-                    headers: Meta::new(),
-                    code: 200,
+                    headers: HeaderMap::new(),
+                    status: StatusCode::from_u16(200u16).unwrap(),
                     body: Payload::Empty,
                 }
             }
 
             pub fn ok(body: Payload) -> Self {
                 Self {
-                    headers: Meta::new(),
-                    code: 200,
+                    headers: HeaderMap::new(),
+                    status: StatusCode::from_u16(200u16).unwrap(),
                     body,
                 }
             }
 
             pub fn server_error() -> Self {
                 Self {
-                    headers: Meta::new(),
-                    code: 500,
+                    headers: HeaderMap::new(),
+                    status: StatusCode::from_u16(500u16).unwrap(),
                     body: Payload::Empty,
                 }
             }
@@ -6099,8 +6279,8 @@ pub mod entity {
             pub fn fail(message: &str) -> Self {
                 let errors = Errors::default(message.clone());
                 Self {
-                    headers: Meta::new(),
-                    code: 500,
+                    headers: HeaderMap::new(),
+                    status: StatusCode::from_u16(500u16).unwrap(),
                     body: Payload::Primitive(Primitive::Errors(errors)),
                 }
             }
@@ -6108,13 +6288,13 @@ pub mod entity {
             pub fn with_new_payload(self, payload: Payload) -> Self {
                 Self {
                     headers: self.headers,
-                    code: self.code,
+                    status: self.status,
                     body: payload,
                 }
             }
 
             pub fn is_ok(&self) -> bool {
-                return self.code >= 200 && self.code <= 299;
+                return self.status.is_success()
             }
 
             pub fn into_response(
@@ -6138,7 +6318,7 @@ pub mod entity {
 
             fn try_into(self) -> Result<HttpResponse, Self::Error> {
                 Ok(HttpResponse {
-                    code: self.code,
+                    code: self.status,
                     headers: self.headers,
                     body: self.body.to_bin()?,
                 })
@@ -6548,6 +6728,47 @@ pub mod util {
 
     use crate::error::Error;
     use crate::version::v0_0_1::mesh_portal_unique_id;
+    use crate::version::v0_0_1::payload::HttpMethod;
+
+    #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
+    pub enum MethodPattern {
+        Any,
+        None,
+        Pattern(#[serde(with = "http_serde::method")]HttpMethod),
+    }
+
+    impl MethodPattern{
+        pub fn is_match(&self, x: &HttpMethod) -> Result<(), Error>
+        {
+            match self {
+                Self::Any => Ok(()),
+                Self::Pattern(exact) => exact.is_match(x),
+                Self::None => Err("None pattern".into()),
+            }
+        }
+
+        pub fn is_match_opt(&self, x: Option<&HttpMethod>) -> Result<(), Error>
+        {
+            match self {
+                Self::Any => Ok(()),
+                Self::Pattern(exact) => match x {
+                    None => Err("option none".into()),
+                    Some(x) => self.is_match(x),
+                },
+                Self::None => Err("None pattern".into()),
+            }
+        }
+    }
+
+    impl ToString for MethodPattern {
+        fn to_string(&self) -> String {
+            match self {
+                Self::Any => "*".to_string(),
+                Self::None => "!".to_string(),
+                Self::Pattern(pattern) => pattern.to_string(),
+            }
+        }
+    }
 
     #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
     pub enum ValuePattern<T> {
@@ -8455,21 +8676,21 @@ Bind.Pipelines.Http.Pipeline.Step: expected '->' (forward request) or '-[' (Requ
         let get_some_capture_pattern = all_consuming(http_pattern)("Http<Get>^/some/(.*)")?.1;
 
         let get_some = RequestCore {
-            action: Action::Http(HttpMethod::Get),
+            action: Action::Http(HttpMethod::GET),
             headers: Default::default(),
             path: "/some".to_string(),
             body: Payload::Empty,
         };
 
         let get_some_plus = RequestCore {
-            action: Action::Http(HttpMethod::Get),
+            action: Action::Http(HttpMethod::GET),
             headers: Default::default(),
             path: "/some/plus".to_string(),
             body: Payload::Empty,
         };
 
         let post_some = RequestCore {
-            action: Action::Http(HttpMethod::Post),
+            action: Action::Http(HttpMethod::POST),
             headers: Default::default(),
             path: "/some".to_string(),
             body: Payload::Empty,
@@ -8491,21 +8712,21 @@ Bind.Pipelines.Http.Pipeline.Step: expected '->' (forward request) or '-[' (Requ
     #[test]
     pub fn test_selector() -> Result<(), Error> {
         let get_some = RequestCore {
-            action: Action::Http(HttpMethod::Get),
+            action: Action::Http(HttpMethod::GET),
             headers: Default::default(),
             path: "/some".to_string(),
             body: Payload::Empty,
         };
 
         let get_some_plus = RequestCore {
-            action: Action::Http(HttpMethod::Get),
+            action: Action::Http(HttpMethod::GET),
             headers: Default::default(),
             path: "/some/plus".to_string(),
             body: Payload::Empty,
         };
 
         let post_some = RequestCore {
-            action: Action::Http(HttpMethod::Post),
+            action: Action::Http(HttpMethod::POST),
             headers: Default::default(),
             path: "/some".to_string(),
             body: Payload::Empty,
@@ -8523,28 +8744,28 @@ Bind.Pipelines.Http.Pipeline.Step: expected '->' (forward request) or '-[' (Requ
     #[test]
     pub fn test_scope() -> Result<(), Error> {
         let get_some = RequestCore {
-            action: Action::Http(HttpMethod::Get),
+            action: Action::Http(HttpMethod::GET),
             headers: Default::default(),
             path: "/some".to_string(),
             body: Payload::Empty,
         };
 
         let get_some_plus = RequestCore {
-            action: Action::Http(HttpMethod::Get),
+            action: Action::Http(HttpMethod::GET),
             headers: Default::default(),
             path: "/some/plus".to_string(),
             body: Payload::Empty,
         };
 
         let post_some = RequestCore {
-            action: Action::Http(HttpMethod::Post),
+            action: Action::Http(HttpMethod::POST),
             headers: Default::default(),
             path: "/some".to_string(),
             body: Payload::Empty,
         };
 
         let delete_some = RequestCore {
-            action: Action::Http(HttpMethod::Delete),
+            action: Action::Http(HttpMethod::DELETE),
             headers: Default::default(),
             path: "/some".to_string(),
             body: Payload::Empty,
