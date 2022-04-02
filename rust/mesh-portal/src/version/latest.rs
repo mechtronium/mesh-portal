@@ -108,6 +108,11 @@ pub mod bin {
     pub type Bin = current::bin::Bin;
 }
 
+pub mod parse {
+    use mesh_portal_versions::version::v0_0_1 as current;
+    pub type Res<I,O> = current::parse::Res<I,O>;
+}
+
 pub mod payload {
     use mesh_portal_versions::version::v0_0_1 as current;
 
@@ -154,13 +159,6 @@ pub mod msg {
     use mesh_portal_versions::version::v0_0_1 as current;
 
     pub type MsgRequest = current::msg::MsgRequest;
-}
-
-pub mod http {
-    use mesh_portal_versions::version::v0_0_1 as current;
-
-    pub type HttpRequest = current::http::HttpRequest;
-    pub type HttpResponse = current::http::HttpResponse;
 }
 
 pub mod config {

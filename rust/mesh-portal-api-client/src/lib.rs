@@ -19,7 +19,6 @@ use std::prelude::rust_2021::TryFrom;
 use std::ops::Deref;
 use std::collections::HashMap;
 use tokio::sync::watch::Receiver;
-use mesh_portal::version::latest::http::{HttpRequest, HttpResponse};
 use mesh_portal::version::latest::portal::{Exchanger, inlet, outlet};
 use mesh_portal::version::latest::resource::{ResourceStub, Status};
 use mesh_portal::version::latest::{portal, entity};
@@ -311,7 +310,6 @@ pub mod client {
     use anyhow::Error;
     use mesh_portal::version::latest::portal::outlet;
     use mesh_portal::version::latest::id::{Address};
-    use mesh_portal::version::latest::http::HttpRequest;
 
     /*
     #[derive(Clone)]

@@ -5,6 +5,8 @@ use std::string::FromUtf8Error;
 use nom::error::VerboseError;
 use semver::{ReqParseError, SemVerError};
 use std::num::ParseIntError;
+use http::header::ToStrError;
+use http::uri::InvalidUri;
 use nom_supreme::error::ErrorTree;
 
 #[derive(Debug,Eq,PartialEq)]
@@ -116,6 +118,31 @@ impl From<ParseIntError> for Error {
 
 impl From<regex::Error> for Error {
     fn from(x: regex::Error) -> Self {
+        Self{
+            message: x.to_string()
+        }
+    }
+}
+
+impl From<InvalidUri> for Error {
+    fn from(x: InvalidUri) -> Self {
+        Self{
+            message: x.to_string()
+        }
+    }
+}
+
+impl From<http::Error> for Error {
+    fn from(x: http::Error) -> Self {
+        Self{
+            message: x.to_string()
+        }
+    }
+}
+
+
+impl From<ToStrError> for Error {
+    fn from(x: ToStrError) -> Self {
         Self{
             message: x.to_string()
         }

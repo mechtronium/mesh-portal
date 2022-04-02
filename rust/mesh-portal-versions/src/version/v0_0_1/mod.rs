@@ -844,19 +844,12 @@ pub mod pattern {
     use crate::version::v0_0_1::id::{
         Address, AddressSegment, ResourceKind, ResourceType, RouteSegment, Specific, Tks, Version,
     };
-    use crate::version::v0_0_1::parse::{
-        address, camel_case, camel_case_to_string_matcher, capture_address, capture_path,
-        consume_address_kind_path, file_chars, path, path_regex, Res,
-    };
+    use crate::version::v0_0_1::parse::{address, camel_case, camel_case_to_string_matcher, capture_address, capture_path, consume_address_kind_path, file_chars, path, path_regex, Res };
     use crate::version::v0_0_1::pattern::parse::{address_kind_pattern, pattern, value_pattern};
     use crate::version::v0_0_1::pattern::specific::{
         ProductPattern, VariantPattern, VendorPattern,
     };
-    use crate::version::v0_0_1::payload::{
-        Call, CallKind, CallWithConfig, HttpCall, HttpMethod, ListPattern, MapPattern, MsgCall,
-        Payload, PayloadFormat, PayloadPattern, PayloadTypePattern, Primitive, PrimitiveType,
-        Range,
-    };
+    use crate::version::v0_0_1::payload::{Call, CallKind, CallWithConfig, HttpCall, HttpMethod, HttpMethodType, ListPattern, MapPattern, MsgCall, Payload, PayloadFormat, PayloadPattern, PayloadTypePattern, Primitive, PrimitiveType, Range};
     use crate::version::v0_0_1::util::{MethodPattern, StringMatcher, ValueMatcher, ValuePattern};
     use crate::{Deserialize, Serialize};
     use nom::branch::alt;
@@ -1764,6 +1757,24 @@ pub mod pattern {
         )
     }
 
+    pub fn skewer_or_snake<T>(i: T) -> Res<T, T>
+        where
+            T: InputTakeAtPosition + nom::InputLength,
+            <T as InputTakeAtPosition>::Item: AsChar,
+    {
+        i.split_at_position1_complete(
+            |item| {
+                let char_item = item.as_char();
+                !(char_item == '-') &&
+                !(char_item == '_')
+                    && !((char_item.is_alpha() && char_item.is_lowercase())
+                    || char_item.is_dec_digit())
+            },
+            ErrorKind::AlphaNumeric,
+        )
+    }
+
+
     fn not_quote<T>(i: T) -> Res<T, T>
     where
         T: InputTakeAtPosition + nom::InputLength,
@@ -1911,13 +1922,13 @@ pub mod pattern {
         fn is_match(&self, core: &RequestCore) -> Result<(), Error> {
             if let Action::Msg(action) = &core.action {
                 self.action.is_match(action)?;
-                let matches = core.path.matches(&self.path_regex);
+                let matches = core.uri.path().matches(&self.path_regex);
                 if matches.count() > 0 {
                     Ok(())
                 } else {
                     Err(format!(
                         "Could not match Msg path: '{}' with: '{}'",
-                        core.path, self.path_regex
+                        core.uri, self.path_regex
                     )
                     .into())
                 }
@@ -1946,12 +1957,12 @@ pub mod pattern {
 
                 let regex = Regex::new(self.path_regex.as_str())?;
 
-                if regex.is_match(found.path.as_str()) {
+                if regex.is_match(found.uri.to_string().as_str() ) {
                     Ok(())
                 } else {
                     Err(format!(
                         "Could not match Msg path: '{}' with: '{}'",
-                        found.path, self.path_regex
+                        found.uri, self.path_regex
                     )
                     .into())
                 }
@@ -2030,7 +2041,7 @@ pub mod pattern {
 
     pub fn http_call(input: &str) -> Res<&str, CallKind> {
         tuple((
-            delimited(tag("Http<"), parse_from_str(alphanumeric1), tag(">")),
+            delimited(tag("Http<"), http_method, tag(">")),
             capture_path,
         ))(input)
         .map(|(next, (method, path))| {
@@ -2379,7 +2390,9 @@ pub mod pattern {
     }
 
     pub fn http_method(input: &str) -> Res<&str, HttpMethod> {
-        context("http_method", parse_from_str(camel_case)).parse(input)
+        context("http_method", parse_from_str(camel_case )).parse(input).map( |(next,method):(&str,HttpMethodType)| {
+            (next,method.to_method())
+        })
     }
 
     pub fn http_method_pattern(input: &str) -> Res<&str, MethodPattern> {
@@ -3006,6 +3019,23 @@ pub mod messaging {
             response
         }
 
+        pub fn not_found(self) -> Response {
+            let core = ResponseCore {
+                headers: Default::default(),
+                status: StatusCode::from_u16(404u16).unwrap(),
+                body: Payload::Empty,
+            };
+            let response = Response {
+                id: unique_id(),
+                from: self.to,
+                to: self.from,
+                core,
+                response_to: self.id,
+            };
+            response
+        }
+
+
         pub fn status(self, status: u16 ) -> Response {
             fn process(request: &Request, status: u16) -> Result<Response,http::status::InvalidStatusCode> {
                 let core = ResponseCore {
@@ -3214,7 +3244,7 @@ pub mod payload {
     use crate::version::v0_0_1::util::{ValueMatcher, ValuePattern};
     use std::str::FromStr;
     use std::sync::Arc;
-    use http::Method;
+    use http::{Method, Uri};
 
     #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, strum_macros::Display)]
     pub enum Payload {
@@ -3273,6 +3303,9 @@ pub mod payload {
         fn try_into(self) -> Result<String, Self::Error> {
             match self {
                 Payload::Primitive(Primitive::Text(text)) => Ok(text),
+                Payload::Primitive(Primitive::Bin(bin)) => {
+                    Ok(String::from_utf8(bin.to_vec())?)
+                },
                 _ => Err("Payload type must an Text".into()),
             }
         }
@@ -3724,21 +3757,21 @@ pub mod payload {
     }
 
     impl CallKind {
-        pub fn core_with_body(self, body: Payload) -> RequestCore {
-            match self {
+        pub fn core_with_body(self, body: Payload) -> Result<RequestCore,Error> {
+            Ok(match self {
                 CallKind::Msg(msg) => RequestCore {
                     headers: Default::default(),
                     action: Action::Msg(msg.action),
-                    path: msg.path,
+                    uri: Uri::from_str(msg.path.as_str())?,
                     body,
                 },
                 CallKind::Http(http) => RequestCore {
                     headers: Default::default(),
                     action: Action::Http(http.method),
-                    path: http.path,
+                    uri: Uri::from_str(http.path.as_str())?,
                     body,
                 },
-            }
+            })
         }
     }
 
@@ -3786,7 +3819,6 @@ pub mod payload {
         }
     }
 
-    /*
     #[derive(
         Debug,
         Clone,
@@ -3798,7 +3830,7 @@ pub mod payload {
         strum_macros::Display,
         strum_macros::EnumString,
     )]
-    pub enum HttpMethod {
+    pub enum HttpMethodType {
         Get,
         Post,
         Put,
@@ -3809,7 +3841,22 @@ pub mod payload {
         Options,
         Trace,
     }
-     */
+
+    impl HttpMethodType {
+        pub fn to_method(self) -> HttpMethod {
+            match self {
+                HttpMethodType::Get => HttpMethod::GET,
+                HttpMethodType::Post => HttpMethod::POST,
+                HttpMethodType::Put => HttpMethod::PUT,
+                HttpMethodType::Delete => HttpMethod::DELETE,
+                HttpMethodType::Patch => HttpMethod::PATCH,
+                HttpMethodType::Head => HttpMethod::HEAD,
+                HttpMethodType::Connect => HttpMethod::CONNECT,
+                HttpMethodType::Options => HttpMethod::OPTIONS,
+                HttpMethodType::Trace => HttpMethod::TRACE
+            }
+        }
+    }
 
     pub type HttpMethod = Method;
 
@@ -4314,7 +4361,7 @@ pub mod msg {
     use crate::version::v0_0_1::id::Meta;
     use crate::version::v0_0_1::payload::{Errors, Payload, Primitive};
     use serde::{Deserialize, Serialize};
-    use http::{HeaderMap, StatusCode};
+    use http::{HeaderMap, StatusCode, Uri};
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct MsgRequest {
@@ -4322,7 +4369,9 @@ pub mod msg {
 
         #[serde(with = "http_serde::header_map")]
         pub headers: HeaderMap,
-        pub path: String,
+
+        #[serde(with = "http_serde::uri")]
+        pub uri: Uri,
         pub body: Payload,
     }
 
@@ -4353,106 +4402,11 @@ pub mod msg {
                 Ok(Self {
                     action,
                     headers: core.headers,
-                    path: core.path,
+                    uri: core.uri,
                     body: core.body,
                 })
             } else {
                 Err("expected Msg".into())
-            }
-        }
-    }
-}
-
-pub mod http {
-    use std::collections::HashMap;
-    use std::sync::Arc;
-
-    use crate::error::Error;
-    use serde::{Deserialize, Serialize};
-    use http::{HeaderMap, StatusCode};
-
-    use crate::version::v0_0_1::entity::request::{Action, RequestCore};
-    use crate::version::v0_0_1::entity::response::ResponseCore;
-    use crate::version::v0_0_1::id::Meta;
-    use crate::version::v0_0_1::payload::{Errors, HttpMethod, Payload, Primitive};
-    use crate::version::v0_0_1::Bin;
-
-    #[derive(Debug, Clone, Serialize, Deserialize)]
-    pub struct HttpRequest {
-
-        #[serde(with = "http_serde::method")]
-        pub method: HttpMethod,
-
-        #[serde(with = "http_serde::header_map")]
-        pub headers: HeaderMap,
-        pub path: String,
-        pub body: Bin,
-    }
-
-    impl HttpRequest {
-        pub fn ok(&self, html: &str) -> ResponseCore {
-            ResponseCore::ok_html(html)
-        }
-
-        pub fn fail(&self, error: &str) -> ResponseCore {
-            let errors = Errors::default(error);
-            ResponseCore {
-                headers: Default::default(),
-                status: StatusCode::from_u16(500u16).unwrap(),
-                body: Payload::Primitive(Primitive::Errors(errors)),
-            }
-        }
-    }
-
-    impl TryFrom<RequestCore> for HttpRequest {
-        type Error = Error;
-
-        fn try_from(core: RequestCore) -> Result<Self, Self::Error> {
-            if let Action::Http(method) = core.action {
-                Ok(Self {
-                    method,
-                    headers: core.headers,
-                    path: core.path,
-                    body: core.body.to_bin()?,
-                })
-            } else {
-                Err("expected Http".into())
-            }
-        }
-    }
-
-    impl Into<RequestCore> for HttpRequest {
-        fn into(self) -> RequestCore {
-            RequestCore {
-                action: Action::Http(self.method),
-                headers: self.headers,
-                path: self.path,
-                body: Payload::Primitive(Primitive::Bin(self.body)),
-            }
-        }
-    }
-
-    impl ToString for HttpRequest {
-        fn to_string(&self) -> String {
-            format!("Http<{}>{}", self.method.to_string(), self.path)
-        }
-    }
-
-    #[derive(Debug, Clone, Serialize, Deserialize)]
-    pub struct HttpResponse {
-        #[serde(with = "http_serde::status_code")]
-        pub code: StatusCode,
-        #[serde(with = "http_serde::header_map")]
-        pub headers: HeaderMap,
-        pub body: Bin,
-    }
-
-    impl HttpResponse {
-        pub fn server_side_error() -> Self {
-            Self {
-                headers: Default::default(),
-                code: StatusCode::from_u16(500u16).unwrap(),
-                body: Arc::new(vec![]),
             }
         }
     }
@@ -4806,6 +4760,7 @@ pub mod config {
             use nom_supreme::error::{ErrorTree, StackContext};
             use nom_supreme::final_parser::final_parser;
             use nom_supreme::ParserExt;
+            use crate::error::Error;
 
             pub fn final_bind(input: &str) -> Result<ProtoBind,String>
             {
@@ -5621,6 +5576,12 @@ println!("Segs count: {}", segs.len() );
                 )
             }
 
+            pub fn final_http_pipeline(input: &str) -> Result<Selector<HttpPattern>,Error> {
+                final_parser(http_pipeline)(input).map_err( |e:ErrorTree<&str>| {
+                    e.to_string().into()
+                })
+            }
+
             pub fn http_pipeline(input: &str) -> Res<&str, Selector<HttpPattern>> {
                 tuple((http_pattern_scoped, multispace0, pipeline, tag(";")))(input).map(
                     |(next, (pattern, _, pipeline, _))| (next, Selector::new(pattern, pipeline)),
@@ -5652,7 +5613,7 @@ pub mod entity {
     }
 
     pub mod request {
-        use http::{HeaderMap, StatusCode};
+        use http::{HeaderMap, Request, StatusCode, Uri};
         use crate::error::Error;
         use crate::version::v0_0_1::bin::Bin;
         use crate::version::v0_0_1::entity::request::create::Create;
@@ -5664,7 +5625,6 @@ pub mod entity {
         use crate::version::v0_0_1::entity::response::ResponseCore;
         use crate::version::v0_0_1::fail;
         use crate::version::v0_0_1::fail::{BadRequest, Fail, NotFound};
-        use crate::version::v0_0_1::http::HttpResponse;
         use crate::version::v0_0_1::id::{Address, Meta, PayloadClaim, ResourceKind, ResourceType};
         use crate::version::v0_0_1::pattern::TksPattern;
         use crate::version::v0_0_1::payload::{Errors, HttpMethod, Payload, Primitive};
@@ -5684,7 +5644,7 @@ pub mod entity {
                 RequestCore {
                     headers: Default::default(),
                     action: self,
-                    path: "/".to_string(),
+                    uri: Uri::from_static("/"),
                     body: Payload::Empty,
                 }
             }
@@ -5695,16 +5655,55 @@ pub mod entity {
             #[serde(with = "http_serde::header_map")]
             pub headers: HeaderMap,
             pub action: Action,
-            pub path: String,
+            #[serde(with = "http_serde::uri")]
+            pub uri: Uri,
             pub body: Payload,
         }
+
+        impl From<http::Request<Bin>> for RequestCore {
+            fn from(request: Request<Bin>) -> Self {
+                Self {
+                    headers: request.headers().clone(),
+                    action: Action::Http(request.method().clone()),
+                    uri: request.uri().clone(),
+                    body: Payload::Primitive(Primitive::Bin(request.body().clone()))
+                }
+            }
+        }
+
+        impl TryInto<http::Request<Bin>> for RequestCore {
+            type Error = Error;
+
+            fn try_into(self) -> Result<http::Request<Bin>,Error>{
+                let mut builder = http::Request::builder();
+                for (name,value) in self.headers {
+                    match name {
+                        Some(name) => {
+                            builder = builder.header(name.as_str(),value.to_str()?.to_string().as_str() );
+                        }
+                        None => {}
+                    }
+                }
+                match self.action {
+                    Action::Http(method) => {
+                        builder = builder.method(method).uri(self.uri);
+                        Ok(builder.body( self.body.to_bin()? )?)
+                    }
+                    _ => {
+                        Err("cannot convert to http response".into())
+                    }
+                }
+
+            }
+        }
+
 
         impl Default for RequestCore {
             fn default() -> Self {
                 Self {
                     headers: Default::default(),
                     action: Action::Msg("Default".to_string()),
-                    path: "/".to_string(),
+                    uri: Uri::from_static("/"),
                     body: Payload::Empty,
                 }
             }
@@ -5714,7 +5713,7 @@ pub mod entity {
             pub fn with_new_payload(self, payload: Payload) -> Self {
                 Self {
                     headers: self.headers,
-                    path: self.path,
+                    uri: self.uri,
                     action: self.action,
                     body: payload,
                 }
@@ -5919,6 +5918,7 @@ pub mod entity {
             #[derive(Debug, Clone, Serialize, Deserialize)]
             pub enum Require {
                 File(String),
+                Auth(String)
             }
 
             #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -6226,7 +6226,6 @@ pub mod entity {
         use crate::version::v0_0_1::entity::request::RequestCore;
         use crate::version::v0_0_1::fail;
         use crate::version::v0_0_1::fail::Fail;
-        use crate::version::v0_0_1::http::HttpResponse;
         use crate::version::v0_0_1::id::{Address, Meta, ResourceKind};
         use crate::version::v0_0_1::messaging::Response;
         use crate::version::v0_0_1::payload::{Errors, Payload, Primitive};
@@ -6234,6 +6233,8 @@ pub mod entity {
         use serde::{Deserialize, Serialize};
         use std::sync::Arc;
         use http::{HeaderMap, StatusCode};
+        use http::response::Parts;
+        use crate::version::v0_0_1::bin::Bin;
 
         #[derive(Debug, Clone, Serialize, Deserialize)]
         pub struct ResponseCore {
@@ -6313,15 +6314,44 @@ pub mod entity {
             }
         }
 
-        impl TryInto<HttpResponse> for ResponseCore {
+        impl TryInto<http::response::Builder> for ResponseCore {
             type Error = Error;
 
-            fn try_into(self) -> Result<HttpResponse, Self::Error> {
-                Ok(HttpResponse {
-                    code: self.status,
-                    headers: self.headers,
-                    body: self.body.to_bin()?,
-                })
+            fn try_into(self) -> Result<http::response::Builder, Self::Error> {
+
+                let mut builder = http::response::Builder::new();
+
+                for (name,value) in self.headers {
+                    match name {
+                        Some(name) => {
+                            builder = builder.header(name.as_str(),value.to_str()?.to_string().as_str() );
+                        }
+                        None => {}
+                    }
+                }
+
+                Ok(builder.status(self.status))
+            }
+        }
+
+        impl TryInto<http::Response<Bin>> for ResponseCore {
+            type Error = Error;
+
+            fn try_into(self) -> Result<http::Response<Bin>, Self::Error> {
+
+                let mut builder = http::response::Builder::new();
+
+                for (name,value) in self.headers {
+                    match name {
+                        Some(name) => {
+                            builder = builder.header(name.as_str(),value.to_str()?.to_string().as_str() );
+                        }
+                        None => {}
+                    }
+                }
+
+                let response = builder.status(self.status).body(self.body.to_bin()?)?;
+                Ok(response)
             }
         }
     }
@@ -7803,6 +7833,7 @@ pub mod parse {
         //recognize(alpha1)(input)
     }
 
+
     pub fn camel_case_to_string_matcher(input: &str) -> Res<&str, StringMatcher> {
         camel_case(input).map(|(next, camel)| (next, StringMatcher::new(camel.to_string())))
     }
@@ -8225,6 +8256,7 @@ pub mod parse {
 #[cfg(test)]
 pub mod test {
     use std::str::FromStr;
+    use http::Uri;
 
     use nom::combinator::{all_consuming, recognize};
 
@@ -8678,21 +8710,21 @@ Bind.Pipelines.Http.Pipeline.Step: expected '->' (forward request) or '-[' (Requ
         let get_some = RequestCore {
             action: Action::Http(HttpMethod::GET),
             headers: Default::default(),
-            path: "/some".to_string(),
+            uri: Uri::from_static("/some"),
             body: Payload::Empty,
         };
 
         let get_some_plus = RequestCore {
             action: Action::Http(HttpMethod::GET),
             headers: Default::default(),
-            path: "/some/plus".to_string(),
+            uri: Uri::from_static("/some/plus"),
             body: Payload::Empty,
         };
 
         let post_some = RequestCore {
             action: Action::Http(HttpMethod::POST),
             headers: Default::default(),
-            path: "/some".to_string(),
+            uri: Uri::from_static("/some"),
             body: Payload::Empty,
         };
 
@@ -8714,21 +8746,21 @@ Bind.Pipelines.Http.Pipeline.Step: expected '->' (forward request) or '-[' (Requ
         let get_some = RequestCore {
             action: Action::Http(HttpMethod::GET),
             headers: Default::default(),
-            path: "/some".to_string(),
+            uri: Uri::from_static( "/some"),
             body: Payload::Empty,
         };
 
         let get_some_plus = RequestCore {
             action: Action::Http(HttpMethod::GET),
             headers: Default::default(),
-            path: "/some/plus".to_string(),
+            uri: Uri::from_static( "/some/plus" ),
             body: Payload::Empty,
         };
 
         let post_some = RequestCore {
             action: Action::Http(HttpMethod::POST),
             headers: Default::default(),
-            path: "/some".to_string(),
+            uri: Uri::from_static( "/some"),
             body: Payload::Empty,
         };
 
@@ -8746,28 +8778,28 @@ Bind.Pipelines.Http.Pipeline.Step: expected '->' (forward request) or '-[' (Requ
         let get_some = RequestCore {
             action: Action::Http(HttpMethod::GET),
             headers: Default::default(),
-            path: "/some".to_string(),
+            uri: Uri::from_static( "/some" ),
             body: Payload::Empty,
         };
 
         let get_some_plus = RequestCore {
             action: Action::Http(HttpMethod::GET),
             headers: Default::default(),
-            path: "/some/plus".to_string(),
+            uri: Uri::from_static( "/some/plus" ),
             body: Payload::Empty,
         };
 
         let post_some = RequestCore {
             action: Action::Http(HttpMethod::POST),
             headers: Default::default(),
-            path: "/some".to_string(),
+            uri: Uri::from_static( "/some" ),
             body: Payload::Empty,
         };
 
         let delete_some = RequestCore {
             action: Action::Http(HttpMethod::DELETE),
             headers: Default::default(),
-            path: "/some".to_string(),
+            uri: Uri::from_static( "/some" ),
             body: Payload::Empty,
         };
 
