@@ -7,7 +7,7 @@ use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 
-use crate::error::Error;
+use crate::error::MsgErr;
 use crate::version::v0_0_1::bin::Bin;
 
 pub type State = HashMap<String, Bin>;
@@ -56,7 +56,7 @@ pub mod id {
     use serde::de::Visitor;
     use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 
-    use crate::error::Error;
+    use crate::error::MsgErr;
     use crate::version::v0_0_1::parse::{address, camel_case, consume_address, Res};
     use crate::version::v0_0_1::pattern::parse::{address_and_kind, resource_type, specific};
     use crate::version::v0_0_1::pattern::{Pattern, SpecificPattern, VersionReq};
@@ -83,7 +83,7 @@ pub mod id {
     }
 
     impl FromStr for AddressAndKind {
-        type Err = Error;
+        type Err = MsgErr;
 
         fn from_str(s: &str) -> Result<Self, Self::Err> {
             let address_and_kind = match all_consuming(address_and_kind)(s) {
@@ -167,7 +167,7 @@ pub mod id {
     }
 
     impl TryInto<semver::Version> for Version {
-        type Error = Error;
+        type Error = MsgErr;
 
         fn try_into(self) -> Result<semver::Version, Self::Error> {
             Ok(self.version)
@@ -175,7 +175,7 @@ pub mod id {
     }
 
     impl FromStr for Version {
-        type Err = Error;
+        type Err = MsgErr;
 
         fn from_str(s: &str) -> Result<Self, Self::Err> {
             let version = semver::Version::from_str(s)?;
@@ -220,7 +220,7 @@ pub mod id {
     }
 
     impl TryInto<SpecificPattern> for Specific {
-        type Error = Error;
+        type Error = MsgErr;
 
         fn try_into(self) -> Result<SpecificPattern, Self::Error> {
             Ok(SpecificPattern {
@@ -267,7 +267,7 @@ pub mod id {
     }
 
     impl AddressSegment {
-        pub fn apply_captures(self, captures: &Captures) -> Result<Self, Error> {
+        pub fn apply_captures(self, captures: &Captures) -> Result<Self, MsgErr> {
             match self {
                 AddressSegment::Root => Ok(AddressSegment::Root),
                 AddressSegment::Space(replacement) => {
@@ -372,7 +372,7 @@ pub mod id {
     }
 
     impl Address {
-        pub fn to_bundle(self) -> Result<Address, Error> {
+        pub fn to_bundle(self) -> Result<Address, MsgErr> {
             if self.segments.is_empty() {
                 return Err("Address does not contain a bundle".into());
             }
@@ -417,7 +417,7 @@ pub mod id {
             }
         }
 
-        pub fn push(&self, segment: String) -> Result<Self, Error> {
+        pub fn push(&self, segment: String) -> Result<Self, MsgErr> {
             if self.segments.is_empty() {
                 Self::from_str(segment.as_str())
             } else {
@@ -450,7 +450,7 @@ pub mod id {
             }
         }
 
-        pub fn push_file(&self, segment: String) -> Result<Self, Error> {
+        pub fn push_file(&self, segment: String) -> Result<Self, MsgErr> {
             Self::from_str(format!("{}{}", self.to_string(), segment).as_str())
         }
 
@@ -497,7 +497,7 @@ pub mod id {
     }
 
     impl FromStr for Address {
-        type Err = Error;
+        type Err = MsgErr;
 
         fn from_str(s: &str) -> Result<Self, Self::Err> {
             Ok(consume_address(s)?.1)
@@ -584,7 +584,7 @@ pub mod id {
     }
 
     impl CaptureAddress {
-        pub fn to_address(self, captures: Captures) -> Result<Address, Error> {
+        pub fn to_address(self, captures: Captures) -> Result<Address, MsgErr> {
             let mut segments = vec![];
             for segment in self.segments {
                 segments.push(segment.apply_captures(&captures)?)
@@ -660,7 +660,7 @@ pub mod id {
     }
 
     impl FromStr for KindParts {
-        type Err = Error;
+        type Err = MsgErr;
 
         fn from_str(s: &str) -> Result<Self, Self::Err> {
             let (_, kind) = all_consuming(tuple((
@@ -733,7 +733,7 @@ pub mod id {
 }
 
 pub mod path {
-    use crate::error::Error;
+    use crate::error::MsgErr;
     use crate::version::v0_0_1::parse::consume_path;
     use serde::{Deserialize, Serialize};
     use std::str::FromStr;
@@ -750,7 +750,7 @@ pub mod path {
             }
         }
 
-        pub fn make_absolute(string: &str) -> Result<Self, Error> {
+        pub fn make_absolute(string: &str) -> Result<Self, MsgErr> {
             if string.starts_with("/") {
                 Path::from_str(string)
             } else {
@@ -758,7 +758,7 @@ pub mod path {
             }
         }
 
-        pub fn bin(&self) -> Result<Vec<u8>, Error> {
+        pub fn bin(&self) -> Result<Vec<u8>, MsgErr> {
             let bin = bincode::serialize(self)?;
             Ok(bin)
         }
@@ -767,7 +767,7 @@ pub mod path {
             self.string.starts_with("/")
         }
 
-        pub fn cat(&self, path: &Path) -> Result<Self, Error> {
+        pub fn cat(&self, path: &Path) -> Result<Self, MsgErr> {
             if self.string.ends_with("/") {
                 Path::from_str(format!("{}{}", self.string.as_str(), path.string.as_str()).as_str())
             } else {
@@ -811,7 +811,7 @@ pub mod path {
     }
 
     impl FromStr for Path {
-        type Err = Error;
+        type Err = MsgErr;
 
         fn from_str(s: &str) -> Result<Self, Self::Err> {
             let (_, path) = consume_path(s)?;
@@ -838,7 +838,7 @@ pub mod pattern {
     use serde::de::Visitor;
     use serde::{de, Deserializer, Serializer};
 
-    use crate::error::Error;
+    use crate::error::MsgErr;
 
     use crate::version::v0_0_1::entity::request::{Action, Rc, RcCommandType, RequestCore};
     use crate::version::v0_0_1::id::{
@@ -914,7 +914,7 @@ pub mod pattern {
     }
 
     impl FromStr for AddressKindPattern {
-        type Err = Error;
+        type Err = MsgErr;
 
         fn from_str(s: &str) -> Result<Self, Self::Err> {
             let (_, rtn) = all_consuming(address_kind_pattern)(s)?;
@@ -1102,7 +1102,7 @@ pub mod pattern {
     }
 
     impl TryInto<semver::VersionReq> for VersionReq {
-        type Error = Error;
+        type Error = MsgErr;
 
         fn try_into(self) -> Result<semver::VersionReq, Self::Error> {
             Ok(self.version)
@@ -1110,7 +1110,7 @@ pub mod pattern {
     }
 
     impl FromStr for VersionReq {
-        type Err = Error;
+        type Err = MsgErr;
 
         fn from_str(s: &str) -> Result<Self, Self::Err> {
             let version = semver::VersionReq::from_str(s)?;
@@ -1200,7 +1200,7 @@ pub mod pattern {
     }
 
     impl ValueMatcher<Specific> for SpecificPattern {
-        fn is_match(&self, specific: &Specific) -> Result<(), Error> {
+        fn is_match(&self, specific: &Specific) -> Result<(), MsgErr> {
             if self.vendor.matches(&specific.vendor)
                 && self.product.matches(&specific.product)
                 && self.variant.matches(&specific.variant)
@@ -1228,7 +1228,7 @@ pub mod pattern {
         use std::ops::Deref;
         use std::str::FromStr;
 
-        use crate::error::Error;
+        use crate::error::MsgErr;
         use crate::version::v0_0_1::pattern::Pattern;
 
         pub struct VersionReq {
@@ -1244,7 +1244,7 @@ pub mod pattern {
         }
 
         impl FromStr for VersionReq {
-            type Err = Error;
+            type Err = MsgErr;
 
             fn from_str(s: &str) -> Result<Self, Self::Err> {
                 Ok(VersionReq {
@@ -1273,7 +1273,7 @@ pub mod pattern {
         use nom::{Compare, InputIter, InputLength, InputTake, Parser, UnspecializedInput};
         use nom::{Err, IResult};
 
-        use crate::error::Error;
+        use crate::error::MsgErr;
         use crate::version::v0_0_1::id::{
             AddressAndKind, AddressSegment, KindParts, ResourceKind, ResourceType, Specific,
             Version,
@@ -1555,7 +1555,7 @@ pub mod pattern {
             delimited(tag("<"), kind, tag(">"))(input)
         }
 
-        pub fn consume_kind(input: &str) -> Result<ResourceKind, Error> {
+        pub fn consume_kind(input: &str) -> Result<ResourceKind, MsgErr> {
             let (_, kind_parts) = all_consuming(kind_parts)(input)?;
 
             Ok(kind_parts.try_into()?)
@@ -1829,7 +1829,7 @@ pub mod pattern {
     }
 
     impl ValueMatcher<RequestCore> for EntityPattern {
-        fn is_match(&self, core: &RequestCore) -> Result<(), Error> {
+        fn is_match(&self, core: &RequestCore) -> Result<(), MsgErr> {
             match &core.action {
                 Action::Rc(found) => {
                     if let EntityPattern::Rc(pattern) = self {
@@ -1887,7 +1887,7 @@ pub mod pattern {
     }
 
     impl ValueMatcher<RequestCore> for RcPattern {
-        fn is_match(&self, core: &RequestCore) -> Result<(), Error> {
+        fn is_match(&self, core: &RequestCore) -> Result<(), MsgErr> {
             if let Action::Rc(rc) = &core.action {
                 if self.command.matches(&rc.get_type()) {
                     Ok(())
@@ -1919,7 +1919,7 @@ pub mod pattern {
     }
 
     impl ValueMatcher<RequestCore> for MsgPattern {
-        fn is_match(&self, core: &RequestCore) -> Result<(), Error> {
+        fn is_match(&self, core: &RequestCore) -> Result<(), MsgErr> {
             if let Action::Msg(action) = &core.action {
                 self.action.is_match(action)?;
                 let matches = core.uri.path().matches(&self.path_regex);
@@ -1951,7 +1951,7 @@ pub mod pattern {
     }
 
     impl ValueMatcher<RequestCore> for HttpPattern {
-        fn is_match(&self, found: &RequestCore) -> Result<(), Error> {
+        fn is_match(&self, found: &RequestCore) -> Result<(), MsgErr> {
             if let Action::Http(method) = &found.action {
                 self.method.is_match(&method)?;
 
@@ -2705,9 +2705,9 @@ pub mod pattern {
             }
         }
 
-        pub fn convert<To>(self) -> Result<Pattern<To>, Error>
+        pub fn convert<To>(self) -> Result<Pattern<To>, MsgErr>
         where
-            P: TryInto<To, Error = Error> + Eq + PartialEq,
+            P: TryInto<To, Error =MsgErr> + Eq + PartialEq,
         {
             Ok(match self {
                 Pattern::Any => Pattern::Any,
@@ -2781,9 +2781,9 @@ pub mod pattern {
             }
         }
 
-        pub fn convert<To>(self) -> Result<EmptyPattern<To>, Error>
+        pub fn convert<To>(self) -> Result<EmptyPattern<To>, MsgErr>
         where
-            P: TryInto<To, Error = Error> + Eq + PartialEq,
+            P: TryInto<To, Error =MsgErr> + Eq + PartialEq,
         {
             Ok(match self {
                 EmptyPattern::Any => EmptyPattern::Any,
@@ -2902,7 +2902,7 @@ pub mod pattern {
     }
 
     impl FromStr for AddressKindPath {
-        type Err = Error;
+        type Err = MsgErr;
 
         fn from_str(s: &str) -> Result<Self, Self::Err> {
             Ok(consume_address_kind_path(s)?)
@@ -2916,7 +2916,7 @@ pub mod messaging {
     use serde::{Deserialize, Serialize};
     use http::StatusCode;
 
-    use crate::error::Error;
+    use crate::error::{MsgErr, StatusErr};
     use crate::version::v0_0_1::entity::request::RequestCore;
     use crate::version::v0_0_1::entity::response::ResponseCore;
     use crate::version::v0_0_1::id::Address;
@@ -2932,6 +2932,51 @@ pub mod messaging {
     }
 
     impl Request {
+
+        pub fn result<E:StatusErr>(self, result: Result<ResponseCore, E> ) -> Response {
+            match result {
+                Ok(core) => {
+                    Response {
+                        id: unique_id(),
+                        to: self.from,
+                        from: self.to,
+                        core,
+                        response_to: self.id
+                    }
+                }
+                Err(err) => {
+                    let core = self.core.err(err);
+                    Response {
+                        id: unique_id(),
+                        to: self.from,
+                        from: self.to,
+                        core,
+                        response_to: self.id
+                    }
+                }
+            }
+        }
+
+        pub fn payload_result<E: StatusErr>(self, result: Result<Payload, E> ) -> Response {
+            match result {
+                Ok(payload) => {
+                    self.ok_payload(payload)
+                }
+                Err(err) => {
+                    let core = self.core.err(err);
+                    Response {
+                        id: unique_id(),
+                        to: self.from,
+                        from: self.to,
+                        core,
+                        response_to: self.id
+                    }
+                }
+            }
+        }
+    }
+
+    impl Request {
         pub fn new(core: RequestCore, from: Address, to: Address) -> Self {
             Self {
                 id: unique_id(),
@@ -2941,6 +2986,7 @@ pub mod messaging {
             }
         }
 
+        /*
         pub fn result<E>(self, result: Result<ResponseCore,E> ) -> Response where E: ToString {
             match result {
                 Ok(core) => {
@@ -2968,6 +3014,8 @@ pub mod messaging {
                 }
             }
         }
+
+         */
 
         pub fn ok(self) -> Response {
             let core = ResponseCore {
@@ -3075,7 +3123,7 @@ pub mod messaging {
             }
         }
 
-        pub fn validate(&self) -> Result<(), Error> {
+        pub fn validate(&self) -> Result<(), MsgErr> {
             self.to.as_ref().ok_or("request.to must be set")?;
             Ok(())
         }
@@ -3088,7 +3136,7 @@ pub mod messaging {
             self.core = Option::Some(core);
         }
 
-        pub fn into_request(self, from: Address) -> Result<Request, Error> {
+        pub fn into_request(self, from: Address) -> Result<Request, MsgErr> {
             self.validate()?;
             let core = self
                 .core
@@ -3124,7 +3172,7 @@ pub mod messaging {
             }
         }
 
-        pub fn ok_or(self) -> Result<Self, Error> {
+        pub fn ok_or(self) -> Result<Self, MsgErr> {
             if self.core.status.is_success() {
                 Ok(self)
             } else {
@@ -3177,7 +3225,7 @@ pub mod frame {
 
     use serde::{Deserialize, Serialize};
 
-    use crate::error::Error;
+    use crate::error::MsgErr;
 
     pub struct PrimitiveFrame {
         pub data: Vec<u8>,
@@ -3205,7 +3253,7 @@ pub mod frame {
     }
 
     impl TryInto<String> for PrimitiveFrame {
-        type Error = Error;
+        type Error = MsgErr;
 
         fn try_into(self) -> Result<String, Self::Error> {
             Ok(String::from_utf8(self.data)?)
@@ -3233,7 +3281,7 @@ pub mod payload {
     use std::collections::HashMap;
     use std::ops::{Deref, DerefMut};
 
-    use crate::error::Error;
+    use crate::error::MsgErr;
     use crate::version::v0_0_1::bin::Bin;
     use crate::version::v0_0_1::entity::request::{Action, Rc, RcCommandType, RequestCore};
     use crate::version::v0_0_1::id::{
@@ -3255,6 +3303,16 @@ pub mod payload {
     }
 
     impl Payload {
+
+        pub fn to_text(self) -> Result<String, MsgErr> {
+            if let Payload::Primitive(Primitive::Text(text)) = self {
+                Ok(text)
+            } else {
+                Err("not a 'Text' payload".into())
+            }
+        }
+
+
         pub fn is_some(&self) -> bool {
             if let Self::Empty = self {
                 false
@@ -3276,7 +3334,7 @@ pub mod payload {
             }
         }
 
-        pub fn to_bin(self) -> Result<Bin, Error> {
+        pub fn to_bin(self) -> Result<Bin, MsgErr> {
             match self {
                 Payload::Empty => Ok(Arc::new(vec![])),
                 Payload::Primitive(primitive) => primitive.to_bin(),
@@ -3287,7 +3345,7 @@ pub mod payload {
     }
 
     impl TryInto<HashMap<String,Payload>> for Payload {
-        type Error = Error;
+        type Error = MsgErr;
 
         fn try_into(self) -> Result<HashMap<String,Payload>, Self::Error> {
             match self {
@@ -3298,7 +3356,7 @@ pub mod payload {
     }
 
     impl TryInto<String> for Payload {
-        type Error = Error;
+        type Error = MsgErr;
 
         fn try_into(self) -> Result<String, Self::Error> {
             match self {
@@ -3313,7 +3371,7 @@ pub mod payload {
 
 
     impl TryInto<Address> for Payload {
-        type Error = Error;
+        type Error = MsgErr;
 
         fn try_into(self) -> Result<Address, Self::Error> {
             match self {
@@ -3324,7 +3382,7 @@ pub mod payload {
     }
 
     impl TryInto<Primitive> for Payload {
-        type Error = Error;
+        type Error = MsgErr;
 
         fn try_into(self) -> Result<Primitive, Self::Error> {
             match self {
@@ -3391,7 +3449,7 @@ pub mod payload {
         }
 
          */
-        pub fn to_bin(self) -> Result<Bin, Error> {
+        pub fn to_bin(self) -> Result<Bin, MsgErr> {
             Ok(Arc::new(bincode::serialize(&self)?))
         }
 
@@ -3472,7 +3530,7 @@ pub mod payload {
             }
         }
 
-        pub fn to_bin(self) -> Result<Bin, Error> {
+        pub fn to_bin(self) -> Result<Bin, MsgErr> {
             match self {
                 Primitive::Text(text) => {
                     let text = text.into_bytes();
@@ -3498,7 +3556,7 @@ pub mod payload {
     }
 
     impl TryInto<Bin> for Primitive {
-        type Error = Error;
+        type Error = MsgErr;
 
         fn try_into(self) -> Result<Bin, Self::Error> {
             match self {
@@ -3509,7 +3567,7 @@ pub mod payload {
     }
 
     impl TryInto<String> for Primitive {
-        type Error = Error;
+        type Error = MsgErr;
 
         fn try_into(self) -> Result<String, Self::Error> {
             match self {
@@ -3538,7 +3596,7 @@ pub mod payload {
                 list: vec![],
             }
         }
-        pub fn validate(&self) -> Result<(), Error> {
+        pub fn validate(&self) -> Result<(), MsgErr> {
             for primitive in &self.list {
                 if primitive.primitive_type() != self.primitive_type {
                     return Err(format!(
@@ -3552,7 +3610,7 @@ pub mod payload {
             Ok(())
         }
 
-        pub fn to_bin(self) -> Result<Bin, Error> {
+        pub fn to_bin(self) -> Result<Bin, MsgErr> {
             Ok(Arc::new(bincode::serialize(&self)?))
         }
     }
@@ -3586,7 +3644,7 @@ pub mod payload {
     }
 
     impl FromStr for PrimitiveType {
-        type Err = Error;
+        type Err = MsgErr;
 
         fn from_str(s: &str) -> Result<Self, Self::Err> {
             Ok(match s {
@@ -3629,7 +3687,7 @@ pub mod payload {
     }
 
     impl ListPattern {
-        pub fn is_match(&self, list: &PrimitiveList) -> Result<(), Error> {
+        pub fn is_match(&self, list: &PrimitiveList) -> Result<(), MsgErr> {
             for i in &list.list {
                 if self.primitive != i.primitive_type() {
                     return Err(format!(
@@ -3661,7 +3719,7 @@ pub mod payload {
     }
 
     impl PayloadTypePattern {
-        pub fn is_match(&self, payload: &Payload) -> Result<(), Error> {
+        pub fn is_match(&self, payload: &Payload) -> Result<(), MsgErr> {
             match self {
                 PayloadTypePattern::Empty => {
                     if payload.payload_type() == PayloadType::Empty {
@@ -3730,7 +3788,7 @@ pub mod payload {
     }
 
     impl ValueMatcher<Payload> for PayloadPattern {
-        fn is_match(&self, payload: &Payload) -> Result<(), Error> {
+        fn is_match(&self, payload: &Payload) -> Result<(), MsgErr> {
             self.structure.is_match(&payload)?;
 
             // more matching to come... not sure exactly how to match Format and Validation...
@@ -3757,7 +3815,7 @@ pub mod payload {
     }
 
     impl CallKind {
-        pub fn core_with_body(self, body: Payload) -> Result<RequestCore,Error> {
+        pub fn core_with_body(self, body: Payload) -> Result<RequestCore, MsgErr> {
             Ok(match self {
                 CallKind::Msg(msg) => RequestCore {
                     headers: Default::default(),
@@ -3884,7 +3942,7 @@ pub mod payload {
      */
 
     impl ValueMatcher<HttpMethod> for HttpMethod {
-        fn is_match(&self, found: &HttpMethod) -> Result<(), crate::error::Error> {
+        fn is_match(&self, found: &HttpMethod) -> Result<(), crate::error::MsgErr> {
             if *self == *found {
                 Ok(())
             } else {
@@ -3925,7 +3983,7 @@ pub mod payload {
     }
 
     impl PrimitiveType {
-        pub fn is_match(&self, primitive: &Primitive) -> Result<(), Error> {
+        pub fn is_match(&self, primitive: &Primitive) -> Result<(), MsgErr> {
             match primitive {
                 Primitive::Text(_) => {
                     if *self == Self::Text {
@@ -4044,7 +4102,7 @@ pub mod payload {
             }
         }
 
-        pub fn is_match(&self, map: &PayloadMap) -> Result<(), Error> {
+        pub fn is_match(&self, map: &PayloadMap) -> Result<(), MsgErr> {
             // if Any keys are allowed then skip
             for (key, payload) in &map.map {
                 if !self.required.contains_key(key) {
@@ -4229,7 +4287,7 @@ pub mod command {
 
         use serde::{Deserialize, Serialize};
 
-        use crate::error::Error;
+        use crate::error::MsgErr;
         use crate::version::v0_0_1::payload::{Payload, PayloadMap};
 
         #[derive(Debug, Clone, Serialize, Deserialize, strum_macros::Display)]
@@ -4355,7 +4413,7 @@ pub mod command {
 }
 
 pub mod msg {
-    use crate::error::Error;
+    use crate::error::MsgErr;
     use crate::version::v0_0_1::entity::request::{Action, RequestCore};
     use crate::version::v0_0_1::entity::response::ResponseCore;
     use crate::version::v0_0_1::id::Meta;
@@ -4395,7 +4453,7 @@ pub mod msg {
     }
 
     impl TryFrom<RequestCore> for MsgRequest {
-        type Error = Error;
+        type Error = MsgErr;
 
         fn try_from(core: RequestCore) -> Result<Self, Self::Error> {
             if let Action::Msg(action) = core.action {
@@ -4495,7 +4553,7 @@ pub mod config {
     }
 
     pub mod bind {
-        use crate::error::Error;
+        use crate::error::MsgErr;
         use crate::version::v0_0_1::entity::request::{Rc, RequestCore};
         use crate::version::v0_0_1::entity::EntityType;
         use crate::version::v0_0_1::id::CaptureAddress;
@@ -4514,7 +4572,7 @@ pub mod config {
         }
 
         impl TryInto<BindConfig> for ProtoBind {
-            type Error = Error;
+            type Error = MsgErr;
 
             fn try_into(self) -> Result<BindConfig, Self::Error> {
                 let mut opt_msg = Option::None;
@@ -4590,7 +4648,7 @@ pub mod config {
         }
 
         impl<T> Scope<T, Selector<HttpPattern>> {
-            pub fn find_match(&self, m: &RequestCore) -> Result<Selector<HttpPattern>, Error> {
+            pub fn find_match(&self, m: &RequestCore) -> Result<Selector<HttpPattern>, MsgErr> {
                 for e in &self.elements {
                     if e.is_match(m).is_ok() {
                         return Ok(e.clone());
@@ -4601,7 +4659,7 @@ pub mod config {
         }
 
         impl<T> Scope<T, Selector<MsgPattern>> {
-            pub fn find_match(&self, m: &RequestCore) -> Result<Selector<MsgPattern>, Error> {
+            pub fn find_match(&self, m: &RequestCore) -> Result<Selector<MsgPattern>, MsgErr> {
                 for e in &self.elements {
                     if e.is_match(m).is_ok() {
                         return Ok(e.clone());
@@ -4676,25 +4734,25 @@ pub mod config {
         }
 
         impl Selector<EntityPattern> {
-            pub fn is_match(&self, m: &RequestCore) -> Result<(), Error> {
+            pub fn is_match(&self, m: &RequestCore) -> Result<(), MsgErr> {
                 self.pattern.is_match(m)
             }
         }
 
         impl Selector<MsgPattern> {
-            pub fn is_match(&self, m: &RequestCore) -> Result<(), Error> {
+            pub fn is_match(&self, m: &RequestCore) -> Result<(), MsgErr> {
                 self.pattern.is_match(m)
             }
         }
 
         impl Selector<RcPattern> {
-            pub fn is_match(&self, m: &RequestCore) -> Result<(), Error> {
+            pub fn is_match(&self, m: &RequestCore) -> Result<(), MsgErr> {
                 self.pattern.is_match(m)
             }
         }
 
         impl Selector<HttpPattern> {
-            pub fn is_match(&self, m: &RequestCore) -> Result<(), Error> {
+            pub fn is_match(&self, m: &RequestCore) -> Result<(), MsgErr> {
                 self.pattern.is_match(m)
             }
         }
@@ -4760,7 +4818,7 @@ pub mod config {
             use nom_supreme::error::{ErrorTree, StackContext};
             use nom_supreme::final_parser::final_parser;
             use nom_supreme::ParserExt;
-            use crate::error::Error;
+            use crate::error::MsgErr;
 
             pub fn final_bind(input: &str) -> Result<ProtoBind,String>
             {
@@ -5576,7 +5634,7 @@ println!("Segs count: {}", segs.len() );
                 )
             }
 
-            pub fn final_http_pipeline(input: &str) -> Result<Selector<HttpPattern>,Error> {
+            pub fn final_http_pipeline(input: &str) -> Result<Selector<HttpPattern>, MsgErr> {
                 final_parser(http_pipeline)(input).map_err( |e:ErrorTree<&str>| {
                     e.to_string().into()
                 })
@@ -5614,7 +5672,8 @@ pub mod entity {
 
     pub mod request {
         use http::{HeaderMap, Request, StatusCode, Uri};
-        use crate::error::Error;
+        use http::status::InvalidStatusCode;
+        use crate::error::{MsgErr, StatusErr};
         use crate::version::v0_0_1::bin::Bin;
         use crate::version::v0_0_1::entity::request::create::Create;
         use crate::version::v0_0_1::entity::request::get::Get;
@@ -5672,9 +5731,9 @@ pub mod entity {
         }
 
         impl TryInto<http::Request<Bin>> for RequestCore {
-            type Error = Error;
+            type Error = MsgErr;
 
-            fn try_into(self) -> Result<http::Request<Bin>,Error>{
+            fn try_into(self) -> Result<http::Request<Bin>, MsgErr>{
                 let mut builder = http::Request::builder();
                 for (name,value) in self.headers {
                     match name {
@@ -5743,6 +5802,20 @@ pub mod entity {
                     body: Payload::Primitive(Primitive::Errors(errors)),
                 }
             }
+
+            pub fn err<E: StatusErr>(&self, error: E) -> ResponseCore {
+                let errors = Errors::default(error.message().as_str());
+                let status = match StatusCode::from_u16(error.status()) {
+                    Ok(status) => status,
+                    Err(_) => StatusCode::from_u16(500u16).unwrap()
+                };
+ println!("----->   returning STATUS of {}",status.as_str());
+                ResponseCore {
+                    headers: Default::default(),
+                    status,
+                    body: Payload::Primitive(Primitive::Errors(errors)),
+                }
+            }
         }
 
         #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -5804,7 +5877,7 @@ pub mod entity {
         }
 
         impl ValueMatcher<Rc> for Rc {
-            fn is_match(&self, x: &Rc) -> Result<(), crate::error::Error> {
+            fn is_match(&self, x: &Rc) -> Result<(), crate::error::MsgErr> {
                 if self.get_type() == x.get_type() {
                     Ok(())
                 } else {
@@ -5859,7 +5932,7 @@ pub mod entity {
 
             use serde::{Deserialize, Serialize};
 
-            use crate::error::Error;
+            use crate::error::MsgErr;
             use crate::version::v0_0_1::bin::Bin;
             use crate::version::v0_0_1::command::common::{SetProperties, SetRegistry, StateSrc};
             use crate::version::v0_0_1::id::{Address, AddressSegment, HostKey, ResourceKind};
@@ -5901,7 +5974,7 @@ pub mod entity {
             }
 
             impl TryInto<ResourceKind> for KindTemplate {
-                type Error = Error;
+                type Error = MsgErr;
 
                 fn try_into(self) -> Result<ResourceKind, Self::Error> {
                     if self.specific.is_some() {
@@ -6009,7 +6082,7 @@ pub mod entity {
 
             use serde::{Deserialize, Serialize};
 
-            use crate::error::Error;
+            use crate::error::MsgErr;
             use crate::version::v0_0_1::fail::{BadCoercion, Fail};
             use crate::version::v0_0_1::id::Address;
             use crate::version::v0_0_1::pattern::{AddressKindPath, AddressKindPattern, Hop};
@@ -6028,7 +6101,7 @@ pub mod entity {
                 pub fn to_primitive(
                     &self,
                     stubs: Vec<ResourceStub>,
-                ) -> Result<PrimitiveList, Error> {
+                ) -> Result<PrimitiveList, MsgErr> {
                     let stubs: Vec<Primitive> = stubs
                         .into_iter()
                         .map(|stub| Primitive::Stub(stub))
@@ -6078,7 +6151,7 @@ pub mod entity {
             }
 
             impl TryInto<SubSelect> for Select {
-                type Error = Error;
+                type Error = MsgErr;
 
                 fn try_into(self) -> Result<SubSelect, Self::Error> {
                     if let SelectKind::SubSelect {
@@ -6163,7 +6236,7 @@ pub mod entity {
 
             use serde::{Deserialize, Serialize};
 
-            use crate::error::Error;
+            use crate::error::MsgErr;
             use crate::version::v0_0_1::command::common::SetProperties;
             use crate::version::v0_0_1::id::Address;
             use crate::version::v0_0_1::payload::Payload;
@@ -6179,7 +6252,7 @@ pub mod entity {
 
             use serde::{Deserialize, Serialize};
 
-            use crate::error::Error;
+            use crate::error::MsgErr;
             use crate::version::v0_0_1::entity::request::Rc;
             use crate::version::v0_0_1::pattern::AddressKindPath;
 
@@ -6194,9 +6267,9 @@ pub mod entity {
             }
 
             impl TryInto<AddressKindPath> for QueryResult {
-                type Error = Error;
+                type Error = MsgErr;
 
-                fn try_into(self) -> Result<AddressKindPath, Error> {
+                fn try_into(self) -> Result<AddressKindPath, MsgErr> {
                     match self {
                         QueryResult::AddressKindPath(address_kind_path) => Ok(address_kind_path),
                     }
@@ -6222,7 +6295,7 @@ pub mod entity {
     }
 
     pub mod response {
-        use crate::error::Error;
+        use crate::error::MsgErr;
         use crate::version::v0_0_1::entity::request::RequestCore;
         use crate::version::v0_0_1::fail;
         use crate::version::v0_0_1::fail::Fail;
@@ -6315,7 +6388,7 @@ pub mod entity {
         }
 
         impl TryInto<http::response::Builder> for ResponseCore {
-            type Error = Error;
+            type Error = MsgErr;
 
             fn try_into(self) -> Result<http::response::Builder, Self::Error> {
 
@@ -6335,7 +6408,7 @@ pub mod entity {
         }
 
         impl TryInto<http::Response<Bin>> for ResponseCore {
-            type Error = Error;
+            type Error = MsgErr;
 
             fn try_into(self) -> Result<http::Response<Bin>, Self::Error> {
 
@@ -6373,7 +6446,7 @@ pub mod resource {
     use nom_supreme::{parse_from_str, ParserExt};
     use serde::{Deserialize, Serialize};
 
-    use crate::error::Error;
+    use crate::error::MsgErr;
     use crate::version::v0_0_1::id::{Address, AddressAndKind, ResourceKind, ResourceType};
     use crate::version::v0_0_1::parse::{address, Res};
     use crate::version::v0_0_1::payload::{Payload, PayloadMap};
@@ -6538,7 +6611,7 @@ pub mod portal {
         use std::convert::TryFrom;
         use std::ops::Deref;
 
-        use crate::error::Error;
+        use crate::error::MsgErr;
         use crate::version::v0_0_1::artifact::ArtifactRequest;
         use crate::version::v0_0_1::frame::{CloseReason, PrimitiveFrame};
         use crate::version::v0_0_1::id::{Address, ResourceKind, ResourceType};
@@ -6608,7 +6681,7 @@ pub mod portal {
         }
 
         impl TryInto<PrimitiveFrame> for Frame {
-            type Error = Error;
+            type Error = MsgErr;
 
             fn try_into(self) -> Result<PrimitiveFrame, Self::Error> {
                 Ok(PrimitiveFrame {
@@ -6618,7 +6691,7 @@ pub mod portal {
         }
 
         impl TryFrom<PrimitiveFrame> for portal::inlet::Frame {
-            type Error = Error;
+            type Error = MsgErr;
 
             fn try_from(value: PrimitiveFrame) -> Result<Self, Self::Error> {
                 Ok(bincode::deserialize(value.data.as_slice())?)
@@ -6629,7 +6702,7 @@ pub mod portal {
     pub mod outlet {
         use std::convert::TryFrom;
 
-        use crate::error::Error;
+        use crate::error::MsgErr;
         use crate::version::v0_0_1::artifact::{Artifact, ArtifactResponse};
         use crate::version::v0_0_1::config::{Assign, Config, ConfigBody};
         use crate::version::v0_0_1::frame::{CloseReason, PrimitiveFrame};
@@ -6663,7 +6736,7 @@ pub mod portal {
         }
 
         impl TryInto<PrimitiveFrame> for Frame {
-            type Error = Error;
+            type Error = MsgErr;
 
             fn try_into(self) -> Result<PrimitiveFrame, Self::Error> {
                 Ok(PrimitiveFrame {
@@ -6673,7 +6746,7 @@ pub mod portal {
         }
 
         impl TryFrom<PrimitiveFrame> for Frame {
-            type Error = Error;
+            type Error = MsgErr;
 
             fn try_from(value: PrimitiveFrame) -> Result<Self, Self::Error> {
                 Ok(bincode::deserialize(value.data.as_slice())?)
@@ -6682,7 +6755,7 @@ pub mod portal {
     }
 
     pub mod initin {
-        use crate::error::Error;
+        use crate::error::MsgErr;
         use crate::version::v0_0_1::artifact::{Artifact, ArtifactRequest, ArtifactResponse};
         use crate::version::v0_0_1::frame::PrimitiveFrame;
         use crate::version::v0_0_1::portal::Exchanger;
@@ -6704,7 +6777,7 @@ pub mod portal {
         }
 
         impl TryInto<PrimitiveFrame> for Frame {
-            type Error = Error;
+            type Error = MsgErr;
 
             fn try_into(self) -> Result<PrimitiveFrame, Self::Error> {
                 Ok(PrimitiveFrame {
@@ -6714,7 +6787,7 @@ pub mod portal {
         }
 
         impl TryFrom<PrimitiveFrame> for Frame {
-            type Error = Error;
+            type Error = MsgErr;
 
             fn try_from(value: PrimitiveFrame) -> Result<Self, Self::Error> {
                 Ok(bincode::deserialize(value.data.as_slice())?)
@@ -6722,7 +6795,7 @@ pub mod portal {
         }
     }
     pub mod initout {
-        use crate::error::Error;
+        use crate::error::MsgErr;
         use crate::version::v0_0_1::artifact::{Artifact, ArtifactResponse};
         use crate::version::v0_0_1::frame::PrimitiveFrame;
         use crate::version::v0_0_1::portal::Exchanger;
@@ -6734,7 +6807,7 @@ pub mod portal {
             Artifact(Exchanger<ArtifactResponse>),
         }
         impl TryInto<PrimitiveFrame> for Frame {
-            type Error = Error;
+            type Error = MsgErr;
 
             fn try_into(self) -> Result<PrimitiveFrame, Self::Error> {
                 Ok(PrimitiveFrame {
@@ -6744,7 +6817,7 @@ pub mod portal {
         }
 
         impl TryFrom<PrimitiveFrame> for Frame {
-            type Error = Error;
+            type Error = MsgErr;
 
             fn try_from(value: PrimitiveFrame) -> Result<Self, Self::Error> {
                 Ok(bincode::deserialize(value.data.as_slice())?)
@@ -6756,7 +6829,7 @@ pub mod portal {
 pub mod util {
     use serde::{Deserialize, Serialize};
 
-    use crate::error::Error;
+    use crate::error::MsgErr;
     use crate::version::v0_0_1::mesh_portal_unique_id;
     use crate::version::v0_0_1::payload::HttpMethod;
 
@@ -6768,7 +6841,7 @@ pub mod util {
     }
 
     impl MethodPattern{
-        pub fn is_match(&self, x: &HttpMethod) -> Result<(), Error>
+        pub fn is_match(&self, x: &HttpMethod) -> Result<(), MsgErr>
         {
             match self {
                 Self::Any => Ok(()),
@@ -6777,7 +6850,7 @@ pub mod util {
             }
         }
 
-        pub fn is_match_opt(&self, x: Option<&HttpMethod>) -> Result<(), Error>
+        pub fn is_match_opt(&self, x: Option<&HttpMethod>) -> Result<(), MsgErr>
         {
             match self {
                 Self::Any => Ok(()),
@@ -6808,7 +6881,7 @@ pub mod util {
     }
 
     impl<T> ValuePattern<T> {
-        pub fn is_match<X>(&self, x: &X) -> Result<(), Error>
+        pub fn is_match<X>(&self, x: &X) -> Result<(), MsgErr>
         where
             T: ValueMatcher<X>,
         {
@@ -6819,7 +6892,7 @@ pub mod util {
             }
         }
 
-        pub fn is_match_opt<X>(&self, x: Option<&X>) -> Result<(), Error>
+        pub fn is_match_opt<X>(&self, x: Option<&X>) -> Result<(), MsgErr>
         where
             T: ValueMatcher<X>,
         {
@@ -6845,7 +6918,7 @@ pub mod util {
     }
 
     pub trait ValueMatcher<X> {
-        fn is_match(&self, x: &X) -> Result<(), Error>;
+        fn is_match(&self, x: &X) -> Result<(), MsgErr>;
     }
 
     pub struct RegexMatcher {
@@ -6865,7 +6938,7 @@ pub mod util {
     }
 
     impl ValueMatcher<String> for RegexMatcher {
-        fn is_match(&self, x: &String) -> Result<(), Error> {
+        fn is_match(&self, x: &String) -> Result<(), MsgErr> {
             let matches = x.matches(x);
             if matches.count() > 0 {
                 Ok(())
@@ -6893,7 +6966,7 @@ pub mod util {
     }
 
     impl ValueMatcher<String> for StringMatcher {
-        fn is_match(&self, x: &String) -> Result<(), Error> {
+        fn is_match(&self, x: &String) -> Result<(), MsgErr> {
             if self.pattern == *x {
                 Ok(())
             } else {
@@ -6903,14 +6976,14 @@ pub mod util {
     }
 
     pub trait Convert<A> {
-        fn convert(self) -> Result<A, Error>;
+        fn convert(self) -> Result<A, MsgErr>;
     }
 
     pub trait ConvertFrom<A>
     where
         Self: Sized,
     {
-        fn convert_from(a: A) -> Result<Self, Error>;
+        fn convert_from(a: A) -> Result<Self, MsgErr>;
     }
 
     /*
@@ -6930,7 +7003,7 @@ pub mod util {
 pub mod fail {
     use serde::{Deserialize, Serialize};
 
-    use crate::error::Error;
+    use crate::error::MsgErr;
     use crate::version::v0_0_1::id::Specific;
 
     pub mod mesh {
@@ -7101,13 +7174,16 @@ pub mod fail {
         }
     }
 
-    impl Into<Error> for Fail {
-        fn into(self) -> Error {
-            Error {
+/*    impl Into<MsgErr> for Fail {
+        fn into(self) -> MsgErr {
+            MsgErr {
+                status: 500,
                 message: "Fail".to_string(),
             }
         }
     }
+
+ */
 }
 
 pub mod parse {
@@ -7126,7 +7202,7 @@ pub mod parse {
     use nom::{AsChar, IResult, InputTakeAtPosition};
     use nom_supreme::parse_from_str;
 
-    use crate::error::Error;
+    use crate::error::MsgErr;
     use crate::version::v0_0_1::command::common::{PropertyMod, SetProperties, StateSrc};
     use crate::version::v0_0_1::config::bind::parse::pipeline_step;
     use crate::version::v0_0_1::entity::request::create::{
@@ -7156,7 +7232,7 @@ pub mod parse {
             address(input)
         }
 
-        pub fn consume_address(input: &str) -> Result<Address, Error> {
+        pub fn consume_address(input: &str) -> Result<Address, MsgErr> {
             let (_, address) = all_consuming(address)(input)?;
             Ok(address)
         }
@@ -7443,7 +7519,7 @@ pub mod parse {
         )
     }
 
-    pub fn consume_address_kind_path(input: &str) -> Result<AddressKindPath, Error> {
+    pub fn consume_address_kind_path(input: &str) -> Result<AddressKindPath, MsgErr> {
         let (_, rtn) = all_consuming(address_kind_path)(input)?;
         Ok(rtn)
     }
@@ -8260,7 +8336,7 @@ pub mod test {
 
     use nom::combinator::{all_consuming, recognize};
 
-    use crate::error::Error;
+    use crate::error::MsgErr;
     use crate::version::v0_0_1::config::bind::parse::{bind, final_bind, select_http_pipelines, http_pipeline, pipeline, pipeline_step, pipeline_stop};
     use crate::version::v0_0_1::config::bind::{PipelinesSubScope, ProtoBind};
     use crate::version::v0_0_1::entity::request::{Action, RequestCore};
@@ -8284,7 +8360,7 @@ pub mod test {
     use regex::Regex;
 
     #[test]
-    pub fn test_skewer_chars() -> Result<(), Error> {
+    pub fn test_skewer_chars() -> Result<(), MsgErr> {
         match all_consuming(rec_skewer)("317") {
             Ok(ok) => {
                 return Err("should not have parsed 317".into());
@@ -8302,7 +8378,7 @@ pub mod test {
     }
 
     #[test]
-    pub fn test_address() -> Result<(), Error> {
+    pub fn test_address() -> Result<(), MsgErr> {
         assert_eq!(
             ("", RouteSegment::Resource),
             all_consuming(route_segment)("")?
@@ -8335,7 +8411,7 @@ pub mod test {
     }
 
     #[test]
-    pub fn test_address_template() -> Result<(), Error> {
+    pub fn test_address_template() -> Result<(), MsgErr> {
         all_consuming(address_template)("hello:kitty")?;
         all_consuming(address_template)("hello:kitty-%")?;
         all_consuming(address_template)("hello:kitty:bob:/some-%-time")?;
@@ -8343,14 +8419,14 @@ pub mod test {
     }
 
     #[test]
-    pub fn test_create() -> Result<(), Error> {
+    pub fn test_create() -> Result<(), MsgErr> {
         all_consuming(create)("hello:kitty<App>")?;
         all_consuming(create)("hello:kitty<App>{ +config='some:config:1.0.0:/blah.conf' }")?;
         Ok(())
     }
 
     #[test]
-    pub fn test_publish() -> Result<(), Error> {
+    pub fn test_publish() -> Result<(), MsgErr> {
         let (_, block) = all_consuming(upload_step)("^[ bundle.zip ]->")?;
         assert_eq!("bundle.zip", block.name.as_str());
         all_consuming(publish)("^[ bundle.zip ]-> space.org:hello:1.0.0")?;
@@ -8358,20 +8434,20 @@ pub mod test {
     }
 
     #[test]
-    pub fn test_pipeline_stop() -> Result<(), Error> {
+    pub fn test_pipeline_stop() -> Result<(), MsgErr> {
         pipeline_stop("apps:my-app^Http<Get>/*")?;
         Ok(())
     }
 
     #[test]
-    pub fn test_pipeline() -> Result<(), Error> {
+    pub fn test_pipeline() -> Result<(), MsgErr> {
         pipeline("-> apps:my-app^Http<Get>/users/$1 => &")?;
         pipeline("-> apps:bundle:1.0.0:/html/$1 => &")?;
         Ok(())
     }
 
     #[test]
-    pub fn test_capture_address() -> Result<(), Error> {
+    pub fn test_capture_address() -> Result<(), MsgErr> {
         file_address_capture_segment("$1")?;
 
         let address = all_consuming(capture_address)("apps:bundle:1.0.0:/html/$1")?.1;
@@ -8381,7 +8457,7 @@ pub mod test {
     }
 
     #[test]
-    pub fn test_address_kind_pattern() -> Result<(), Error> {
+    pub fn test_address_kind_pattern() -> Result<(), MsgErr> {
         all_consuming(address_kind_pattern)("*")?;
         all_consuming(address_kind_pattern)("space")?;
         all_consuming(address_kind_pattern)("space:base")?;
@@ -8399,12 +8475,12 @@ pub mod test {
     }
     #[cfg(test)]
     pub mod bind{
-        use crate::error::Error;
+        use crate::error::MsgErr;
         use crate::version::v0_0_1::config::bind::parse::{bind, final_bind};
         use crate::version::v0_0_1::config::bind::ProtoBind;
 
         #[test]
-        pub fn test_expect_pipelines_scope_selector() -> Result<(), Error> {
+        pub fn test_expect_pipelines_scope_selector() -> Result<(), MsgErr> {
             match final_bind(
                 r#"Bind{Msg{}}"#,
             ) {
@@ -8421,7 +8497,7 @@ Bind.Pipelines: expecting 'Pipelines' (Pipelines selector)"#, err );
         }
 
         #[test]
-        pub fn test_expect_pipelines_scope_selector_open() -> Result<(), Error> {
+        pub fn test_expect_pipelines_scope_selector_open() -> Result<(), MsgErr> {
             match final_bind(
                 r#"Bind{Pipelines}"#,
             ) {
@@ -8438,7 +8514,7 @@ Bind.Pipelines: expecting '{' (Pipelines open scope)"#, err);
         }
 
         #[test]
-        pub fn test_expect_pipelines_scope_selector_empty() -> Result<(), Error> {
+        pub fn test_expect_pipelines_scope_selector_empty() -> Result<(), MsgErr> {
             match final_bind(r#"Bind{Pipelines{ }}"#) {
                 Ok(_) => {
                     Ok(())
@@ -8452,7 +8528,7 @@ Bind.Pipelines: expecting '{' (Pipelines open scope)"#, err);
 
 
         #[test]
-        pub fn test_expect_pipelines_scope_selector_enumeration() -> Result<(), Error> {
+        pub fn test_expect_pipelines_scope_selector_enumeration() -> Result<(), MsgErr> {
             match final_bind(
                 r#"Bind{Pipelines{Blah{ } }}"#,
             ) {
@@ -8470,7 +8546,7 @@ Bind.Pipelines: expecting 'Rc', 'Msg' or 'Http' (pipelines selectors) or '}' (cl
         }
 
         #[test]
-        pub fn test_expect_pipelines_scope_selector_msg() -> Result<(), Error> {
+        pub fn test_expect_pipelines_scope_selector_msg() -> Result<(), MsgErr> {
             match final_bind(
                 r#"Bind{ Pipelines{ Msg{ } }}"#,
             ) {
@@ -8484,7 +8560,7 @@ Bind.Pipelines: expecting 'Rc', 'Msg' or 'Http' (pipelines selectors) or '}' (cl
         }
 
         #[test]
-        pub fn test_expect_http_method_pattern() -> Result<(), Error> {
+        pub fn test_expect_http_method_pattern() -> Result<(), MsgErr> {
             match final_bind(
                 r#"Bind{
     Pipelines{
@@ -8509,7 +8585,7 @@ Bind.Pipelines.Http: expecting '*' or valid HttpMethod: 'Get', 'Post', 'Put', 'D
 
 
         #[test]
-        pub fn test_good() -> Result<(), Error> {
+        pub fn test_good() -> Result<(), MsgErr> {
             final_bind(
       r#"
             Bind{
@@ -8525,7 +8601,7 @@ Bind.Pipelines.Http: expecting '*' or valid HttpMethod: 'Get', 'Post', 'Put', 'D
 
 
         #[test]
-        pub fn test_open_angle_bracket() -> Result<(), Error> {
+        pub fn test_open_angle_bracket() -> Result<(), MsgErr> {
             match final_bind(
                 r#"
             Bind{
@@ -8548,7 +8624,7 @@ Bind.Pipelines: expecting: '<' (open angle bracket)"#,err);
         }
 
         #[test]
-        pub fn test_close_angle_bracket() -> Result<(), Error> {
+        pub fn test_close_angle_bracket() -> Result<(), MsgErr> {
             match final_bind(
                 r#"
             Bind{
@@ -8573,7 +8649,7 @@ Bind.Pipelines: expecting: '>' (close angle bracket)"#,err);
 
 
         #[test]
-        pub fn test_missing_pipeline_stop() -> Result<(), Error> {
+        pub fn test_missing_pipeline_stop() -> Result<(), MsgErr> {
             match final_bind(
                 r#"
             Bind{
@@ -8596,7 +8672,7 @@ Bind.Pipelines.Stop: expected valid pipeline stop "{{ }}" (Core) or valid Addres
             }
         }
         #[test]
-        pub fn test_invalid_address() -> Result<(), Error> {
+        pub fn test_invalid_address() -> Result<(), MsgErr> {
             match final_bind(
                 r#"
             Bind{
@@ -8620,7 +8696,7 @@ Bind.Pipelines.Http.Pipeline.Step: expected '->' (forward request) or '-[' (Requ
         }
 
         #[test]
-        pub fn test_missing_enter_pipeline_step() -> Result<(), Error> {
+        pub fn test_missing_enter_pipeline_step() -> Result<(), MsgErr> {
             match final_bind(
                 r#"
             Bind{
@@ -8644,7 +8720,7 @@ Bind.Pipelines.Http.Pipeline.Step: expected '->' (forward request) or '-[' (Requ
         }
 
         #[test]
-        pub fn test_missing_enter_pipeline_step_block() -> Result<(), Error> {
+        pub fn test_missing_enter_pipeline_step_block() -> Result<(), MsgErr> {
             match final_bind(
                 r#"
             Bind{
@@ -8666,7 +8742,7 @@ Bind.Pipelines.Http.Pipeline.Step: expected '->' (forward request) or '-[' (Requ
 
 
         #[test]
-        pub fn test_bind() -> Result<(), Error> {
+        pub fn test_bind() -> Result<(), MsgErr> {
             final_bind(
                 r#"
 
@@ -8700,7 +8776,7 @@ Bind.Pipelines.Http.Pipeline.Step: expected '->' (forward request) or '-[' (Requ
     }
 
     #[test]
-    pub fn test_http_pattern() -> Result<(), Error> {
+    pub fn test_http_pattern() -> Result<(), MsgErr> {
         let any_pattern = all_consuming(http_pattern)("Http<*>")?.1;
         let get_any_pattern = all_consuming(http_pattern)("Http<Get>")?.1;
         let get_some_pattern = all_consuming(http_pattern)("Http<Get>^/some$")?.1;
@@ -8742,7 +8818,7 @@ Bind.Pipelines.Http.Pipeline.Step: expected '->' (forward request) or '-[' (Requ
     }
 
     #[test]
-    pub fn test_selector() -> Result<(), Error> {
+    pub fn test_selector() -> Result<(), MsgErr> {
         let get_some = RequestCore {
             action: Action::Http(HttpMethod::GET),
             headers: Default::default(),
@@ -8774,7 +8850,7 @@ Bind.Pipelines.Http.Pipeline.Step: expected '->' (forward request) or '-[' (Requ
         Ok(())
     }
     #[test]
-    pub fn test_scope() -> Result<(), Error> {
+    pub fn test_scope() -> Result<(), MsgErr> {
         let get_some = RequestCore {
             action: Action::Http(HttpMethod::GET),
             headers: Default::default(),
@@ -8825,14 +8901,14 @@ Bind.Pipelines.Http.Pipeline.Step: expected '->' (forward request) or '-[' (Requ
     }
 
     #[test]
-    pub fn test_http_method() -> Result<(), Error> {
+    pub fn test_http_method() -> Result<(), MsgErr> {
         http_method("Get")?;
         assert!(http_method("Bad").is_err());
         Ok(())
     }
 
     #[test]
-    pub fn test_http_method_pattern() -> Result<(), Error> {
+    pub fn test_http_method_pattern() -> Result<(), MsgErr> {
         http_method_pattern("*")?;
         http_method_pattern("Get")?;
         assert!(http_method_pattern("Bad").is_err());

@@ -123,7 +123,7 @@ impl <FRAME> FrameReader<FRAME>  {
     }
 }
 
-impl <F> FrameReader<F> where F: TryFrom<PrimitiveFrame,Error=error::Error>{
+impl <F> FrameReader<F> where F: TryFrom<PrimitiveFrame,Error=error::MsgErr>{
     pub async fn read( &mut self ) -> Result<F,Error> {
         let frame = self.stream.read().await?;
         Ok(F::try_from(frame)?)
