@@ -3174,6 +3174,19 @@ pub mod messaging {
 
     }
 
+    impl Default for RequestBuilder {
+        fn default() -> Self {
+            Self {
+                to: None,
+                from: None,
+                core: None,
+                agent: Default::default(),
+                session: None,
+                scope: Default::default()
+            }
+        }
+    }
+
     #[derive(Debug, Clone)]
     pub struct ProtoRequest {
         pub id: String,
