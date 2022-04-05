@@ -2911,6 +2911,7 @@ pub mod pattern {
 }
 
 pub mod messaging {
+    use std::collections::HashMap;
     use std::convert::TryInto;
 
     use serde::{Deserialize, Serialize};
@@ -2926,6 +2927,9 @@ pub mod messaging {
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct Request {
         pub id: String,
+        pub agent: Agent,
+        pub session: Option<Session>,
+        pub scope: Scope,
         pub from: Address,
         pub to: Address,
         pub core: RequestCore,
@@ -2980,6 +2984,9 @@ pub mod messaging {
         pub fn new(core: RequestCore, from: Address, to: Address) -> Self {
             Self {
                 id: unique_id(),
+                agent: Agent::Anonymous,
+                session: Option::None,
+                scope: Scope::none(),
                 from,
                 to,
                 core,
@@ -3107,6 +3114,66 @@ pub mod messaging {
         }
     }
 
+    pub struct RequestBuilder {
+        pub to: Option<Address>,
+        pub from: Option<Address>,
+        pub core: Option<RequestCore>,
+        pub agent: Agent,
+        pub session: Option<Session>,
+        pub scope: Scope
+    }
+
+    impl RequestBuilder {
+        pub fn new() -> Self {
+            Self {
+                ..Default::default()
+            }
+        }
+
+        pub fn to( mut self, address: Address ) -> Self {
+            self.to = Some(address);
+            self
+        }
+
+        pub fn from( mut self, address: Address ) -> Self {
+            self.from = Some(address);
+            self
+        }
+
+        pub fn core( mut self, core: RequestCore ) -> Self {
+            self.core = Some(core);
+            self
+        }
+
+        pub fn agent( mut self, agent: Agent ) -> Self {
+            self.agent = agent;
+            self
+        }
+
+        pub fn session( mut self, session: Session ) -> Self {
+            self.session = Some(session);
+            self
+        }
+
+        pub fn scope( mut self, scope: Scope) -> Self {
+            self.scope = scope;
+            self
+        }
+
+        pub fn build(self) -> Result<Request,MsgErr> {
+            Ok(Request {
+                id: unique_id(),
+                to: self.to.ok_or("RequestBuilder: 'to' must be set")?,
+                from: self.from.ok_or("RequestBuilder: 'from' must be set")?,
+                core: self.core.ok_or("RequestBuilder: 'core' must be set")?,
+                agent: self.agent,
+                session: self.session,
+                scope: self.scope
+            })
+        }
+
+    }
+
     #[derive(Debug, Clone)]
     pub struct ProtoRequest {
         pub id: String,
@@ -3136,7 +3203,7 @@ pub mod messaging {
             self.core = Option::Some(core);
         }
 
-        pub fn into_request(self, from: Address) -> Result<Request, MsgErr> {
+        pub fn into_request(self, from: Address, agent: Agent, session: Option<Session>, scope: Scope) -> Result<Request, MsgErr> {
             self.validate()?;
             let core = self
                 .core
@@ -3147,6 +3214,9 @@ pub mod messaging {
                 from,
                 to: self.to.expect("expected to address"),
                 core,
+                agent,
+                session,
+                scope
             };
             Ok(request)
         }
@@ -3218,6 +3288,96 @@ pub mod messaging {
             Self::Response(response)
         }
     }
+
+
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub enum RequestTransform {
+        Request(RequestCore),
+        Response(ResponseCore)
+    }
+
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub enum Agent {
+        Anonymous,
+        Authenticated(AuthedAgent)
+    }
+
+    impl Default for Agent {
+        fn default() -> Self {
+            Self::Anonymous
+        }
+    }
+
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub struct AuthedAgent {
+        pub owner: Address,
+        pub executor: Address
+    }
+
+    impl AuthedAgent {
+        pub fn new(address: Address) -> Self {
+            Self {
+                owner: address.clone(),
+                executor: address
+            }
+        }
+    }
+
+    impl TryInto<AuthedAgent> for Agent {
+        type Error = MsgErr;
+
+        fn try_into(self) -> Result<AuthedAgent, Self::Error> {
+            match self {
+                Agent::Anonymous => Err(MsgErr::new(401, "Authorization required")),
+                Agent::Authenticated(auth) => Ok(auth)
+            }
+        }
+    }
+
+    impl Into<Agent> for AuthedAgent {
+        fn into(self) -> Agent {
+            Agent::Authenticated(self)
+        }
+    }
+
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub struct Session {
+       pub id: String,
+       pub attributes: HashMap<String,String>
+    }
+
+    impl Session {
+        pub fn get_preferred_username(&self) -> Option<String> {
+            self.attributes.get(&"preferred_username".to_string()).cloned()
+        }
+    }
+
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub struct Scope {
+        pub roles: Roles
+    }
+
+    impl Default for Scope {
+        fn default() -> Self {
+            Self::none()
+        }
+    }
+
+    impl Scope {
+        pub fn none() -> Self {
+            Self {
+                roles: Roles::None
+            }
+        }
+    }
+
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub enum Roles{
+        Full,
+        None,
+        Enumerated(Vec<String>)
+    }
+
 }
 
 pub mod frame {
@@ -4617,28 +4777,28 @@ pub mod config {
 
         #[derive(Debug, Clone, Serialize, Deserialize)]
         pub struct BindConfig {
-            pub msg: Scope<EntityType, Selector<MsgPattern>>,
-            pub http: Scope<EntityType, Selector<HttpPattern>>,
-            pub rc: Scope<EntityType, Selector<RcPattern>>,
+            pub msg: ConfigScope<EntityType, Selector<MsgPattern>>,
+            pub http: ConfigScope<EntityType, Selector<HttpPattern>>,
+            pub rc: ConfigScope<EntityType, Selector<RcPattern>>,
         }
 
         impl Default for BindConfig {
             fn default() -> Self {
                 Self {
-                    msg: Scope::new(EntityType::Msg, vec![]),
-                    http: Scope::new(EntityType::Http, vec![]),
-                    rc: Scope::new(EntityType::Rc, vec![]),
+                    msg: ConfigScope::new(EntityType::Msg, vec![]),
+                    http: ConfigScope::new(EntityType::Http, vec![]),
+                    rc: ConfigScope::new(EntityType::Rc, vec![]),
                 }
             }
         }
 
         #[derive(Debug, Clone, Serialize, Deserialize)]
-        pub struct Scope<T, E> {
+        pub struct ConfigScope<T, E> {
             pub scope_type: T,
             pub elements: Vec<E>,
         }
 
-        impl<T, E> Scope<T, E> {
+        impl<T, E> ConfigScope<T, E> {
             pub fn new(scope_type: T, elements: Vec<E>) -> Self {
                 Self {
                     scope_type,
@@ -4647,7 +4807,7 @@ pub mod config {
             }
         }
 
-        impl<T> Scope<T, Selector<HttpPattern>> {
+        impl<T> ConfigScope<T, Selector<HttpPattern>> {
             pub fn find_match(&self, m: &RequestCore) -> Result<Selector<HttpPattern>, MsgErr> {
                 for e in &self.elements {
                     if e.is_match(m).is_ok() {
@@ -4658,7 +4818,7 @@ pub mod config {
             }
         }
 
-        impl<T> Scope<T, Selector<MsgPattern>> {
+        impl<T> ConfigScope<T, Selector<MsgPattern>> {
             pub fn find_match(&self, m: &RequestCore) -> Result<Selector<MsgPattern>, MsgErr> {
                 for e in &self.elements {
                     if e.is_match(m).is_ok() {
@@ -4781,9 +4941,9 @@ pub mod config {
         }
 
         pub enum PipelinesSubScope {
-            Msg(Scope<EntityType, Selector<MsgPattern>>),
-            Http(Scope<EntityType, Selector<HttpPattern>>),
-            Rc(Scope<EntityType, Selector<RcPattern>>),
+            Msg(ConfigScope<EntityType, Selector<MsgPattern>>),
+            Http(ConfigScope<EntityType, Selector<HttpPattern>>),
+            Rc(ConfigScope<EntityType, Selector<RcPattern>>),
         }
 
         pub enum ScopeType {
@@ -4798,7 +4958,7 @@ pub mod config {
             use std::ops::{Deref, DerefMut};
             use crate::version::v0_0_1::config::bind::{
                 Pipeline, PipelineSegment, PipelineStep, PipelineStop, PipelinesSubScope,
-                ProtoBind, Scope, Selector, StepKind,
+                ProtoBind, ConfigScope, Selector, StepKind,
             };
             use crate::version::v0_0_1::entity::EntityType;
             use crate::version::v0_0_1::parse::{capture_address, Res};
@@ -5507,7 +5667,7 @@ println!("Segs count: {}", segs.len() );
                 select_scope("Msg", msg_selectors )(input).map(|(next, selectors)| {
                     (
                         next,
-                        PipelinesSubScope::Msg(Scope::new(EntityType::Msg, selectors)),
+                        PipelinesSubScope::Msg(ConfigScope::new(EntityType::Msg, selectors)),
                     )
                 })
             }
@@ -5516,7 +5676,7 @@ println!("Segs count: {}", segs.len() );
                 select_scope("Http", http_pipelines)(input).map(|(next, selectors)| {
                     (
                         next,
-                        PipelinesSubScope::Http(Scope::new(EntityType::Http, selectors)),
+                        PipelinesSubScope::Http(ConfigScope::new(EntityType::Http, selectors)),
                     )
                 })
             }
@@ -5525,7 +5685,7 @@ println!("Segs count: {}", segs.len() );
                 select_scope("Rc", rc_selectors)(input).map(|(next, selectors)| {
                     (
                         next,
-                        PipelinesSubScope::Rc(Scope::new(EntityType::Rc, selectors)),
+                        PipelinesSubScope::Rc(ConfigScope::new(EntityType::Rc, selectors)),
                     )
                 })
             }
@@ -5670,6 +5830,7 @@ pub mod entity {
         Http,
     }
 
+
     pub mod request {
         use http::{HeaderMap, Request, StatusCode, Uri};
         use http::status::InvalidStatusCode;
@@ -5689,6 +5850,7 @@ pub mod entity {
         use crate::version::v0_0_1::payload::{Errors, HttpMethod, Payload, Primitive};
         use crate::version::v0_0_1::util::ValueMatcher;
         use serde::{Deserialize, Serialize};
+
 
         #[derive(Debug, Clone, Serialize, Deserialize)]
         pub enum Action {

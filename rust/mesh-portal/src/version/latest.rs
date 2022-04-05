@@ -90,8 +90,13 @@ pub mod messaging {
 
     pub type Request = current::messaging::Request;
     pub type Response= current::messaging::Response;
+    pub type RequestBuilder = current::messaging::RequestBuilder;
     pub type ProtoRequest= current::messaging::ProtoRequest;
     pub type Message = current::messaging::Message;
+    pub type Agent = current::messaging::Agent;
+    pub type AuthedAgent = current::messaging::AuthedAgent;
+    pub type Session = current::messaging::Session;
+    pub type Scope = current::messaging::Scope;
 }
 
 
@@ -178,7 +183,7 @@ pub mod config {
 
         pub type ProtoBind = current::config::bind::ProtoBind;
         pub type BindConfig = current::config::bind::BindConfig;
-        pub type Scope<T,E>= current::config::bind::Scope<T,E>;
+        pub type ConfigScope<T,E>= current::config::bind::ConfigScope<T,E>;
         pub type Pipeline=current::config::bind::Pipeline;
         pub type PipelineStep=current::config::bind::PipelineStep;
         pub type PipelineStop=current::config::bind::PipelineStop;
