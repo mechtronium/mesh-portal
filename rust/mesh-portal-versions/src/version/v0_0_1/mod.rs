@@ -2876,7 +2876,7 @@ pub mod pattern {
 
             for (index, segment) in self.segments.iter().enumerate() {
                 rtn.push_str(segment.to_string().as_str());
-                if index < self.segments.len() {
+                if index < self.segments.len()-1 {
                     rtn.push_str(segment.address_segment.terminating_delim());
                 }
             }
@@ -2930,6 +2930,7 @@ pub mod messaging {
         pub agent: Agent,
         pub session: Option<Session>,
         pub scope: Scope,
+        pub handling: Handling,
         pub from: Address,
         pub to: Address,
         pub core: RequestCore,
@@ -2987,6 +2988,7 @@ pub mod messaging {
                 agent: Agent::Anonymous,
                 session: Option::None,
                 scope: Scope::none(),
+                handling: Default::default(),
                 from,
                 to,
                 core,
@@ -3120,7 +3122,8 @@ pub mod messaging {
         pub core: Option<RequestCore>,
         pub agent: Agent,
         pub session: Option<Session>,
-        pub scope: Scope
+        pub scope: Scope,
+        pub handling: Handling,
     }
 
     impl RequestBuilder {
@@ -3160,6 +3163,11 @@ pub mod messaging {
             self
         }
 
+        pub fn handling( mut self, handling: Handling ) -> Self {
+            self.handling = handling;
+            self
+        }
+
         pub fn build(self) -> Result<Request,MsgErr> {
             Ok(Request {
                 id: unique_id(),
@@ -3168,7 +3176,8 @@ pub mod messaging {
                 core: self.core.ok_or("RequestBuilder: 'core' must be set")?,
                 agent: self.agent,
                 session: self.session,
-                scope: self.scope
+                scope: self.scope,
+                handling: self.handling
             })
         }
 
@@ -3182,7 +3191,8 @@ pub mod messaging {
                 core: None,
                 agent: Default::default(),
                 session: None,
-                scope: Default::default()
+                scope: Default::default(),
+                handling: Default::default()
             }
         }
     }
@@ -3229,6 +3239,7 @@ pub mod messaging {
                 core,
                 agent,
                 session,
+                handling: Default::default(),
                 scope
             };
             Ok(request)
@@ -3390,6 +3401,41 @@ pub mod messaging {
         None,
         Enumerated(Vec<String>)
     }
+
+
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub struct Handling {
+        priority: Priority,
+        karma: Priority,
+        retries: u8,
+        timeout: u16,
+    }
+
+    impl Default for Handling {
+        fn default() -> Self {
+            Self {
+                priority: Default::default(),
+                karma: Default::default(),
+                retries: 0,
+                timeout: 30
+            }
+        }
+    }
+
+
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub enum Priority{
+        High,
+        Med,
+        Low
+    }
+
+    impl Default for Priority {
+        fn default() -> Self {
+            Self::Med
+        }
+    }
+
 
 }
 
