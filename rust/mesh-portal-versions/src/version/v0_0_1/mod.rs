@@ -4,6 +4,7 @@ use std::convert::TryInto;
 use std::fmt::Debug;
 use std::hash::Hash;
 use std::sync::Arc;
+use nom_locate::LocatedSpan;
 
 use serde::{Deserialize, Serialize};
 
@@ -11,6 +12,7 @@ use crate::error::MsgErr;
 use crate::version::v0_0_1::bin::Bin;
 
 pub type State = HashMap<String, Bin>;
+pub type Span<'a> = LocatedSpan<&'a str>;
 
 extern "C" {
     pub fn mesh_portal_unique_id() -> String;
@@ -59,7 +61,7 @@ pub mod id {
     use crate::error::MsgErr;
     use crate::version::v0_0_1::parse::{address, camel_case, consume_address, Res};
     use crate::version::v0_0_1::pattern::parse::{address_and_kind, resource_type, specific};
-    use crate::version::v0_0_1::pattern::{Pattern, SpecificPattern, VersionReq};
+    use crate::version::v0_0_1::pattern::{AddressKindPattern, Pattern, SpecificPattern, VersionReq};
 
     pub type ResourceType = String;
     pub type ResourceKind = KindParts;
@@ -509,6 +511,15 @@ pub mod id {
             self.to_string()
         }
     }
+
+    impl TryInto<AddressKindPattern> for Address {
+        type Error = MsgErr;
+
+        fn try_into(self) -> Result<AddressKindPattern, Self::Error> {
+            Ok(AddressKindPattern::from_str(self.to_string().as_str())?)
+        }
+    }
+
 
     impl ToString for Address {
         fn to_string(&self) -> String {
@@ -1046,7 +1057,9 @@ pub mod pattern {
             let mut rtn = String::new();
             for (index,hop) in self.hops.iter().enumerate() {
                 rtn.push_str(hop.to_string().as_str() );
-                rtn.push_str(":" );
+                if index < self.hops.len()-1 {
+                    rtn.push_str(":");
+                }
             }
             rtn
         }
@@ -3476,6 +3489,227 @@ pub mod messaging {
     }
 
 
+}
+
+pub mod security {
+    use std::collections::HashSet;
+    use std::str::FromStr;
+    use nom::combinator::all_consuming;
+    use crate::error::MsgErr;
+    use crate::version::v0_0_1::id::Address;
+    use crate::version::v0_0_1::pattern::AddressKindPattern;
+    use serde::{Serialize,Deserialize};
+    use crate::version::v0_0_1::parse::permissions_mask;
+    use crate::version::v0_0_1::Span;
+
+    #[derive(Debug,Clone,Serialize,Deserialize)]
+    pub enum Access {
+        SuperUser,
+        Enumerated(EnumeratedAccess)
+    }
+
+    impl Access {
+        pub fn is_super(&self) -> bool {
+            match self {
+                Access::SuperUser => true,
+                Access::Enumerated(_) => false
+            }
+        }
+
+        pub fn permissions(&self) -> Permissions {
+            match self {
+                Access::SuperUser => {
+                    Permissions::full()
+                },
+                Access::Enumerated(enumerated) => {
+                    enumerated.permissions.clone()
+                }
+            }
+        }
+
+        pub fn check_privilege(&self, privilege: String ) -> Result<(),MsgErr> {
+            match self {
+                Access::SuperUser => Ok(()),
+                Access::Enumerated(enumerated) => {
+                    match enumerated.privileges.contains(&privilege) {
+                        true => Ok(()),
+                        false => Err(format!("'{}'",privilege).into())
+                    }
+                }
+            }
+        }
+
+
+    }
+
+    #[derive(Debug,Clone,Serialize,Deserialize)]
+    pub struct EnumeratedAccess {
+        pub permissions: Permissions,
+        pub privileges: HashSet<String>
+    }
+
+    impl EnumeratedAccess {
+        pub fn full() -> Self {
+            Self{
+                permissions: Permissions::full(),
+                privileges: HashSet::new()
+            }
+        }
+    }
+
+    #[derive(Debug,Clone,Serialize,Deserialize,Eq,PartialEq)]
+    pub struct PermissionsMask {
+        pub kind: PermissionsMaskKind,
+        pub permissions: Permissions
+    }
+
+    impl FromStr for PermissionsMask {
+        type Err = MsgErr;
+
+        fn from_str(s: &str) -> Result<Self, Self::Err> {
+            let span = Span::new(s);
+            Ok(all_consuming(permissions_mask)(span)?.1)
+        }
+    }
+
+    impl ToString for PermissionsMask {
+        fn to_string(&self) -> String {
+            match self.kind{
+                PermissionsMaskKind::Or => format!("+{}", self.permissions.to_string()),
+                PermissionsMaskKind::And => format!("&{}", self.permissions.to_string())
+            }
+        }
+    }
+
+    #[derive(Debug,Clone,Serialize,Deserialize,Eq,PartialEq)]
+    pub struct Permissions {
+        pub child: PermissionBlock,
+        pub particle: PermissionBlock
+    }
+
+    impl Permissions {
+        pub fn full() -> Self {
+            Self {
+                child: PermissionBlock::full(),
+                particle: PermissionBlock::full()
+            }
+        }
+
+        pub fn none() -> Self {
+            Self {
+                child: PermissionBlock::none(),
+                particle: PermissionBlock::none()
+            }
+        }
+
+        pub fn or( &mut self, permissions: &Permissions ) {
+            self.child.or(&permissions.child);
+            self.particle.or(&permissions.particle);
+        }
+
+        pub fn and( &mut self, permissions: &Permissions ) {
+            self.child.and(&permissions.child);
+            self.particle.and(&permissions.particle);
+        }
+    }
+
+    impl ToString for Permissions {
+        fn to_string(&self) -> String {
+            format!("{}-{}", self.child.to_string(), self.particle.to_string() )
+        }
+    }
+
+    #[derive(Debug,Clone,Serialize,Deserialize,Eq,PartialEq)]
+    pub struct PermissionBlock {
+        pub read: bool,
+        pub write: bool,
+        pub execute: bool,
+    }
+
+    impl PermissionBlock {
+        pub fn full()->Self {
+            Self {
+                read: true,
+                write: true,
+                execute: true
+            }
+        }
+
+        pub fn none()->Self {
+            Self {
+                read: false,
+                write: false,
+                execute:false
+            }
+        }
+
+        pub fn or(&mut self, block: &PermissionBlock ) {
+            self.read |= block.read;
+            self.write |= block.write;
+            self.execute |= block.execute;
+        }
+
+        pub fn and(&mut self, block: &PermissionBlock ) {
+            self.read &= block.read;
+            self.write &= block.write;
+            self.execute &= block.execute;
+        }
+    }
+
+    impl FromStr for PermissionBlock {
+        type Err = ();
+
+        fn from_str(s: &str) -> Result<Self, Self::Err> {
+            todo!()
+        }
+    }
+
+    impl ToString for PermissionBlock {
+        fn to_string(&self) -> String {
+            let mut rtn = String::new();
+
+            if self.read {
+                rtn.push_str("R");
+            } else {
+                rtn.push_str("r");
+            }
+
+            if self.write {
+                rtn.push_str("W");
+            } else {
+                rtn.push_str("w");
+            }
+
+            if self.execute {
+                rtn.push_str("X");
+            } else {
+                rtn.push_str("x");
+            }
+
+            rtn
+        }
+    }
+
+    #[derive(Debug,Clone,Serialize,Deserialize,Eq,PartialEq)]
+    pub enum PermissionsMaskKind {
+        Or,
+        And
+    }
+
+    #[derive(Debug,Clone,Serialize,Deserialize)]
+    pub struct AccessGrant {
+        pub kind: AccessGrantKind,
+        pub on_point: AddressKindPattern,
+        pub to_point: AddressKindPattern,
+        pub by_particle: Address,
+    }
+
+    #[derive(Debug,Clone,Serialize,Deserialize)]
+    pub enum AccessGrantKind {
+        Super,
+        Privilege(String),
+        PermissionsMask(PermissionsMask),
+    }
 }
 
 pub mod frame {
@@ -7469,10 +7703,8 @@ pub mod parse {
     use nom::branch::alt;
     use nom::bytes::complete::tag;
     use nom::bytes::complete::{is_a, is_not};
-    use nom::character::complete::{
-        alpha0, alpha1, alphanumeric1, digit1, multispace0, multispace1, space0, space1,
-    };
-    use nom::combinator::{all_consuming, not, opt, recognize};
+    use nom::character::complete::{alpha0, alpha1, alphanumeric1, char, digit1, multispace0, multispace1, space0, space1};
+    use nom::combinator::{all_consuming, not, opt, recognize, value};
     use nom::error::{context, ErrorKind, ParseError, VerboseError};
     use nom::multi::{many0, separated_list0, separated_list1};
     use nom::sequence::{delimited, preceded, terminated, tuple};
@@ -7501,6 +7733,8 @@ pub mod parse {
     use crate::version::v0_0_1::util::StringMatcher;
     use nom::bytes::complete::take;
     use nom_supreme::error::ErrorTree;
+    use crate::version::v0_0_1::security::{PermissionBlock, Permissions, PermissionsMask, PermissionsMaskKind};
+    use crate::version::v0_0_1::Span;
 
     pub struct Parser {}
 
@@ -8604,6 +8838,42 @@ pub mod parse {
 
         Ok((next, create))
     }
+
+    pub fn permissions_mask(input: Span) -> Res<Span, PermissionsMask> {
+        tuple((alt((value(PermissionsMaskKind::Or,char('+')),value(PermissionsMaskKind::And,char('&')))),permissions))(input).map( |(next,(kind,permissions))| {
+            let mask = PermissionsMask {
+                kind,
+                permissions
+            };
+
+            (next,mask)
+        })
+    }
+
+
+    pub fn permissions(input: Span) -> Res<Span, Permissions> {
+        tuple((permission_block,tag("-"), permission_block))(input).map( |(next,(child,_,particle))| {
+            let permissions = Permissions {
+                child,
+                particle
+            };
+            (next,permissions)
+        })
+    }
+
+    pub fn permission_block(input: Span) -> Res<Span, PermissionBlock> {
+        tuple( (alt( (value(false,char('r')),value(true,char('R')))),
+                   alt( (value(false,char('w')),value(true,char('W')))),
+                   alt( (value(false,char('x')),value(true,char('X'))))))(input).map( |(next,(read,write,execute))|{
+          let block = PermissionBlock {
+              read,
+              write,
+              execute,
+          };
+            (next,block)
+        })
+    }
+
 }
 
 #[cfg(test)]
@@ -8618,21 +8888,19 @@ pub mod test {
     use crate::version::v0_0_1::config::bind::{PipelinesSubScope, ProtoBind};
     use crate::version::v0_0_1::entity::request::{Action, RequestCore};
     use crate::version::v0_0_1::id::{Address, AddressSegment, RouteSegment};
-    use crate::version::v0_0_1::parse::{
-        address, address_template, base_address_segment, camel_case, capture_address, create,
-        file_address_capture_segment, publish, rec_skewer, route_segment, skewer_chars,
-        version_address_segment, Res,
-    };
+    use crate::version::v0_0_1::parse::{address, address_template, base_address_segment, camel_case, capture_address, create, file_address_capture_segment, publish, rec_skewer, route_segment, skewer_chars, version_address_segment, Res, permission_block, permissions, permissions_mask};
     use crate::version::v0_0_1::pattern::parse::address_kind_pattern;
     use crate::version::v0_0_1::pattern::parse::version;
     use crate::version::v0_0_1::pattern::{AddressKindPath, AddressKindPattern, http_method, http_method_pattern, http_pattern, http_pattern_scoped, upload_step};
     use crate::version::v0_0_1::payload::{HttpMethod, Payload};
     use crate::version::v0_0_1::util::ValueMatcher;
     use nom::error::VerboseError;
-    use nom::Err;
+    use nom::{Err, Offset};
     use nom_supreme::error::ErrorTree;
     use nom_supreme::final_parser::ExtractContext;
     use regex::Regex;
+    use crate::version::v0_0_1::security::{PermissionBlock, Permissions, PermissionsMask, PermissionsMaskKind};
+    use crate::version::v0_0_1::Span;
 
     #[test]
     pub fn test_address_kind_pattern_matching() -> Result<(), MsgErr> {
@@ -9205,5 +9473,42 @@ Bind.Pipelines.Http.Pipeline.Step: expected '->' (forward request) or '-[' (Requ
         */
         Ok(())
     }
+
+    #[test]
+    pub fn test_permission_block() -> Result<(), MsgErr> {
+       let span = Span::new("rWx-");
+       let perm = permission_block(span)?;
+        let (span,block) = perm;
+        println!("offset : {}",span.location_offset());
+
+        assert_eq!(block, PermissionBlock{read:false,write:true,execute:false});
+       Ok(())
+    }
+
+    #[test]
+    pub fn test_permissions() -> Result<(), MsgErr> {
+        let span = Span::new("rWx-RwX");
+        let result = permissions(span)?;
+        let (span,permissions) = result;
+        println!("offset : {}",span.location_offset());
+
+        assert_eq!(permissions, crate::version::v0_0_1::security::Permissions {child: PermissionBlock{read:false,write:true,execute:false}, particle: PermissionBlock{read:true,write:false,execute:true}});
+        Ok(())
+    }
+
+    #[test]
+    pub fn test_permissions_mask() -> Result<(), MsgErr> {
+        let span = Span::new("&rWx-RwX");
+        let result = permissions_mask(span)?;
+        let (span,mask) = result;
+        let permissions = crate::version::v0_0_1::security::Permissions {child: PermissionBlock{read:false,write:true,execute:false}, particle: PermissionBlock{read:true,write:false,execute:true}};
+        let mask2 = PermissionsMask {
+            kind: PermissionsMaskKind::And,
+            permissions
+        };
+        assert_eq!(mask, mask2);
+        Ok(())
+    }
+
 }
 
