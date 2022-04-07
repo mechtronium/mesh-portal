@@ -897,6 +897,12 @@ pub mod pattern {
         }
     }
 
+    impl ToString for TksPattern {
+        fn to_string(&self) -> String {
+            format!("{}<{}<{}>>", self.resource_type.to_string(), self.kind.to_string(), self.specific.to_string() )
+        }
+    }
+
     impl TksPattern {
         pub fn any() -> Self {
             Self {
@@ -924,7 +930,7 @@ pub mod pattern {
 
     impl AddressKindPattern {
         fn consume(&self) -> Option<AddressKindPattern> {
-            if self.hops.len() <= 1 {
+            if self.hops.is_empty() {
                 Option::None
             } else {
                 let mut hops = self.hops.clone();
@@ -1020,17 +1026,11 @@ pub mod pattern {
                     // the NEXT hop does not match, therefore we do NOT consume() the current hop
                     self.matches(&address_kind_path.consume().expect("AddressKindPath"))
                 }
+            } else if hop.segment.is_recursive() && address_kind_path.is_final() {
+               hop.matches( address_kind_path.segments.last().expect("segment"))
+            } else if hop.segment.is_recursive() {
+                hop.matches( address_kind_path.segments.last().expect("segment")) && self.matches( &address_kind_path.consume().expect("address_kind_path") )
             } else if hop.matches(seg) {
-                println!("seg {}", seg.to_string());
-                println!("self.hops.len() {}", self.hops.len());
-                println!(
-                    "address_kind_path.len() {}",
-                    address_kind_path.segments.len()
-                );
-                println!(
-                    "address_kind_path.to_string() {}",
-                    address_kind_path.to_string()
-                );
                 // in a normal match situation, we consume the hop and move to the next one
                 self.consume()
                     .expect("AddressTksPattern")
@@ -1038,6 +1038,17 @@ pub mod pattern {
             } else {
                 false
             }
+        }
+    }
+
+    impl ToString for AddressKindPattern {
+        fn to_string(&self) -> String {
+            let mut rtn = String::new();
+            for (index,hop) in self.hops.iter().enumerate() {
+                rtn.push_str(hop.to_string().as_str() );
+                rtn.push_str(":" );
+            }
+            rtn
         }
     }
 
@@ -1168,6 +1179,17 @@ pub mod pattern {
         }
     }
 
+    impl ToString for SegmentPattern {
+        fn to_string(&self) -> String {
+            match self {
+                SegmentPattern::Any => "*".to_string(),
+                SegmentPattern::Recursive => "**".to_string(),
+                SegmentPattern::Exact(exact) => exact.to_string(),
+                SegmentPattern::Version(version) => version.to_string()
+            }
+        }
+    }
+
     pub type KeySegment = String;
 
     #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
@@ -1187,6 +1209,15 @@ pub mod pattern {
                         false
                     }
                 }
+            }
+        }
+    }
+
+    impl ToString for ExactSegment {
+        fn to_string(&self) -> String {
+            match self {
+                ExactSegment::Address(address) => address.to_string(),
+                ExactSegment::Version(version) => version.to_string()
             }
         }
     }
@@ -2670,9 +2701,17 @@ pub mod pattern {
         pub tks: TksPattern,
     }
 
+
+
     impl Hop {
         pub fn matches(&self, address_kind_segment: &AddressKindSegment) -> bool {
             self.segment.matches(&address_kind_segment.address_segment)
+        }
+    }
+
+    impl ToString for Hop {
+        fn to_string(&self) -> String {
+            format!("{}<{}>", self.segment.to_string(),self.tks.to_string())
         }
     }
 
@@ -6316,6 +6355,7 @@ pub mod entity {
             #[derive(Debug, Clone, Serialize, Deserialize)]
             pub enum SelectIntoPayload {
                 Stubs,
+                Addresses,
             }
 
             impl SelectIntoPayload {
@@ -6323,15 +6363,31 @@ pub mod entity {
                     &self,
                     stubs: Vec<ResourceStub>,
                 ) -> Result<PrimitiveList, MsgErr> {
-                    let stubs: Vec<Primitive> = stubs
-                        .into_iter()
-                        .map(|stub| Primitive::Stub(stub))
-                        .collect();
-                    let stubs = PrimitiveList {
-                        primitive_type: PrimitiveType::Stub,
-                        list: stubs,
-                    };
-                    Ok(stubs)
+                    match self {
+                        SelectIntoPayload::Stubs => {
+                            let stubs: Vec<Primitive> = stubs
+                                .into_iter()
+                                .map(|stub| Primitive::Stub(stub))
+                                .collect();
+                            let stubs = PrimitiveList {
+                                primitive_type: PrimitiveType::Stub,
+                                list: stubs,
+                            };
+                            Ok(stubs)
+                        }
+                        SelectIntoPayload::Addresses => {
+                            let addresses: Vec<Primitive> = stubs
+                                .into_iter()
+                                .map(|stub| Primitive::Address(stub.address))
+                                .collect();
+                            let stubs = PrimitiveList {
+                                primitive_type: PrimitiveType::Address,
+                                list: addresses,
+                            };
+                            Ok(stubs)
+                        }
+                    }
+
                 }
             }
 
@@ -6692,12 +6748,12 @@ pub mod resource {
         Unknown,      // initial status or when we status cannot be determined
         Pending,      // resource is now registered but not assigned to a host
         Assigning,    // resource is being assigned to at least one host
-        Initializing, // assigned to a host and undergoing custom initialization...This resource can send requests but not receive requests.  The String gives a progress indication like 2/10 (step 2 of 10) or 7/? when the number of steps are not known.
+        Initializing, // assigned to a host and undergoing custom initialization...This resource can send requests but not receive requests.
         Ready,        // ready to take requests
-        Paused, // can not receive requests (probably because it is waiting for some other resource to make updates)... String should be some form of meaningful identifier of which resource Paused this resource
-        Resuming, // like Initializing but triggered after a pause is lifted, the resource may be doing something before it is ready to accept requests again.  String is a progress indication just like Initializing.
-        Panic, // something is wrong... all requests are blocked and responses are cancelled. String is a hopefully  meaningful message describing why the Resource has Panic
-        Done, // this resource had a life span and has now completed succesfully it can no longer receive requests. String is a hopefully meaningful or useful Status message that is returned
+        Paused, // can not receive requests (probably because it is waiting for some other resource to make updates)...
+        Resuming, // like Initializing but triggered after a pause is lifted, the resource may be doing something before it is ready to accept requests again.
+        Panic, // something is wrong... all requests are blocked and responses are cancelled.
+        Done, // this resource had a life span and has now completed succesfully it can no longer receive requests.
     }
 
     #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
@@ -8561,7 +8617,7 @@ pub mod test {
     use crate::version::v0_0_1::config::bind::parse::{bind, final_bind, select_http_pipelines, http_pipeline, pipeline, pipeline_step, pipeline_stop};
     use crate::version::v0_0_1::config::bind::{PipelinesSubScope, ProtoBind};
     use crate::version::v0_0_1::entity::request::{Action, RequestCore};
-    use crate::version::v0_0_1::id::{AddressSegment, RouteSegment};
+    use crate::version::v0_0_1::id::{Address, AddressSegment, RouteSegment};
     use crate::version::v0_0_1::parse::{
         address, address_template, base_address_segment, camel_case, capture_address, create,
         file_address_capture_segment, publish, rec_skewer, route_segment, skewer_chars,
@@ -8569,9 +8625,7 @@ pub mod test {
     };
     use crate::version::v0_0_1::pattern::parse::address_kind_pattern;
     use crate::version::v0_0_1::pattern::parse::version;
-    use crate::version::v0_0_1::pattern::{
-        http_method, http_method_pattern, http_pattern, http_pattern_scoped, upload_step,
-    };
+    use crate::version::v0_0_1::pattern::{AddressKindPath, AddressKindPattern, http_method, http_method_pattern, http_pattern, http_pattern_scoped, upload_step};
     use crate::version::v0_0_1::payload::{HttpMethod, Payload};
     use crate::version::v0_0_1::util::ValueMatcher;
     use nom::error::VerboseError;
@@ -8581,6 +8635,14 @@ pub mod test {
     use regex::Regex;
 
     #[test]
+    pub fn test_address_kind_pattern_matching() -> Result<(), MsgErr> {
+        let pattern = AddressKindPattern::from_str("**")?;
+        let address = AddressKindPath::from_str("localhost<Space>:mechtron<Mechtron>")?;
+        assert!(pattern.matches(&address));
+        Ok(())
+    }
+
+        #[test]
     pub fn test_skewer_chars() -> Result<(), MsgErr> {
         match all_consuming(rec_skewer)("317") {
             Ok(ok) => {
