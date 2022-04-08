@@ -962,6 +962,9 @@ pub mod pattern {
             let mut segments = vec![];
             for hop in &self.hops {
                 if let SegmentPattern::Exact(exact) = &hop.segment {
+                    if hop.inclusive {
+                        break;
+                    }
                     match exact {
                         ExactSegment::Address(seg) => {
                             segments.push(seg.clone());
@@ -995,9 +998,6 @@ pub mod pattern {
             ResourceType: Clone,
             ResourceKind: Clone,
         {
-            if address_kind_path.segments.len() < self.hops.len() {
-                return false;
-            }
 
             if address_kind_path.is_root() && self.is_root() {
                 return true;
@@ -1010,6 +1010,21 @@ pub mod pattern {
             let hop = self.hops.first().expect("hop");
             let seg = address_kind_path.segments.first().expect("segment");
 
+            /*
+            if address_kind_path.segments.len() < self.hops.len() {
+                // if a hop is 'inclusive' then this will match to true.  We do this for cases like:
+                // localhost+:**   // Here we want everything under localhost INCLUDING localhost to be matched
+println!("hop: {}", hop.to_string());
+println!("seg: {}", seg.to_string());
+                if hop.inclusive && hop.matches(&seg) {
+                    return true;
+                } else {
+                    return false;
+                }
+            }
+
+             */
+
             if address_kind_path.is_final() && self.is_final() {
                 // this is the final hop & segment if they match, everything matches!
                 hop.matches(seg)
@@ -1018,8 +1033,14 @@ pub mod pattern {
             } else if self.is_root() {
                 false
             } else if address_kind_path.is_final() {
-                // we still have hops that haven't been matched and we are all out of path
-                false
+                // we still have hops that haven't been matched and we are all out of path... but we have a weird rule
+                // if a hop is 'inclusive' then this will match to true.  We do this for cases like:
+                // localhost+:**   // Here we want everything under localhost INCLUDING localhost to be matched
+                if hop.inclusive && hop.matches(&seg) {
+                    true
+                } else {
+                    false
+                }
             }
             // special logic is applied to recursives **
             else if hop.segment.is_recursive() && self.hops.len() >= 2 {
@@ -1660,50 +1681,55 @@ pub mod pattern {
         }
 
         fn space_hop(input: &str) -> Res<&str, Hop> {
-            tuple((space_segment, opt(tks)))(input).map(|(next, (segment, tks))| {
+            tuple((space_segment, opt(tks), opt(tag("+"))))(input).map(|(next, (segment, tks,inclusive))| {
                 let tks = match tks {
                     None => TksPattern::any(),
                     Some(tks) => tks,
                 };
-                (next, Hop { segment, tks })
+                let inclusive = inclusive.is_some();
+                (next, Hop { inclusive, segment, tks })
             })
         }
 
         fn base_hop(input: &str) -> Res<&str, Hop> {
-            tuple((base_segment, opt(tks)))(input).map(|(next, (segment, tks))| {
+            tuple((base_segment, opt(tks), opt(tag("+"))))(input).map(|(next, (segment, tks, inclusive))| {
                 let tks = match tks {
                     None => TksPattern::any(),
                     Some(tks) => tks,
                 };
-                (next, Hop { segment, tks })
+                let inclusive = inclusive.is_some();
+                (next, Hop { inclusive, segment, tks })
             })
         }
 
         fn file_hop(input: &str) -> Res<&str, Hop> {
-            file_segment(input).map(|(next, segment)| {
+            tuple((file_segment,opt(tag("+"))))(input).map(|(next, (segment,inclusive))| {
                 let tks = TksPattern {
                     resource_type: Pattern::Exact("File".to_string()),
                     kind: Pattern::Any,
                     specific: ValuePattern::Any,
                 };
-                (next, Hop { segment, tks })
+                let inclusive = inclusive.is_some();
+                (next, Hop { inclusive, segment, tks })
             })
         }
 
         fn dir_hop(input: &str) -> Res<&str, Hop> {
-            dir_segment(input).map(|(next, segment)| {
+            tuple((dir_segment,opt(tag("+"))))(input).map(|(next, (segment,inclusive))| {
                 let tks = TksPattern::any();
-                (next, Hop { segment, tks })
+                let inclusive = inclusive.is_some();
+                (next, Hop { inclusive, segment, tks })
             })
         }
 
         fn version_hop(input: &str) -> Res<&str, Hop> {
-            tuple((version_segment, opt(tks)))(input).map(|(next, (segment, tks))| {
+            tuple((version_segment, opt(tks), opt(tag("+"))))(input).map(|(next, (segment, tks, inclusive ))| {
                 let tks = match tks {
                     None => TksPattern::any(),
                     Some(tks) => tks,
                 };
-                (next, Hop { segment, tks })
+                let inclusive = inclusive.is_some();
+                (next, Hop { inclusive, segment, tks })
             })
         }
 
@@ -1730,6 +1756,7 @@ pub mod pattern {
                     if let Some((dir_hops, file_hop)) = filesystem_hops {
                         // first push the filesystem root
                         hops.push(Hop {
+                            inclusive: false,
                             segment: SegmentPattern::Exact(ExactSegment::Address(
                                 AddressSegment::FilesystemRootDir,
                             )),
@@ -2710,6 +2737,7 @@ pub mod pattern {
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct Hop {
+        pub inclusive: bool,
         pub segment: SegmentPattern,
         pub tks: TksPattern,
     }
@@ -2718,13 +2746,33 @@ pub mod pattern {
 
     impl Hop {
         pub fn matches(&self, address_kind_segment: &AddressKindSegment) -> bool {
-            self.segment.matches(&address_kind_segment.address_segment)
+            self.segment.matches(&address_kind_segment.address_segment) && self.tks.matches(&address_kind_segment.kind)
         }
     }
 
     impl ToString for Hop {
         fn to_string(&self) -> String {
-            format!("{}<{}>", self.segment.to_string(),self.tks.to_string())
+            let mut rtn = String::new();
+            rtn.push_str( self.segment.to_string().as_str() );
+
+            if let Pattern::Exact(resource_type) = &self.tks.resource_type {
+                rtn.push_str(format!("<{}", resource_type.to_string()).as_str());
+                if let Pattern::Exact(kind) = &self.tks.kind {
+                    rtn.push_str(format!("<{}", kind.to_string()).as_str());
+                    if let ValuePattern::Pattern(specific) = &self.tks.specific {
+                        rtn.push_str(format!("<{}", specific.to_string()).as_str());
+                        rtn.push_str(">");
+                    }
+                    rtn.push_str(">");
+                }
+                rtn.push_str(">");
+            }
+
+            if self.inclusive {
+                rtn.push_str("+");
+            }
+
+            rtn
         }
     }
 
@@ -2738,6 +2786,15 @@ pub mod pattern {
     where
         P: Eq + PartialEq,
     {
+
+        pub fn is_any(&self) -> bool {
+            match self {
+                Pattern::Any => true,
+                Pattern::Exact(_) => false
+            }
+        }
+
+
         pub fn matches(&self, t: &P) -> bool {
             match self {
                 Self::Any => true,
@@ -3504,21 +3561,32 @@ pub mod security {
 
     #[derive(Debug,Clone,Serialize,Deserialize)]
     pub enum Access {
-        SuperUser,
+        Super,
         Enumerated(EnumeratedAccess)
     }
 
     impl Access {
         pub fn is_super(&self) -> bool {
             match self {
-                Access::SuperUser => true,
+                Access::Super => true,
                 Access::Enumerated(_) => false
             }
         }
 
+        pub fn enumerated(&self) -> Result<EnumeratedAccess,MsgErr> {
+           match self {
+               Access::Super => {
+                   Err("cannot get enumerated access from a Super".into())
+               },
+               Access::Enumerated(enumerated) => {
+                   Ok(enumerated.clone())
+               }
+           }
+        }
+
         pub fn permissions(&self) -> Permissions {
             match self {
-                Access::SuperUser => {
+                Access::Super => {
                     Permissions::full()
                 },
                 Access::Enumerated(enumerated) => {
@@ -3529,7 +3597,7 @@ pub mod security {
 
         pub fn check_privilege(&self, privilege: String ) -> Result<(),MsgErr> {
             match self {
-                Access::SuperUser => Ok(()),
+                Access::Super=> Ok(()),
                 Access::Enumerated(enumerated) => {
                     match enumerated.privileges.contains(&privilege) {
                         true => Ok(()),
@@ -3704,7 +3772,7 @@ pub mod security {
         pub by_particle: Address,
     }
 
-    #[derive(Debug,Clone,Serialize,Deserialize)]
+    #[derive(Debug,Clone,Serialize,Deserialize,strum_macros::Display)]
     pub enum AccessGrantKind {
         Super,
         Privilege(String),
@@ -8910,7 +8978,84 @@ pub mod test {
         Ok(())
     }
 
-        #[test]
+    #[test]
+    pub fn test_query_root() -> Result<(), MsgErr> {
+        let inclusive_pattern = AddressKindPattern::from_str("localhost+:**")?;
+        let exclusive_pattern = AddressKindPattern::from_str("localhost:**")?;
+        println!("inclusive: '{}'", inclusive_pattern.query_root().to_string());
+        println!("exclusive : '{}'", exclusive_pattern.query_root().to_string());
+        Ok(())
+    }
+
+
+    #[test]
+    pub fn test_inclusive() -> Result<(), MsgErr> {
+        // if a hop is 'inclusive' then this will match to true.  We do this for cases like:
+        // localhost+:**   // Here we want everything under localhost INCLUDING localhost to be matched
+        let inclusive_pattern = AddressKindPattern::from_str("localhost+:**")?;
+        let exclusive_pattern = AddressKindPattern::from_str("localhost:**")?;
+        let address1 = AddressKindPath::from_str("localhost<Space>")?;
+        let address2 = AddressKindPath::from_str("localhost<Space>:mechtron<Mechtron>")?;
+
+        assert!(!exclusive_pattern.matches(&address1));
+        assert!(exclusive_pattern.matches(&address2));
+        assert!(inclusive_pattern.matches(&address1));
+        assert!(inclusive_pattern.matches(&address2));
+        Ok(())
+    }
+
+
+    #[test]
+    pub fn test_inclusive2() -> Result<(), MsgErr> {
+        let inclusive_pattern = AddressKindPattern::from_str("localhost+:app+:**")?;
+        let exclusive_pattern = AddressKindPattern::from_str("localhost:app:**")?;
+        let address1 = AddressKindPath::from_str("localhost<Space>")?;
+        let address2 = AddressKindPath::from_str("localhost<Space>:app<App>")?;
+        let address3 = AddressKindPath::from_str("localhost<Space>:app<App>:mechtron<Mechtron>")?;
+
+        assert!(!exclusive_pattern.matches(&address1));
+        assert!(!exclusive_pattern.matches(&address2));
+        assert!(exclusive_pattern.matches(&address3));
+        assert!(inclusive_pattern.matches(&address1));
+        assert!(inclusive_pattern.matches(&address2));
+        assert!(inclusive_pattern.matches(&address3));
+        Ok(())
+    }
+
+
+
+    #[test]
+    pub fn test_some_matches() -> Result<(), MsgErr> {
+        let users = AddressKindPattern::from_str("**<User>")?;
+        let address1 = AddressKindPath::from_str("localhost<Space>")?;
+        let address2 = AddressKindPath::from_str("localhost<Space>:app<App>")?;
+        let address3 = AddressKindPath::from_str("localhost<Space>:app<App>:mechtron<Mechtron>")?;
+        let address4 = AddressKindPath::from_str("localhost<Space>:app<App>:users<UserBase>")?;
+        let address5 = AddressKindPath::from_str("localhost<Space>:app<App>:users<UserBase>:scott<User>")?;
+        let address6 = AddressKindPath::from_str("localhost<Space>:users<UserBase>")?;
+        let address7 = AddressKindPath::from_str("localhost<Space>:users<UserBase>:superuser<User>")?;
+
+        assert!(!users.matches(&address1));
+        assert!(!users.matches(&address2));
+        assert!(!users.matches(&address3));
+        assert!(!users.matches(&address4));
+        assert!(users.matches(&address5));
+        assert!(!users.matches(&address6));
+        assert!(users.matches(&address7));
+        Ok(())
+    }
+
+
+    #[test]
+    pub fn test_a_match() -> Result<(), MsgErr> {
+        let pattern = AddressKindPattern::from_str("localhost:app+:**")?;
+        let address = AddressKindPath::from_str("localhost<Space>:app<App>")?;
+
+        assert!(pattern.matches(&address));
+        Ok(())
+    }
+
+    #[test]
     pub fn test_skewer_chars() -> Result<(), MsgErr> {
         match all_consuming(rec_skewer)("317") {
             Ok(ok) => {
@@ -9022,6 +9167,8 @@ pub mod test {
         all_consuming(address_kind_pattern)("space:base:*")?;
         all_consuming(address_kind_pattern)("space<Space>:**<Base>")?;
         all_consuming(address_kind_pattern)("space:series:1.0.0:/some/file.txt")?;
+        all_consuming(address_kind_pattern)("space+")?;
+        all_consuming(address_kind_pattern)("space+:**")?;
         Ok(())
     }
     #[cfg(test)]
