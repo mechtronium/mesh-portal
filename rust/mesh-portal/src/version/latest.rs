@@ -169,7 +169,7 @@ pub mod security {
     use mesh_portal_versions::version::v0_0_1 as current;
 
     pub type Access = current::security::Access;
-    pub type Privileges = current::security::Privileges;
+    pub type Privileges = current::security::EnumeratedPrivileges;
     pub type EnumeratedAccess = current::security::EnumeratedAccess;
     pub type Permissions = current::security::Permissions;
     pub type PermissionsMask = current::security::PermissionsMask;

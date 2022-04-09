@@ -3088,8 +3088,9 @@ pub mod messaging {
     use crate::version::v0_0_1::entity::request::RequestCore;
     use crate::version::v0_0_1::entity::response::ResponseCore;
     use crate::version::v0_0_1::id::Address;
-    use crate::version::v0_0_1::payload::{Errors, Payload, Primitive};
-    use crate::version::v0_0_1::security::{Access, AccessGrant, EnumeratedAccess};
+    use crate::version::v0_0_1::pattern::{AddressKindPath, AddressKindPattern};
+    use crate::version::v0_0_1::payload::{Errors, MsgCall, Payload, Primitive};
+    use crate::version::v0_0_1::security::{Access, AccessGrant, EnumeratedAccess, Permissions, Privilege, EnumeratedPrivileges, Privileges};
     use crate::version::v0_0_1::util::unique_id;
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -3145,6 +3146,13 @@ pub mod messaging {
                         response_to: self.id
                     }
                 }
+            }
+        }
+
+        pub fn to_call(&self) -> MsgCall {
+            MsgCall{
+                path: self.core.uri.to_string(),
+                action: self.core.action.to_string()
             }
         }
     }
@@ -3554,39 +3562,64 @@ pub mod messaging {
     pub enum Scope {
         Full,
         None,
-        Grants(Vec<AccessGrant>),
+        Grants(Vec<ScopeGrant>),
     }
 
     impl Scope {
-        /*pub fn create( &self, on: &Address, to: &Address, access: &Access ) -> Access {
+        pub fn mask( &self, on: &AddressKindPath ) -> Access {
             match self {
-                // if scope is full just return access unmodified
-                Scope::Full => access.clone(),
-
-                // scope is enumerated
+                Scope::Full => {
+                    access.clone()
+                }
+                Scope::None => {
+                    Access::none()
+                }
                 Scope::Grants(grants) => {
-                    match access {
-                        // if access is also enumerated then and it to enumerated scope
-                        Access::Enumerated(enumerated) => {
-                            let mut enumerated = enumerated.clone();
-                            enumerated.clear_privs();
-                            for grant in &grants {
-                                enumerated.add(grant);
-                            }
-                            Access::Enumerated(enumerated)
-                        }
-                        // if it's Super or Owner then create an enumerated from the scope's grants
-                        _ => Access::Enumerated(scope.clone()),
-                    }
+                    let mut access  = access.clone();
+                    let mut privileges = EnumeratedPrivileges::none();
+                    let mut permissions = Permissions::full();
+                    for grant in grants {
+                       if grant.on.matches(on) {
+                           match &grant.aspect {
+                               ScopeGrantAspect::Perm(and) => permissions.and(and),
+                               ScopeGrantAspect::Priv(and) =>  privileges.insert(and.clone())
+                           }
+                       }
+                   }
                 }
             }
-        }*/
+        }
     }
 
     impl Default for Scope {
         fn default() -> Self {
             Self::None
         }
+    }
+
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub struct ScopeGrant {
+        pub on: AddressKindPattern,
+        pub kind: ScopeGrantKind,
+        pub aspect: ScopeGrantAspect
+    }
+
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub enum ScopeGrantKind{
+        Or,
+        And
+    }
+
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub enum ScopeGrantAspect {
+        Perm(Permissions),
+        Priv(Privilege)
+    }
+
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub struct RequestAccess {
+        pub permissions: Permissions,
+        pub privileges:  Privileges,
     }
 
 
@@ -3694,6 +3727,7 @@ pub mod security {
     use crate::version::v0_0_1::id::Address;
     use crate::version::v0_0_1::pattern::AddressKindPattern;
     use serde::{Serialize,Deserialize};
+    use crate::version::v0_0_1::messaging::ScopeGrant;
     use crate::version::v0_0_1::parse::permissions_mask;
     use crate::version::v0_0_1::Span;
 
@@ -3706,14 +3740,15 @@ pub mod security {
     }
 
     impl Access {
-        pub fn is_super(&self) -> bool {
+
+        pub fn has_super(&self) -> bool {
             match self {
                 Access::Super(_) => true,
                 _=> false,
             }
         }
 
-        pub fn is_owner(&self) -> bool {
+        pub fn has_owner(&self) -> bool {
             match self {
                 Access::Owner => true,
                 Access::Super(owner)=> owner.clone(),
@@ -3728,6 +3763,10 @@ pub mod security {
                 Access::Owner => true,
                 Access::Enumerated(_) => false
             }
+        }
+
+        pub fn none() -> Self {
+            Self::Enumerated(EnumeratedAccess::none())
         }
 
         pub fn permissions(&self) -> Permissions {
@@ -3759,40 +3798,125 @@ pub mod security {
 
     }
 
+
     #[derive(Debug,Clone,Serialize,Deserialize)]
-    pub struct Privileges{
-       set: HashSet<String>
+    pub enum Privileges{
+        Full,
+        Enumerated(EnumeratedPrivileges)
     }
 
     impl Privileges {
-        pub fn new() -> Self {
+        pub fn has( &self, privilege: &str ) -> Result<(),()>{
+            match self {
+                Privileges::Full => Ok(()),
+                Privileges::Enumerated(privileges) => privileges.has(privilege)
+            }
+        }
+
+        pub fn none() -> Self {
             Self{ set: HashSet::new() }
         }
 
-        pub fn or( &mut self, other: &Self )  {
-            for p in other.iter() {
-                if !self.contains(p) {
-                    self.insert(p.clone());
+        pub fn or( mut self, other: &Self ) -> Self  {
+            match self {
+                Privileges::Full => {
+                    self
+                }
+                Privileges::Enumerated(privileges) => {
+                    match other {
+                        Privileges::Full => {
+                            Priviledges::Full
+                        }
+                        Privileges::Enumerated(other) => {
+                            Privileges::Enumerated(privileges.or(other))
+                        }
+                    }
                 }
             }
         }
 
-        pub fn and( &mut self, other: &Self ) {
+        pub fn and( self, other: &Self ) -> Privileges {
+            match other {
+                Privileges::Full => {
+                    self
+                },
+                Privileges::Enumerated(other) => {
+                    match self {
+                        Privileges::Full => {
+                            other.clone()
+                        }
+                        Privileges::Enumerated(enumerated_self) => {
+                            Privileges::Enumerated(enumerated_self.and(other))
+                        }
+                    }
+                }
+            }
+        }
+
+        pub fn add( &mut self, privilege: &str ) {
+            self.set.insert(privilege.to_string() );
+        }
+
+    }
+
+
+
+    #[derive(Debug,Clone,Serialize,Deserialize)]
+    pub struct EnumeratedPrivileges {
+       set: HashSet<String>
+    }
+
+    impl EnumeratedPrivileges {
+        pub fn new() -> Self {
+            Self{ set: HashSet::new() }
+        }
+
+        pub fn none() -> Self {
+            Self{ set: HashSet::new() }
+        }
+
+        pub fn or( mut self, other: &Self ) -> Self {
+            for p in other.set.iter() {
+                if !self.contains(p) {
+                    self.insert(p.clone());
+                }
+            }
+            self
+        }
+
+        pub fn and( mut self, other: &Self ) -> Self {
             self.retain( |p| other.contains(p) );
+            self
+        }
+
+        pub fn add( &mut self, privilege: &str ) {
+            self.set.insert(privilege.to_string() );
+        }
+
+        pub fn has( &self, privilege: &str ) -> Result<(),()>{
+            let privilege = privilege.to_string();
+            if self.set.contains(&privilege) {
+                Ok(())
+            } else {
+                Err(())
+            }
         }
     }
 
-    impl Deref for Privileges {
-        type Target = HashSet<String>;
 
-        fn deref(&self) -> &Self::Target {
-            &self.set
-        }
+
+    #[derive(Debug,Clone,Serialize,Deserialize,Eq,PartialEq,Hash)]
+    pub enum Privilege {
+        Full,
+        Single(String)
     }
 
-    impl DerefMut for Privileges {
-        fn deref_mut(&mut self) -> &mut Self::Target {
-            &mut self.set
+    impl ToString for Privilege {
+        fn to_string(&self) -> String {
+            match self {
+                Privilege::Full => "*".to_string(),
+                Privilege::Single(name) => name.clone()
+            }
         }
     }
 
@@ -3803,16 +3927,29 @@ pub mod security {
     }
 
     impl EnumeratedAccess {
+
+        pub fn mask(&mut self, scope_grant: &ScopeGrant ) {
+
+        }
+
+
         pub fn full() -> Self {
             Self{
                 permissions: Permissions::full(),
-                privileges: Privileges::new()
+                privileges: Privileges::Full
+            }
+        }
+
+        pub fn none() -> Self {
+            Self {
+                permissions: Permissions::none(),
+                privileges: Privileges::none(),
             }
         }
 
         pub fn and( &mut self, access: &Self ) {
             self.permissions.and(&access.permissions);
-            self.privileges.and(&access.privileges);
+            self.privileges = self.privileges.and(&access.privileges);
         }
 
         pub fn clear_privs(&mut self) {
@@ -4050,7 +4187,7 @@ pub mod security {
     #[derive(Debug,Clone,Serialize,Deserialize)]
     pub enum AccessGrantKind {
         Super,
-        Privilege(String),
+        Privilege(Privilege),
         PermissionsMask(PermissionsMask),
     }
 
@@ -5576,7 +5713,7 @@ pub mod config {
         pub enum PipelineStop {
             Internal,
             Call(Call),
-            Return,
+            Respond,
             CaptureAddress(CaptureAddress),
         }
 
@@ -9267,6 +9404,75 @@ pub mod parse {
         })
     }
 
+}
+
+pub mod log {
+    use serde::{Serialize,Deserialize};
+    use crate::version::v0_0_1::id::Address;
+
+    #[derive(Debug,Clone,Serialize,Deserialize)]
+    pub enum Level {
+        Trace,
+        Debug,
+        Info,
+        Warn,
+        Error
+    }
+
+    #[derive(Debug,Clone,Serialize,Deserialize)]
+    pub struct Log {
+        pub point: Address,
+        pub message: String,
+        pub level: Level
+    }
+
+    impl ToString for Log {
+        fn to_string(&self) -> String {
+            format!("{} {}", self.point.to_string(), self.message )
+        }
+    }
+
+    impl Log {
+        pub fn trace( point: Address, message: &str ) -> Self {
+            Self {
+                level: Level::Trace,
+                point,
+                message: message.to_string()
+            }
+        }
+        pub fn debug( point: Address, message: &str ) -> Self {
+            Self {
+                level: Level::Debug,
+                point,
+                message: message.to_string()
+            }
+        }
+        pub fn info( point: Address, message: &str ) -> Self {
+            Self {
+                level: Level::Info,
+                point,
+                message: message.to_string()
+            }
+        }
+        pub fn warn( point: Address, message: &str ) -> Self {
+            Self {
+                level: Level::Warn,
+                point,
+                message: message.to_string()
+            }
+        }
+        pub fn error( point: Address, message: &str ) -> Self {
+            Self {
+                level: Level::Error,
+                point,
+                message: message.to_string()
+            }
+        }
+    }
+
+    pub trait ParticleLogger {
+        fn log(&self, log: Log );
+    }
 }
 
 #[cfg(test)]
