@@ -236,7 +236,7 @@ pub mod id {
 
     #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
     pub enum RouteSegment {
-        Resource,
+        Local,
         Domain(String),
         Tag(String),
         Mesh(String),
@@ -245,7 +245,7 @@ pub mod id {
     impl ToString for RouteSegment {
         fn to_string(&self) -> String {
             match self {
-                RouteSegment::Resource => "".to_string(),
+                RouteSegment::Local => ".".to_string(),
                 RouteSegment::Domain(domain) => domain.clone(),
                 RouteSegment::Tag(tag) => {
                     format!("[{}]", tag)
@@ -520,13 +520,37 @@ pub mod id {
         }
     }
 
+    impl Address {
+        pub fn to_full_string(&self) -> String {
+            match self.route {
+                RouteSegment::Local => {
+                    let mut rtn = String::new();
+                    rtn.push_str(".::");
+                    if self.segments.is_empty() {
+                        rtn.push_str("ROOT");
+                    } else {
+                        for (i, segment) in self.segments.iter().enumerate() {
+                            rtn.push_str(segment.to_string().as_str());
+                            if i != self.segments.len() - 1 {
+                                rtn.push_str(segment.terminating_delim());
+                            }
+                        }
+                    }
+                    rtn.to_string()
+                }
+                _ => self.to_string()
+            }
+        }
+
+    }
+
 
     impl ToString for Address {
         fn to_string(&self) -> String {
             let mut rtn = String::new();
 
             match &self.route {
-                RouteSegment::Resource => {}
+                RouteSegment::Local => {}
                 RouteSegment::Domain(domain) => {
                     rtn.push_str(format!("{}::", domain).as_str());
                 }
@@ -539,7 +563,7 @@ pub mod id {
             }
 
             if self.segments.is_empty() {
-                "[root]".to_string()
+                "ROOT".to_string()
             } else {
                 for (i, segment) in self.segments.iter().enumerate() {
                     rtn.push_str(segment.to_string().as_str());
@@ -571,7 +595,7 @@ pub mod id {
 
         pub fn root() -> Self {
             Self {
-                route: RouteSegment::Resource,
+                route: RouteSegment::Local,
                 segments: vec![],
             }
         }
@@ -616,7 +640,7 @@ pub mod id {
             let mut rtn = String::new();
 
             match &self.route {
-                RouteSegment::Resource => {}
+                RouteSegment::Local => {}
                 RouteSegment::Domain(domain) => {
                     rtn.push_str(format!("{}::", domain).as_str());
                 }
@@ -878,7 +902,7 @@ pub mod pattern {
     use std::collections::HashMap;
     use crate::version::v0_0_1::config::bind::parse::{many_until0, select_block, SelectBlock};
 
-    #[derive(Debug, Clone, Serialize, Deserialize)]
+    #[derive(Debug,Clone,Serialize,Deserialize,)]
     pub struct TksPattern {
         pub resource_type: ResourceTypePattern,
         pub kind: KindPattern,
@@ -925,7 +949,7 @@ pub mod pattern {
     }
 
     pub type KindPattern = Pattern<ResourceKind>;
-    #[derive(Debug, Clone, Serialize, Deserialize)]
+    #[derive(Debug,Clone,Serialize,Deserialize)]
     pub struct AddressKindPattern {
         pub hops: Vec<Hop>,
     }
@@ -948,6 +972,24 @@ pub mod pattern {
                 hops.remove(0);
                 Option::Some(AddressKindPattern { hops })
             }
+        }
+
+        pub fn matches_root(&self) -> bool {
+
+           if self.hops.is_empty() {
+             true
+           } else if self.hops.len() == 1 {
+               let hop = self.hops.first().unwrap();
+               if SegmentPattern::InclusiveAny == hop.segment || SegmentPattern::InclusiveRecursive == hop.segment {
+                   let resource_kind = ResourceKind::new( "Root".to_string(), None, None );
+                   hop.tks.matches(&resource_kind)
+               } else {
+                   false
+               }
+           }
+           else {
+               false
+           }
         }
 
         pub fn is_root(&self) -> bool {
@@ -979,7 +1021,7 @@ pub mod pattern {
             }
 
             Address {
-                route: RouteSegment::Resource,
+                route: RouteSegment::Local,
                 segments,
             }
         }
@@ -1086,7 +1128,7 @@ println!("seg: {}", seg.to_string());
         }
     }
 
-    #[derive(Debug, Clone)]
+    #[derive(Debug,Clone,Eq,PartialEq,Hash)]
     pub struct VersionReq {
         pub version: semver::VersionReq,
     }
@@ -1163,8 +1205,10 @@ println!("seg: {}", seg.to_string());
         }
     }
 
-    #[derive(Debug, Clone, Serialize, Deserialize)]
+    #[derive(Debug,Clone,Serialize,Deserialize,Eq,PartialEq)]
     pub enum SegmentPattern {
+        InclusiveAny,       // +:*  // includes Root if it's the first segment
+        InclusiveRecursive, // +:** // includes Root if its the first segment
         Any,       // *
         Recursive, // **
         Exact(ExactSegment),
@@ -1181,6 +1225,8 @@ println!("seg: {}", seg.to_string());
 
         pub fn matches(&self, segment: &AddressSegment) -> bool {
             match self {
+                SegmentPattern::InclusiveAny => true,
+                SegmentPattern::InclusiveRecursive => true,
                 SegmentPattern::Any => true,
                 SegmentPattern::Recursive => true,
                 SegmentPattern::Exact(exact) => match exact {
@@ -1205,6 +1251,8 @@ println!("seg: {}", seg.to_string());
 
         pub fn is_recursive(&self) -> bool {
             match self {
+                SegmentPattern::InclusiveAny=> false,
+                SegmentPattern::InclusiveRecursive => true,
                 SegmentPattern::Any => false,
                 SegmentPattern::Recursive => true,
                 SegmentPattern::Exact(_) => false,
@@ -1216,6 +1264,8 @@ println!("seg: {}", seg.to_string());
     impl ToString for SegmentPattern {
         fn to_string(&self) -> String {
             match self {
+                SegmentPattern::InclusiveAny => "+:*".to_string(),
+                SegmentPattern::InclusiveRecursive=> "+:**".to_string(),
                 SegmentPattern::Any => "*".to_string(),
                 SegmentPattern::Recursive => "**".to_string(),
                 SegmentPattern::Exact(exact) => exact.to_string(),
@@ -1358,6 +1408,14 @@ println!("seg: {}", seg.to_string());
         use nom_supreme::error::ErrorTree;
         use nom_supreme::{parse_from_str, ParserExt};
 
+        fn inclusive_any_segment(input: &str) -> Res<&str, SegmentPattern> {
+            tag("+:*")(input).map(|(next, _)| (next, SegmentPattern::InclusiveAny))
+        }
+
+        fn inclusive_recursive_segment(input: &str) -> Res<&str, SegmentPattern> {
+            tag("+:**")(input).map(|(next, _)| (next, SegmentPattern::InclusiveRecursive))
+        }
+
         fn any_segment(input: &str) -> Res<&str, SegmentPattern> {
             tag("*")(input).map(|(next, _)| (next, SegmentPattern::Any))
         }
@@ -1422,7 +1480,7 @@ println!("seg: {}", seg.to_string());
         }
 
         fn space_segment(input: &str) -> Res<&str, SegmentPattern> {
-            alt((recursive_segment, any_segment, exact_space_segment))(input)
+            alt((inclusive_recursive_segment,inclusive_any_segment,recursive_segment, any_segment, exact_space_segment))(input)
         }
 
         fn base_segment(input: &str) -> Res<&str, SegmentPattern> {
@@ -2735,7 +2793,7 @@ println!("seg: {}", seg.to_string());
         pub payload: ValuePattern<PayloadPattern>,
     }
 
-    #[derive(Debug, Clone, Serialize, Deserialize)]
+    #[derive(Debug,Clone,Serialize,Deserialize)]
     pub struct Hop {
         pub inclusive: bool,
         pub segment: SegmentPattern,
@@ -2776,7 +2834,7 @@ println!("seg: {}", seg.to_string());
         }
     }
 
-    #[derive(Debug, Clone, Serialize, Deserialize)]
+    #[derive(Debug,Clone,Serialize,Deserialize)]
     pub enum Pattern<P> {
         Any,
         Exact(P),
@@ -2976,7 +3034,7 @@ println!("seg: {}", seg.to_string());
         fn to_string(&self) -> String {
             let mut rtn = String::new();
             match &self.route {
-                RouteSegment::Resource => {}
+                RouteSegment::Local => {}
                 route => {
                     rtn.push_str(route.to_string().as_str());
                     rtn.push_str("::");
@@ -3031,6 +3089,7 @@ pub mod messaging {
     use crate::version::v0_0_1::entity::response::ResponseCore;
     use crate::version::v0_0_1::id::Address;
     use crate::version::v0_0_1::payload::{Errors, Payload, Primitive};
+    use crate::version::v0_0_1::security::{Access, AccessGrant, EnumeratedAccess};
     use crate::version::v0_0_1::util::unique_id;
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -3096,7 +3155,7 @@ pub mod messaging {
                 id: unique_id(),
                 agent: Agent::Anonymous,
                 session: Option::None,
-                scope: Scope::none(),
+                scope: Scope::Full,
                 handling: Default::default(),
                 from,
                 to,
@@ -3486,23 +3545,44 @@ pub mod messaging {
     }
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
-    pub struct Scope {
-        pub roles: Roles
+    pub enum Scope {
+        Full,
+        None,
+        Grants(Vec<AccessGrant>),
+    }
+
+    impl Scope {
+        /*pub fn create( &self, on: &Address, to: &Address, access: &Access ) -> Access {
+            match self {
+                // if scope is full just return access unmodified
+                Scope::Full => access.clone(),
+
+                // scope is enumerated
+                Scope::Grants(grants) => {
+                    match access {
+                        // if access is also enumerated then and it to enumerated scope
+                        Access::Enumerated(enumerated) => {
+                            let mut enumerated = enumerated.clone();
+                            enumerated.clear_privs();
+                            for grant in &grants {
+                                enumerated.add(grant);
+                            }
+                            Access::Enumerated(enumerated)
+                        }
+                        // if it's Super or Owner then create an enumerated from the scope's grants
+                        _ => Access::Enumerated(scope.clone()),
+                    }
+                }
+            }
+        }*/
     }
 
     impl Default for Scope {
         fn default() -> Self {
-            Self::none()
+            Self::None
         }
     }
 
-    impl Scope {
-        pub fn none() -> Self {
-            Self {
-                roles: Roles::None
-            }
-        }
-    }
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub enum Roles{
@@ -3550,6 +3630,7 @@ pub mod messaging {
 
 pub mod security {
     use std::collections::HashSet;
+    use std::ops::{Deref, DerefMut};
     use std::str::FromStr;
     use nom::combinator::all_consuming;
     use crate::error::MsgErr;
@@ -3561,32 +3642,43 @@ pub mod security {
 
     #[derive(Debug,Clone,Serialize,Deserialize)]
     pub enum Access {
-        Super,
+        // bool is true if Super is also Owner
+        Super(bool),
+        Owner,
         Enumerated(EnumeratedAccess)
     }
 
     impl Access {
         pub fn is_super(&self) -> bool {
             match self {
-                Access::Super => true,
+                Access::Super(_) => true,
+                _=> false,
+            }
+        }
+
+        pub fn is_owner(&self) -> bool {
+            match self {
+                Access::Owner => true,
+                Access::Super(owner)=> owner.clone(),
+                _ => false,
+            }
+        }
+
+
+        pub fn has_full(&self) -> bool {
+            match self {
+                Access::Super(_) => true,
+                Access::Owner => true,
                 Access::Enumerated(_) => false
             }
         }
 
-        pub fn enumerated(&self) -> Result<EnumeratedAccess,MsgErr> {
-           match self {
-               Access::Super => {
-                   Err("cannot get enumerated access from a Super".into())
-               },
-               Access::Enumerated(enumerated) => {
-                   Ok(enumerated.clone())
-               }
-           }
-        }
-
         pub fn permissions(&self) -> Permissions {
             match self {
-                Access::Super => {
+                Access::Super(_) => {
+                    Permissions::full()
+                },
+                Access::Owner => {
                     Permissions::full()
                 },
                 Access::Enumerated(enumerated) => {
@@ -3595,11 +3687,12 @@ pub mod security {
             }
         }
 
-        pub fn check_privilege(&self, privilege: String ) -> Result<(),MsgErr> {
+        pub fn check_privilege(&self, privilege: &str) -> Result<(),MsgErr> {
             match self {
-                Access::Super=> Ok(()),
+                Access::Super(_)=> Ok(()),
+                Access::Owner=> Ok(()),
                 Access::Enumerated(enumerated) => {
-                    match enumerated.privileges.contains(&privilege) {
+                    match enumerated.privileges.contains(privilege) {
                         true => Ok(()),
                         false => Err(format!("'{}'",privilege).into())
                     }
@@ -3607,20 +3700,82 @@ pub mod security {
             }
         }
 
+    }
 
+    #[derive(Debug,Clone,Serialize,Deserialize)]
+    pub struct Privileges{
+       set: HashSet<String>
+    }
+
+    impl Privileges {
+        pub fn new() -> Self {
+            Self{ set: HashSet::new() }
+        }
+
+        pub fn or( &mut self, other: &Self )  {
+            for p in other.iter() {
+                if !self.contains(p) {
+                    self.insert(p.clone());
+                }
+            }
+        }
+
+        pub fn and( &mut self, other: &Self ) {
+            self.retain( |p| other.contains(p) );
+        }
+    }
+
+    impl Deref for Privileges {
+        type Target = HashSet<String>;
+
+        fn deref(&self) -> &Self::Target {
+            &self.set
+        }
+    }
+
+    impl DerefMut for Privileges {
+        fn deref_mut(&mut self) -> &mut Self::Target {
+            &mut self.set
+        }
     }
 
     #[derive(Debug,Clone,Serialize,Deserialize)]
     pub struct EnumeratedAccess {
         pub permissions: Permissions,
-        pub privileges: HashSet<String>
+        pub privileges: Privileges
     }
 
     impl EnumeratedAccess {
         pub fn full() -> Self {
             Self{
                 permissions: Permissions::full(),
-                privileges: HashSet::new()
+                privileges: Privileges::new()
+            }
+        }
+
+        pub fn and( &mut self, access: &Self ) {
+            self.permissions.and(&access.permissions);
+            self.privileges.and(&access.privileges);
+        }
+
+        pub fn clear_privs(&mut self) {
+            self.privileges.clear();
+        }
+
+        pub fn add(&mut self, grant: &AccessGrant ) {
+            match &grant.kind {
+                AccessGrantKind::Super => {
+                    // we can't mask Super with Enumerated... it does nothing
+                }
+                AccessGrantKind::Privilege(prv) => {
+                    self.privileges.insert(prv.clone());
+                }
+                AccessGrantKind::PermissionsMask(mask) => {
+                    match mask.kind {
+                        PermissionsMaskKind::Or => self.permissions.or(&mask.permissions),
+                        PermissionsMaskKind::And => self.permissions.and(&mask.permissions)
+                    }
+                }
             }
         }
     }
@@ -3651,22 +3806,22 @@ pub mod security {
 
     #[derive(Debug,Clone,Serialize,Deserialize,Eq,PartialEq)]
     pub struct Permissions {
-        pub child: PermissionBlock,
-        pub particle: PermissionBlock
+        pub child: ChildPerms,
+        pub particle: ParticlePerms
     }
 
     impl Permissions {
         pub fn full() -> Self {
             Self {
-                child: PermissionBlock::full(),
-                particle: PermissionBlock::full()
+                child: ChildPerms::full(),
+                particle: ParticlePerms::full()
             }
         }
 
         pub fn none() -> Self {
             Self {
-                child: PermissionBlock::none(),
-                particle: PermissionBlock::none()
+                child: ChildPerms::none(),
+                particle: ParticlePerms::none()
             }
         }
 
@@ -3688,13 +3843,76 @@ pub mod security {
     }
 
     #[derive(Debug,Clone,Serialize,Deserialize,Eq,PartialEq)]
-    pub struct PermissionBlock {
+    pub struct ChildPerms{
+        pub create: bool,
+        pub select: bool,
+        pub delete: bool,
+    }
+
+    impl ChildPerms{
+        pub fn full()->Self {
+            Self {
+                create: true,
+                select: true,
+                delete: true
+            }
+        }
+
+        pub fn none()->Self {
+            Self {
+                create: false,
+                select: false,
+                delete:false
+            }
+        }
+
+        pub fn or(&mut self, block: &ChildPerms) {
+            self.create |= block.create;
+            self.select |= block.select;
+            self.delete |= block.delete;
+        }
+
+        pub fn and(&mut self, block: &ChildPerms) {
+            self.create &= block.create;
+            self.select &= block.select;
+            self.delete &= block.delete;
+        }
+    }
+
+    impl ToString for ChildPerms{
+        fn to_string(&self) -> String {
+            let mut rtn = String::new();
+
+            if self.create {
+                rtn.push_str("C");
+            } else {
+                rtn.push_str("c");
+            }
+
+            if self.select {
+                rtn.push_str("S");
+            } else {
+                rtn.push_str("s");
+            }
+
+            if self.delete {
+                rtn.push_str("D");
+            } else {
+                rtn.push_str("d");
+            }
+
+            rtn
+        }
+    }
+
+    #[derive(Debug,Clone,Serialize,Deserialize,Eq,PartialEq)]
+    pub struct ParticlePerms {
         pub read: bool,
         pub write: bool,
         pub execute: bool,
     }
 
-    impl PermissionBlock {
+    impl ParticlePerms {
         pub fn full()->Self {
             Self {
                 read: true,
@@ -3711,20 +3929,20 @@ pub mod security {
             }
         }
 
-        pub fn or(&mut self, block: &PermissionBlock ) {
+        pub fn or(&mut self, block: &ParticlePerms) {
             self.read |= block.read;
             self.write |= block.write;
             self.execute |= block.execute;
         }
 
-        pub fn and(&mut self, block: &PermissionBlock ) {
+        pub fn and(&mut self, block: &ParticlePerms) {
             self.read &= block.read;
             self.write &= block.write;
             self.execute &= block.execute;
         }
     }
 
-    impl FromStr for PermissionBlock {
+    impl FromStr for ParticlePerms {
         type Err = ();
 
         fn from_str(s: &str) -> Result<Self, Self::Err> {
@@ -3732,7 +3950,7 @@ pub mod security {
         }
     }
 
-    impl ToString for PermissionBlock {
+    impl ToString for ParticlePerms {
         fn to_string(&self) -> String {
             let mut rtn = String::new();
 
@@ -3772,13 +3990,25 @@ pub mod security {
         pub by_particle: Address,
     }
 
-    #[derive(Debug,Clone,Serialize,Deserialize,strum_macros::Display)]
+    #[derive(Debug,Clone,Serialize,Deserialize)]
     pub enum AccessGrantKind {
         Super,
         Privilege(String),
         PermissionsMask(PermissionsMask),
     }
+
+    impl ToString for AccessGrantKind {
+        fn to_string(&self) -> String {
+            match self {
+                AccessGrantKind::Super => "super".to_string(),
+                AccessGrantKind::Privilege(_) => "priv".to_string(),
+                AccessGrantKind::PermissionsMask(_) => "perm".to_string()
+            }
+        }
+    }
 }
+
+
 
 pub mod frame {
     use std::convert::TryInto;
@@ -4125,6 +4355,18 @@ pub mod payload {
             }
         }
     }
+
+    impl TryInto<Address> for Primitive {
+        type Error = MsgErr;
+
+        fn try_into(self) -> Result<Address, Self::Error> {
+            match self {
+                Primitive::Address(address) => Ok(address),
+                _ => Err("Primitive must be of type Address".into()),
+            }
+        }
+    }
+
 
     impl TryInto<String> for Primitive {
         type Error = MsgErr;
@@ -7452,7 +7694,7 @@ pub mod util {
         }
     }
 
-    #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
+    #[derive(Debug, Clone, Serialize, Deserialize,Eq,PartialEq)]
     pub enum ValuePattern<T> {
         Any,
         None,
@@ -7801,7 +8043,7 @@ pub mod parse {
     use crate::version::v0_0_1::util::StringMatcher;
     use nom::bytes::complete::take;
     use nom_supreme::error::ErrorTree;
-    use crate::version::v0_0_1::security::{PermissionBlock, Permissions, PermissionsMask, PermissionsMaskKind};
+    use crate::version::v0_0_1::security::{ChildPerms, ParticlePerms, Permissions, PermissionsMask, PermissionsMaskKind};
     use crate::version::v0_0_1::Span;
 
     pub struct Parser {}
@@ -7858,9 +8100,9 @@ pub mod parse {
         )
     }
 
-    pub fn resource_route_segment(input: &str) -> Res<&str, RouteSegment> {
-        not(alt((domain_route_segment, tag_route_segment)))(input)
-            .map(|(next, _)| (next, RouteSegment::Resource))
+    pub fn local_route_segment(input: &str) -> Res<&str, RouteSegment> {
+        alt((recognize(tag(".::")),recognize(not(other_route_segment))))(input)
+            .map(|(next, _)| (next, RouteSegment::Local))
     }
 
     pub fn domain_route_segment(input: &str) -> Res<&str, RouteSegment> {
@@ -7878,12 +8120,19 @@ pub mod parse {
             .map(|(next, tag)| (next, RouteSegment::Tag(tag.to_string())))
     }
 
-    pub fn route_segment(input: &str) -> Res<&str, RouteSegment> {
+    pub fn other_route_segment(input: &str) -> Res<&str, RouteSegment> {
         alt((
             tag_route_segment,
             domain_route_segment,
             mesh_route_segment,
-            resource_route_segment,
+        ))(input)
+    }
+
+
+    pub fn route_segment(input: &str) -> Res<&str, RouteSegment> {
+        alt((
+            other_route_segment,
+            local_route_segment,
         ))(input)
     }
 
@@ -7920,7 +8169,7 @@ pub mod parse {
     }
 
     pub fn root_address(input: &str) -> Res<&str, Address> {
-        tuple((route_segment, tag("[root]")))(input).map(|(next, (route, _))| {
+        tuple((route_segment, tag("ROOT")))(input).map(|(next, (route, _))| {
             let address = Address {
                 route,
                 segments: vec![],
@@ -7973,7 +8222,7 @@ pub mod parse {
 
     pub fn capture_address(input: &str) -> Res<&str, CaptureAddress> {
         context( "Address", tuple((
-            tuple((route_segment, space_address_capture_segment)),
+            tuple((route_segment, alt((root_address_capture_segment,space_address_capture_segment)))),
             many0(base_address_capture_segment),
             opt(version_address_segment),
             opt(root_dir_address_segment),
@@ -8005,6 +8254,12 @@ pub mod parse {
             },
         )
     }
+
+    pub fn root_address_capture_segment(input: &str) -> Res<&str, AddressSegment> {
+        tag("ROOT")(input)
+            .map(|(next, space)| (next, AddressSegment::Root))
+    }
+
 
     pub fn space_address_capture_segment(input: &str) -> Res<&str, AddressSegment> {
         space_chars_plus_capture(input)
@@ -8920,7 +9175,7 @@ pub mod parse {
 
 
     pub fn permissions(input: Span) -> Res<Span, Permissions> {
-        tuple((permission_block,tag("-"), permission_block))(input).map( |(next,(child,_,particle))| {
+        tuple((child_perms, tag("-"), particle_perms))(input).map( |(next,(child,_,particle))| {
             let permissions = Permissions {
                 child,
                 particle
@@ -8929,11 +9184,24 @@ pub mod parse {
         })
     }
 
-    pub fn permission_block(input: Span) -> Res<Span, PermissionBlock> {
+    pub fn child_perms(input: Span) -> Res<Span, ChildPerms> {
+        tuple( (alt( (value(false,char('c')),value(true,char('C')))),
+                alt( (value(false,char('s')),value(true,char('S')))),
+                alt( (value(false,char('d')),value(true,char('D'))))))(input).map( |(next,(create, select, delete))|{
+            let block = ChildPerms{
+                create,
+                select,
+                delete,
+            };
+            (next,block)
+        })
+    }
+
+    pub fn particle_perms(input: Span) -> Res<Span, ParticlePerms> {
         tuple( (alt( (value(false,char('r')),value(true,char('R')))),
                    alt( (value(false,char('w')),value(true,char('W')))),
                    alt( (value(false,char('x')),value(true,char('X'))))))(input).map( |(next,(read,write,execute))|{
-          let block = PermissionBlock {
+          let block = ParticlePerms {
               read,
               write,
               execute,
@@ -8956,7 +9224,7 @@ pub mod test {
     use crate::version::v0_0_1::config::bind::{PipelinesSubScope, ProtoBind};
     use crate::version::v0_0_1::entity::request::{Action, RequestCore};
     use crate::version::v0_0_1::id::{Address, AddressSegment, RouteSegment};
-    use crate::version::v0_0_1::parse::{address, address_template, base_address_segment, camel_case, capture_address, create, file_address_capture_segment, publish, rec_skewer, route_segment, skewer_chars, version_address_segment, Res, permission_block, permissions, permissions_mask};
+    use crate::version::v0_0_1::parse::{address, address_template, base_address_segment, camel_case, capture_address, create, file_address_capture_segment, publish, rec_skewer, route_segment, skewer_chars, version_address_segment, Res, particle_perms, permissions, permissions_mask};
     use crate::version::v0_0_1::pattern::parse::address_kind_pattern;
     use crate::version::v0_0_1::pattern::parse::version;
     use crate::version::v0_0_1::pattern::{AddressKindPath, AddressKindPattern, http_method, http_method_pattern, http_pattern, http_pattern_scoped, upload_step};
@@ -8967,7 +9235,7 @@ pub mod test {
     use nom_supreme::error::ErrorTree;
     use nom_supreme::final_parser::ExtractContext;
     use regex::Regex;
-    use crate::version::v0_0_1::security::{PermissionBlock, Permissions, PermissionsMask, PermissionsMaskKind};
+    use crate::version::v0_0_1::security::{ChildPerms, ParticlePerms, Permissions, PermissionsMask, PermissionsMaskKind};
     use crate::version::v0_0_1::Span;
 
     #[test]
@@ -9076,7 +9344,7 @@ pub mod test {
     #[test]
     pub fn test_address() -> Result<(), MsgErr> {
         assert_eq!(
-            ("", RouteSegment::Resource),
+            ("", RouteSegment::Local),
             all_consuming(route_segment)("")?
         );
 
@@ -9624,31 +9892,31 @@ Bind.Pipelines.Http.Pipeline.Step: expected '->' (forward request) or '-[' (Requ
     #[test]
     pub fn test_permission_block() -> Result<(), MsgErr> {
        let span = Span::new("rWx-");
-       let perm = permission_block(span)?;
+       let perm = particle_perms(span)?;
         let (span,block) = perm;
         println!("offset : {}",span.location_offset());
 
-        assert_eq!(block, PermissionBlock{read:false,write:true,execute:false});
+        assert_eq!(block, ParticlePerms {read:false,write:true,execute:false});
        Ok(())
     }
 
     #[test]
     pub fn test_permissions() -> Result<(), MsgErr> {
-        let span = Span::new("rWx-RwX");
+        let span = Span::new("cSd-RwX");
         let result = permissions(span)?;
         let (span,permissions) = result;
         println!("offset : {}",span.location_offset());
 
-        assert_eq!(permissions, crate::version::v0_0_1::security::Permissions {child: PermissionBlock{read:false,write:true,execute:false}, particle: PermissionBlock{read:true,write:false,execute:true}});
+        assert_eq!(permissions, crate::version::v0_0_1::security::Permissions {child: ChildPerms{create:false,select:true,delete:false}, particle: ParticlePerms {read:true,write:false,execute:true}});
         Ok(())
     }
 
     #[test]
     pub fn test_permissions_mask() -> Result<(), MsgErr> {
-        let span = Span::new("&rWx-RwX");
+        let span = Span::new("&cSd-RwX");
         let result = permissions_mask(span)?;
         let (span,mask) = result;
-        let permissions = crate::version::v0_0_1::security::Permissions {child: PermissionBlock{read:false,write:true,execute:false}, particle: PermissionBlock{read:true,write:false,execute:true}};
+        let permissions = crate::version::v0_0_1::security::Permissions {child: ChildPerms{create:false,select:true,delete:false}, particle: ParticlePerms {read:true,write:false,execute:true}};
         let mask2 = PermissionsMask {
             kind: PermissionsMaskKind::And,
             permissions
@@ -9657,5 +9925,11 @@ Bind.Pipelines.Http.Pipeline.Step: expected '->' (forward request) or '-[' (Requ
         Ok(())
     }
 
+    #[test]
+    pub fn test_root_pattern_match() -> Result<(),MsgErr>{
+        let pattern = AddressKindPattern::from_str("+:**")?;
+        assert!(pattern.matches_root());
+        Ok(())
+    }
 }
 
