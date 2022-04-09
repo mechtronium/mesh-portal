@@ -1,6 +1,8 @@
 [workspace]
 members = [
     "mesh-portal",
+    "mesh-binder",
+    "mesh-artifact-api",
     "mesh-portal-api-client",
     "mesh-portal-api-server",
     "mesh-portal-tcp-common",

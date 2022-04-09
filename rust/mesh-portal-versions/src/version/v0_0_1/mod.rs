@@ -3488,6 +3488,12 @@ pub mod messaging {
         Response(ResponseCore)
     }
 
+    pub enum ResponseKindExpected {
+        None,
+        Synch, // requestor will wait for response
+        Async(Payload) // The payload
+    }
+
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub enum Agent {
         Anonymous,
@@ -3591,25 +3597,61 @@ pub mod messaging {
         Enumerated(Vec<String>)
     }
 
-
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct Handling {
+        kind: HandlingKind,
         priority: Priority,
-        karma: Priority,
-        retries: u8,
-        timeout: u16,
+        retries: Retries,
+        timeout: Timeout
+    }
+
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub enum HandlingKind {
+        Durable,  // Mesh will guarantee delivery eventually once Request call has returned
+        Queued,   // Slower but more reliable delivery, message can be lost if a star crashes, etc
+        Immediate // Message should never touch a filesystem, it will be in memory for its entire journey for immediate processing
     }
 
     impl Default for Handling {
         fn default() -> Self {
             Self {
+                kind: HandlingKind::Queued,
                 priority: Default::default(),
-                karma: Default::default(),
-                retries: 0,
-                timeout: 30
+                retries: Default::default(),
+                timeout: Default::default()
             }
         }
     }
+
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub enum Timeout {
+        Never,
+        Max,
+        Medium,
+        Min
+    }
+
+    impl Default for Timeout {
+        fn default() -> Self {
+            Timeout::Medium
+        }
+    }
+
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub enum Retries {
+        None,
+        Max,
+        Medium,
+        Min
+    }
+
+    impl Default for Retries{
+        fn default() -> Self {
+            Retries::None
+        }
+    }
+
+
 
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -3625,6 +3667,21 @@ pub mod messaging {
         }
     }
 
+
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub enum Karma{
+        Super,
+        High,
+        Med,
+        Low,
+        None
+    }
+
+    impl Default for Karma{
+        fn default() -> Self {
+            Self::High
+        }
+    }
 
 }
 

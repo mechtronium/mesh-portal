@@ -97,6 +97,10 @@ pub mod messaging {
     pub type AuthedAgent = current::messaging::AuthedAgent;
     pub type Session = current::messaging::Session;
     pub type Scope = current::messaging::Scope;
+    pub type Priority = current::messaging::Priority;
+    pub type Karma = current::messaging::Karma;
+    pub type Handling = current::messaging::Handling;
+    pub type HandlingKind = current::messaging::HandlingKind;
 }
 
 
@@ -160,6 +164,23 @@ pub mod command {
         pub type SetRegistry = current::command::common::SetRegistry;
     }
 }
+
+pub mod security {
+    use mesh_portal_versions::version::v0_0_1 as current;
+
+    pub type Access = current::security::Access;
+    pub type Privileges = current::security::Privileges;
+    pub type EnumeratedAccess = current::security::EnumeratedAccess;
+    pub type Permissions = current::security::Permissions;
+    pub type PermissionsMask = current::security::PermissionsMask;
+    pub type PermissionsMaskKind = current::security::PermissionsMaskKind;
+    pub type ChildPerms = current::security::ChildPerms;
+    pub type ParticlePerms = current::security::ParticlePerms;
+    pub type AccessGrant = current::security::AccessGrant;
+    pub type AccessGrantKind = current::security::AccessGrantKind;
+}
+
+
 pub mod msg {
     use mesh_portal_versions::version::v0_0_1 as current;
 
