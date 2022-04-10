@@ -281,7 +281,7 @@ pub mod id {
     }
 
     impl PointSegKind {
-        pub fn terminating_delim(&self) -> &str {
+        pub fn terminating_delim(&self) -> &'static str {
             match self {
                 Self::Space => ":",
                 Self::Base => ":",
@@ -411,7 +411,7 @@ pub mod id {
             }
         }
 
-        pub fn terminating_delim(&self) -> &str {
+        pub fn terminating_delim(&self) -> &'static str {
             self.kind().terminating_delim()
         }
 
@@ -464,7 +464,7 @@ pub mod id {
             point.push_str("::");
 
             for (index,segment) in self.segments.iter().enumerate() {
-                point.push_str( segment.to_resolved_str(resolver)?.as_str() );
+                point.push_str( segment.clone().to_resolved_str(resolver)?.as_str() );
 
                 if index < self.segments.len()-1 {
                     point.push_str(":" );
@@ -490,9 +490,9 @@ println!("normalized : {}", point.to_string());
             }
 
             let mut segments = self.segments.clone();
-            for seg in self.segments {
+            for seg in &self.segments {
                 match seg.is_normalized() {
-                    true => segments.push(seg),
+                    true => segments.push(seg.clone()),
                     false => {
                         if segments.pop().is_none() {
                             return Err(format!("'..' too many pop segments directives: out of parents: '{}'",self.to_string()).into());
@@ -589,6 +589,8 @@ println!("normalized : {}", point.to_string());
                         format!("{}:/", self.to_string())
                     }
                     PointSeg::File(_) => return Err("cannot append to a file".into()),
+                    PointSeg::PopSeg => format!("{}:{}", self.to_string(), segment),
+                        PointSeg::PopDir => format!("{}/{}", self.to_string(), segment),
                 };
                 Self::from_str(point.as_str())
             }
@@ -10355,12 +10357,7 @@ use crate::version::v0_0_1::config::bind::{PipelinesSubScope, ProtoBind};
 use crate::version::v0_0_1::entity::request::{Action, RequestCore};
 use crate::version::v0_0_1::id::{Point, PointSeg, RouteSeg};
 use crate::version::v0_0_1::parse::error::{find, result};
-use crate::version::v0_0_1::parse::{
-    access_grant, access_grant_kind, base_point_segment, camel_case, capture_point,
-    child_perms, create, file_point_capture_segment, particle_perms, permissions,
-    permissions_mask, point_subst, point_template, publish, rec_skewer, route_segment, skewer_chars,
-    var_subst, version_point_segment, MapResolver, Res, ToResolved,
-};
+use crate::version::v0_0_1::parse::{access_grant, access_grant_kind, base_point_segment, camel_case, capture_point, child_perms, create, file_point_capture_segment, particle_perms, permissions, permissions_mask, point_subst, point_template, publish, rec_skewer, route_segment, skewer_chars, var_subst, version_point_segment, MapResolver, Res, ToResolved, point};
 use crate::version::v0_0_1::payload::{HttpMethod, Payload};
 use crate::version::v0_0_1::security::{
     ChildPerms, ParticlePerms, Permissions, PermissionsMask, PermissionsMaskKind,
@@ -10492,25 +10489,25 @@ pub fn test_point() -> Result<(), MsgErr> {
         all_consuming(route_segment)(Span::new(""))?
     );
 
-    all_consuming(point_subst)(Span::new("[root]"))?;
-    all_consuming(point_subst)(Span::new("hello:kitty"))?;
-    all_consuming(point_subst)(Span::new("hello.com:kitty"))?;
-    all_consuming(point_subst)(Span::new("hello:kitty:/file.txt"))?;
-    all_consuming(point_subst)(Span::new("hello.com:kitty:/file.txt"))?;
-    all_consuming(point_subst)(Span::new("hello.com:kitty:/"))?;
+    all_consuming(point)(Span::new("[root]"))?;
+    all_consuming(point)(Span::new("hello:kitty"))?;
+    all_consuming(point)(Span::new("hello.com:kitty"))?;
+    all_consuming(point)(Span::new("hello:kitty:/file.txt"))?;
+    all_consuming(point)(Span::new("hello.com:kitty:/file.txt"))?;
+    all_consuming(point)(Span::new("hello.com:kitty:/"))?;
     //all_consuming(point)("hello.com:kitty:/greater-glory/file.txt")?;
-    all_consuming(point_subst)(Span::new("hello.com:kitty:base"))?;
+    all_consuming(point)(Span::new("hello.com:kitty:base"))?;
 
     all_consuming(version)(Span::new("1.0.0"))?;
     let (next, version) = all_consuming(version_point_segment)(Span::new(":1.2.3"))?;
     println!("next: '{}' segment: '{}'", next, version.to_string());
-    all_consuming(point_subst)(Span::new("hello.com:bundle:1.2.3"))?;
-    let (next, addy) = all_consuming(point_subst)(Span::new("hello.com:bundle:1.2.3:/"))?;
+    all_consuming(point)(Span::new("hello.com:bundle:1.2.3"))?;
+    let (next, addy) = all_consuming(point)(Span::new("hello.com:bundle:1.2.3:/"))?;
     println!("{}", addy.last_segment().unwrap().to_string());
-    let (next, addy) = all_consuming(point_subst)(Span::new("hello.com:bundle:1.2.3"))?;
+    let (next, addy) = all_consuming(point)(Span::new("hello.com:bundle:1.2.3"))?;
     //       let (next, addy) = all_consuming(point)("hello.com:bundle:1.2.3:/some/file.txt")?;
     let (next, addy) =
-        all_consuming(point_subst)(Span::new("hello.com:bundle:1.2.3:/greater-glory/file.txt"))?;
+        all_consuming(point)(Span::new("hello.com:bundle:1.2.3:/greater-glory/file.txt"))?;
     println!("{}", addy.to_string());
     println!("{}", addy.parent().unwrap().to_string());
     println!("{}", addy.last_segment().unwrap().to_string());
