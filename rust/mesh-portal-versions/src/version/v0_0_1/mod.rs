@@ -59,7 +59,7 @@ pub mod id {
     use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 
     use crate::error::MsgErr;
-    use crate::version::v0_0_1::parse::{point, camel_case, consume_point, Res};
+    use crate::version::v0_0_1::parse::{point, camel_case, consume_point, Res, Subst};
     use crate::version::v0_0_1::selector::parse::{point_and_kind, kind, generic_kind_base, specific};
     use crate::version::v0_0_1::selector::{
         PointSelector, Pattern, SpecificSelector, VersionReq,
@@ -368,10 +368,13 @@ pub mod id {
         }
     }
 
+    pub type Point = PointDef<RouteSeg,PointSeg>;
+    pub type PointSubst = PointDef<Subst<RouteSeg>,Subst<PointSeg>>;
+
     #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
-    pub struct Point {
-        pub route: RouteSeg,
-        pub segments: Vec<PointSeg>,
+    pub struct PointDef<Route,Seg> {
+        pub route: Route,
+        pub segments: Vec<Seg>
     }
 
     impl Point {
@@ -3967,9 +3970,7 @@ pub mod security {
     use crate::version::v0_0_1::id::Point;
     use crate::version::v0_0_1::messaging::ScopeGrant;
     use crate::version::v0_0_1::parse::error::{just_msg, result};
-    use crate::version::v0_0_1::parse::{
-        particle_perms, permissions_mask, privilege, Subst, ToVal,
-    };
+    use crate::version::v0_0_1::parse::{MapResolver, particle_perms, permissions_mask, privilege, Resolver, Subst, ToVal};
     use crate::version::v0_0_1::selector::PointSelector;
     use crate::version::v0_0_1::Span;
     use nom::combinator::all_consuming;
@@ -3977,6 +3978,7 @@ pub mod security {
     use std::collections::{HashMap, HashSet};
     use std::ops::{Deref, DerefMut};
     use std::str::FromStr;
+    use nom_supreme::parser_ext::MapRes;
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub enum Access {
@@ -4419,19 +4421,19 @@ pub mod security {
     }
 
     impl ToVal<AccessGrant> for AccessGrantSubst {
-        fn to_val(self, map: &HashMap<String, String>) -> Result<AccessGrant, MsgErr> {
+        fn to_val(self, resolver: &dyn Resolver) -> Result<AccessGrant, MsgErr> {
             Ok(AccessGrant {
-                kind: self.kind.to_val(map)?,
-                on_point: self.on_point.to_val(map)?,
-                to_point: self.to_point.to_val(map)?,
-                by_particle: self.by_particle.to_val(map)?,
+                kind: self.kind.to_val(resolver)?,
+                on_point: self.on_point.to_val(resolver)?,
+                to_point: self.to_point.to_val(resolver)?,
+                by_particle: self.by_particle.to_val(resolver)?,
             })
         }
     }
 
     impl AccessGrantSubst {
         pub fn with_by(self, by_particle: Point) -> Result<AccessGrant, MsgErr> {
-            let map = HashMap::new();
+            let map = MapResolver::new();
             Ok(AccessGrant {
                 kind: self.kind.to_val(&map)?,
                 on_point: self.on_point.to_val(&map)?,
@@ -4452,14 +4454,14 @@ pub mod security {
     >;
 
     impl ToVal<AccessGrantKind> for AccessGrantKindSubst {
-        fn to_val(self, map: &HashMap<String, String>) -> Result<AccessGrantKind, MsgErr> {
+        fn to_val(self, resolver: &dyn Resolver) -> Result<AccessGrantKind, MsgErr> {
             match self {
                 AccessGrantKindSubst::Super => Ok(AccessGrantKind::Super),
                 AccessGrantKindSubst::Privilege(privilege) => {
-                    Ok(AccessGrantKind::Privilege(privilege.to_val(map)?))
+                    Ok(AccessGrantKind::Privilege(privilege.to_val(resolver)?))
                 }
                 AccessGrantKindSubst::PermissionsMask(perms) => {
-                    Ok(AccessGrantKind::PermissionsMask(perms.to_val(map)?))
+                    Ok(AccessGrantKind::PermissionsMask(perms.to_val(resolver)?))
                 }
             }
         }
@@ -9552,8 +9554,55 @@ pub mod parse {
         }
     }
 
+    pub enum CtxOp {
+        Point,
+        UpPointSeg
+    }
+
+    impl ToString for CtxOp {
+        fn to_string(&self) -> String {
+            match self {
+                CtxOp::Point => ".".to_string(),
+                CtxOp::UpPointSeg => "..".to_string()
+            }
+        }
+    }
+
+    pub trait Resolver {
+        fn val(&self, id: &str) -> Result<String,MsgErr>
+        {
+           Err(format!("variable '{}' not found",id).into())
+        }
+        fn ctx(&self, op: CtxOp ) -> Result<String,MsgErr>
+        {
+            Err(format!("context operation '{}' not available here",op.to_string()).into())
+        }
+    }
+
+    pub struct MapResolver {
+        pub map: HashMap<String,String>
+    }
+
+    impl MapResolver {
+        pub fn new() -> Self {
+            Self {
+                map: HashMap::new()
+            }
+        }
+
+        pub fn insert( &mut self, key: &str, value: &str )  {
+            self.map.insert(key.to_string(),value.to_string());
+        }
+    }
+
+    impl Resolver for MapResolver {
+        fn val(&self, id: &str ) -> Result<String, MsgErr> {
+            self.map.get(id).cloned().ok_or(format!("variable not found: '{}'",id).into() )
+        }
+    }
+
     pub trait ToVal<Val> {
-        fn to_val(self, map: &HashMap<String, String>) -> Result<Val, MsgErr>;
+        fn to_val(self, resolver: &dyn Resolver) -> Result<Val, MsgErr>;
     }
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -9569,14 +9618,10 @@ pub mod parse {
     where
         V: Clone + FromStr<Err = MsgErr>,
     {
-        fn to_val(self, map: &HashMap<String, String>) -> Result<V, MsgErr> {
+        fn to_val(self, resolver: &dyn Resolver) -> Result<V, MsgErr> {
             match self {
                 Subst::Var(var) => {
-                    let raw = map.get(&var.name).ok_or(format!(
-                        "cannot resolve variable '{}'",
-                        var.name.to_string()
-                    ))?;
-
+                    let raw = resolver.val(var.name.as_str())?;
                     V::from_str(raw.as_str())
                 }
                 Subst::Val(val) => Ok(val.clone()),
@@ -10038,12 +10083,7 @@ pub mod test {
     use crate::version::v0_0_1::entity::request::{Action, RequestCore};
     use crate::version::v0_0_1::id::{Point, PointSeg, RouteSeg};
     use crate::version::v0_0_1::parse::error::{find, result};
-    use crate::version::v0_0_1::parse::{
-        access_grant, access_grant_kind, point, point_template, base_point_segment,
-        camel_case, capture_point, child_perms, create, file_point_capture_segment,
-        particle_perms, permissions, permissions_mask, publish, rec_skewer, route_segment,
-        skewer_chars, subst, version_point_segment, Res, ToVal,
-    };
+    use crate::version::v0_0_1::parse::{access_grant, access_grant_kind, point, point_template, base_point_segment, camel_case, capture_point, child_perms, create, file_point_capture_segment, particle_perms, permissions, permissions_mask, publish, rec_skewer, route_segment, skewer_chars, subst, version_point_segment, Res, ToVal, MapResolver};
     use crate::version::v0_0_1::selector::parse::point_selector;
     use crate::version::v0_0_1::selector::parse::version;
     use crate::version::v0_0_1::selector::{
@@ -10517,8 +10557,8 @@ pub mod test {
         let val = result(subst(permissions_mask)(val))?;
         let var = result(subst(permissions_mask)(var))?;
 
-        let mut map = HashMap::new();
-        map.insert("env.some-var".to_string(), "+CSD-RWX".to_string());
+        let mut map = MapResolver::new();
+        map.insert("env.some-var", "+CSD-RWX");
 
         let val = val.to_val(&map)?;
         let var = var.to_val(&map)?;
