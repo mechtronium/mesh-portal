@@ -78,9 +78,9 @@ pub mod selector {
         use mesh_portal_versions::version::v0_0_1 as current;
 
         pub type VersionReq = current::selector::specific::VersionReq;
-        pub type VendorSelector = current::selector::specific::VendorPattern;
-        pub type ProductSelector = current::selector::specific::ProductPattern;
-        pub type VariantSelector = current::selector::specific::VariantPattern;
+        pub type VendorSelector = current::selector::specific::VendorSelector;
+        pub type ProductSelector = current::selector::specific::ProductSelector;
+        pub type VariantSelector = current::selector::specific::VariantSelector;
         pub type VersionPattern = current::selector::specific::VersionPattern;
    }
 }
@@ -240,7 +240,7 @@ pub mod entity {
             pub type KindTemplate = current::entity::request::create::KindTemplate;
             pub type Fulfillment = current::entity::request::create::Fulfillment;
             pub type Strategy = current::entity::request::create::Strategy;
-            pub type AddressTemplate = current::entity::request::create::AddressTemplate;
+            pub type AddressTemplate = current::entity::request::create::PointTemplate;
             pub type AddressSegmentTemplate = current::entity::request::create::PointSegFactory;
             pub type CreateOp = current::entity::request::create::CreateOp;
             pub type Require = current::entity::request::create::Require;
