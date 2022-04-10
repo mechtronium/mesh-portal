@@ -20,23 +20,23 @@ extern "C" {
 
 pub mod artifact {
     use crate::version::v0_0_1::bin::Bin;
-    use crate::version::v0_0_1::id::Address;
+    use crate::version::v0_0_1::id::Point;
     use serde::{Deserialize, Serialize};
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct Artifact {
-        pub address: Address,
+        pub address: Point,
         pub bin: Bin,
     }
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct ArtifactRequest {
-        pub address: Address,
+        pub address: Point,
     }
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct ArtifactResponse {
-        pub to: Address,
+        pub to: Point,
         pub payload: Bin,
     }
 }
@@ -60,34 +60,33 @@ pub mod id {
 
     use crate::error::MsgErr;
     use crate::version::v0_0_1::parse::{address, camel_case, consume_address, Res};
-    use crate::version::v0_0_1::pattern::parse::{address_and_kind, kind, resource_type, specific};
-    use crate::version::v0_0_1::pattern::{
-        AddressKindPattern, Pattern, SpecificPattern, VersionReq,
+    use crate::version::v0_0_1::selector::parse::{address_and_kind, kind, resource_type, specific};
+    use crate::version::v0_0_1::selector::{
+        PointSelector, Pattern, SpecificPattern, VersionReq,
     };
     use crate::version::v0_0_1::Span;
 
-    pub type ResourceType = String;
-    pub type ResourceKind = KindParts;
+    pub type GenericKindBase = String;
 
     #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
-    pub struct AddressAndKind {
-        pub address: Address,
-        pub kind: ResourceKind,
+    pub struct PointKind {
+        pub address: Point,
+        pub kind: GenericKind,
     }
 
-    impl AddressAndKind {
-        pub fn new(address: Address, kind: ResourceKind) -> Self {
+    impl PointKind {
+        pub fn new(address: Point, kind: GenericKind) -> Self {
             Self { address, kind }
         }
     }
 
-    impl ToString for AddressAndKind {
+    impl ToString for PointKind {
         fn to_string(&self) -> String {
             format!("{}<{}>", self.address.to_string(), self.kind.to_string())
         }
     }
 
-    impl FromStr for AddressAndKind {
+    impl FromStr for PointKind {
         type Err = MsgErr;
 
         fn from_str(s: &str) -> Result<Self, Self::Err> {
@@ -103,8 +102,8 @@ pub mod id {
 
     #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
     pub struct AddressAndType {
-        pub address: Address,
-        pub resource_type: ResourceType,
+        pub address: Point,
+        pub resource_type: GenericKindBase,
     }
 
     pub type Meta = HashMap<String, String>;
@@ -190,7 +189,7 @@ pub mod id {
 
     /// Stands for "Type, Kind, Specific"
     pub trait Tks {
-        fn resource_type(&self) -> ResourceType;
+        fn resource_type(&self) -> GenericKindBase;
         fn kind_to_string(&self) -> Option<String>;
         fn specific(&self) -> Option<Specific>;
         fn matches(&self, tks: &dyn Tks) -> bool;
@@ -238,22 +237,22 @@ pub mod id {
     }
 
     #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
-    pub enum RouteSegment {
+    pub enum RouteSeg {
         Local,
         Domain(String),
         Tag(String),
         Mesh(String),
     }
 
-    impl ToString for RouteSegment {
+    impl ToString for RouteSeg {
         fn to_string(&self) -> String {
             match self {
-                RouteSegment::Local => ".".to_string(),
-                RouteSegment::Domain(domain) => domain.clone(),
-                RouteSegment::Tag(tag) => {
+                RouteSeg::Local => ".".to_string(),
+                RouteSeg::Domain(domain) => domain.clone(),
+                RouteSeg::Tag(tag) => {
                     format!("[{}]", tag)
                 }
-                RouteSegment::Mesh(mesh) => {
+                RouteSeg::Mesh(mesh) => {
                     format!("<<{}>>", mesh)
                 }
             }
@@ -261,7 +260,7 @@ pub mod id {
     }
 
     #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
-    pub enum AddressSegment {
+    pub enum PointSeg {
         Root,
         Space(String),
         Base(String),
@@ -271,118 +270,118 @@ pub mod id {
         Version(Version),
     }
 
-    impl AddressSegment {
+    impl PointSeg {
         pub fn apply_captures(self, captures: &Captures) -> Result<Self, MsgErr> {
             match self {
-                AddressSegment::Root => Ok(AddressSegment::Root),
-                AddressSegment::Space(replacement) => {
+                PointSeg::Root => Ok(PointSeg::Root),
+                PointSeg::Space(replacement) => {
                     let mut dst = String::new();
                     captures.expand(replacement.as_str(), &mut dst);
-                    Ok(AddressSegment::Space(dst))
+                    Ok(PointSeg::Space(dst))
                 }
-                AddressSegment::Base(replacement) => {
+                PointSeg::Base(replacement) => {
                     let mut dst = String::new();
                     captures.expand(replacement.as_str(), &mut dst);
-                    Ok(AddressSegment::Base(dst))
+                    Ok(PointSeg::Base(dst))
                 }
-                AddressSegment::FilesystemRootDir => Ok(AddressSegment::FilesystemRootDir),
-                AddressSegment::Dir(replacement) => {
+                PointSeg::FilesystemRootDir => Ok(PointSeg::FilesystemRootDir),
+                PointSeg::Dir(replacement) => {
                     let mut dst = String::new();
                     captures.expand(replacement.as_str(), &mut dst);
-                    Ok(AddressSegment::Dir(dst))
+                    Ok(PointSeg::Dir(dst))
                 }
-                AddressSegment::File(replacement) => {
+                PointSeg::File(replacement) => {
                     let mut dst = String::new();
                     captures.expand(replacement.as_str(), &mut dst);
-                    Ok(AddressSegment::File(dst))
+                    Ok(PointSeg::File(dst))
                 }
-                AddressSegment::Version(version) => Ok(AddressSegment::Version(version)),
+                PointSeg::Version(version) => Ok(PointSeg::Version(version)),
             }
         }
 
         pub fn is_version(&self) -> bool {
             match self {
-                AddressSegment::Version(_) => true,
+                PointSeg::Version(_) => true,
                 _ => false,
             }
         }
 
         pub fn is_filepath(&self) -> bool {
             match self {
-                AddressSegment::Dir(_) => true,
-                AddressSegment::FilesystemRootDir => true,
-                AddressSegment::File(_) => true,
+                PointSeg::Dir(_) => true,
+                PointSeg::FilesystemRootDir => true,
+                PointSeg::File(_) => true,
                 _ => false,
             }
         }
 
         pub fn is_file(&self) -> bool {
             match self {
-                AddressSegment::File(_) => true,
+                PointSeg::File(_) => true,
                 _ => false,
             }
         }
 
         pub fn is_dir(&self) -> bool {
             match self {
-                AddressSegment::Dir(_) => true,
-                AddressSegment::FilesystemRootDir => true,
+                PointSeg::Dir(_) => true,
+                PointSeg::FilesystemRootDir => true,
                 _ => false,
             }
         }
 
         pub fn terminating_delim(&self) -> &str {
             match self {
-                AddressSegment::Space(_) => ":",
-                AddressSegment::Base(_) => ":",
-                AddressSegment::Dir(_) => "",
-                AddressSegment::File(_) => "",
-                AddressSegment::Version(_) => ":",
-                AddressSegment::FilesystemRootDir => "",
-                AddressSegment::Root => "",
+                PointSeg::Space(_) => ":",
+                PointSeg::Base(_) => ":",
+                PointSeg::Dir(_) => "",
+                PointSeg::File(_) => "",
+                PointSeg::Version(_) => ":",
+                PointSeg::FilesystemRootDir => "",
+                PointSeg::Root => "",
             }
         }
 
         pub fn is_filesystem_ref(&self) -> bool {
             match self {
-                AddressSegment::Space(_) => false,
-                AddressSegment::Base(_) => false,
-                AddressSegment::Dir(_) => true,
-                AddressSegment::File(_) => true,
-                AddressSegment::Version(_) => false,
-                AddressSegment::FilesystemRootDir => true,
-                AddressSegment::Root => false,
+                PointSeg::Space(_) => false,
+                PointSeg::Base(_) => false,
+                PointSeg::Dir(_) => true,
+                PointSeg::File(_) => true,
+                PointSeg::Version(_) => false,
+                PointSeg::FilesystemRootDir => true,
+                PointSeg::Root => false,
             }
         }
     }
 
-    impl ToString for AddressSegment {
+    impl ToString for PointSeg {
         fn to_string(&self) -> String {
             match self {
-                AddressSegment::Space(space) => space.clone(),
-                AddressSegment::Base(base) => base.clone(),
-                AddressSegment::Dir(dir) => dir.clone(),
-                AddressSegment::File(file) => file.clone(),
-                AddressSegment::Version(version) => version.to_string(),
-                AddressSegment::FilesystemRootDir => "/".to_string(),
-                AddressSegment::Root => "".to_string(),
+                PointSeg::Space(space) => space.clone(),
+                PointSeg::Base(base) => base.clone(),
+                PointSeg::Dir(dir) => dir.clone(),
+                PointSeg::File(file) => file.clone(),
+                PointSeg::Version(version) => version.to_string(),
+                PointSeg::FilesystemRootDir => "/".to_string(),
+                PointSeg::Root => "".to_string(),
             }
         }
     }
 
     #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
-    pub struct Address {
-        pub route: RouteSegment,
-        pub segments: Vec<AddressSegment>,
+    pub struct Point {
+        pub route: RouteSeg,
+        pub segments: Vec<PointSeg>,
     }
 
-    impl Address {
-        pub fn to_bundle(self) -> Result<Address, MsgErr> {
+    impl Point {
+        pub fn to_bundle(self) -> Result<Point, MsgErr> {
             if self.segments.is_empty() {
                 return Err("Address does not contain a bundle".into());
             }
 
-            if let Some(AddressSegment::Version(_)) = self.segments.last() {
+            if let Some(PointSeg::Version(_)) = self.segments.last() {
                 return Ok(self);
             }
 
@@ -428,20 +427,20 @@ pub mod id {
             } else {
                 let last = self.last_segment().expect("expected last segment");
                 let address = match last {
-                    AddressSegment::Root => segment,
-                    AddressSegment::Space(_) => {
+                    PointSeg::Root => segment,
+                    PointSeg::Space(_) => {
                         format!("{}:{}", self.to_string(), segment)
                     }
-                    AddressSegment::Base(_) => {
+                    PointSeg::Base(_) => {
                         format!("{}:{}", self.to_string(), segment)
                     }
-                    AddressSegment::FilesystemRootDir => {
+                    PointSeg::FilesystemRootDir => {
                         format!("{}{}", self.to_string(), segment)
                     }
-                    AddressSegment::Dir(_) => {
+                    PointSeg::Dir(_) => {
                         format!("{}{}", self.to_string(), segment)
                     }
-                    AddressSegment::Version(_) => {
+                    PointSeg::Version(_) => {
                         if segment != "/" {
                             return Err(
                                 "Root filesystem artifact dir required after version".into()
@@ -449,7 +448,7 @@ pub mod id {
                         }
                         format!("{}:/", self.to_string())
                     }
-                    AddressSegment::File(_) => return Err("cannot append to a file".into()),
+                    PointSeg::File(_) => return Err("cannot append to a file".into()),
                 };
                 Self::from_str(address.as_str())
             }
@@ -459,13 +458,13 @@ pub mod id {
             Self::from_str(format!("{}{}", self.to_string(), segment).as_str())
         }
 
-        pub fn push_segment(&self, segment: AddressSegment) -> Self {
+        pub fn push_segment(&self, segment: PointSeg) -> Self {
             let mut address = self.clone();
             address.segments.push(segment);
             address
         }
 
-        pub fn last_segment(&self) -> Option<AddressSegment> {
+        pub fn last_segment(&self) -> Option<PointSeg> {
             self.segments.last().cloned()
         }
 
@@ -473,13 +472,13 @@ pub mod id {
             let mut path = String::new();
             for segment in &self.segments {
                 match segment {
-                    AddressSegment::FilesystemRootDir => {
+                    PointSeg::FilesystemRootDir => {
                         path.push_str("/");
                     }
-                    AddressSegment::Dir(dir) => {
+                    PointSeg::Dir(dir) => {
                         path.push_str(dir.as_str());
                     }
-                    AddressSegment::File(file) => {
+                    PointSeg::File(file) => {
                         path.push_str(file.as_str());
                     }
                     _ => {}
@@ -501,7 +500,7 @@ pub mod id {
         }
     }
 
-    impl FromStr for Address {
+    impl FromStr for Point {
         type Err = MsgErr;
 
         fn from_str(s: &str) -> Result<Self, Self::Err> {
@@ -509,24 +508,24 @@ pub mod id {
         }
     }
 
-    impl Into<String> for Address {
+    impl Into<String> for Point {
         fn into(self) -> String {
             self.to_string()
         }
     }
 
-    impl TryInto<AddressKindPattern> for Address {
+    impl TryInto<PointSelector> for Point {
         type Error = MsgErr;
 
-        fn try_into(self) -> Result<AddressKindPattern, Self::Error> {
-            Ok(AddressKindPattern::from_str(self.to_string().as_str())?)
+        fn try_into(self) -> Result<PointSelector, Self::Error> {
+            Ok(PointSelector::from_str(self.to_string().as_str())?)
         }
     }
 
-    impl Address {
+    impl Point {
         pub fn to_full_string(&self) -> String {
             match self.route {
-                RouteSegment::Local => {
+                RouteSeg::Local => {
                     let mut rtn = String::new();
                     rtn.push_str(".::");
                     if self.segments.is_empty() {
@@ -546,19 +545,19 @@ pub mod id {
         }
     }
 
-    impl ToString for Address {
+    impl ToString for Point {
         fn to_string(&self) -> String {
             let mut rtn = String::new();
 
             match &self.route {
-                RouteSegment::Local => {}
-                RouteSegment::Domain(domain) => {
+                RouteSeg::Local => {}
+                RouteSeg::Domain(domain) => {
                     rtn.push_str(format!("{}::", domain).as_str());
                 }
-                RouteSegment::Tag(tag) => {
+                RouteSeg::Tag(tag) => {
                     rtn.push_str(format!("[{}]::", tag).as_str());
                 }
-                RouteSegment::Mesh(mesh) => {
+                RouteSeg::Mesh(mesh) => {
                     rtn.push_str(format!("<<{}>>::", mesh).as_str());
                 }
             }
@@ -577,8 +576,8 @@ pub mod id {
         }
     }
 
-    impl Address {
-        pub fn parent(&self) -> Option<Address> {
+    impl Point {
+        pub fn parent(&self) -> Option<Point> {
             if self.segments.is_empty() {
                 return Option::None;
             }
@@ -596,12 +595,12 @@ pub mod id {
 
         pub fn root() -> Self {
             Self {
-                route: RouteSegment::Local,
+                route: RouteSeg::Local,
                 segments: vec![],
             }
         }
 
-        pub fn root_with_route(route: RouteSegment) -> Self {
+        pub fn root_with_route(route: RouteSeg) -> Self {
             Self {
                 route,
                 segments: vec![],
@@ -615,23 +614,23 @@ pub mod id {
 
     #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
     pub struct CaptureAddress {
-        pub route: RouteSegment,
-        pub segments: Vec<AddressSegment>,
+        pub route: RouteSeg,
+        pub segments: Vec<PointSeg>,
     }
 
     impl CaptureAddress {
-        pub fn to_address(self, captures: Captures) -> Result<Address, MsgErr> {
+        pub fn to_address(self, captures: Captures) -> Result<Point, MsgErr> {
             let mut segments = vec![];
             for segment in self.segments {
                 segments.push(segment.apply_captures(&captures)?)
             }
-            let address = Address {
+            let address = Point {
                 route: self.route,
                 segments,
             };
 
             // to make sure all the regex captures are removed...
-            let address = Address::from_str(address.to_string().as_str())?;
+            let address = Point::from_str(address.to_string().as_str())?;
             Ok(address)
         }
     }
@@ -641,14 +640,14 @@ pub mod id {
             let mut rtn = String::new();
 
             match &self.route {
-                RouteSegment::Local => {}
-                RouteSegment::Domain(domain) => {
+                RouteSeg::Local => {}
+                RouteSeg::Domain(domain) => {
                     rtn.push_str(format!("{}::", domain).as_str());
                 }
-                RouteSegment::Tag(tag) => {
+                RouteSeg::Tag(tag) => {
                     rtn.push_str(format!("[{}]::", tag).as_str());
                 }
-                RouteSegment::Mesh(mesh) => {
+                RouteSeg::Mesh(mesh) => {
                     rtn.push_str(format!("<<{}>>::", mesh).as_str());
                 }
             }
@@ -668,13 +667,13 @@ pub mod id {
     }
 
     #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
-    pub struct KindParts {
-        pub resource_type: ResourceType,
+    pub struct GenericKind {
+        pub resource_type: GenericKindBase,
         pub kind: Option<String>,
         pub specific: Option<Specific>,
     }
 
-    impl ToString for KindParts {
+    impl ToString for GenericKind {
         fn to_string(&self) -> String {
             if self.kind.is_some() && self.specific.is_some() {
                 format!(
@@ -695,7 +694,7 @@ pub mod id {
         }
     }
 
-    impl FromStr for KindParts {
+    impl FromStr for GenericKind {
         type Err = MsgErr;
 
         fn from_str(s: &str) -> Result<Self, Self::Err> {
@@ -705,9 +704,9 @@ pub mod id {
         }
     }
 
-    impl KindParts {
+    impl GenericKind {
         pub fn new(
-            resource_type: ResourceType,
+            resource_type: GenericKindBase,
             kind: Option<String>,
             specific: Option<Specific>,
         ) -> Self {
@@ -719,8 +718,8 @@ pub mod id {
         }
     }
 
-    impl Tks for KindParts {
-        fn resource_type(&self) -> ResourceType {
+    impl Tks for GenericKind {
+        fn resource_type(&self) -> GenericKindBase {
             self.resource_type.clone()
         }
 
@@ -837,7 +836,7 @@ pub mod path {
     }
 }
 
-pub mod pattern {
+pub mod selector {
     use std::convert::TryInto;
     use std::fmt::Formatter;
     use std::ops::Deref;
@@ -852,14 +851,14 @@ pub mod pattern {
     use crate::version::v0_0_1::config::bind::parse::{many_until0, select_block, SelectBlock};
     use crate::version::v0_0_1::entity::request::{Action, Rc, RcCommandType, RequestCore};
     use crate::version::v0_0_1::id::{
-        Address, AddressSegment, ResourceKind, ResourceType, RouteSegment, Specific, Tks, Version,
+        Point, PointSeg, GenericKind, GenericKindBase, RouteSeg, Specific, Tks, Version,
     };
     use crate::version::v0_0_1::parse::{
         address, camel_case, camel_case_to_string_matcher, capture_address, capture_path,
         consume_address_kind_path, file_chars, path, path_regex, Res,
     };
-    use crate::version::v0_0_1::pattern::parse::{address_kind_pattern, pattern, value_pattern};
-    use crate::version::v0_0_1::pattern::specific::{
+    use crate::version::v0_0_1::selector::parse::{address_kind_pattern, pattern, value_pattern};
+    use crate::version::v0_0_1::selector::specific::{
         ProductPattern, VariantPattern, VendorPattern,
     };
     use crate::version::v0_0_1::payload::{
@@ -905,9 +904,9 @@ pub mod pattern {
             }
         }
 
-        pub fn matches(&self, kind: &ResourceKind) -> bool
+        pub fn matches(&self, kind: &GenericKind) -> bool
         where
-            ResourceKind: Eq + PartialEq,
+            GenericKind: Eq + PartialEq,
         {
             self.resource_type.matches(&kind.resource_type())
                 && self.kind.matches(kind)
@@ -936,13 +935,13 @@ pub mod pattern {
         }
     }
 
-    pub type KindPattern = Pattern<ResourceKind>;
+    pub type KindPattern = Pattern<GenericKind>;
     #[derive(Debug, Clone, Serialize, Deserialize)]
-    pub struct AddressKindPattern {
+    pub struct PointSelector {
         pub hops: Vec<Hop>,
     }
 
-    impl FromStr for AddressKindPattern {
+    impl FromStr for PointSelector {
         type Err = MsgErr;
 
         fn from_str(s: &str) -> Result<Self, Self::Err> {
@@ -951,14 +950,14 @@ pub mod pattern {
         }
     }
 
-    impl AddressKindPattern {
-        fn consume(&self) -> Option<AddressKindPattern> {
+    impl PointSelector {
+        fn consume(&self) -> Option<PointSelector> {
             if self.hops.is_empty() {
                 Option::None
             } else {
                 let mut hops = self.hops.clone();
                 hops.remove(0);
-                Option::Some(AddressKindPattern { hops })
+                Option::Some(PointSelector { hops })
             }
         }
 
@@ -967,10 +966,10 @@ pub mod pattern {
                 true
             } else if self.hops.len() == 1 {
                 let hop = self.hops.first().unwrap();
-                if SegmentPattern::InclusiveAny == hop.segment
-                    || SegmentPattern::InclusiveRecursive == hop.segment
+                if PointSegSelector::InclusiveAny == hop.segment
+                    || PointSegSelector::InclusiveRecursive == hop.segment
                 {
-                    let resource_kind = ResourceKind::new("Root".to_string(), None, None);
+                    let resource_kind = GenericKind::new("Root".to_string(), None, None);
                     hop.tks.matches(&resource_kind)
                 } else {
                     false
@@ -988,19 +987,19 @@ pub mod pattern {
             self.hops.len() == 1
         }
 
-        pub fn query_root(&self) -> Address {
+        pub fn query_root(&self) -> Point {
             let mut segments = vec![];
             for hop in &self.hops {
-                if let SegmentPattern::Exact(exact) = &hop.segment {
+                if let PointSegSelector::Exact(exact) = &hop.segment {
                     if hop.inclusive {
                         break;
                     }
                     match exact {
-                        ExactSegment::Address(seg) => {
+                        ExactPointSeg::PointSeg(seg) => {
                             segments.push(seg.clone());
                         }
-                        ExactSegment::Version(version) => {
-                            segments.push(AddressSegment::Version(version.clone()));
+                        ExactPointSeg::Version(version) => {
+                            segments.push(PointSeg::Version(version.clone()));
                         }
                     }
                 } else {
@@ -1008,8 +1007,8 @@ pub mod pattern {
                 }
             }
 
-            Address {
-                route: RouteSegment::Local,
+            Point {
+                route: RouteSeg::Local,
                 segments,
             }
         }
@@ -1023,10 +1022,10 @@ pub mod pattern {
             hops
         }
 
-        pub fn matches(&self, address_kind_path: &AddressKindPath) -> bool
+        pub fn matches(&self, address_kind_path: &PointKindHierarchy) -> bool
         where
-            ResourceType: Clone,
-            ResourceKind: Clone,
+            GenericKindBase: Clone,
+            GenericKind: Clone,
         {
             if address_kind_path.is_root() && self.is_root() {
                 return true;
@@ -1081,7 +1080,7 @@ pub mod pattern {
                     // this allows us to make matches like:
                     // space.org:**:users ~ space.org:many:silly:dirs:users
                     self.consume()
-                        .expect("AddressTksPattern")
+                        .expect("PointSelector")
                         .matches(&address_kind_path.consume().expect("AddressKindPath"))
                 } else {
                     // the NEXT hop does not match, therefore we do NOT consume() the current hop
@@ -1103,7 +1102,7 @@ pub mod pattern {
         }
     }
 
-    impl ToString for AddressKindPattern {
+    impl ToString for PointSelector {
         fn to_string(&self) -> String {
             let mut rtn = String::new();
             for (index, hop) in self.hops.iter().enumerate() {
@@ -1194,41 +1193,41 @@ pub mod pattern {
     }
 
     #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
-    pub enum SegmentPattern {
+    pub enum PointSegSelector {
         InclusiveAny,       // +:*  // includes Root if it's the first segment
         InclusiveRecursive, // +:** // includes Root if its the first segment
         Any,                // *
         Recursive,          // **
-        Exact(ExactSegment),
+        Exact(ExactPointSeg),
         Version(VersionReq),
     }
 
-    impl SegmentPattern {
+    impl PointSegSelector {
         pub fn is_exact(&self) -> bool {
             match self {
-                SegmentPattern::Exact(_) => true,
+                PointSegSelector::Exact(_) => true,
                 _ => false,
             }
         }
 
-        pub fn matches(&self, segment: &AddressSegment) -> bool {
+        pub fn matches(&self, segment: &PointSeg) -> bool {
             match self {
-                SegmentPattern::InclusiveAny => true,
-                SegmentPattern::InclusiveRecursive => true,
-                SegmentPattern::Any => true,
-                SegmentPattern::Recursive => true,
-                SegmentPattern::Exact(exact) => match exact {
-                    ExactSegment::Address(pattern) => *pattern == *segment,
-                    ExactSegment::Version(a) => {
-                        if let AddressSegment::Version(b) = segment {
+                PointSegSelector::InclusiveAny => true,
+                PointSegSelector::InclusiveRecursive => true,
+                PointSegSelector::Any => true,
+                PointSegSelector::Recursive => true,
+                PointSegSelector::Exact(exact) => match exact {
+                    ExactPointSeg::PointSeg(pattern) => *pattern == *segment,
+                    ExactPointSeg::Version(a) => {
+                        if let PointSeg::Version(b) = segment {
                             *a == *b
                         } else {
                             false
                         }
                     }
                 },
-                SegmentPattern::Version(req) => {
-                    if let AddressSegment::Version(b) = segment {
+                PointSegSelector::Version(req) => {
+                    if let PointSeg::Version(b) = segment {
                         req.matches(b)
                     } else {
                         false
@@ -1239,25 +1238,25 @@ pub mod pattern {
 
         pub fn is_recursive(&self) -> bool {
             match self {
-                SegmentPattern::InclusiveAny => false,
-                SegmentPattern::InclusiveRecursive => true,
-                SegmentPattern::Any => false,
-                SegmentPattern::Recursive => true,
-                SegmentPattern::Exact(_) => false,
-                SegmentPattern::Version(_) => false,
+                PointSegSelector::InclusiveAny => false,
+                PointSegSelector::InclusiveRecursive => true,
+                PointSegSelector::Any => false,
+                PointSegSelector::Recursive => true,
+                PointSegSelector::Exact(_) => false,
+                PointSegSelector::Version(_) => false,
             }
         }
     }
 
-    impl ToString for SegmentPattern {
+    impl ToString for PointSegSelector {
         fn to_string(&self) -> String {
             match self {
-                SegmentPattern::InclusiveAny => "+:*".to_string(),
-                SegmentPattern::InclusiveRecursive => "+:**".to_string(),
-                SegmentPattern::Any => "*".to_string(),
-                SegmentPattern::Recursive => "**".to_string(),
-                SegmentPattern::Exact(exact) => exact.to_string(),
-                SegmentPattern::Version(version) => version.to_string(),
+                PointSegSelector::InclusiveAny => "+:*".to_string(),
+                PointSegSelector::InclusiveRecursive => "+:**".to_string(),
+                PointSegSelector::Any => "*".to_string(),
+                PointSegSelector::Recursive => "**".to_string(),
+                PointSegSelector::Exact(exact) => exact.to_string(),
+                PointSegSelector::Version(version) => version.to_string(),
             }
         }
     }
@@ -1265,17 +1264,17 @@ pub mod pattern {
     pub type KeySegment = String;
 
     #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
-    pub enum ExactSegment {
-        Address(AddressSegment),
+    pub enum ExactPointSeg {
+        PointSeg(PointSeg),
         Version(Version),
     }
 
-    impl ExactSegment {
-        pub fn matches(&self, segment: &AddressSegment) -> bool {
+    impl ExactPointSeg {
+        pub fn matches(&self, segment: &PointSeg) -> bool {
             match self {
-                ExactSegment::Address(s) => *s == *segment,
-                ExactSegment::Version(a) => {
-                    if let AddressSegment::Version(b) = segment {
+                ExactPointSeg::PointSeg(s) => *s == *segment,
+                ExactPointSeg::Version(a) => {
+                    if let PointSeg::Version(b) = segment {
                         *a == *b
                     } else {
                         false
@@ -1285,11 +1284,11 @@ pub mod pattern {
         }
     }
 
-    impl ToString for ExactSegment {
+    impl ToString for ExactPointSeg {
         fn to_string(&self) -> String {
             match self {
-                ExactSegment::Address(address) => address.to_string(),
-                ExactSegment::Version(version) => version.to_string(),
+                ExactPointSeg::PointSeg(address) => address.to_string(),
+                ExactPointSeg::Version(version) => version.to_string(),
             }
         }
     }
@@ -1332,7 +1331,7 @@ pub mod pattern {
         use std::str::FromStr;
 
         use crate::error::MsgErr;
-        use crate::version::v0_0_1::pattern::Pattern;
+        use crate::version::v0_0_1::selector::Pattern;
 
         pub struct VersionReq {
             pub req: semver::VersionReq,
@@ -1378,79 +1377,79 @@ pub mod pattern {
 
         use crate::error::MsgErr;
         use crate::version::v0_0_1::id::{
-            AddressAndKind, AddressSegment, KindParts, ResourceKind, ResourceType, Specific,
+            PointKind, PointSeg, GenericKind, GenericKindBase, Specific,
             Version,
         };
         use crate::version::v0_0_1::parse::{
             address, address_segment_chars, camel_case, domain_chars, file_chars, skewer_chars,
             version_address_segment, version_chars, version_req_chars, Res,
         };
-        use crate::version::v0_0_1::pattern::specific::{
+        use crate::version::v0_0_1::selector::specific::{
             ProductPattern, VariantPattern, VendorPattern,
         };
-        use crate::version::v0_0_1::pattern::{
-            AddressKindPattern, ExactSegment, Hop, KindPattern, Pattern, ResourceTypePattern,
-            SegmentPattern, SpecificPattern, TksPattern, VersionReq,
+        use crate::version::v0_0_1::selector::{
+            PointSelector, ExactPointSeg, Hop, KindPattern, Pattern, ResourceTypePattern,
+            PointSegSelector, SpecificPattern, TksPattern, VersionReq,
         };
         use crate::version::v0_0_1::util::ValuePattern;
         use nom_supreme::error::ErrorTree;
         use nom_supreme::{parse_from_str, ParserExt};
         use crate::version::v0_0_1::Span;
 
-        fn inclusive_any_segment(input: Span) -> Res<Span, SegmentPattern> {
-            tag("+:*")(input).map(|(next, _)| (next, SegmentPattern::InclusiveAny))
+        fn inclusive_any_segment(input: Span) -> Res<Span, PointSegSelector> {
+            tag("+:*")(input).map(|(next, _)| (next, PointSegSelector::InclusiveAny))
         }
 
-        fn inclusive_recursive_segment(input: Span) -> Res<Span, SegmentPattern> {
-            tag("+:**")(input).map(|(next, _)| (next, SegmentPattern::InclusiveRecursive))
+        fn inclusive_recursive_segment(input: Span) -> Res<Span, PointSegSelector> {
+            tag("+:**")(input).map(|(next, _)| (next, PointSegSelector::InclusiveRecursive))
         }
 
-        fn any_segment(input: Span) -> Res<Span, SegmentPattern> {
-            tag("*")(input).map(|(next, _)| (next, SegmentPattern::Any))
+        fn any_segment(input: Span) -> Res<Span, PointSegSelector> {
+            tag("*")(input).map(|(next, _)| (next, PointSegSelector::Any))
         }
 
-        fn recursive_segment(input: Span) -> Res<Span, SegmentPattern> {
-            tag("**")(input).map(|(next, _)| (next, SegmentPattern::Recursive))
+        fn recursive_segment(input: Span) -> Res<Span, PointSegSelector> {
+            tag("**")(input).map(|(next, _)| (next, PointSegSelector::Recursive))
         }
 
-        fn exact_space_segment(input: Span) -> Res<Span, SegmentPattern> {
+        fn exact_space_segment(input: Span) -> Res<Span, PointSegSelector> {
             address_segment_chars(input).map(|(next, segment)| {
                 (
                     next,
-                    SegmentPattern::Exact(ExactSegment::Address(AddressSegment::Space(
+                    PointSegSelector::Exact(ExactPointSeg::PointSeg(PointSeg::Space(
                         segment.to_string(),
                     ))),
                 )
             })
         }
 
-        fn exact_base_segment(input: Span) -> Res<Span, SegmentPattern> {
+        fn exact_base_segment(input: Span) -> Res<Span, PointSegSelector> {
             address_segment_chars(input).map(|(next, segment)| {
                 (
                     next,
-                    SegmentPattern::Exact(ExactSegment::Address(AddressSegment::Base(
+                    PointSegSelector::Exact(ExactPointSeg::PointSeg(PointSeg::Base(
                         segment.to_string(),
                     ))),
                 )
             })
         }
 
-        fn exact_file_segment(input: Span) -> Res<Span, SegmentPattern> {
+        fn exact_file_segment(input: Span) -> Res<Span, PointSegSelector> {
             file_chars(input).map(|(next, segment)| {
                 (
                     next,
-                    SegmentPattern::Exact(ExactSegment::Address(AddressSegment::File(
+                    PointSegSelector::Exact(ExactPointSeg::PointSeg(PointSeg::File(
                         segment.to_string(),
                     ))),
                 )
             })
         }
 
-        fn exact_dir_segment(input: Span) -> Res<Span, SegmentPattern> {
+        fn exact_dir_segment(input: Span) -> Res<Span, PointSegSelector> {
             file_chars(input).map(|(next, segment)| {
                 (
                     next,
-                    SegmentPattern::Exact(ExactSegment::Address(AddressSegment::Dir(
+                    PointSegSelector::Exact(ExactPointSeg::PointSeg(PointSeg::Dir(
                         segment.to_string(),
                     ))),
                 )
@@ -1470,18 +1469,18 @@ pub mod pattern {
         }
 
 
-        fn exact_version_segment(input: Span) -> Res<Span, SegmentPattern> {
+        fn exact_version_segment(input: Span) -> Res<Span, PointSegSelector> {
             version_req(input ).map( |(next,version_req)| {
-                (next,SegmentPattern::Version(version_req))
+                (next, PointSegSelector::Version(version_req))
             } )
         }
 
-        fn version_req_segment(input: Span) -> Res<Span, SegmentPattern> {
+        fn version_req_segment(input: Span) -> Res<Span, PointSegSelector> {
             delimited(tag("("), version_req, tag(")"))(input)
-                .map(|(next, version_req)| (next, SegmentPattern::Version(version_req)))
+                .map(|(next, version_req)| (next, PointSegSelector::Version(version_req)))
         }
 
-        fn space_segment(input: Span) -> Res<Span, SegmentPattern> {
+        fn space_segment(input: Span) -> Res<Span, PointSegSelector> {
             alt((
                 inclusive_recursive_segment,
                 inclusive_any_segment,
@@ -1491,22 +1490,22 @@ pub mod pattern {
             ))(input)
         }
 
-        fn base_segment(input: Span) -> Res<Span, SegmentPattern> {
+        fn base_segment(input: Span) -> Res<Span, PointSegSelector> {
             alt((recursive_segment, any_segment, exact_base_segment))(input)
         }
 
-        fn file_segment(input: Span) -> Res<Span, SegmentPattern> {
+        fn file_segment(input: Span) -> Res<Span, PointSegSelector> {
             alt((recursive_segment, any_segment, exact_file_segment))(input)
         }
 
-        fn dir_segment(input: Span) -> Res<Span, SegmentPattern> {
+        fn dir_segment(input: Span) -> Res<Span, PointSegSelector> {
             terminated(
                 alt((recursive_segment, any_segment, exact_dir_segment)),
                 tag("/"),
             )(input)
         }
 
-        fn version_segment(input: Span) -> Res<Span, SegmentPattern> {
+        fn version_segment(input: Span) -> Res<Span, PointSegSelector> {
             alt((
                 recursive_segment,
                 any_segment,
@@ -1679,7 +1678,7 @@ pub mod pattern {
             })
         }
 
-        fn kind_parts(input: Span) -> Res<Span, KindParts> {
+        fn kind_parts(input: Span) -> Res<Span, GenericKind> {
             tuple((
                 resource_type,
                 opt(delimited(
@@ -1689,7 +1688,7 @@ pub mod pattern {
                 )),
             ))(input)
             .map(|(next, (resource_type, more))| {
-                let mut parts = KindParts {
+                let mut parts = GenericKind {
                     resource_type,
                     kind: None,
                     specific: None,
@@ -1711,7 +1710,7 @@ pub mod pattern {
             recognize(kind_parts)(input)
         }
 
-        pub fn kind(input: Span) -> Res<Span, ResourceKind> {
+        pub fn kind(input: Span) -> Res<Span, GenericKind> {
             tuple((
                 resource_type,
                 opt(delimited(
@@ -1722,7 +1721,7 @@ pub mod pattern {
             ))(input)
 
                 .map(|(next, (resource_type, rest))| {
-                    let mut rtn = KindParts {
+                    let mut rtn = GenericKind {
                         resource_type,
                         kind: Option::None,
                         specific: Option::None,
@@ -1745,11 +1744,11 @@ pub mod pattern {
                 })
         }
 
-        pub fn delim_kind(input: Span) -> Res<Span, ResourceKind> {
+        pub fn delim_kind(input: Span) -> Res<Span, GenericKind> {
             delimited(tag("<"), kind, tag(">"))(input)
         }
 
-        pub fn consume_kind(input: Span) -> Result<ResourceKind, MsgErr> {
+        pub fn consume_kind(input: Span) -> Result<GenericKind, MsgErr> {
             let (_, kind_parts) = all_consuming(kind_parts)(input)?;
 
             Ok(kind_parts.try_into()?)
@@ -1759,7 +1758,7 @@ pub mod pattern {
             pattern(kind)(input).map(|(next, kind)| (next, kind))
         }
 
-        pub fn resource_type(input: Span) -> Res<Span, ResourceType> {
+        pub fn resource_type(input: Span) -> Res<Span, GenericKindBase> {
             camel_case(input).map( |(next,resource_type)|{
                 (next,resource_type.to_string())
             } )
@@ -1905,7 +1904,7 @@ pub mod pattern {
             )
         }
 
-        pub fn address_kind_pattern(input: Span) -> Res<Span, AddressKindPattern> {
+        pub fn address_kind_pattern(input: Span) -> Res<Span, PointSelector> {
             context(
                 "address_kind_pattern",
                 tuple((
@@ -1929,8 +1928,8 @@ pub mod pattern {
                         // first push the filesystem root
                         hops.push(Hop {
                             inclusive: false,
-                            segment: SegmentPattern::Exact(ExactSegment::Address(
-                                AddressSegment::FilesystemRootDir,
+                            segment: PointSegSelector::Exact(ExactPointSeg::PointSeg(
+                                PointSeg::FilesystemRootDir,
                             )),
                             tks: TksPattern {
                                 resource_type: Pattern::Exact("Dir".to_string()),
@@ -1946,16 +1945,16 @@ pub mod pattern {
                         }
                     }
 
-                    let rtn = AddressKindPattern { hops };
+                    let rtn = PointSelector { hops };
 
                     (next, rtn)
                 },
             )
         }
 
-        pub fn address_and_kind(input: Span) -> Res<Span, AddressAndKind> {
+        pub fn address_and_kind(input: Span) -> Res<Span, PointKind> {
             tuple((address, kind))(input)
-                .map(|(next, (address, kind))| (next, AddressAndKind { address, kind }))
+                .map(|(next, (address, kind))| (next, PointKind { address, kind }))
         }
 
 
@@ -2321,7 +2320,7 @@ pub mod pattern {
     }
 
     pub fn call_with_config(input: Span) -> Res<Span, CallWithConfig> {
-        tuple((call, opt(preceded(tag("+"), Address::parse))))(input)
+        tuple((call, opt(preceded(tag("+"), Point::parse))))(input)
             .map(|(next, (call, config))| (next, CallWithConfig { call, config }))
     }
 
@@ -3039,13 +3038,13 @@ pub mod pattern {
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct Hop {
         pub inclusive: bool,
-        pub segment: SegmentPattern,
+        pub segment: PointSegSelector,
         pub tks: TksPattern,
     }
 
     impl Hop {
-        pub fn matches(&self, address_kind_segment: &AddressKindSegment) -> bool {
-            self.segment.matches(&address_kind_segment.address_segment)
+        pub fn matches(&self, address_kind_segment: &PointKindSeg) -> bool {
+            self.segment.matches(&address_kind_segment.segment)
                 && self.tks.matches(&address_kind_segment.kind)
         }
     }
@@ -3220,25 +3219,25 @@ pub mod pattern {
         }
     }
 
-    pub type ResourceTypePattern = Pattern<ResourceType>;
+    pub type ResourceTypePattern = Pattern<GenericKindBase>;
 
     #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
-    pub struct AddressKindPath {
-        pub route: RouteSegment,
-        pub segments: Vec<AddressKindSegment>,
+    pub struct PointKindHierarchy {
+        pub route: RouteSeg,
+        pub segments: Vec<PointKindSeg>,
     }
 
-    impl AddressKindPath {
-        pub fn new(route: RouteSegment, segments: Vec<AddressKindSegment>) -> Self {
+    impl PointKindHierarchy {
+        pub fn new(route: RouteSeg, segments: Vec<PointKindSeg>) -> Self {
             Self { route, segments }
         }
 
-        pub fn push(&self, segment: AddressKindSegment) -> AddressKindPath
+        pub fn push(&self, segment: PointKindSeg) -> PointKindHierarchy
         where
-            ResourceKind: Clone,
-            ResourceType: Clone,
+            GenericKind: Clone,
+            GenericKindBase: Clone,
         {
-            if let AddressSegment::Root = segment.address_segment {
+            if let PointSeg::Root = segment.segment {
                 println!("pushing ROOT");
             }
             let mut segments = self.segments.clone();
@@ -3249,13 +3248,13 @@ pub mod pattern {
             }
         }
 
-        pub fn consume(&self) -> Option<AddressKindPath> {
+        pub fn consume(&self) -> Option<PointKindHierarchy> {
             if self.segments.len() <= 1 {
                 return Option::None;
             }
             let mut segments = self.segments.clone();
             segments.remove(0);
-            Option::Some(AddressKindPath {
+            Option::Some(PointKindHierarchy {
                 route: self.route.clone(),
                 segments,
             })
@@ -3270,11 +3269,11 @@ pub mod pattern {
         }
     }
 
-    impl ToString for AddressKindPath {
+    impl ToString for PointKindHierarchy {
         fn to_string(&self) -> String {
             let mut rtn = String::new();
             match &self.route {
-                RouteSegment::Local => {}
+                RouteSeg::Local => {}
                 route => {
                     rtn.push_str(route.to_string().as_str());
                     rtn.push_str("::");
@@ -3284,7 +3283,7 @@ pub mod pattern {
             for (index, segment) in self.segments.iter().enumerate() {
                 rtn.push_str(segment.to_string().as_str());
                 if index < self.segments.len() - 1 {
-                    rtn.push_str(segment.address_segment.terminating_delim());
+                    rtn.push_str(segment.segment.terminating_delim());
                 }
             }
 
@@ -3293,22 +3292,22 @@ pub mod pattern {
     }
 
     #[derive(Debug, Eq, PartialEq, Clone, Serialize, Deserialize)]
-    pub struct AddressKindSegment {
-        pub address_segment: AddressSegment,
-        pub kind: ResourceKind,
+    pub struct PointKindSeg {
+        pub segment: PointSeg,
+        pub kind: GenericKind,
     }
 
-    impl ToString for AddressKindSegment {
+    impl ToString for PointKindSeg {
         fn to_string(&self) -> String {
             format!(
                 "{}<{}>",
-                self.address_segment.to_string(),
+                self.segment.to_string(),
                 self.kind.to_string()
             )
         }
     }
 
-    impl FromStr for AddressKindPath {
+    impl FromStr for PointKindHierarchy {
         type Err = MsgErr;
 
         fn from_str(s: &str) -> Result<Self, Self::Err> {
@@ -3327,8 +3326,8 @@ pub mod messaging {
     use crate::error::{MsgErr, StatusErr};
     use crate::version::v0_0_1::entity::request::RequestCore;
     use crate::version::v0_0_1::entity::response::ResponseCore;
-    use crate::version::v0_0_1::id::Address;
-    use crate::version::v0_0_1::pattern::{AddressKindPath, AddressKindPattern};
+    use crate::version::v0_0_1::id::Point;
+    use crate::version::v0_0_1::selector::{PointKindHierarchy, PointSelector};
     use crate::version::v0_0_1::payload::{Errors, MsgCall, Payload, Primitive};
     use crate::version::v0_0_1::security::{
         Access, AccessGrant, EnumeratedAccess, EnumeratedPrivileges, Permissions, Privilege,
@@ -3343,8 +3342,8 @@ pub mod messaging {
         pub session: Option<Session>,
         pub scope: Scope,
         pub handling: Handling,
-        pub from: Address,
-        pub to: Address,
+        pub from: Point,
+        pub to: Point,
         pub core: RequestCore,
     }
 
@@ -3396,7 +3395,7 @@ pub mod messaging {
     }
 
     impl Request {
-        pub fn new(core: RequestCore, from: Address, to: Address) -> Self {
+        pub fn new(core: RequestCore, from: Point, to: Point) -> Self {
             Self {
                 id: unique_id(),
                 agent: Agent::Anonymous,
@@ -3533,8 +3532,8 @@ pub mod messaging {
     }
 
     pub struct RequestBuilder {
-        pub to: Option<Address>,
-        pub from: Option<Address>,
+        pub to: Option<Point>,
+        pub from: Option<Point>,
         pub core: Option<RequestCore>,
         pub agent: Agent,
         pub session: Option<Session>,
@@ -3549,12 +3548,12 @@ pub mod messaging {
             }
         }
 
-        pub fn to(mut self, address: Address) -> Self {
+        pub fn to(mut self, address: Point) -> Self {
             self.to = Some(address);
             self
         }
 
-        pub fn from(mut self, address: Address) -> Self {
+        pub fn from(mut self, address: Point) -> Self {
             self.from = Some(address);
             self
         }
@@ -3615,7 +3614,7 @@ pub mod messaging {
     #[derive(Debug, Clone)]
     pub struct ProtoRequest {
         pub id: String,
-        pub to: Option<Address>,
+        pub to: Option<Point>,
         pub core: Option<RequestCore>,
     }
 
@@ -3633,7 +3632,7 @@ pub mod messaging {
             Ok(())
         }
 
-        pub fn to(&mut self, to: Address) {
+        pub fn to(&mut self, to: Point) {
             self.to = Option::Some(to);
         }
 
@@ -3643,7 +3642,7 @@ pub mod messaging {
 
         pub fn into_request(
             self,
-            from: Address,
+            from: Point,
             agent: Agent,
             session: Option<Session>,
             scope: Scope,
@@ -3670,14 +3669,14 @@ pub mod messaging {
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct Response {
         pub id: String,
-        pub from: Address,
-        pub to: Address,
+        pub from: Point,
+        pub to: Point,
         pub core: ResponseCore,
         pub response_to: String,
     }
 
     impl Response {
-        pub fn new(core: ResponseCore, from: Address, to: Address, response_to: String) -> Self {
+        pub fn new(core: ResponseCore, from: Point, to: Point, response_to: String) -> Self {
             Self {
                 id: unique_id(),
                 to,
@@ -3714,7 +3713,7 @@ pub mod messaging {
             }
         }
 
-        pub fn to(&self) -> Address {
+        pub fn to(&self) -> Point {
             match self {
                 Message::Request(request) => request.to.clone(),
                 Message::Response(response) => response.to.clone(),
@@ -3760,12 +3759,12 @@ pub mod messaging {
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct AuthedAgent {
-        pub owner: Address,
-        pub executor: Address,
+        pub owner: Point,
+        pub executor: Point,
     }
 
     impl AuthedAgent {
-        pub fn new(address: Address) -> Self {
+        pub fn new(address: Point) -> Self {
             Self {
                 owner: address.clone(),
                 executor: address,
@@ -3848,7 +3847,7 @@ pub mod messaging {
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct ScopeGrant {
-        pub on: AddressKindPattern,
+        pub on: PointSelector,
         pub kind: ScopeGrantKind,
         pub aspect: ScopeGrantAspect,
     }
@@ -3963,13 +3962,13 @@ pub mod messaging {
 
 pub mod security {
     use crate::error::MsgErr;
-    use crate::version::v0_0_1::id::Address;
+    use crate::version::v0_0_1::id::Point;
     use crate::version::v0_0_1::messaging::ScopeGrant;
     use crate::version::v0_0_1::parse::error::{just_msg, result};
     use crate::version::v0_0_1::parse::{
         particle_perms, permissions_mask, privilege, Subst, ToVal,
     };
-    use crate::version::v0_0_1::pattern::AddressKindPattern;
+    use crate::version::v0_0_1::selector::PointSelector;
     use crate::version::v0_0_1::Span;
     use nom::combinator::all_consuming;
     use serde::{Deserialize, Serialize};
@@ -4429,7 +4428,7 @@ pub mod security {
     }
 
     impl AccessGrantSubst {
-        pub fn with_by(self, by_particle: Address) -> Result<AccessGrant, MsgErr> {
+        pub fn with_by(self, by_particle: Point) -> Result<AccessGrant, MsgErr> {
             let map = HashMap::new();
             Ok(AccessGrant {
                 kind: self.kind.to_val(&map)?,
@@ -4440,14 +4439,14 @@ pub mod security {
         }
     }
 
-    pub type AccessGrant = AccessGrantDef<Privilege, PermissionsMask, AddressKindPattern, Address>;
+    pub type AccessGrant = AccessGrantDef<Privilege, PermissionsMask, PointSelector, Point>;
     pub type AccessGrantKind = AccessGrantKindDef<Privilege, PermissionsMask>;
     pub type AccessGrantKindSubst = AccessGrantKindDef<Subst<Privilege>, Subst<PermissionsMask>>;
     pub type AccessGrantSubst = AccessGrantDef<
         Subst<Privilege>,
         Subst<PermissionsMask>,
-        Subst<AddressKindPattern>,
-        Subst<Address>,
+        Subst<PointSelector>,
+        Subst<Point>,
     >;
 
     impl ToVal<AccessGrantKind> for AccessGrantKindSubst {
@@ -4547,9 +4546,9 @@ pub mod payload {
     use crate::version::v0_0_1::bin::Bin;
     use crate::version::v0_0_1::entity::request::{Action, Rc, RcCommandType, RequestCore};
     use crate::version::v0_0_1::id::{
-        Address, CaptureAddress, Meta, PayloadClaim, ResourceKind, ResourceType,
+        Point, CaptureAddress, Meta, PayloadClaim, GenericKind, GenericKindBase,
     };
-    use crate::version::v0_0_1::pattern::TksPattern;
+    use crate::version::v0_0_1::selector::TksPattern;
     use crate::version::v0_0_1::resource::{Resource, ResourceStub, Status};
     use crate::version::v0_0_1::util::{ValueMatcher, ValuePattern};
     use http::{Method, Uri};
@@ -4627,12 +4626,12 @@ pub mod payload {
         }
     }
 
-    impl TryInto<Address> for Payload {
+    impl TryInto<Point> for Payload {
         type Error = MsgErr;
 
-        fn try_into(self) -> Result<Address, Self::Error> {
+        fn try_into(self) -> Result<Point, Self::Error> {
             match self {
-                Payload::Primitive(Primitive::Address(address)) => Ok(address),
+                Payload::Primitive(Primitive::Point(address)) => Ok(address),
                 _ => Err("Payload type must an Address".into()),
             }
         }
@@ -4760,7 +4759,7 @@ pub mod payload {
     #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, strum_macros::Display)]
     pub enum Primitive {
         Text(String),
-        Address(Address),
+        Point(Point),
         Stub(ResourceStub),
         Meta(Meta),
         Bin(Bin),
@@ -4775,7 +4774,7 @@ pub mod payload {
         pub fn primitive_type(&self) -> PrimitiveType {
             match self {
                 Primitive::Text(_) => PrimitiveType::Text,
-                Primitive::Address(_) => PrimitiveType::Address,
+                Primitive::Point(_) => PrimitiveType::Address,
                 Primitive::Stub(_) => PrimitiveType::Stub,
                 Primitive::Meta(_) => PrimitiveType::Meta,
                 Primitive::Bin(_) => PrimitiveType::Bin,
@@ -4793,7 +4792,7 @@ pub mod payload {
                     let text = text.into_bytes();
                     Ok(Arc::new(text))
                 }
-                Primitive::Address(address) => {
+                Primitive::Point(address) => {
                     let address = address.to_string().into_bytes();
                     Ok(Arc::new(address))
                 }
@@ -4823,12 +4822,12 @@ pub mod payload {
         }
     }
 
-    impl TryInto<Address> for Primitive {
+    impl TryInto<Point> for Primitive {
         type Error = MsgErr;
 
-        fn try_into(self) -> Result<Address, Self::Error> {
+        fn try_into(self) -> Result<Point, Self::Error> {
             match self {
-                Primitive::Address(address) => Ok(address),
+                Primitive::Point(address) => Ok(address),
                 _ => Err("Primitive must be of type Address".into()),
             }
         }
@@ -5067,7 +5066,7 @@ pub mod payload {
     #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
     pub struct CallWithConfig {
         pub call: Call,
-        pub config: Option<Address>,
+        pub config: Option<Point>,
     }
 
     #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
@@ -5260,7 +5259,7 @@ pub mod payload {
                         Err("expected Text primitive".into())
                     }
                 }
-                Primitive::Address(_) => {
+                Primitive::Point(_) => {
                     if *self == Self::Address {
                         Ok(())
                     } else {
@@ -5737,7 +5736,7 @@ pub mod config {
     use serde::{Deserialize, Serialize};
 
     use crate::version::v0_0_1::config::bind::BindConfig;
-    use crate::version::v0_0_1::id::{Address, ResourceKind};
+    use crate::version::v0_0_1::id::{Point, GenericKind};
     use crate::version::v0_0_1::resource;
     use crate::version::v0_0_1::resource::ResourceStub;
 
@@ -5789,7 +5788,7 @@ pub mod config {
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct Config<Body> {
-        pub address: Address,
+        pub address: Point,
         pub body: Body,
     }
 
@@ -5817,7 +5816,7 @@ pub mod config {
         use crate::version::v0_0_1::entity::request::{Rc, RequestCore};
         use crate::version::v0_0_1::entity::EntityType;
         use crate::version::v0_0_1::id::CaptureAddress;
-        use crate::version::v0_0_1::pattern::{
+        use crate::version::v0_0_1::selector::{
             Block, EntityPattern, HttpPattern, MsgPattern, RcPattern,
         };
         use crate::version::v0_0_1::payload::Call;
@@ -6061,7 +6060,7 @@ pub mod config {
             };
             use crate::version::v0_0_1::entity::EntityType;
             use crate::version::v0_0_1::parse::{capture_address, Res};
-            use crate::version::v0_0_1::pattern::{
+            use crate::version::v0_0_1::selector::{
                 call, entity_pattern, http_pattern, http_pattern_scoped, msg_pattern_scoped,
                 pipeline_step_block, rc_pattern_scoped, EntityPattern, HttpPattern, MsgPattern,
                 RcPattern,
@@ -6840,8 +6839,8 @@ pub mod entity {
         use crate::version::v0_0_1::entity::response::ResponseCore;
         use crate::version::v0_0_1::fail;
         use crate::version::v0_0_1::fail::{BadRequest, Fail, NotFound};
-        use crate::version::v0_0_1::id::{Address, Meta, PayloadClaim, ResourceKind, ResourceType};
-        use crate::version::v0_0_1::pattern::TksPattern;
+        use crate::version::v0_0_1::id::{Point, Meta, PayloadClaim, GenericKind, GenericKindBase};
+        use crate::version::v0_0_1::selector::TksPattern;
         use crate::version::v0_0_1::payload::{Errors, HttpMethod, Payload, Primitive};
         use crate::version::v0_0_1::util::ValueMatcher;
         use http::status::InvalidStatusCode;
@@ -7063,24 +7062,24 @@ pub mod entity {
 
         pub mod set {
             use crate::version::v0_0_1::command::common::SetProperties;
-            use crate::version::v0_0_1::id::Address;
+            use crate::version::v0_0_1::id::Point;
             use serde::{Deserialize, Serialize};
 
             #[derive(Debug, Clone, Serialize, Deserialize)]
             pub struct Set {
-                pub address: Address,
+                pub address: Point,
                 pub properties: SetProperties,
             }
         }
 
         pub mod get {
             use crate::version::v0_0_1::command::common::SetProperties;
-            use crate::version::v0_0_1::id::Address;
+            use crate::version::v0_0_1::id::Point;
             use serde::{Deserialize, Serialize};
 
             #[derive(Debug, Clone, Serialize, Deserialize)]
             pub struct Get {
-                pub address: Address,
+                pub address: Point,
                 pub op: GetOp,
             }
 
@@ -7099,21 +7098,21 @@ pub mod entity {
             use crate::error::MsgErr;
             use crate::version::v0_0_1::bin::Bin;
             use crate::version::v0_0_1::command::common::{SetProperties, SetRegistry, StateSrc};
-            use crate::version::v0_0_1::id::{Address, AddressSegment, HostKey, ResourceKind};
-            use crate::version::v0_0_1::pattern::SpecificPattern;
+            use crate::version::v0_0_1::id::{Point, PointSeg, HostKey, GenericKind};
+            use crate::version::v0_0_1::selector::SpecificPattern;
             use crate::version::v0_0_1::payload::{Payload, Primitive};
             use crate::version::v0_0_1::util::ConvertFrom;
 
-            pub enum AddressTemplateSegment {
-                AddressSegment(AddressSegment),
+            pub enum PointTemplateSeg {
+                ExactSeg(PointSeg),
                 Wildcard(String),
             }
 
-            impl AddressTemplateSegment {
+            impl PointTemplateSeg {
                 pub fn is_wildcard(&self) -> bool {
                     match self {
-                        AddressTemplateSegment::AddressSegment(_) => false,
-                        AddressTemplateSegment::Wildcard(_) => true,
+                        PointTemplateSeg::ExactSeg(_) => false,
+                        PointTemplateSeg::Wildcard(_) => true,
                     }
                 }
             }
@@ -7137,14 +7136,14 @@ pub mod entity {
                 pub specific: Option<SpecificPattern>,
             }
 
-            impl TryInto<ResourceKind> for KindTemplate {
+            impl TryInto<GenericKind> for KindTemplate {
                 type Error = MsgErr;
 
-                fn try_into(self) -> Result<ResourceKind, Self::Error> {
+                fn try_into(self) -> Result<GenericKind, Self::Error> {
                     if self.specific.is_some() {
                         return Err("cannot create a ResourceKind from a specific pattern when using KindTemplate".into());
                     }
-                    Ok(ResourceKind {
+                    Ok(GenericKind {
                         resource_type: self.resource_type,
                         kind: self.kind,
                         specific: None,
@@ -7228,12 +7227,12 @@ pub mod entity {
 
             #[derive(Debug, Clone, Serialize, Deserialize)]
             pub struct AddressTemplate {
-                pub parent: Address,
-                pub child_segment_template: AddressSegmentTemplate,
+                pub parent: Point,
+                pub child_segment_template: PointSegFactory,
             }
 
             #[derive(Debug, Clone, strum_macros::Display, Serialize, Deserialize)]
-            pub enum AddressSegmentTemplate {
+            pub enum PointSegFactory {
                 Exact(String),
                 Pattern(String), // must have a '%'
             }
@@ -7248,8 +7247,8 @@ pub mod entity {
 
             use crate::error::MsgErr;
             use crate::version::v0_0_1::fail::{BadCoercion, Fail};
-            use crate::version::v0_0_1::id::Address;
-            use crate::version::v0_0_1::pattern::{AddressKindPath, AddressKindPattern, Hop};
+            use crate::version::v0_0_1::id::Point;
+            use crate::version::v0_0_1::selector::{PointKindHierarchy, PointSelector, Hop};
             use crate::version::v0_0_1::payload::{
                 MapPattern, Primitive, PrimitiveList, PrimitiveType,
             };
@@ -7282,7 +7281,7 @@ pub mod entity {
                         SelectIntoPayload::Addresses => {
                             let addresses: Vec<Primitive> = stubs
                                 .into_iter()
-                                .map(|stub| Primitive::Address(stub.address))
+                                .map(|stub| Primitive::Point(stub.address))
                                 .collect();
                             let stubs = PrimitiveList {
                                 primitive_type: PrimitiveType::Address,
@@ -7296,7 +7295,7 @@ pub mod entity {
 
             #[derive(Debug, Clone, Serialize, Deserialize)]
             pub struct Select {
-                pub pattern: AddressKindPattern,
+                pub pattern: PointSelector,
                 pub properties: PropertiesPattern,
                 pub into_payload: SelectIntoPayload,
                 pub kind: SelectKind,
@@ -7306,18 +7305,18 @@ pub mod entity {
             pub enum SelectKind {
                 Initial,
                 SubSelect {
-                    address: Address,
+                    address: Point,
                     hops: Vec<Hop>,
-                    address_kind_path: AddressKindPath,
+                    address_kind_path: PointKindHierarchy,
                 },
             }
 
             impl Select {
                 pub fn sub_select(
                     self,
-                    address: Address,
+                    address: Point,
                     hops: Vec<Hop>,
-                    address_kind_path: AddressKindPath,
+                    address_kind_path: PointKindHierarchy,
                 ) -> SubSelect {
                     SubSelect {
                         address,
@@ -7356,12 +7355,12 @@ pub mod entity {
 
             #[derive(Debug, Clone, Serialize, Deserialize)]
             pub struct SubSelect {
-                pub address: Address,
-                pub pattern: AddressKindPattern,
+                pub address: Point,
+                pub pattern: PointSelector,
                 pub properties: PropertiesPattern,
                 pub into_payload: SelectIntoPayload,
                 pub hops: Vec<Hop>,
-                pub address_kind_path: AddressKindPath,
+                pub address_kind_path: PointKindHierarchy,
             }
 
             impl Into<Select> for SubSelect {
@@ -7382,9 +7381,9 @@ pub mod entity {
             impl SubSelect {
                 pub fn sub_select(
                     &self,
-                    address: Address,
+                    address: Point,
                     hops: Vec<Hop>,
-                    address_kind_path: AddressKindPath,
+                    address_kind_path: PointKindHierarchy,
                 ) -> SubSelect {
                     SubSelect {
                         address,
@@ -7398,7 +7397,7 @@ pub mod entity {
             }
 
             impl Select {
-                fn new(pattern: AddressKindPattern) -> Self {
+                fn new(pattern: PointSelector) -> Self {
                     Self {
                         pattern,
                         properties: Default::default(),
@@ -7418,7 +7417,7 @@ pub mod entity {
 
             use crate::error::MsgErr;
             use crate::version::v0_0_1::command::common::SetProperties;
-            use crate::version::v0_0_1::id::Address;
+            use crate::version::v0_0_1::id::Point;
             use crate::version::v0_0_1::payload::Payload;
 
             #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -7434,7 +7433,7 @@ pub mod entity {
 
             use crate::error::MsgErr;
             use crate::version::v0_0_1::entity::request::Rc;
-            use crate::version::v0_0_1::pattern::AddressKindPath;
+            use crate::version::v0_0_1::selector::PointKindHierarchy;
 
             #[derive(Debug, Clone, Serialize, Deserialize)]
             pub enum Query {
@@ -7443,13 +7442,13 @@ pub mod entity {
 
             #[derive(Debug, Clone, Serialize, Deserialize)]
             pub enum QueryResult {
-                AddressKindPath(AddressKindPath),
+                AddressKindPath(PointKindHierarchy),
             }
 
-            impl TryInto<AddressKindPath> for QueryResult {
+            impl TryInto<PointKindHierarchy> for QueryResult {
                 type Error = MsgErr;
 
-                fn try_into(self) -> Result<AddressKindPath, MsgErr> {
+                fn try_into(self) -> Result<PointKindHierarchy, MsgErr> {
                     match self {
                         QueryResult::AddressKindPath(address_kind_path) => Ok(address_kind_path),
                     }
@@ -7480,7 +7479,7 @@ pub mod entity {
         use crate::version::v0_0_1::entity::request::RequestCore;
         use crate::version::v0_0_1::fail;
         use crate::version::v0_0_1::fail::Fail;
-        use crate::version::v0_0_1::id::{Address, Meta, ResourceKind};
+        use crate::version::v0_0_1::id::{Point, Meta, GenericKind};
         use crate::version::v0_0_1::messaging::Response;
         use crate::version::v0_0_1::payload::{Errors, Payload, Primitive};
         use crate::version::v0_0_1::util::unique_id;
@@ -7553,8 +7552,8 @@ pub mod entity {
 
             pub fn into_response(
                 self,
-                from: Address,
-                to: Address,
+                from: Point,
+                to: Point,
                 response_to: String,
             ) -> Response {
                 Response {
@@ -7627,15 +7626,15 @@ pub mod resource {
     use serde::{Deserialize, Serialize};
 
     use crate::error::MsgErr;
-    use crate::version::v0_0_1::id::{Address, AddressAndKind, ResourceKind, ResourceType};
+    use crate::version::v0_0_1::id::{Point, PointKind, GenericKind, GenericKindBase};
     use crate::version::v0_0_1::parse::{address, Res};
-    use crate::version::v0_0_1::pattern::parse_alpha1_str;
+    use crate::version::v0_0_1::selector::parse_alpha1_str;
     use crate::version::v0_0_1::payload::{Payload, PayloadMap};
     use crate::version::v0_0_1::Span;
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct StatusUpdate {
-        pub from: Address,
+        pub from: Point,
         pub status: Status,
     }
 
@@ -7729,21 +7728,21 @@ pub mod resource {
 
     #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
     pub struct Archetype {
-        pub kind: ResourceKind,
+        pub kind: GenericKind,
         pub properties: Properties,
     }
 
     #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
     pub struct ResourceStub {
-        pub address: Address,
-        pub kind: ResourceKind,
+        pub address: Point,
+        pub kind: GenericKind,
         pub properties: Properties,
         pub status: Status,
     }
 
     impl ResourceStub {
-        pub fn address_and_kind(self) -> AddressAndKind {
-            AddressAndKind {
+        pub fn address_and_kind(self) -> PointKind {
+            PointKind {
                 address: self.address,
                 kind: self.kind,
             }
@@ -7796,9 +7795,9 @@ pub mod portal {
         use crate::error::MsgErr;
         use crate::version::v0_0_1::artifact::ArtifactRequest;
         use crate::version::v0_0_1::frame::{CloseReason, PrimitiveFrame};
-        use crate::version::v0_0_1::id::{Address, ResourceKind, ResourceType};
+        use crate::version::v0_0_1::id::{Point, GenericKind, GenericKindBase};
         use crate::version::v0_0_1::messaging::{Request, Response};
-        use crate::version::v0_0_1::pattern::TksPattern;
+        use crate::version::v0_0_1::selector::TksPattern;
         use crate::version::v0_0_1::payload::Payload;
         use crate::version::v0_0_1::portal;
         use crate::version::v0_0_1::portal::Exchanger;
@@ -7839,7 +7838,7 @@ pub mod portal {
         }
 
         impl Frame {
-            pub fn from(&self) -> Option<Address> {
+            pub fn from(&self) -> Option<Point> {
                 match self {
                     Frame::Log(_) => Option::None,
                     Frame::Request(request) => Option::Some(request.from.clone()),
@@ -7888,7 +7887,7 @@ pub mod portal {
         use crate::version::v0_0_1::artifact::{Artifact, ArtifactResponse};
         use crate::version::v0_0_1::config::{Assign, Config, ConfigBody};
         use crate::version::v0_0_1::frame::{CloseReason, PrimitiveFrame};
-        use crate::version::v0_0_1::id::{Address, ResourceKind, ResourceType};
+        use crate::version::v0_0_1::id::{Point, GenericKind, GenericKindBase};
         use crate::version::v0_0_1::messaging::{Request, Response};
         use crate::version::v0_0_1::payload::Payload;
         use crate::version::v0_0_1::portal::Exchanger;
@@ -7905,7 +7904,7 @@ pub mod portal {
         }
 
         impl Frame {
-            pub fn to(&self) -> Option<Address> {
+            pub fn to(&self) -> Option<Point> {
                 match self {
                     Frame::Assign(assign) => Option::Some(assign.stub.address.clone()),
                     Frame::Request(request) => Option::Some(request.to.clone()),
@@ -8224,7 +8223,7 @@ pub mod fail {
         use crate::version::v0_0_1::fail::{
             Bad, BadCoercion, BadRequest, Conditional, Messaging, NotFound,
         };
-        use crate::version::v0_0_1::id::Address;
+        use crate::version::v0_0_1::id::Point;
 
         #[derive(Debug, Clone, Serialize, Deserialize)]
         pub enum Fail {
@@ -8251,7 +8250,7 @@ pub mod fail {
 
         #[derive(Debug, Clone, Serialize, Deserialize)]
         pub enum Select {
-            WrongAddress { required: Address, found: Address },
+            WrongAddress { required: Point, found: Point },
             BadSelectRouting { required: String, found: String },
             BadCoercion(BadCoercion),
         }
@@ -8393,21 +8392,21 @@ pub mod parse {
     use crate::version::v0_0_1::command::common::{PropertyMod, SetProperties, StateSrc};
     use crate::version::v0_0_1::config::bind::parse::pipeline_step;
     use crate::version::v0_0_1::entity::request::create::{
-        AddressSegmentTemplate, AddressTemplate, AddressTemplateSegment, Create, CreateOp,
+        PointSegFactory, AddressTemplate, PointTemplateSeg, Create, CreateOp,
         KindTemplate, Require, Strategy, Template,
     };
     use crate::version::v0_0_1::entity::request::get::{Get, GetOp};
     use crate::version::v0_0_1::entity::request::select::{Select, SelectIntoPayload, SelectKind};
     use crate::version::v0_0_1::entity::request::set::Set;
     use crate::version::v0_0_1::id::{
-        Address, AddressSegment, CaptureAddress, RouteSegment, Version,
+        Point, PointSeg, CaptureAddress, RouteSeg, Version,
     };
     use crate::version::v0_0_1::parse::error::{first_context, result};
-    use crate::version::v0_0_1::pattern::parse::{
+    use crate::version::v0_0_1::selector::parse::{
         address_kind_pattern, delim_kind, kind, resource_type, specific, specific_pattern, version,
     };
-    use crate::version::v0_0_1::pattern::{
-        skewer, upload_step, AddressKindPath, AddressKindPattern, AddressKindSegment,
+    use crate::version::v0_0_1::selector::{
+        skewer, upload_step, PointKindHierarchy, PointSelector, PointKindSeg,
     };
     use crate::version::v0_0_1::security::{
         AccessGrant, AccessGrantKindDef, AccessGrantKindSubst, AccessGrantSubst, ChildPerms,
@@ -8423,11 +8422,11 @@ pub mod parse {
     pub struct Parser {}
 
     impl Parser {
-        pub fn address(input: Span) -> Res<Span, Address> {
+        pub fn address(input: Span) -> Res<Span, Point> {
             address(input)
         }
 
-        pub fn consume_address(input: Span) -> Result<Address, MsgErr> {
+        pub fn consume_address(input: Span) -> Result<Point, MsgErr> {
             let (_, address) = all_consuming(address)(input)?;
             Ok(address)
         }
@@ -8474,76 +8473,76 @@ pub mod parse {
         )
     }
 
-    pub fn local_route_segment(input: Span) -> Res<Span, RouteSegment> {
+    pub fn local_route_segment(input: Span) -> Res<Span, RouteSeg> {
         alt((recognize(tag(".::")), recognize(not(other_route_segment))))(input)
-            .map(|(next, _)| (next, RouteSegment::Local))
+            .map(|(next, _)| (next, RouteSeg::Local))
     }
 
-    pub fn domain_route_segment(input: Span) -> Res<Span, RouteSegment> {
+    pub fn domain_route_segment(input: Span) -> Res<Span, RouteSeg> {
         terminated(domain_chars, tag("::"))(input)
-            .map(|(next, domain)| (next, RouteSegment::Domain(domain.to_string())))
+            .map(|(next, domain)| (next, RouteSeg::Domain(domain.to_string())))
     }
 
-    pub fn tag_route_segment(input: Span) -> Res<Span, RouteSegment> {
+    pub fn tag_route_segment(input: Span) -> Res<Span, RouteSeg> {
         terminated(delimited(tag("["), skewer_chars, tag("]")), tag("::"))(input)
-            .map(|(next, tag)| (next, RouteSegment::Tag(tag.to_string())))
+            .map(|(next, tag)| (next, RouteSeg::Tag(tag.to_string())))
     }
 
-    pub fn mesh_route_segment(input: Span) -> Res<Span, RouteSegment> {
+    pub fn mesh_route_segment(input: Span) -> Res<Span, RouteSeg> {
         terminated(delimited(tag("<<"), mesh_route_chars, tag(">>")), tag("::"))(input)
-            .map(|(next, tag)| (next, RouteSegment::Tag(tag.to_string())))
+            .map(|(next, tag)| (next, RouteSeg::Tag(tag.to_string())))
     }
 
-    pub fn other_route_segment(input: Span) -> Res<Span, RouteSegment> {
+    pub fn other_route_segment(input: Span) -> Res<Span, RouteSeg> {
         alt((tag_route_segment, domain_route_segment, mesh_route_segment))(input)
     }
 
-    pub fn route_segment(input: Span) -> Res<Span, RouteSegment> {
+    pub fn route_segment(input: Span) -> Res<Span, RouteSeg> {
         alt((other_route_segment, local_route_segment))(input)
     }
 
-    pub fn space_address_segment(input: Span) -> Res<Span, AddressSegment> {
-        space_chars(input).map(|(next, space)| (next, AddressSegment::Space(space.to_string())))
+    pub fn space_address_segment(input: Span) -> Res<Span, PointSeg> {
+        space_chars(input).map(|(next, space)| (next, PointSeg::Space(space.to_string())))
     }
 
-    pub fn base_address_segment(input: Span) -> Res<Span, AddressSegment> {
+    pub fn base_address_segment(input: Span) -> Res<Span, PointSeg> {
         preceded(tag(":"), rec_skewer)(input)
-            .map(|(next, base)| (next, AddressSegment::Base(base.to_string())))
+            .map(|(next, base)| (next, PointSeg::Base(base.to_string())))
     }
 
-    pub fn filesystem_address_segment(input: Span) -> Res<Span, AddressSegment> {
+    pub fn filesystem_address_segment(input: Span) -> Res<Span, PointSeg> {
         alt((dir_address_segment, file_address_segment))(input)
     }
 
-    pub fn dir_address_segment(input: Span) -> Res<Span, AddressSegment> {
+    pub fn dir_address_segment(input: Span) -> Res<Span, PointSeg> {
         context("dir_address_segment", terminated(file_chars, tag("/")))(input)
-            .map(|(next, dir)| (next, AddressSegment::Dir(format!("{}/", dir))))
+            .map(|(next, dir)| (next, PointSeg::Dir(format!("{}/", dir))))
     }
 
-    pub fn root_dir_address_segment(input: Span) -> Res<Span, AddressSegment> {
-        tag(":/")(input).map(|(next, _)| (next, AddressSegment::FilesystemRootDir))
+    pub fn root_dir_address_segment(input: Span) -> Res<Span, PointSeg> {
+        tag(":/")(input).map(|(next, _)| (next, PointSeg::FilesystemRootDir))
     }
 
-    pub fn file_address_segment(input: Span) -> Res<Span, AddressSegment> {
+    pub fn file_address_segment(input: Span) -> Res<Span, PointSeg> {
         context("file_address_segment", file_chars)(input)
-            .map(|(next, filename)| (next, AddressSegment::File(filename.to_string())))
+            .map(|(next, filename)| (next, PointSeg::File(filename.to_string())))
     }
 
-    pub fn version_address_segment(input: Span) -> Res<Span, AddressSegment> {
+    pub fn version_address_segment(input: Span) -> Res<Span, PointSeg> {
         preceded(tag(":"), version)(input)
-            .map(|(next, version)| (next, AddressSegment::Version(version)))
+            .map(|(next, version)| (next, PointSeg::Version(version)))
     }
 
-    pub fn root_address(input: Span) -> Res<Span, Address> {
+    pub fn root_address(input: Span) -> Res<Span, Point> {
         tuple((route_segment, tag("ROOT")))(input).map(|(next, (route, _))| {
-            let address = Address {
+            let address = Point {
                 route,
                 segments: vec![],
             };
             (next, address)
         })
     }
-    pub fn regular_address(input: Span) -> Res<Span, Address> {
+    pub fn regular_address(input: Span) -> Res<Span, Point> {
         tuple((
             tuple((route_segment, space_address_segment)),
             many0(base_address_segment),
@@ -8568,7 +8567,7 @@ pub mod parse {
                     segments.append(&mut files);
                 }
 
-                let address = Address {
+                let address = Point {
                     route: hub,
                     segments,
                 };
@@ -8578,11 +8577,11 @@ pub mod parse {
         )
     }
 
-    pub fn address(input: Span) -> Res<Span, Address> {
+    pub fn address(input: Span) -> Res<Span, Point> {
         alt((root_address, regular_address))(input)
     }
 
-    pub fn consume_address(input: Span) -> Res<Span, Address> {
+    pub fn consume_address(input: Span) -> Res<Span, Point> {
         all_consuming(address)(input)
     }
 
@@ -8627,95 +8626,95 @@ pub mod parse {
         )
     }
 
-    pub fn root_address_capture_segment(input: Span) -> Res<Span, AddressSegment> {
-        tag("ROOT")(input).map(|(next, space)| (next, AddressSegment::Root))
+    pub fn root_address_capture_segment(input: Span) -> Res<Span, PointSeg> {
+        tag("ROOT")(input).map(|(next, space)| (next, PointSeg::Root))
     }
 
-    pub fn space_address_capture_segment(input: Span) -> Res<Span, AddressSegment> {
+    pub fn space_address_capture_segment(input: Span) -> Res<Span, PointSeg> {
         space_chars_plus_capture(input)
-            .map(|(next, space)| (next, AddressSegment::Space(space.to_string())))
+            .map(|(next, space)| (next, PointSeg::Space(space.to_string())))
     }
 
-    pub fn base_address_capture_segment(input: Span) -> Res<Span, AddressSegment> {
+    pub fn base_address_capture_segment(input: Span) -> Res<Span, PointSeg> {
         preceded(tag(":"), rec_skewer_capture)(input)
-            .map(|(next, base)| (next, AddressSegment::Base(base.to_string())))
+            .map(|(next, base)| (next, PointSeg::Base(base.to_string())))
     }
 
-    pub fn filesystem_address_capture_segment(input: Span) -> Res<Span, AddressSegment> {
+    pub fn filesystem_address_capture_segment(input: Span) -> Res<Span, PointSeg> {
         alt((dir_address_capture_segment, file_address_capture_segment))(input)
     }
 
-    pub fn dir_address_capture_segment(input: Span) -> Res<Span, AddressSegment> {
+    pub fn dir_address_capture_segment(input: Span) -> Res<Span, PointSeg> {
         context(
             "dir_address_capture_segment",
             terminated(file_chars_plus_capture, tag("/")),
         )(input)
-        .map(|(next, dir)| (next, AddressSegment::Dir(format!("{}/", dir))))
+        .map(|(next, dir)| (next, PointSeg::Dir(format!("{}/", dir))))
     }
 
-    pub fn file_address_capture_segment(input: Span) -> Res<Span, AddressSegment> {
+    pub fn file_address_capture_segment(input: Span) -> Res<Span, PointSeg> {
         context("file_address_capture_segment", file_chars_plus_capture)(input)
-            .map(|(next, filename)| (next, AddressSegment::File(filename.to_string())))
+            .map(|(next, filename)| (next, PointSeg::File(filename.to_string())))
     }
 
-    pub fn space_address_kind_segment(input: Span) -> Res<Span, AddressKindSegment> {
+    pub fn space_address_kind_segment(input: Span) -> Res<Span, PointKindSeg> {
         tuple((space_address_segment, delim_kind))(input).map(|(next, (address_segment, kind))| {
             (
                 next,
-                AddressKindSegment {
-                    address_segment,
+                PointKindSeg {
+                    segment: address_segment,
                     kind,
                 },
             )
         })
     }
 
-    pub fn base_address_kind_segment(input: Span) -> Res<Span, AddressKindSegment> {
+    pub fn base_address_kind_segment(input: Span) -> Res<Span, PointKindSeg> {
         tuple((base_address_segment, delim_kind))(input).map(|(next, (address_segment, kind))| {
             (
                 next,
-                AddressKindSegment {
-                    address_segment,
+                PointKindSeg {
+                    segment: address_segment,
                     kind,
                 },
             )
         })
     }
 
-    pub fn filepath_address_kind_segment(input: Span) -> Res<Span, AddressKindSegment> {
+    pub fn filepath_address_kind_segment(input: Span) -> Res<Span, PointKindSeg> {
         alt((file_address_kind_segment, dir_address_kind_segment))(input)
     }
-    pub fn dir_address_kind_segment(input: Span) -> Res<Span, AddressKindSegment> {
+    pub fn dir_address_kind_segment(input: Span) -> Res<Span, PointKindSeg> {
         tuple((dir_address_segment, delim_kind))(input).map(|(next, (address_segment, kind))| {
             (
                 next,
-                AddressKindSegment {
-                    address_segment,
+                PointKindSeg {
+                    segment: address_segment,
                     kind,
                 },
             )
         })
     }
 
-    pub fn file_address_kind_segment(input: Span) -> Res<Span, AddressKindSegment> {
+    pub fn file_address_kind_segment(input: Span) -> Res<Span, PointKindSeg> {
         tuple((file_address_segment, delim_kind))(input).map(|(next, (address_segment, kind))| {
             (
                 next,
-                AddressKindSegment {
-                    address_segment,
+                PointKindSeg {
+                    segment: address_segment,
                     kind,
                 },
             )
         })
     }
 
-    pub fn version_address_kind_segment(input: Span) -> Res<Span, AddressKindSegment> {
+    pub fn version_address_kind_segment(input: Span) -> Res<Span, PointKindSeg> {
         tuple((version_address_segment, delim_kind))(input).map(
             |(next, (address_segment, kind))| {
                 (
                     next,
-                    AddressKindSegment {
-                        address_segment,
+                    PointKindSeg {
+                        segment: address_segment,
                         kind,
                     },
                 )
@@ -8723,12 +8722,12 @@ pub mod parse {
         )
     }
 
-    pub fn consume_address_kind_path(input: Span) -> Result<AddressKindPath, MsgErr> {
+    pub fn consume_address_kind_path(input: Span) -> Result<PointKindHierarchy, MsgErr> {
         let (_, rtn) = all_consuming(address_kind_path)(input)?;
         Ok(rtn)
     }
 
-    pub fn address_kind_path(input: Span) -> Res<Span, AddressKindPath> {
+    pub fn address_kind_path(input: Span) -> Res<Span, PointKindHierarchy> {
         tuple((
             tuple((route_segment, space_address_kind_segment)),
             many0(base_address_kind_segment),
@@ -8747,7 +8746,7 @@ pub mod parse {
             }
             segments.append(&mut files);
 
-            let address = AddressKindPath::new(hub, segments);
+            let address = PointKindHierarchy::new(hub, segments);
 
             (next, address)
         })
@@ -9157,35 +9156,35 @@ pub mod parse {
         recognize(parse_version)(input)
     }
 
-    pub fn base_address_segment_wildcard(input: Span) -> Res<Span, AddressTemplateSegment> {
+    pub fn base_address_segment_wildcard(input: Span) -> Res<Span, PointTemplateSeg> {
         preceded(
             tag(":"),
             recognize(tuple((many0(skewer), tag("%"), many0(skewer)))),
         )(input)
-        .map(|(next, base)| (next, AddressTemplateSegment::Wildcard(base.to_string())))
+        .map(|(next, base)| (next, PointTemplateSeg::Wildcard(base.to_string())))
     }
 
-    pub fn base_address_segment_template(input: Span) -> Res<Span, AddressTemplateSegment> {
+    pub fn base_address_segment_template(input: Span) -> Res<Span, PointTemplateSeg> {
         preceded(tag(":"), rec_skewer)(input).map(|(next, base)| {
             (
                 next,
-                AddressTemplateSegment::AddressSegment(AddressSegment::Base(base.to_string())),
+                PointTemplateSeg::ExactSeg(PointSeg::Base(base.to_string())),
             )
         })
     }
 
-    pub fn filepath_address_segment_wildcard(input: Span) -> Res<Span, AddressTemplateSegment> {
+    pub fn filepath_address_segment_wildcard(input: Span) -> Res<Span, PointTemplateSeg> {
         recognize(tuple((
             many0(filepath_chars),
             tag("%"),
             many0(filepath_chars),
         )))(input)
-        .map(|(next, base)| (next, AddressTemplateSegment::Wildcard(base.to_string())))
+        .map(|(next, base)| (next, PointTemplateSeg::Wildcard(base.to_string())))
     }
 
-    pub fn filepath_address_segment_template(input: Span) -> Res<Span, AddressTemplateSegment> {
+    pub fn filepath_address_segment_template(input: Span) -> Res<Span, PointTemplateSeg> {
         filesystem_address_segment(input)
-            .map(|(next, segment)| (next, AddressTemplateSegment::AddressSegment(segment)))
+            .map(|(next, segment)| (next, PointTemplateSeg::ExactSeg(segment)))
     }
 
     pub fn address_template(input: Span) -> Res<Span, AddressTemplate> {
@@ -9248,46 +9247,46 @@ pub mod parse {
         let mut space_last = false;
         let last = if !files.is_empty() {
             match files.remove(files.len() - 1) {
-                AddressTemplateSegment::AddressSegment(exact) => {
-                    AddressSegmentTemplate::Exact(exact.to_string())
+                PointTemplateSeg::ExactSeg(exact) => {
+                    PointSegFactory::Exact(exact.to_string())
                 }
-                AddressTemplateSegment::Wildcard(pattern) => {
-                    AddressSegmentTemplate::Pattern(pattern)
+                PointTemplateSeg::Wildcard(pattern) => {
+                    PointSegFactory::Pattern(pattern)
                 }
             }
         } else if root.is_some() {
-            AddressSegmentTemplate::Exact("/".to_string())
+            PointSegFactory::Exact("/".to_string())
         } else if let Option::Some(version) = &version {
-            AddressSegmentTemplate::Exact(version.to_string())
+            PointSegFactory::Exact(version.to_string())
         } else if !bases.is_empty() {
             match bases.remove(bases.len() - 1) {
-                AddressTemplateSegment::AddressSegment(exact) => {
-                    AddressSegmentTemplate::Exact(exact.to_string())
+                PointTemplateSeg::ExactSeg(exact) => {
+                    PointSegFactory::Exact(exact.to_string())
                 }
-                AddressTemplateSegment::Wildcard(pattern) => {
-                    AddressSegmentTemplate::Pattern(pattern)
+                PointTemplateSeg::Wildcard(pattern) => {
+                    PointSegFactory::Pattern(pattern)
                 }
             }
         } else {
             space_last = true;
-            AddressSegmentTemplate::Exact(space.to_string())
+            PointSegFactory::Exact(space.to_string())
         };
 
-        let mut bases: Vec<AddressSegment> = bases
+        let mut bases: Vec<PointSeg> = bases
             .into_iter()
             .map(|b| match b {
-                AddressTemplateSegment::AddressSegment(seg) => seg,
-                AddressTemplateSegment::Wildcard(_) => {
+                PointTemplateSeg::ExactSeg(seg) => seg,
+                PointTemplateSeg::Wildcard(_) => {
                     panic!("should have filtered wildcards already!")
                 }
             })
             .collect();
 
-        let mut files: Vec<AddressSegment> = files
+        let mut files: Vec<PointSeg> = files
             .into_iter()
             .map(|b| match b {
-                AddressTemplateSegment::AddressSegment(seg) => seg,
-                AddressTemplateSegment::Wildcard(_) => {
+                PointTemplateSeg::ExactSeg(seg) => seg,
+                PointTemplateSeg::Wildcard(_) => {
                     panic!("should have filtered wildcards already!")
                 }
             })
@@ -9313,7 +9312,7 @@ pub mod parse {
             segments.append(&mut files);
         }
 
-        let address = Address {
+        let address = Point {
             route: hub,
             segments,
         };
@@ -9528,7 +9527,7 @@ pub mod parse {
         let template = Template {
             address: AddressTemplate {
                 parent,
-                child_segment_template: AddressSegmentTemplate::Exact(last.to_string()),
+                child_segment_template: PointSegFactory::Exact(last.to_string()),
             },
             kind: KindTemplate {
                 resource_type: "ArtifactBundle".to_string(),
@@ -9961,7 +9960,7 @@ pub mod parse {
 }
 
 pub mod log {
-    use crate::version::v0_0_1::id::Address;
+    use crate::version::v0_0_1::id::Point;
     use serde::{Deserialize, Serialize};
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -9975,7 +9974,7 @@ pub mod log {
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct Log {
-        pub point: Address,
+        pub point: Point,
         pub message: String,
         pub level: Level,
     }
@@ -9987,35 +9986,35 @@ pub mod log {
     }
 
     impl Log {
-        pub fn trace(point: Address, message: &str) -> Self {
+        pub fn trace(point: Point, message: &str) -> Self {
             Self {
                 level: Level::Trace,
                 point,
                 message: message.to_string(),
             }
         }
-        pub fn debug(point: Address, message: &str) -> Self {
+        pub fn debug(point: Point, message: &str) -> Self {
             Self {
                 level: Level::Debug,
                 point,
                 message: message.to_string(),
             }
         }
-        pub fn info(point: Address, message: &str) -> Self {
+        pub fn info(point: Point, message: &str) -> Self {
             Self {
                 level: Level::Info,
                 point,
                 message: message.to_string(),
             }
         }
-        pub fn warn(point: Address, message: &str) -> Self {
+        pub fn warn(point: Point, message: &str) -> Self {
             Self {
                 level: Level::Warn,
                 point,
                 message: message.to_string(),
             }
         }
-        pub fn error(point: Address, message: &str) -> Self {
+        pub fn error(point: Point, message: &str) -> Self {
             Self {
                 level: Level::Error,
                 point,
@@ -10044,7 +10043,7 @@ pub mod test {
     };
     use crate::version::v0_0_1::config::bind::{PipelinesSubScope, ProtoBind};
     use crate::version::v0_0_1::entity::request::{Action, RequestCore};
-    use crate::version::v0_0_1::id::{Address, AddressSegment, RouteSegment};
+    use crate::version::v0_0_1::id::{Point, PointSeg, RouteSeg};
     use crate::version::v0_0_1::parse::error::{find, result};
     use crate::version::v0_0_1::parse::{
         access_grant, access_grant_kind, address, address_template, base_address_segment,
@@ -10052,11 +10051,11 @@ pub mod test {
         particle_perms, permissions, permissions_mask, publish, rec_skewer, route_segment,
         skewer_chars, subst, version_address_segment, Res, ToVal,
     };
-    use crate::version::v0_0_1::pattern::parse::address_kind_pattern;
-    use crate::version::v0_0_1::pattern::parse::version;
-    use crate::version::v0_0_1::pattern::{
+    use crate::version::v0_0_1::selector::parse::address_kind_pattern;
+    use crate::version::v0_0_1::selector::parse::version;
+    use crate::version::v0_0_1::selector::{
         http_method, http_method_pattern, http_pattern, http_pattern_scoped, upload_step,
-        AddressKindPath, AddressKindPattern,
+        PointKindHierarchy, PointSelector,
     };
     use crate::version::v0_0_1::payload::{HttpMethod, Payload};
     use crate::version::v0_0_1::security::{
@@ -10072,16 +10071,16 @@ pub mod test {
 
     #[test]
     pub fn test_address_kind_pattern_matching() -> Result<(), MsgErr> {
-        let pattern = AddressKindPattern::from_str("**")?;
-        let address = AddressKindPath::from_str("localhost<Space>:mechtron<Mechtron>")?;
+        let pattern = PointSelector::from_str("**")?;
+        let address = PointKindHierarchy::from_str("localhost<Space>:mechtron<Mechtron>")?;
         assert!(pattern.matches(&address));
         Ok(())
     }
 
     #[test]
     pub fn test_query_root() -> Result<(), MsgErr> {
-        let inclusive_pattern = AddressKindPattern::from_str("localhost+:**")?;
-        let exclusive_pattern = AddressKindPattern::from_str("localhost:**")?;
+        let inclusive_pattern = PointSelector::from_str("localhost+:**")?;
+        let exclusive_pattern = PointSelector::from_str("localhost:**")?;
         println!(
             "inclusive: '{}'",
             inclusive_pattern.query_root().to_string()
@@ -10097,10 +10096,10 @@ pub mod test {
     pub fn test_inclusive() -> Result<(), MsgErr> {
         // if a hop is 'inclusive' then this will match to true.  We do this for cases like:
         // localhost+:**   // Here we want everything under localhost INCLUDING localhost to be matched
-        let inclusive_pattern = AddressKindPattern::from_str("localhost+:**")?;
-        let exclusive_pattern = AddressKindPattern::from_str("localhost:**")?;
-        let address1 = AddressKindPath::from_str("localhost<Space>")?;
-        let address2 = AddressKindPath::from_str("localhost<Space>:mechtron<Mechtron>")?;
+        let inclusive_pattern = PointSelector::from_str("localhost+:**")?;
+        let exclusive_pattern = PointSelector::from_str("localhost:**")?;
+        let address1 = PointKindHierarchy::from_str("localhost<Space>")?;
+        let address2 = PointKindHierarchy::from_str("localhost<Space>:mechtron<Mechtron>")?;
 
         assert!(!exclusive_pattern.matches(&address1));
         assert!(exclusive_pattern.matches(&address2));
@@ -10111,11 +10110,11 @@ pub mod test {
 
     #[test]
     pub fn test_inclusive2() -> Result<(), MsgErr> {
-        let inclusive_pattern = AddressKindPattern::from_str("localhost+:app+:**")?;
-        let exclusive_pattern = AddressKindPattern::from_str("localhost:app:**")?;
-        let address1 = AddressKindPath::from_str("localhost<Space>")?;
-        let address2 = AddressKindPath::from_str("localhost<Space>:app<App>")?;
-        let address3 = AddressKindPath::from_str("localhost<Space>:app<App>:mechtron<Mechtron>")?;
+        let inclusive_pattern = PointSelector::from_str("localhost+:app+:**")?;
+        let exclusive_pattern = PointSelector::from_str("localhost:app:**")?;
+        let address1 = PointKindHierarchy::from_str("localhost<Space>")?;
+        let address2 = PointKindHierarchy::from_str("localhost<Space>:app<App>")?;
+        let address3 = PointKindHierarchy::from_str("localhost<Space>:app<App>:mechtron<Mechtron>")?;
 
         assert!(!exclusive_pattern.matches(&address1));
         assert!(!exclusive_pattern.matches(&address2));
@@ -10128,16 +10127,16 @@ pub mod test {
 
     #[test]
     pub fn test_some_matches() -> Result<(), MsgErr> {
-        let users = AddressKindPattern::from_str("**<User>")?;
-        let address1 = AddressKindPath::from_str("localhost<Space>")?;
-        let address2 = AddressKindPath::from_str("localhost<Space>:app<App>")?;
-        let address3 = AddressKindPath::from_str("localhost<Space>:app<App>:mechtron<Mechtron>")?;
-        let address4 = AddressKindPath::from_str("localhost<Space>:app<App>:users<UserBase>")?;
+        let users = PointSelector::from_str("**<User>")?;
+        let address1 = PointKindHierarchy::from_str("localhost<Space>")?;
+        let address2 = PointKindHierarchy::from_str("localhost<Space>:app<App>")?;
+        let address3 = PointKindHierarchy::from_str("localhost<Space>:app<App>:mechtron<Mechtron>")?;
+        let address4 = PointKindHierarchy::from_str("localhost<Space>:app<App>:users<UserBase>")?;
         let address5 =
-            AddressKindPath::from_str("localhost<Space>:app<App>:users<UserBase>:scott<User>")?;
-        let address6 = AddressKindPath::from_str("localhost<Space>:users<UserBase>")?;
+            PointKindHierarchy::from_str("localhost<Space>:app<App>:users<UserBase>:scott<User>")?;
+        let address6 = PointKindHierarchy::from_str("localhost<Space>:users<UserBase>")?;
         let address7 =
-            AddressKindPath::from_str("localhost<Space>:users<UserBase>:superuser<User>")?;
+            PointKindHierarchy::from_str("localhost<Space>:users<UserBase>:superuser<User>")?;
 
         assert!(!users.matches(&address1));
         assert!(!users.matches(&address2));
@@ -10151,8 +10150,8 @@ pub mod test {
 
     #[test]
     pub fn test_a_match() -> Result<(), MsgErr> {
-        let pattern = AddressKindPattern::from_str("localhost:app+:**")?;
-        let address = AddressKindPath::from_str("localhost<Space>:app<App>")?;
+        let pattern = PointSelector::from_str("localhost:app+:**")?;
+        let address = PointKindHierarchy::from_str("localhost<Space>:app<App>")?;
 
         assert!(pattern.matches(&address));
         Ok(())
@@ -10178,7 +10177,7 @@ pub mod test {
 
     #[test]
     pub fn test_address() -> Result<(), MsgErr> {
-        assert_eq!((Span::new(""), RouteSegment::Local), all_consuming(route_segment)(Span::new(""))?);
+        assert_eq!((Span::new(""), RouteSeg::Local), all_consuming(route_segment)(Span::new(""))?);
 
         all_consuming(address)(Span::new("[root]"))?;
         all_consuming(address)(Span::new("hello:kitty"))?;
@@ -10499,7 +10498,7 @@ pub mod test {
 
     #[test]
     pub fn test_root_pattern_match() -> Result<(), MsgErr> {
-        let pattern = AddressKindPattern::from_str("+:**")?;
+        let pattern = PointSelector::from_str("+:**")?;
         assert!(pattern.matches_root());
         Ok(())
     }

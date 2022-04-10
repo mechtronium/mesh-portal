@@ -23,9 +23,9 @@ pub mod artifact {
 
 pub mod id {
     use mesh_portal_versions::version::v0_0_1 as current;
-    pub type ResourceType = current::id::ResourceType;
-    pub type ResourceKind = current::id::ResourceKind;
-    pub type AddressAndKind = current::id::AddressAndKind;
+    pub type ResourceType = current::id::GenericKindBase;
+    pub type ResourceKind = current::id::GenericKind;
+    pub type AddressAndKind = current::id::PointKind;
     pub type AddressAndType = current::id::AddressAndType;
     pub type Meta = current::id::Meta;
     pub type PayloadClaim = current::id::PayloadClaim;
@@ -33,10 +33,10 @@ pub mod id {
     pub type Version = current::id::Version;
     pub type Tks = dyn current::id::Tks;
     pub type Specific = current::id::Specific;
-    pub type RouteSegment = current::id::RouteSegment;
-    pub type AddressSegment = current::id::AddressSegment;
-    pub type Address = current::id::Address;
-    pub type KindParts = current::id::KindParts;
+    pub type RouteSegment = current::id::RouteSeg;
+    pub type AddressSegment = current::id::PointSeg;
+    pub type Point = current::id::Point;
+    pub type KindParts = current::id::GenericKind;
 }
 
 pub mod path {
@@ -44,44 +44,44 @@ pub mod path {
     pub type Path=current::path::Path;
 }
 
-pub mod pattern {
+pub mod selector {
     use mesh_portal_versions::version::v0_0_1 as current;
 
-    pub type TksPattern = current::pattern::TksPattern;
-    pub type KindPattern = current::pattern::KindPattern;
-    pub type AddressKindPattern = current::pattern::AddressKindPattern;
-    pub type VersionReq = current::pattern::VersionReq;
-    pub type SegmentPattern = current::pattern::SegmentPattern;
-    pub type KeySegment = current::pattern::KeySegment;
-    pub type ExactSegment = current::pattern::ExactSegment;
-    pub type SpecificPattern = current::pattern::SpecificPattern;
-    pub type LabeledPrimitiveTypeDef = current::pattern::LabeledPrimitiveTypeDef;
-    pub type PrimitiveTypeDef = current::pattern::PrimitiveTypeDef;
-    pub type Format = current::pattern::Format;
-    pub type EntityPattern = current::pattern::EntityPattern;
-    pub type RcPattern = current::pattern::RcPattern;
-    pub type MsgPattern = current::pattern::MsgPattern;
-    pub type HttpPattern = current::pattern::HttpPattern;
-    pub type Block = current::pattern::Block;
-    pub type UploadBlock = current::pattern::UploadBlock;
-    pub type CreateBlock = current::pattern::CreateBlock;
-    pub type PatternBlock = current::pattern::PatternBlock;
-    pub type MapEntryPattern= current::pattern::MapEntryPattern;
-    pub type Hop = current::pattern::Hop;
-    pub type Pattern<P> = current::pattern::Pattern<P>;
-    pub type EmptyPattern<P> = current::pattern::EmptyPattern<P>;
-    pub type ResourceTypePattern  = current::pattern::ResourceTypePattern;
-    pub type AddressKindPath = current::pattern::AddressKindPath;
-    pub type AddressKindSegment = current::pattern::AddressKindSegment;
+    pub type TksPattern = current::selector::KindSelector;
+    pub type KindSelector = current::selector::SubKindSelector;
+    pub type PointSelector = current::selector::PointSelector;
+    pub type VersionReq = current::selector::VersionReq;
+    pub type PointSegSelector = current::selector::PointSegSelector;
+    pub type KeySegment = current::selector::KeySegment;
+    pub type ExactSegment = current::selector::ExactPointSeg;
+    pub type SpecificPattern = current::selector::SpecificSelector;
+    pub type LabeledPrimitiveTypeDef = current::selector::LabeledPrimitiveTypeDef;
+    pub type PrimitiveTypeDef = current::selector::PrimitiveTypeDef;
+    pub type Format = current::selector::Format;
+    pub type EntityPattern = current::selector::EntityPattern;
+    pub type RcPattern = current::selector::RcPattern;
+    pub type MsgPattern = current::selector::MsgPattern;
+    pub type HttpPattern = current::selector::HttpPattern;
+    pub type Block = current::selector::Block;
+    pub type UploadBlock = current::selector::UploadBlock;
+    pub type CreateBlock = current::selector::CreateBlock;
+    pub type PatternBlock = current::selector::PatternBlock;
+    pub type MapEntryPattern= current::selector::MapEntryPattern;
+    pub type Hop = current::selector::SelectorHop;
+    pub type Pattern<P> = current::selector::Pattern<P>;
+    pub type EmptyPattern<P> = current::selector::EmptyPattern<P>;
+    pub type BaseKindSelector = current::selector::KindBaseSelector;
+    pub type PointKindHierarchy = current::selector::PointKindHierarchy;
+    pub type PointKindSeg = current::selector::PointKindSeg;
 
     pub mod specific {
         use mesh_portal_versions::version::v0_0_1 as current;
 
-        pub type VersionReq = current::pattern::specific::VersionReq;
-        pub type VendorPattern = current::pattern::specific::VendorPattern;
-        pub type ProductPattern = current::pattern::specific::ProductPattern;
-        pub type VariantPattern = current::pattern::specific::VariantPattern;
-        pub type VersionPattern = current::pattern::specific::VersionPattern;
+        pub type VersionReq = current::selector::specific::VersionReq;
+        pub type VendorSelector = current::selector::specific::VendorPattern;
+        pub type ProductSelector = current::selector::specific::ProductPattern;
+        pub type VariantSelector = current::selector::specific::VariantPattern;
+        pub type VersionPattern = current::selector::specific::VersionPattern;
    }
 }
 
@@ -241,7 +241,7 @@ pub mod entity {
             pub type Fulfillment = current::entity::request::create::Fulfillment;
             pub type Strategy = current::entity::request::create::Strategy;
             pub type AddressTemplate = current::entity::request::create::AddressTemplate;
-            pub type AddressSegmentTemplate = current::entity::request::create::AddressSegmentTemplate;
+            pub type AddressSegmentTemplate = current::entity::request::create::PointSegFactory;
             pub type CreateOp = current::entity::request::create::CreateOp;
             pub type Require = current::entity::request::create::Require;
             pub type Fulfilemment = current::entity::request::create::Fulfillment;
