@@ -3731,7 +3731,8 @@ pub mod security {
     use crate::version::v0_0_1::pattern::AddressKindPattern;
     use serde::{Serialize,Deserialize};
     use crate::version::v0_0_1::messaging::ScopeGrant;
-    use crate::version::v0_0_1::parse::permissions_mask;
+    use crate::version::v0_0_1::parse::{particle_perms, permissions_mask, privilege};
+    use crate::version::v0_0_1::parse::error::{just_msg, result};
     use crate::version::v0_0_1::Span;
 
     #[derive(Debug,Clone,Serialize,Deserialize)]
@@ -3928,6 +3929,15 @@ pub mod security {
         }
     }
 
+    impl FromStr for Privilege {
+        type Err = MsgErr;
+
+        fn from_str(s: &str) -> Result<Self, Self::Err> {
+            let span = Span::new(s);
+            Ok(result(all_consuming(privilege)(span))?)
+        }
+    }
+
     #[derive(Debug,Clone,Serialize,Deserialize)]
     pub struct EnumeratedAccess {
         pub permissions: Permissions,
@@ -3999,8 +4009,8 @@ pub mod security {
         type Err = MsgErr;
 
         fn from_str(s: &str) -> Result<Self, Self::Err> {
-            let span = Span::new(s);
-            Ok(all_consuming(permissions_mask)(span)?.1)
+            let s = Span::new(s);
+            just_msg(all_consuming(permissions_mask)(s))
         }
     }
 
@@ -4152,10 +4162,11 @@ pub mod security {
     }
 
     impl FromStr for ParticlePerms {
-        type Err = ();
+        type Err = MsgErr;
 
         fn from_str(s: &str) -> Result<Self, Self::Err> {
-            todo!()
+            let s = Span::new(s);
+            just_msg(all_consuming(particle_perms)(s))
         }
     }
 
@@ -8240,7 +8251,7 @@ pub mod parse {
     use nom::error::{context, ErrorKind, ParseError, VerboseError};
     use nom::multi::{many0, separated_list0, separated_list1};
     use nom::sequence::{delimited, preceded, terminated, tuple};
-    use nom::{AsChar, IResult, InputTakeAtPosition, InputIter, InputLength, InputTake, Slice, Compare};
+    use nom::{AsChar, IResult, InputTakeAtPosition, InputIter, InputLength, InputTake, Slice, Compare, UnspecializedInput};
     use nom_supreme::parse_from_str;
 
     use crate::error::MsgErr;
@@ -8264,9 +8275,10 @@ pub mod parse {
     };
     use crate::version::v0_0_1::util::StringMatcher;
     use nom::bytes::complete::take;
+    use nom_locate::LocatedSpan;
     use nom_supreme::error::ErrorTree;
     use crate::version::v0_0_1::parse::error::{first_context, result};
-    use crate::version::v0_0_1::security::{AccessGrant, ChildPerms, ParticlePerms, Permissions, PermissionsMask, PermissionsMaskKind};
+    use crate::version::v0_0_1::security::{AccessGrant, ChildPerms, ParticlePerms, Permissions, PermissionsMask, PermissionsMaskKind, Privilege};
     use crate::version::v0_0_1::Span;
 
     pub struct Parser {}
@@ -8659,6 +8671,24 @@ pub mod parse {
             ErrorKind::AlphaNumeric,
         )
     }
+
+    pub fn skewer_colon<T>(i: T) -> Res<T, T>
+        where
+            T: InputTakeAtPosition + nom::InputLength,
+            <T as InputTakeAtPosition>::Item: AsChar,
+    {
+        i.split_at_position1_complete(
+            |item| {
+                let char_item = item.as_char();
+                !(char_item == '-')
+                    && !(char_item == ':')
+                    && !((char_item.is_alpha() && char_item.is_lowercase())
+                    || char_item.is_dec_digit())
+            },
+            ErrorKind::AlphaNumeric,
+        )
+    }
+
     pub fn skewer_dot<T>(i: T) -> Res<T, T>
     where
         T: InputTakeAtPosition + nom::InputLength,
@@ -9388,6 +9418,12 @@ pub mod parse {
     #[derive(Debug,Clone,Eq,PartialEq,Hash)]
     pub struct VariableName(String);
 
+    impl VariableName {
+        pub fn new( name: &str ) -> Self {
+            Self(name.to_string())
+        }
+    }
+
     impl Deref for VariableName {
         type Target = String;
 
@@ -9406,39 +9442,44 @@ pub mod parse {
         }
     }
 
-    pub enum Subst<I,V> where I:Clone, V:Clone {
-        Variable{
-            variable: Variable,
-            parser: Box<dyn nom::Parser<I, V, ErrorTree<I>>>
-        },
-        Value(V)
+    pub enum Subst<V> where V:Clone+FromStr<Err=MsgErr> {
+        Var(Variable),
+        Val(V)
     }
 
-    impl <I,V> Subst<I,V> where I:Clone, V:Clone {
-        pub fn resolve( &self, resolver: HashMap<VariableName,String> ) -> Result<V,String> {
+    impl <V> Subst<V> where V:Clone+FromStr<Err=MsgErr> {
+        pub fn resolve( &self, resolver: &HashMap<VariableName,String> ) -> Result<V,String> {
             match self {
-                Subst::Variable { variable,parser } => {
-                  let raw = resolver.get( &variable.name ).ok_or(format!("cannot resolve variable '{}'", variable.name.to_string()))?;
-                  let span = Span::new(raw);
-                  result((parser.deref())(span))
+                Subst::Var(var) => {
+                  let raw = resolver.get( &var.name ).ok_or(format!("cannot resolve variable '{}'", var.name.to_string()))?;
+
+                    match V::from_str(raw.as_str()) {
+                        Ok(val) => {
+                            Ok(val)
+                        }
+                        Err(err) => {
+                            Err(err.to_string())
+                        }
+                    }
                }
-                Subst::Value(value) => Ok(value.clone())
+                Subst::Val(val) => Ok(val.clone())
             }
         }
     }
 
 
-    pub fn subst<I,O,F>(
+    /*
+    pub fn subst<'a,I,O,F>(
         mut f: F,
-    ) -> impl FnMut(I) -> Res<I,Subst<I,O>>
-        where F: 'static+nom::Parser<I, O, ErrorTree<I>>+Clone, I: Clone, O: Clone
+    ) -> impl FnMut(I) -> Res<I,Subst<O>>
+        where F: 'static+nom::Parser<String, O, ErrorTree<String>>+Clone,O: Clone, I: Clone+ToString
     {
         move |input:I| {
-            let result = variable(input.clone());
+            let result = variable(Span::new(input.to_string().as_str()) );
 
             match result {
                 Ok((next, variable)) => {
-                    Ok((next, Subst::Variable { variable, parser: Box::new(f.clone()) }))
+                    Ok((next, Subst::Variable { variable, /*parser: Box::new(f.clone())*/ }))
                 }
                 Err(err) => {
                     match first_context(err) {
@@ -9454,29 +9495,55 @@ pub mod parse {
                             // give the next parser a chance
                         }
                     }
-                    match f.parse(input) {
+                    match f.parse(input.to_string()) {
                         Ok((next, v)) => {
-                            Ok((next, Subst::Value(v)))
+                            Ok((Span::new(next.as_str()), Subst::Value(v)))
                         }
                         Err(err) => {
-                            Err(err)
+                            Err(nom::Err::Error(ErrorTree::Alt(vec!())))
                         }
                     }
                 }
             }
         }
     }
+     */
 
-    pub fn variable<I>(input: I) -> Res<I, Variable> where I: Clone{
+    pub fn subst<I: Clone, O, E: ParseError<I>, F>(
+        mut f: F,
+    ) -> impl FnMut(I) -> IResult<I, Subst<O>, E>
+        where
+            I: ToString+InputLength + InputTake + Compare<&'static str>+InputIter+Clone+InputTakeAtPosition,<I as InputTakeAtPosition>::Item: AsChar  ,
+            F: nom::Parser<I, O, E>,
+            E: nom::error::ContextError<I>,
+            O: Clone+FromStr<Err=MsgErr>
+    {
+        move |input: I| match variable(input.clone()) {
+            Ok((next, v)) => Ok((next, Subst::Var(v))),
+            Err(err) => f.parse(input.clone()).map( |(next, val)|(next, Subst::Val(val))),
+        }
+    }
+
+    pub fn variable<I>(input: I) -> Res<I, Variable>  where I: ToString+Clone+InputLength + InputTake + Compare<&'static str>+InputIter+InputTakeAtPosition,<I as InputTakeAtPosition>::Item: AsChar   {
         preceded(tag("$"),context("variable",delimited(tag("("),variable_name,tag(")"))))(input)
        .map(|(next,name)|{
            (next, Variable::new(name))
        })
     }
 
-    pub fn variable_name<I>(input: I) -> Res<I,VariableName> where I: Clone{
+    pub fn variable_name<I>(input: I) -> Res<I, VariableName>  where I: ToString+InputLength + InputTake + Compare<&'static str>+InputIter+Clone+InputTakeAtPosition,<I as InputTakeAtPosition>::Item: AsChar {
         skewer_dot(input).map( |(next,name)|{
             (next, VariableName(name.to_string()))
+        })
+    }
+
+    pub fn privilege(input: Span) -> Res<Span,Privilege> {
+        context("privilege", alt((tag("*"),skewer_colon )))(input).map( |(next,prv)| {
+            let prv = match prv.to_string().as_str() {
+                "*" => Privilege::Full,
+                prv => Privilege::Single(prv.to_string())
+            };
+            (next,prv)
         })
     }
 
@@ -9540,7 +9607,7 @@ pub mod parse {
         use nom_supreme::error::{ErrorTree, StackContext};
         use crate::version::v0_0_1::Span;
 
-        pub fn result<E>(result: Result<(Span, E),Err<ErrorTree<Span>>> ) -> Result<E,String> {
+        pub fn result<R>(result: Result<(Span, R),Err<ErrorTree<Span>>> ) -> Result<R,String> {
             match result {
                 Ok((_,e)) => Ok(e),
                 Err(err) => {
@@ -9556,6 +9623,22 @@ pub mod parse {
             }
         }
 
+        pub fn just_msg<R,E:From<String>>(result: Result<(Span, R),Err<ErrorTree<Span>>> ) -> Result<R,E> {
+            match result {
+                Ok((_,e)) => Ok(e),
+                Err(err) => {
+                    match find(err) {
+                        Ok((message,_)) => {
+                            Err(E::from(message))
+                        }
+                        Err(err) => {
+                            Err(E::from(format!("parsing error: could not find matching error message")))
+                        }
+                    }
+                }
+            }
+        }
+
         fn message( context: &str ) -> Result<String,()> {
           let message =match context {
               "variable" => "variable name must be alphanumeric lowercase, dashes and dots.  Variables are preceded by the '$' operator and must be sorounded by parenthesis $(env.valid-variable-name)",
@@ -9563,6 +9646,7 @@ pub mod parse {
               "particle_perms" => "expecting particle permissions form rwx (Read, Write, Execute) uppercase indicates set permission (RWX==full permission, rwx==no permission)",
               "permissions" => "expecting permissions form 'csd-rwx' (Create,Select,Delete)-(Read,Write,Execute) uppercase indicates set permission (CSD-RWX==full permission, csd-rwx==no permission)",
               "permissions_mask" => "expecting permissions mask symbol '+' for 'Or' mask and '&' for 'And' mask. Example:  &csd-RwX removes ----R-X from current permission",
+              "privilege" => "privilege name must be '*' for 'full' privileges or an alphanumeric lowercase, dashes and colons i.e. 'props:email:read'",
               _ => {
                   return Err(());
               }
@@ -9570,7 +9654,7 @@ pub mod parse {
             Ok(message.to_string())
         }
 
-        pub fn find(err: Err<ErrorTree<Span>>) -> Result<(String, Span),()> {
+        pub fn find<I:Clone>(err: Err<ErrorTree<I>>) -> Result<(String, I),()> {
             match err {
                 Err::Error(err) => {
                    match err {
@@ -9690,6 +9774,7 @@ pub mod log {
 
 #[cfg(test)]
 pub mod test {
+    use std::collections::HashMap;
     use std::str::FromStr;
     use http::Uri;
 
@@ -9700,7 +9785,7 @@ pub mod test {
     use crate::version::v0_0_1::config::bind::{PipelinesSubScope, ProtoBind};
     use crate::version::v0_0_1::entity::request::{Action, RequestCore};
     use crate::version::v0_0_1::id::{Address, AddressSegment, RouteSegment};
-    use crate::version::v0_0_1::parse::{address, address_template, base_address_segment, camel_case, capture_address, create, file_address_capture_segment, publish, rec_skewer, route_segment, skewer_chars, version_address_segment, Res, particle_perms, permissions, permissions_mask, child_perms, subst};
+    use crate::version::v0_0_1::parse::{address, address_template, base_address_segment, camel_case, capture_address, create, file_address_capture_segment, publish, rec_skewer, route_segment, skewer_chars, version_address_segment, Res, particle_perms, permissions, permissions_mask, child_perms, subst, VariableName};
     use crate::version::v0_0_1::pattern::parse::address_kind_pattern;
     use crate::version::v0_0_1::pattern::parse::version;
     use crate::version::v0_0_1::pattern::{AddressKindPath, AddressKindPattern, http_method, http_method_pattern, http_pattern, http_pattern_scoped, upload_step};
@@ -10426,8 +10511,20 @@ Bind.Pipelines.Http.Pipeline.Step: expected '->' (forward request) or '-[' (Requ
 
     #[test]
     pub fn test_subst() -> Result<(), MsgErr> {
-        let span = Span::new("&cSd-RwX");
-        let result = result(subst(permissions_mask)(span))?;
+        let val = Span::new("&cSd-RwX");
+        let var= Span::new("$(env.some-var)");
+        let val = result(subst(permissions_mask)(val))?;
+        let var = result(subst(permissions_mask)(var))?;
+
+        let mut map = HashMap::new();
+        map.insert( VariableName::new("env.some-var"), "bad+CSD-RWX".to_string() );
+
+        let val = val.resolve(&map)?;
+        let var = var.resolve(&map)?;
+
+        println!("val {}", val.to_string() );
+        println!("var {}", var.to_string() );
+
         Ok(())
     }
 

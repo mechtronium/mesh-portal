@@ -270,3 +270,9 @@ impl From<nom::Err<ErrorTree<LocatedSpan<&str>>>> for MsgErr {
         }
     }
 }
+
+impl Into<String> for MsgErr {
+    fn into(self) -> String {
+        self.message
+    }
+}
