@@ -1,10 +1,10 @@
+use nom_locate::LocatedSpan;
 use std::collections::HashMap;
 use std::convert::From;
 use std::convert::TryInto;
 use std::fmt::Debug;
 use std::hash::Hash;
 use std::sync::Arc;
-use nom_locate::LocatedSpan;
 
 use serde::{Deserialize, Serialize};
 
@@ -61,7 +61,9 @@ pub mod id {
     use crate::error::MsgErr;
     use crate::version::v0_0_1::parse::{address, camel_case, consume_address, Res};
     use crate::version::v0_0_1::pattern::parse::{address_and_kind, resource_type, specific};
-    use crate::version::v0_0_1::pattern::{AddressKindPattern, Pattern, SpecificPattern, VersionReq};
+    use crate::version::v0_0_1::pattern::{
+        AddressKindPattern, Pattern, SpecificPattern, VersionReq,
+    };
 
     pub type ResourceType = String;
     pub type ResourceKind = KindParts;
@@ -538,12 +540,10 @@ pub mod id {
                     }
                     rtn.to_string()
                 }
-                _ => self.to_string()
+                _ => self.to_string(),
             }
         }
-
     }
-
 
     impl ToString for Address {
         fn to_string(&self) -> String {
@@ -875,16 +875,24 @@ pub mod pattern {
 
     use crate::error::MsgErr;
 
+    use crate::version::v0_0_1::config::bind::parse::{many_until0, select_block, SelectBlock};
     use crate::version::v0_0_1::entity::request::{Action, Rc, RcCommandType, RequestCore};
     use crate::version::v0_0_1::id::{
         Address, AddressSegment, ResourceKind, ResourceType, RouteSegment, Specific, Tks, Version,
     };
-    use crate::version::v0_0_1::parse::{address, camel_case, camel_case_to_string_matcher, capture_address, capture_path, consume_address_kind_path, file_chars, path, path_regex, Res };
+    use crate::version::v0_0_1::parse::{
+        address, camel_case, camel_case_to_string_matcher, capture_address, capture_path,
+        consume_address_kind_path, file_chars, path, path_regex, Res,
+    };
     use crate::version::v0_0_1::pattern::parse::{address_kind_pattern, pattern, value_pattern};
     use crate::version::v0_0_1::pattern::specific::{
         ProductPattern, VariantPattern, VendorPattern,
     };
-    use crate::version::v0_0_1::payload::{Call, CallKind, CallWithConfig, HttpCall, HttpMethod, HttpMethodType, ListPattern, MapPattern, MsgCall, Payload, PayloadFormat, PayloadPattern, PayloadTypePattern, Primitive, PrimitiveType, Range};
+    use crate::version::v0_0_1::payload::{
+        Call, CallKind, CallWithConfig, HttpCall, HttpMethod, HttpMethodType, ListPattern,
+        MapPattern, MsgCall, Payload, PayloadFormat, PayloadPattern, PayloadTypePattern, Primitive,
+        PrimitiveType, Range,
+    };
     use crate::version::v0_0_1::util::{MethodPattern, StringMatcher, ValueMatcher, ValuePattern};
     use crate::{Deserialize, Serialize};
     use nom::branch::alt;
@@ -894,15 +902,14 @@ pub mod pattern {
     use nom::error::{context, ErrorKind, ParseError, VerboseError};
     use nom::multi::separated_list0;
     use nom::sequence::{delimited, preceded, terminated, tuple};
-    use nom::{AsChar, IResult, InputTakeAtPosition, Parser, InputLength, InputTake, Compare};
+    use nom::{AsChar, Compare, IResult, InputLength, InputTake, InputTakeAtPosition, Parser};
     use nom_supreme::error::ErrorTree;
     use nom_supreme::parser_ext::FromStrParser;
     use nom_supreme::{parse_from_str, ParserExt};
     use regex::Regex;
     use std::collections::HashMap;
-    use crate::version::v0_0_1::config::bind::parse::{many_until0, select_block, SelectBlock};
 
-    #[derive(Debug,Clone,Serialize,Deserialize,)]
+    #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct TksPattern {
         pub resource_type: ResourceTypePattern,
         pub kind: KindPattern,
@@ -934,7 +941,12 @@ pub mod pattern {
 
     impl ToString for TksPattern {
         fn to_string(&self) -> String {
-            format!("{}<{}<{}>>", self.resource_type.to_string(), self.kind.to_string(), self.specific.to_string() )
+            format!(
+                "{}<{}<{}>>",
+                self.resource_type.to_string(),
+                self.kind.to_string(),
+                self.specific.to_string()
+            )
         }
     }
 
@@ -949,7 +961,7 @@ pub mod pattern {
     }
 
     pub type KindPattern = Pattern<ResourceKind>;
-    #[derive(Debug,Clone,Serialize,Deserialize)]
+    #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct AddressKindPattern {
         pub hops: Vec<Hop>,
     }
@@ -975,21 +987,21 @@ pub mod pattern {
         }
 
         pub fn matches_root(&self) -> bool {
-
-           if self.hops.is_empty() {
-             true
-           } else if self.hops.len() == 1 {
-               let hop = self.hops.first().unwrap();
-               if SegmentPattern::InclusiveAny == hop.segment || SegmentPattern::InclusiveRecursive == hop.segment {
-                   let resource_kind = ResourceKind::new( "Root".to_string(), None, None );
-                   hop.tks.matches(&resource_kind)
-               } else {
-                   false
-               }
-           }
-           else {
-               false
-           }
+            if self.hops.is_empty() {
+                true
+            } else if self.hops.len() == 1 {
+                let hop = self.hops.first().unwrap();
+                if SegmentPattern::InclusiveAny == hop.segment
+                    || SegmentPattern::InclusiveRecursive == hop.segment
+                {
+                    let resource_kind = ResourceKind::new("Root".to_string(), None, None);
+                    hop.tks.matches(&resource_kind)
+                } else {
+                    false
+                }
+            } else {
+                false
+            }
         }
 
         pub fn is_root(&self) -> bool {
@@ -1040,7 +1052,6 @@ pub mod pattern {
             ResourceType: Clone,
             ResourceKind: Clone,
         {
-
             if address_kind_path.is_root() && self.is_root() {
                 return true;
             }
@@ -1053,19 +1064,19 @@ pub mod pattern {
             let seg = address_kind_path.segments.first().expect("segment");
 
             /*
-            if address_kind_path.segments.len() < self.hops.len() {
-                // if a hop is 'inclusive' then this will match to true.  We do this for cases like:
-                // localhost+:**   // Here we want everything under localhost INCLUDING localhost to be matched
-println!("hop: {}", hop.to_string());
-println!("seg: {}", seg.to_string());
-                if hop.inclusive && hop.matches(&seg) {
-                    return true;
-                } else {
-                    return false;
-                }
-            }
+                        if address_kind_path.segments.len() < self.hops.len() {
+                            // if a hop is 'inclusive' then this will match to true.  We do this for cases like:
+                            // localhost+:**   // Here we want everything under localhost INCLUDING localhost to be matched
+            println!("hop: {}", hop.to_string());
+            println!("seg: {}", seg.to_string());
+                            if hop.inclusive && hop.matches(&seg) {
+                                return true;
+                            } else {
+                                return false;
+                            }
+                        }
 
-             */
+                         */
 
             if address_kind_path.is_final() && self.is_final() {
                 // this is the final hop & segment if they match, everything matches!
@@ -1101,9 +1112,10 @@ println!("seg: {}", seg.to_string());
                     self.matches(&address_kind_path.consume().expect("AddressKindPath"))
                 }
             } else if hop.segment.is_recursive() && address_kind_path.is_final() {
-               hop.matches( address_kind_path.segments.last().expect("segment"))
+                hop.matches(address_kind_path.segments.last().expect("segment"))
             } else if hop.segment.is_recursive() {
-                hop.matches( address_kind_path.segments.last().expect("segment")) && self.matches( &address_kind_path.consume().expect("address_kind_path") )
+                hop.matches(address_kind_path.segments.last().expect("segment"))
+                    && self.matches(&address_kind_path.consume().expect("address_kind_path"))
             } else if hop.matches(seg) {
                 // in a normal match situation, we consume the hop and move to the next one
                 self.consume()
@@ -1118,9 +1130,9 @@ println!("seg: {}", seg.to_string());
     impl ToString for AddressKindPattern {
         fn to_string(&self) -> String {
             let mut rtn = String::new();
-            for (index,hop) in self.hops.iter().enumerate() {
-                rtn.push_str(hop.to_string().as_str() );
-                if index < self.hops.len()-1 {
+            for (index, hop) in self.hops.iter().enumerate() {
+                rtn.push_str(hop.to_string().as_str());
+                if index < self.hops.len() - 1 {
                     rtn.push_str(":");
                 }
             }
@@ -1128,7 +1140,7 @@ println!("seg: {}", seg.to_string());
         }
     }
 
-    #[derive(Debug,Clone,Eq,PartialEq,Hash)]
+    #[derive(Debug, Clone, Eq, PartialEq, Hash)]
     pub struct VersionReq {
         pub version: semver::VersionReq,
     }
@@ -1205,12 +1217,12 @@ println!("seg: {}", seg.to_string());
         }
     }
 
-    #[derive(Debug,Clone,Serialize,Deserialize,Eq,PartialEq)]
+    #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
     pub enum SegmentPattern {
         InclusiveAny,       // +:*  // includes Root if it's the first segment
         InclusiveRecursive, // +:** // includes Root if its the first segment
-        Any,       // *
-        Recursive, // **
+        Any,                // *
+        Recursive,          // **
         Exact(ExactSegment),
         Version(VersionReq),
     }
@@ -1251,7 +1263,7 @@ println!("seg: {}", seg.to_string());
 
         pub fn is_recursive(&self) -> bool {
             match self {
-                SegmentPattern::InclusiveAny=> false,
+                SegmentPattern::InclusiveAny => false,
                 SegmentPattern::InclusiveRecursive => true,
                 SegmentPattern::Any => false,
                 SegmentPattern::Recursive => true,
@@ -1265,11 +1277,11 @@ println!("seg: {}", seg.to_string());
         fn to_string(&self) -> String {
             match self {
                 SegmentPattern::InclusiveAny => "+:*".to_string(),
-                SegmentPattern::InclusiveRecursive=> "+:**".to_string(),
+                SegmentPattern::InclusiveRecursive => "+:**".to_string(),
                 SegmentPattern::Any => "*".to_string(),
                 SegmentPattern::Recursive => "**".to_string(),
                 SegmentPattern::Exact(exact) => exact.to_string(),
-                SegmentPattern::Version(version) => version.to_string()
+                SegmentPattern::Version(version) => version.to_string(),
             }
         }
     }
@@ -1301,7 +1313,7 @@ println!("seg: {}", seg.to_string());
         fn to_string(&self) -> String {
             match self {
                 ExactSegment::Address(address) => address.to_string(),
-                ExactSegment::Version(version) => version.to_string()
+                ExactSegment::Version(version) => version.to_string(),
             }
         }
     }
@@ -1480,7 +1492,13 @@ println!("seg: {}", seg.to_string());
         }
 
         fn space_segment(input: &str) -> Res<&str, SegmentPattern> {
-            alt((inclusive_recursive_segment,inclusive_any_segment,recursive_segment, any_segment, exact_space_segment))(input)
+            alt((
+                inclusive_recursive_segment,
+                inclusive_any_segment,
+                recursive_segment,
+                any_segment,
+                exact_space_segment,
+            ))(input)
         }
 
         fn base_segment(input: &str) -> Res<&str, SegmentPattern> {
@@ -1553,7 +1571,9 @@ println!("seg: {}", seg.to_string());
         {
             move |input: I| match tag::<&'static str, I, E>("*")(input.clone()) {
                 Ok((next, _)) => Ok((next, ValuePattern::Any)),
-                Err(err) => f.parse(input.clone()).map( |(next,res)|(next, ValuePattern::Pattern(res))),
+                Err(err) => f
+                    .parse(input.clone())
+                    .map(|(next, res)| (next, ValuePattern::Pattern(res))),
             }
         }
         /*
@@ -1739,56 +1759,97 @@ println!("seg: {}", seg.to_string());
         }
 
         fn space_hop(input: &str) -> Res<&str, Hop> {
-            tuple((space_segment, opt(tks), opt(tag("+"))))(input).map(|(next, (segment, tks,inclusive))| {
-                let tks = match tks {
-                    None => TksPattern::any(),
-                    Some(tks) => tks,
-                };
-                let inclusive = inclusive.is_some();
-                (next, Hop { inclusive, segment, tks })
-            })
+            tuple((space_segment, opt(tks), opt(tag("+"))))(input).map(
+                |(next, (segment, tks, inclusive))| {
+                    let tks = match tks {
+                        None => TksPattern::any(),
+                        Some(tks) => tks,
+                    };
+                    let inclusive = inclusive.is_some();
+                    (
+                        next,
+                        Hop {
+                            inclusive,
+                            segment,
+                            tks,
+                        },
+                    )
+                },
+            )
         }
 
         fn base_hop(input: &str) -> Res<&str, Hop> {
-            tuple((base_segment, opt(tks), opt(tag("+"))))(input).map(|(next, (segment, tks, inclusive))| {
-                let tks = match tks {
-                    None => TksPattern::any(),
-                    Some(tks) => tks,
-                };
-                let inclusive = inclusive.is_some();
-                (next, Hop { inclusive, segment, tks })
-            })
+            tuple((base_segment, opt(tks), opt(tag("+"))))(input).map(
+                |(next, (segment, tks, inclusive))| {
+                    let tks = match tks {
+                        None => TksPattern::any(),
+                        Some(tks) => tks,
+                    };
+                    let inclusive = inclusive.is_some();
+                    (
+                        next,
+                        Hop {
+                            inclusive,
+                            segment,
+                            tks,
+                        },
+                    )
+                },
+            )
         }
 
         fn file_hop(input: &str) -> Res<&str, Hop> {
-            tuple((file_segment,opt(tag("+"))))(input).map(|(next, (segment,inclusive))| {
+            tuple((file_segment, opt(tag("+"))))(input).map(|(next, (segment, inclusive))| {
                 let tks = TksPattern {
                     resource_type: Pattern::Exact("File".to_string()),
                     kind: Pattern::Any,
                     specific: ValuePattern::Any,
                 };
                 let inclusive = inclusive.is_some();
-                (next, Hop { inclusive, segment, tks })
+                (
+                    next,
+                    Hop {
+                        inclusive,
+                        segment,
+                        tks,
+                    },
+                )
             })
         }
 
         fn dir_hop(input: &str) -> Res<&str, Hop> {
-            tuple((dir_segment,opt(tag("+"))))(input).map(|(next, (segment,inclusive))| {
+            tuple((dir_segment, opt(tag("+"))))(input).map(|(next, (segment, inclusive))| {
                 let tks = TksPattern::any();
                 let inclusive = inclusive.is_some();
-                (next, Hop { inclusive, segment, tks })
+                (
+                    next,
+                    Hop {
+                        inclusive,
+                        segment,
+                        tks,
+                    },
+                )
             })
         }
 
         fn version_hop(input: &str) -> Res<&str, Hop> {
-            tuple((version_segment, opt(tks), opt(tag("+"))))(input).map(|(next, (segment, tks, inclusive ))| {
-                let tks = match tks {
-                    None => TksPattern::any(),
-                    Some(tks) => tks,
-                };
-                let inclusive = inclusive.is_some();
-                (next, Hop { inclusive, segment, tks })
-            })
+            tuple((version_segment, opt(tks), opt(tag("+"))))(input).map(
+                |(next, (segment, tks, inclusive))| {
+                    let tks = match tks {
+                        None => TksPattern::any(),
+                        Some(tks) => tks,
+                    };
+                    let inclusive = inclusive.is_some();
+                    (
+                        next,
+                        Hop {
+                            inclusive,
+                            segment,
+                            tks,
+                        },
+                    )
+                },
+            )
         }
 
         pub fn address_kind_pattern(input: &str) -> Res<&str, AddressKindPattern> {
@@ -1887,22 +1948,21 @@ println!("seg: {}", seg.to_string());
     }
 
     pub fn skewer_or_snake<T>(i: T) -> Res<T, T>
-        where
-            T: InputTakeAtPosition + nom::InputLength,
-            <T as InputTakeAtPosition>::Item: AsChar,
+    where
+        T: InputTakeAtPosition + nom::InputLength,
+        <T as InputTakeAtPosition>::Item: AsChar,
     {
         i.split_at_position1_complete(
             |item| {
                 let char_item = item.as_char();
-                !(char_item == '-') &&
-                !(char_item == '_')
+                !(char_item == '-')
+                    && !(char_item == '_')
                     && !((char_item.is_alpha() && char_item.is_lowercase())
-                    || char_item.is_dec_digit())
+                        || char_item.is_dec_digit())
             },
             ErrorKind::AlphaNumeric,
         )
     }
-
 
     fn not_quote<T>(i: T) -> Res<T, T>
     where
@@ -2086,7 +2146,7 @@ println!("seg: {}", seg.to_string());
 
                 let regex = Regex::new(self.path_regex.as_str())?;
 
-                if regex.is_match(found.uri.to_string().as_str() ) {
+                if regex.is_match(found.uri.to_string().as_str()) {
                     Ok(())
                 } else {
                     Err(format!(
@@ -2169,16 +2229,14 @@ println!("seg: {}", seg.to_string());
     }
 
     pub fn http_call(input: &str) -> Res<&str, CallKind> {
-        tuple((
-            delimited(tag("Http<"), http_method, tag(">")),
-            capture_path,
-        ))(input)
-        .map(|(next, (method, path))| {
-            (
-                next,
-                CallKind::Http(HttpCall::new(method, path.to_string())),
-            )
-        })
+        tuple((delimited(tag("Http<"), http_method, tag(">")), capture_path))(input).map(
+            |(next, (method, path))| {
+                (
+                    next,
+                    CallKind::Http(HttpCall::new(method, path.to_string())),
+                )
+            },
+        )
     }
 
     pub fn call_kind(input: &str) -> Res<&str, CallKind> {
@@ -2264,18 +2322,24 @@ println!("seg: {}", seg.to_string());
     }
 
     pub fn primitive_data_struct(input: &str) -> Res<&str, PayloadTypePattern> {
-        context( "selector",primitive)(input).map(|(next, primitive)| (next, PayloadTypePattern::Primitive(primitive)))
+        context("selector", primitive)(input)
+            .map(|(next, primitive)| (next, PayloadTypePattern::Primitive(primitive)))
     }
 
     pub fn array_data_struct(input: &str) -> Res<&str, PayloadTypePattern> {
-        context("selector",tuple((primitive, context("array",delimited(tag("["), range, tag("]"))))))(input).map(
-            |(next, (primitive, range))| {
-                (
-                    next,
-                    PayloadTypePattern::List(ListPattern { primitive, range }),
-                )
-            },
-        )
+        context(
+            "selector",
+            tuple((
+                primitive,
+                context("array", delimited(tag("["), range, tag("]"))),
+            )),
+        )(input)
+        .map(|(next, (primitive, range))| {
+            (
+                next,
+                PayloadTypePattern::List(ListPattern { primitive, range }),
+            )
+        })
     }
 
     pub fn map_entry_pattern_any(input: &str) -> Res<&str, ValuePattern<MapEntryPattern>> {
@@ -2519,32 +2583,38 @@ println!("seg: {}", seg.to_string());
     }
 
     pub fn http_method(input: &str) -> Res<&str, HttpMethod> {
-        context("http_method", parse_from_str(camel_case )).parse(input).map( |(next,method):(&str,HttpMethodType)| {
-            (next,method.to_method())
-        })
+        context("http_method", parse_from_str(camel_case))
+            .parse(input)
+            .map(|(next, method): (&str, HttpMethodType)| (next, method.to_method()))
     }
 
     pub fn http_method_pattern(input: &str) -> Res<&str, MethodPattern> {
-        context("@http_method_pattern",method_pattern(http_method))(input)
+        context("@http_method_pattern", method_pattern(http_method))(input)
     }
 
     pub fn method_pattern<I: Clone, E: ParseError<I>, F>(
         mut f: F,
     ) -> impl FnMut(I) -> IResult<I, MethodPattern, E>
-        where
-            I: InputLength + InputTake + Compare<&'static str>,
-            F: Parser<I, HttpMethod, E>,
-            E: nom::error::ContextError<I>,
+    where
+        I: InputLength + InputTake + Compare<&'static str>,
+        F: Parser<I, HttpMethod, E>,
+        E: nom::error::ContextError<I>,
     {
         move |input: I| match tag::<&'static str, I, E>("*")(input.clone()) {
             Ok((next, _)) => Ok((next, MethodPattern::Any)),
-            Err(err) => f.parse(input.clone()).map( |(next,res)|(next, MethodPattern::Pattern(res))),
+            Err(err) => f
+                .parse(input.clone())
+                .map(|(next, res)| (next, MethodPattern::Pattern(res))),
         }
     }
 
     pub fn http_pattern_scoped(input: &str) -> Res<&str, HttpPattern> {
         tuple((
-            delimited(context("angle_bracket_open",tag("<")), http_method_pattern, context("angle_bracket_close",tag(">"))),
+            delimited(
+                context("angle_bracket_open", tag("<")),
+                http_method_pattern,
+                context("angle_bracket_close", tag(">")),
+            ),
             opt(path_regex),
         ))(input)
         .map(|(next, (method, path_regex))| {
@@ -2622,7 +2692,7 @@ println!("seg: {}", seg.to_string());
 
     pub fn payload_structure_with_validation(input: &str) -> Res<&str, PayloadPattern> {
         tuple((
-            context("selector",payload_structure),
+            context("selector", payload_structure),
             opt(preceded(tag("~"), opt(format))),
             opt(preceded(tag("~"), call_with_config)),
         ))(input)
@@ -2654,8 +2724,11 @@ println!("seg: {}", seg.to_string());
     }
 
     pub fn payload_pattern(input: &str) -> Res<&str, ValuePattern<PayloadPattern>> {
-        context("@payload-pattern", value_pattern(payload_structure_with_validation))(input)
-            .map(|(next, payload_pattern)| (next, payload_pattern))
+        context(
+            "@payload-pattern",
+            value_pattern(payload_structure_with_validation),
+        )(input)
+        .map(|(next, payload_pattern)| (next, payload_pattern))
     }
 
     /*
@@ -2680,13 +2753,12 @@ println!("seg: {}", seg.to_string());
     }
 
     pub fn payload_filter_block_any(input: &str) -> Res<&str, PatternBlock> {
-        let (next, _) = delimited(multispace0, context("selector",tag("*")), multispace0)(input)?;
+        let (next, _) = delimited(multispace0, context("selector", tag("*")), multispace0)(input)?;
 
         Ok((next, PatternBlock::Any))
     }
 
     pub fn payload_filter_block_def(input: &str) -> Res<&str, PatternBlock> {
-
         payload_structure_with_validation(input)
             .map(|(next, pattern)| (next, PatternBlock::Pattern(pattern)))
     }
@@ -2747,40 +2819,60 @@ println!("seg: {}", seg.to_string());
     }
 
     pub fn request_payload_filter_block(input: &str) -> Res<&str, Block> {
-        context("request-payload-filter-block",
-        terminated(
-            tuple((
-                multispace0,
-                alt((payload_filter_block_any, payload_filter_block_def, payload_filter_block_empty, fail)),
-                multispace0,
-            )),
-            tag("]"),
-        ))(input)
+        context(
+            "request-payload-filter-block",
+            terminated(
+                tuple((
+                    multispace0,
+                    alt((
+                        payload_filter_block_any,
+                        payload_filter_block_def,
+                        payload_filter_block_empty,
+                        fail,
+                    )),
+                    multispace0,
+                )),
+                tag("]"),
+            ),
+        )(input)
         .map(|(next, (_, block, _))| (next, Block::RequestPattern(block)))
     }
 
     pub fn response_payload_filter_block(input: &str) -> Res<&str, Block> {
-        context("response-payload-filter-block",
-                terminated(
-                    tuple((
-                        multispace0,
-                        alt((payload_filter_block_any, payload_filter_block_def, payload_filter_block_empty, fail)),
-                        multispace0,
+        context(
+            "response-payload-filter-block",
+            terminated(
+                tuple((
+                    multispace0,
+                    alt((
+                        payload_filter_block_any,
+                        payload_filter_block_def,
+                        payload_filter_block_empty,
+                        fail,
                     )),
-                    tag("]"),
-                ))(input)
-            .map(|(next, (_, block, _))| (next, Block::ResponsePattern(block)))
+                    multispace0,
+                )),
+                tag("]"),
+            ),
+        )(input)
+        .map(|(next, (_, block, _))| (next, Block::ResponsePattern(block)))
     }
 
     pub fn pipeline_step_block(input: &str) -> Res<&str, Block> {
-        let request = request_payload_filter_block as for<'r> fn(&'r str) -> Result<(&'r str, Block), nom::Err<ErrorTree<&'r str>>>;
-        let response = response_payload_filter_block as for<'r> fn(&'r str) -> Result<(&'r str, Block), nom::Err<ErrorTree<&'r str>>>;
-        let upload = upload_payload_block as for<'r> fn(&'r str) -> Result<(&'r str, Block), nom::Err<ErrorTree<&'r str>>>;
-        context( "pipeline-step-block", select_block(vec!(
-            SelectBlock(tag("-["), request),
-            SelectBlock(tag("=["), response),
-            SelectBlock(tag("^["),upload),
-        )))(input)
+        let request = request_payload_filter_block
+            as for<'r> fn(&'r str) -> Result<(&'r str, Block), nom::Err<ErrorTree<&'r str>>>;
+        let response = response_payload_filter_block
+            as for<'r> fn(&'r str) -> Result<(&'r str, Block), nom::Err<ErrorTree<&'r str>>>;
+        let upload = upload_payload_block
+            as for<'r> fn(&'r str) -> Result<(&'r str, Block), nom::Err<ErrorTree<&'r str>>>;
+        context(
+            "pipeline-step-block",
+            select_block(vec![
+                SelectBlock(tag("-["), request),
+                SelectBlock(tag("=["), response),
+                SelectBlock(tag("^["), upload),
+            ]),
+        )(input)
     }
 
     pub fn consume_pipeline_block(input: &str) -> Res<&str, Block> {
@@ -2793,25 +2885,24 @@ println!("seg: {}", seg.to_string());
         pub payload: ValuePattern<PayloadPattern>,
     }
 
-    #[derive(Debug,Clone,Serialize,Deserialize)]
+    #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct Hop {
         pub inclusive: bool,
         pub segment: SegmentPattern,
         pub tks: TksPattern,
     }
 
-
-
     impl Hop {
         pub fn matches(&self, address_kind_segment: &AddressKindSegment) -> bool {
-            self.segment.matches(&address_kind_segment.address_segment) && self.tks.matches(&address_kind_segment.kind)
+            self.segment.matches(&address_kind_segment.address_segment)
+                && self.tks.matches(&address_kind_segment.kind)
         }
     }
 
     impl ToString for Hop {
         fn to_string(&self) -> String {
             let mut rtn = String::new();
-            rtn.push_str( self.segment.to_string().as_str() );
+            rtn.push_str(self.segment.to_string().as_str());
 
             if let Pattern::Exact(resource_type) = &self.tks.resource_type {
                 rtn.push_str(format!("<{}", resource_type.to_string()).as_str());
@@ -2834,7 +2925,7 @@ println!("seg: {}", seg.to_string());
         }
     }
 
-    #[derive(Debug,Clone,Serialize,Deserialize)]
+    #[derive(Debug, Clone, Serialize, Deserialize)]
     pub enum Pattern<P> {
         Any,
         Exact(P),
@@ -2844,14 +2935,12 @@ println!("seg: {}", seg.to_string());
     where
         P: Eq + PartialEq,
     {
-
         pub fn is_any(&self) -> bool {
             match self {
                 Pattern::Any => true,
-                Pattern::Exact(_) => false
+                Pattern::Exact(_) => false,
             }
         }
-
 
         pub fn matches(&self, t: &P) -> bool {
             match self {
@@ -2874,7 +2963,7 @@ println!("seg: {}", seg.to_string());
 
         pub fn convert<To>(self) -> Result<Pattern<To>, MsgErr>
         where
-            P: TryInto<To, Error =MsgErr> + Eq + PartialEq,
+            P: TryInto<To, Error = MsgErr> + Eq + PartialEq,
         {
             Ok(match self {
                 Pattern::Any => Pattern::Any,
@@ -2950,7 +3039,7 @@ println!("seg: {}", seg.to_string());
 
         pub fn convert<To>(self) -> Result<EmptyPattern<To>, MsgErr>
         where
-            P: TryInto<To, Error =MsgErr> + Eq + PartialEq,
+            P: TryInto<To, Error = MsgErr> + Eq + PartialEq,
         {
             Ok(match self {
                 EmptyPattern::Any => EmptyPattern::Any,
@@ -3043,7 +3132,7 @@ println!("seg: {}", seg.to_string());
 
             for (index, segment) in self.segments.iter().enumerate() {
                 rtn.push_str(segment.to_string().as_str());
-                if index < self.segments.len()-1 {
+                if index < self.segments.len() - 1 {
                     rtn.push_str(segment.address_segment.terminating_delim());
                 }
             }
@@ -3081,8 +3170,8 @@ pub mod messaging {
     use std::collections::HashMap;
     use std::convert::TryInto;
 
-    use serde::{Deserialize, Serialize};
     use http::StatusCode;
+    use serde::{Deserialize, Serialize};
 
     use crate::error::{MsgErr, StatusErr};
     use crate::version::v0_0_1::entity::request::RequestCore;
@@ -3090,7 +3179,10 @@ pub mod messaging {
     use crate::version::v0_0_1::id::Address;
     use crate::version::v0_0_1::pattern::{AddressKindPath, AddressKindPattern};
     use crate::version::v0_0_1::payload::{Errors, MsgCall, Payload, Primitive};
-    use crate::version::v0_0_1::security::{Access, AccessGrant, EnumeratedAccess, Permissions, Privilege, EnumeratedPrivileges, Privileges};
+    use crate::version::v0_0_1::security::{
+        Access, AccessGrant, EnumeratedAccess, EnumeratedPrivileges, Permissions, Privilege,
+        Privileges,
+    };
     use crate::version::v0_0_1::util::unique_id;
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -3106,18 +3198,15 @@ pub mod messaging {
     }
 
     impl Request {
-
-        pub fn result<E:StatusErr>(self, result: Result<ResponseCore, E> ) -> Response {
+        pub fn result<E: StatusErr>(self, result: Result<ResponseCore, E>) -> Response {
             match result {
-                Ok(core) => {
-                    Response {
-                        id: unique_id(),
-                        to: self.from,
-                        from: self.to,
-                        core,
-                        response_to: self.id
-                    }
-                }
+                Ok(core) => Response {
+                    id: unique_id(),
+                    to: self.from,
+                    from: self.to,
+                    core,
+                    response_to: self.id,
+                },
                 Err(err) => {
                     let core = self.core.err(err);
                     Response {
@@ -3125,17 +3214,15 @@ pub mod messaging {
                         to: self.from,
                         from: self.to,
                         core,
-                        response_to: self.id
+                        response_to: self.id,
                     }
                 }
             }
         }
 
-        pub fn payload_result<E: StatusErr>(self, result: Result<Payload, E> ) -> Response {
+        pub fn payload_result<E: StatusErr>(self, result: Result<Payload, E>) -> Response {
             match result {
-                Ok(payload) => {
-                    self.ok_payload(payload)
-                }
+                Ok(payload) => self.ok_payload(payload),
                 Err(err) => {
                     let core = self.core.err(err);
                     Response {
@@ -3143,16 +3230,16 @@ pub mod messaging {
                         to: self.from,
                         from: self.to,
                         core,
-                        response_to: self.id
+                        response_to: self.id,
                     }
                 }
             }
         }
 
         pub fn to_call(&self) -> MsgCall {
-            MsgCall{
+            MsgCall {
                 path: self.core.uri.to_string(),
-                action: self.core.action.to_string()
+                action: self.core.action.to_string(),
             }
         }
     }
@@ -3205,7 +3292,7 @@ pub mod messaging {
         pub fn ok(self) -> Response {
             let core = ResponseCore {
                 headers: Default::default(),
-                status: StatusCode::from_u16(200u16 ).unwrap(),
+                status: StatusCode::from_u16(200u16).unwrap(),
                 body: Payload::Empty,
             };
             let response = Response {
@@ -3222,7 +3309,7 @@ pub mod messaging {
             let core = ResponseCore {
                 headers: Default::default(),
                 status: StatusCode::from_u16(200u16).unwrap(),
-                body: payload
+                body: payload,
             };
             let response = Response {
                 id: unique_id(),
@@ -3268,13 +3355,15 @@ pub mod messaging {
             response
         }
 
-
-        pub fn status(self, status: u16 ) -> Response {
-            fn process(request: &Request, status: u16) -> Result<Response,http::status::InvalidStatusCode> {
+        pub fn status(self, status: u16) -> Response {
+            fn process(
+                request: &Request,
+                status: u16,
+            ) -> Result<Response, http::status::InvalidStatusCode> {
                 let core = ResponseCore {
                     headers: Default::default(),
                     status: StatusCode::from_u16(status)?,
-                    body: Payload::Empty
+                    body: Payload::Empty,
                 };
                 let response = Response {
                     id: unique_id(),
@@ -3287,7 +3376,7 @@ pub mod messaging {
             }
             match process(&self, status) {
                 Ok(response) => response,
-                Err(err) => self.fail(format!("bad status: {}", status).as_str() )
+                Err(err) => self.fail(format!("bad status: {}", status).as_str()),
             }
         }
     }
@@ -3309,42 +3398,42 @@ pub mod messaging {
             }
         }
 
-        pub fn to( mut self, address: Address ) -> Self {
+        pub fn to(mut self, address: Address) -> Self {
             self.to = Some(address);
             self
         }
 
-        pub fn from( mut self, address: Address ) -> Self {
+        pub fn from(mut self, address: Address) -> Self {
             self.from = Some(address);
             self
         }
 
-        pub fn core( mut self, core: RequestCore ) -> Self {
+        pub fn core(mut self, core: RequestCore) -> Self {
             self.core = Some(core);
             self
         }
 
-        pub fn agent( mut self, agent: Agent ) -> Self {
+        pub fn agent(mut self, agent: Agent) -> Self {
             self.agent = agent;
             self
         }
 
-        pub fn session( mut self, session: Session ) -> Self {
+        pub fn session(mut self, session: Session) -> Self {
             self.session = Some(session);
             self
         }
 
-        pub fn scope( mut self, scope: Scope) -> Self {
+        pub fn scope(mut self, scope: Scope) -> Self {
             self.scope = scope;
             self
         }
 
-        pub fn handling( mut self, handling: Handling ) -> Self {
+        pub fn handling(mut self, handling: Handling) -> Self {
             self.handling = handling;
             self
         }
 
-        pub fn build(self) -> Result<Request,MsgErr> {
+        pub fn build(self) -> Result<Request, MsgErr> {
             Ok(Request {
                 id: unique_id(),
                 to: self.to.ok_or("RequestBuilder: 'to' must be set")?,
@@ -3353,10 +3442,9 @@ pub mod messaging {
                 agent: self.agent,
                 session: self.session,
                 scope: self.scope,
-                handling: self.handling
+                handling: self.handling,
             })
         }
-
     }
 
     impl Default for RequestBuilder {
@@ -3368,7 +3456,7 @@ pub mod messaging {
                 agent: Default::default(),
                 session: None,
                 scope: Default::default(),
-                handling: Default::default()
+                handling: Default::default(),
             }
         }
     }
@@ -3402,7 +3490,13 @@ pub mod messaging {
             self.core = Option::Some(core);
         }
 
-        pub fn into_request(self, from: Address, agent: Agent, session: Option<Session>, scope: Scope) -> Result<Request, MsgErr> {
+        pub fn into_request(
+            self,
+            from: Address,
+            agent: Agent,
+            session: Option<Session>,
+            scope: Scope,
+        ) -> Result<Request, MsgErr> {
             self.validate()?;
             let core = self
                 .core
@@ -3416,7 +3510,7 @@ pub mod messaging {
                 agent,
                 session,
                 handling: Default::default(),
-                scope
+                scope,
             };
             Ok(request)
         }
@@ -3489,23 +3583,22 @@ pub mod messaging {
         }
     }
 
-
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub enum RequestTransform {
         Request(RequestCore),
-        Response(ResponseCore)
+        Response(ResponseCore),
     }
 
     pub enum ResponseKindExpected {
         None,
-        Synch, // requestor will wait for response
-        Async(Payload) // The payload
+        Synch,          // requestor will wait for response
+        Async(Payload), // The payload
     }
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub enum Agent {
         Anonymous,
-        Authenticated(AuthedAgent)
+        Authenticated(AuthedAgent),
     }
 
     impl Default for Agent {
@@ -3517,14 +3610,14 @@ pub mod messaging {
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct AuthedAgent {
         pub owner: Address,
-        pub executor: Address
+        pub executor: Address,
     }
 
     impl AuthedAgent {
         pub fn new(address: Address) -> Self {
             Self {
                 owner: address.clone(),
-                executor: address
+                executor: address,
             }
         }
     }
@@ -3535,7 +3628,7 @@ pub mod messaging {
         fn try_into(self) -> Result<AuthedAgent, Self::Error> {
             match self {
                 Agent::Anonymous => Err(MsgErr::new(401, "Authorization required")),
-                Agent::Authenticated(auth) => Ok(auth)
+                Agent::Authenticated(auth) => Ok(auth),
             }
         }
     }
@@ -3548,13 +3641,15 @@ pub mod messaging {
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct Session {
-       pub id: String,
-       pub attributes: HashMap<String,String>
+        pub id: String,
+        pub attributes: HashMap<String, String>,
     }
 
     impl Session {
         pub fn get_preferred_username(&self) -> Option<String> {
-            self.attributes.get(&"preferred_username".to_string()).cloned()
+            self.attributes
+                .get(&"preferred_username".to_string())
+                .cloned()
         }
     }
 
@@ -3604,33 +3699,32 @@ pub mod messaging {
     pub struct ScopeGrant {
         pub on: AddressKindPattern,
         pub kind: ScopeGrantKind,
-        pub aspect: ScopeGrantAspect
+        pub aspect: ScopeGrantAspect,
     }
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
-    pub enum ScopeGrantKind{
+    pub enum ScopeGrantKind {
         Or,
-        And
+        And,
     }
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub enum ScopeGrantAspect {
         Perm(Permissions),
-        Priv(Privilege)
+        Priv(Privilege),
     }
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct RequestAccess {
         pub permissions: Permissions,
-        pub privileges:  Privileges,
+        pub privileges: Privileges,
     }
 
-
     #[derive(Debug, Clone, Serialize, Deserialize)]
-    pub enum Roles{
+    pub enum Roles {
         Full,
         None,
-        Enumerated(Vec<String>)
+        Enumerated(Vec<String>),
     }
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -3638,14 +3732,14 @@ pub mod messaging {
         kind: HandlingKind,
         priority: Priority,
         retries: Retries,
-        timeout: Timeout
+        timeout: Timeout,
     }
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub enum HandlingKind {
-        Durable,  // Mesh will guarantee delivery eventually once Request call has returned
-        Queued,   // Slower but more reliable delivery, message can be lost if a star crashes, etc
-        Immediate // Message should never touch a filesystem, it will be in memory for its entire journey for immediate processing
+        Durable,   // Mesh will guarantee delivery eventually once Request call has returned
+        Queued,    // Slower but more reliable delivery, message can be lost if a star crashes, etc
+        Immediate, // Message should never touch a filesystem, it will be in memory for its entire journey for immediate processing
     }
 
     impl Default for Handling {
@@ -3654,7 +3748,7 @@ pub mod messaging {
                 kind: HandlingKind::Queued,
                 priority: Default::default(),
                 retries: Default::default(),
-                timeout: Default::default()
+                timeout: Default::default(),
             }
         }
     }
@@ -3664,7 +3758,7 @@ pub mod messaging {
         Never,
         Max,
         Medium,
-        Min
+        Min,
     }
 
     impl Default for Timeout {
@@ -3678,23 +3772,20 @@ pub mod messaging {
         None,
         Max,
         Medium,
-        Min
+        Min,
     }
 
-    impl Default for Retries{
+    impl Default for Retries {
         fn default() -> Self {
             Retries::None
         }
     }
 
-
-
-
     #[derive(Debug, Clone, Serialize, Deserialize)]
-    pub enum Priority{
+    pub enum Priority {
         High,
         Med,
-        Low
+        Low,
     }
 
     impl Default for Priority {
@@ -3703,69 +3794,65 @@ pub mod messaging {
         }
     }
 
-
     #[derive(Debug, Clone, Serialize, Deserialize)]
-    pub enum Karma{
+    pub enum Karma {
         Super,
         High,
         Med,
         Low,
-        None
+        None,
     }
 
-    impl Default for Karma{
+    impl Default for Karma {
         fn default() -> Self {
             Self::High
         }
     }
-
 }
 
 pub mod security {
-    use std::collections::HashSet;
-    use std::ops::{Deref, DerefMut};
-    use std::str::FromStr;
-    use nom::combinator::all_consuming;
     use crate::error::MsgErr;
     use crate::version::v0_0_1::id::Address;
-    use crate::version::v0_0_1::pattern::AddressKindPattern;
-    use serde::{Serialize,Deserialize};
     use crate::version::v0_0_1::messaging::ScopeGrant;
-    use crate::version::v0_0_1::parse::{particle_perms, permissions_mask, privilege};
     use crate::version::v0_0_1::parse::error::{just_msg, result};
+    use crate::version::v0_0_1::parse::{particle_perms, permissions_mask, privilege, Subst, ToVal};
+    use crate::version::v0_0_1::pattern::AddressKindPattern;
     use crate::version::v0_0_1::Span;
+    use nom::combinator::all_consuming;
+    use serde::{Deserialize, Serialize};
+    use std::collections::{HashMap, HashSet};
+    use std::ops::{Deref, DerefMut};
+    use std::str::FromStr;
 
-    #[derive(Debug,Clone,Serialize,Deserialize)]
+    #[derive(Debug, Clone, Serialize, Deserialize)]
     pub enum Access {
         // bool is true if Super is also Owner
         Super(bool),
         Owner,
-        Enumerated(EnumeratedAccess)
+        Enumerated(EnumeratedAccess),
     }
 
     impl Access {
-
         pub fn has_super(&self) -> bool {
             match self {
                 Access::Super(_) => true,
-                _=> false,
+                _ => false,
             }
         }
 
         pub fn has_owner(&self) -> bool {
             match self {
                 Access::Owner => true,
-                Access::Super(owner)=> owner.clone(),
+                Access::Super(owner) => owner.clone(),
                 _ => false,
             }
         }
-
 
         pub fn has_full(&self) -> bool {
             match self {
                 Access::Super(_) => true,
                 Access::Owner => true,
-                Access::Enumerated(_) => false
+                Access::Enumerated(_) => false,
             }
         }
 
@@ -3775,45 +3862,37 @@ pub mod security {
 
         pub fn permissions(&self) -> Permissions {
             match self {
-                Access::Super(_) => {
-                    Permissions::full()
-                },
-                Access::Owner => {
-                    Permissions::full()
-                },
-                Access::Enumerated(enumerated) => {
-                    enumerated.permissions.clone()
-                }
+                Access::Super(_) => Permissions::full(),
+                Access::Owner => Permissions::full(),
+                Access::Enumerated(enumerated) => enumerated.permissions.clone(),
             }
         }
 
-        pub fn check_privilege(&self, privilege: &str) -> Result<(),MsgErr> {
+        pub fn check_privilege(&self, privilege: &str) -> Result<(), MsgErr> {
             match self {
-                Access::Super(_)=> Ok(()),
-                Access::Owner=> Ok(()),
+                Access::Super(_) => Ok(()),
+                Access::Owner => Ok(()),
                 Access::Enumerated(enumerated) => {
                     match enumerated.privileges.has(privilege).is_ok() {
                         true => Ok(()),
-                        false => Err(format!("'{}'",privilege).into())
+                        false => Err(format!("'{}'", privilege).into()),
                     }
                 }
             }
         }
-
     }
 
-
-    #[derive(Debug,Clone,Serialize,Deserialize)]
-    pub enum Privileges{
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub enum Privileges {
         Full,
-        Enumerated(EnumeratedPrivileges)
+        Enumerated(EnumeratedPrivileges),
     }
 
     impl Privileges {
-        pub fn has( &self, privilege: &str ) -> Result<(),()>{
+        pub fn has(&self, privilege: &str) -> Result<(), ()> {
             match self {
                 Privileges::Full => Ok(()),
-                Privileges::Enumerated(privileges) => privileges.has(privilege)
+                Privileges::Enumerated(privileges) => privileges.has(privilege),
             }
         }
 
@@ -3821,88 +3900,73 @@ pub mod security {
             Self::Enumerated(EnumeratedPrivileges::none())
         }
 
-        pub fn or( mut self, other: &Self ) -> Self  {
+        pub fn or(mut self, other: &Self) -> Self {
             match self {
-                Privileges::Full => {
-                    self
-                }
-                Privileges::Enumerated(privileges) => {
-                    match other {
-                        Privileges::Full => {
-                            Privileges::Full
-                        }
-                        Privileges::Enumerated(other) => {
-                            Privileges::Enumerated(privileges.or(other))
-                        }
-                    }
-                }
-            }
-        }
-
-        pub fn and( self, other: &Self ) -> Privileges {
-            match other {
-                Privileges::Full => {
-                    self
+                Privileges::Full => self,
+                Privileges::Enumerated(privileges) => match other {
+                    Privileges::Full => Privileges::Full,
+                    Privileges::Enumerated(other) => Privileges::Enumerated(privileges.or(other)),
                 },
-                Privileges::Enumerated(enumerated_other) => {
-                    match self {
-                        Privileges::Full => {
-                            other.clone()
-                        }
-                        Privileges::Enumerated(enumerated_self) => {
-                            Privileges::Enumerated(enumerated_self.and(enumerated_other))
-                        }
+            }
+        }
+
+        pub fn and(self, other: &Self) -> Privileges {
+            match other {
+                Privileges::Full => self,
+                Privileges::Enumerated(enumerated_other) => match self {
+                    Privileges::Full => other.clone(),
+                    Privileges::Enumerated(enumerated_self) => {
+                        Privileges::Enumerated(enumerated_self.and(enumerated_other))
                     }
-                }
+                },
             }
         }
 
-        pub fn add( &mut self, privilege: &str ) {
+        pub fn add(&mut self, privilege: &str) {
             match self {
-                Self::Full => {},
-                Self::Enumerated(privileges) => {
-                    privileges.add(privilege)
-                }
+                Self::Full => {}
+                Self::Enumerated(privileges) => privileges.add(privilege),
             }
         }
-
     }
 
-
-
-    #[derive(Debug,Clone,Serialize,Deserialize)]
+    #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct EnumeratedPrivileges {
-       set: HashSet<String>
+        set: HashSet<String>,
     }
 
     impl EnumeratedPrivileges {
         pub fn new() -> Self {
-            Self{ set: HashSet::new() }
+            Self {
+                set: HashSet::new(),
+            }
         }
 
         pub fn none() -> Self {
-            Self{ set: HashSet::new() }
+            Self {
+                set: HashSet::new(),
+            }
         }
 
-        pub fn or( mut self, other: &Self ) -> Self {
+        pub fn or(mut self, other: &Self) -> Self {
             for p in other.set.iter() {
                 if self.has(p).is_err() {
-                    self.add(p.as_str() );
+                    self.add(p.as_str());
                 }
             }
             self
         }
 
-        pub fn and( mut self, other: &Self ) -> Self {
-            self.set.retain( |p| other.has(p).is_ok() );
+        pub fn and(mut self, other: &Self) -> Self {
+            self.set.retain(|p| other.has(p).is_ok());
             self
         }
 
-        pub fn add( &mut self, privilege: &str ) {
-            self.set.insert(privilege.to_string() );
+        pub fn add(&mut self, privilege: &str) {
+            self.set.insert(privilege.to_string());
         }
 
-        pub fn has( &self, privilege: &str ) -> Result<(),()>{
+        pub fn has(&self, privilege: &str) -> Result<(), ()> {
             let privilege = privilege.to_string();
             if self.set.contains(&privilege) {
                 Ok(())
@@ -3912,19 +3976,17 @@ pub mod security {
         }
     }
 
-
-
-    #[derive(Debug,Clone,Serialize,Deserialize,Eq,PartialEq,Hash)]
+    #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
     pub enum Privilege {
         Full,
-        Single(String)
+        Single(String),
     }
 
     impl ToString for Privilege {
         fn to_string(&self) -> String {
             match self {
                 Privilege::Full => "*".to_string(),
-                Privilege::Single(name) => name.clone()
+                Privilege::Single(name) => name.clone(),
             }
         }
     }
@@ -3938,23 +4000,19 @@ pub mod security {
         }
     }
 
-    #[derive(Debug,Clone,Serialize,Deserialize)]
+    #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct EnumeratedAccess {
         pub permissions: Permissions,
-        pub privileges: Privileges
+        pub privileges: Privileges,
     }
 
     impl EnumeratedAccess {
-
-        pub fn mask(&mut self, scope_grant: &ScopeGrant ) {
-
-        }
-
+        pub fn mask(&mut self, scope_grant: &ScopeGrant) {}
 
         pub fn full() -> Self {
-            Self{
+            Self {
                 permissions: Permissions::full(),
-                privileges: Privileges::Full
+                privileges: Privileges::Full,
             }
         }
 
@@ -3965,7 +4023,7 @@ pub mod security {
             }
         }
 
-        pub fn and( &mut self, access: &Self ) {
+        pub fn and(&mut self, access: &Self) {
             self.permissions.and(&access.permissions);
             self.privileges = self.privileges.clone().and(&access.privileges);
         }
@@ -3974,35 +4032,31 @@ pub mod security {
             self.privileges = Privileges::none()
         }
 
-        pub fn add(&mut self, grant: &AccessGrant ) {
+        pub fn add(&mut self, grant: &AccessGrant) {
             match &grant.kind {
-                AccessGrantKind::Super => {
+                AccessGrantKindDef::Super => {
                     // we can't mask Super with Enumerated... it does nothing
                 }
-                AccessGrantKind::Privilege(prv) => {
-                    match prv {
-                        Privilege::Full => {
-                            self.privileges = Privileges::Full;
-                        }
-                        Privilege::Single(prv) => {
-                            self.privileges.add(prv.as_str());
-                        }
+                AccessGrantKindDef::Privilege(prv) => match prv {
+                    Privilege::Full => {
+                        self.privileges = Privileges::Full;
                     }
-                }
-                AccessGrantKind::PermissionsMask(mask) => {
-                    match mask.kind {
-                        PermissionsMaskKind::Or => self.permissions.or(&mask.permissions),
-                        PermissionsMaskKind::And => self.permissions.and(&mask.permissions)
+                    Privilege::Single(prv) => {
+                        self.privileges.add(prv.as_str());
                     }
-                }
+                },
+                AccessGrantKindDef::PermissionsMask(mask) => match mask.kind {
+                    PermissionsMaskKind::Or => self.permissions.or(&mask.permissions),
+                    PermissionsMaskKind::And => self.permissions.and(&mask.permissions),
+                },
             }
         }
     }
 
-    #[derive(Debug,Clone,Serialize,Deserialize,Eq,PartialEq)]
+    #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
     pub struct PermissionsMask {
         pub kind: PermissionsMaskKind,
-        pub permissions: Permissions
+        pub permissions: Permissions,
     }
 
     impl FromStr for PermissionsMask {
@@ -4016,40 +4070,40 @@ pub mod security {
 
     impl ToString for PermissionsMask {
         fn to_string(&self) -> String {
-            match self.kind{
+            match self.kind {
                 PermissionsMaskKind::Or => format!("+{}", self.permissions.to_string()),
-                PermissionsMaskKind::And => format!("&{}", self.permissions.to_string())
+                PermissionsMaskKind::And => format!("&{}", self.permissions.to_string()),
             }
         }
     }
 
-    #[derive(Debug,Clone,Serialize,Deserialize,Eq,PartialEq)]
+    #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
     pub struct Permissions {
         pub child: ChildPerms,
-        pub particle: ParticlePerms
+        pub particle: ParticlePerms,
     }
 
     impl Permissions {
         pub fn full() -> Self {
             Self {
                 child: ChildPerms::full(),
-                particle: ParticlePerms::full()
+                particle: ParticlePerms::full(),
             }
         }
 
         pub fn none() -> Self {
             Self {
                 child: ChildPerms::none(),
-                particle: ParticlePerms::none()
+                particle: ParticlePerms::none(),
             }
         }
 
-        pub fn or( &mut self, permissions: &Permissions ) {
+        pub fn or(&mut self, permissions: &Permissions) {
             self.child.or(&permissions.child);
             self.particle.or(&permissions.particle);
         }
 
-        pub fn and( &mut self, permissions: &Permissions ) {
+        pub fn and(&mut self, permissions: &Permissions) {
             self.child.and(&permissions.child);
             self.particle.and(&permissions.particle);
         }
@@ -4057,31 +4111,31 @@ pub mod security {
 
     impl ToString for Permissions {
         fn to_string(&self) -> String {
-            format!("{}-{}", self.child.to_string(), self.particle.to_string() )
+            format!("{}-{}", self.child.to_string(), self.particle.to_string())
         }
     }
 
-    #[derive(Debug,Clone,Serialize,Deserialize,Eq,PartialEq)]
-    pub struct ChildPerms{
+    #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
+    pub struct ChildPerms {
         pub create: bool,
         pub select: bool,
         pub delete: bool,
     }
 
-    impl ChildPerms{
-        pub fn full()->Self {
+    impl ChildPerms {
+        pub fn full() -> Self {
             Self {
                 create: true,
                 select: true,
-                delete: true
+                delete: true,
             }
         }
 
-        pub fn none()->Self {
+        pub fn none() -> Self {
             Self {
                 create: false,
                 select: false,
-                delete:false
+                delete: false,
             }
         }
 
@@ -4098,7 +4152,7 @@ pub mod security {
         }
     }
 
-    impl ToString for ChildPerms{
+    impl ToString for ChildPerms {
         fn to_string(&self) -> String {
             let mut rtn = String::new();
 
@@ -4124,7 +4178,7 @@ pub mod security {
         }
     }
 
-    #[derive(Debug,Clone,Serialize,Deserialize,Eq,PartialEq)]
+    #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
     pub struct ParticlePerms {
         pub read: bool,
         pub write: bool,
@@ -4132,19 +4186,19 @@ pub mod security {
     }
 
     impl ParticlePerms {
-        pub fn full()->Self {
+        pub fn full() -> Self {
             Self {
                 read: true,
                 write: true,
-                execute: true
+                execute: true,
             }
         }
 
-        pub fn none()->Self {
+        pub fn none() -> Self {
             Self {
                 read: false,
                 write: false,
-                execute:false
+                execute: false,
             }
         }
 
@@ -4196,39 +4250,63 @@ pub mod security {
         }
     }
 
-    #[derive(Debug,Clone,Serialize,Deserialize,Eq,PartialEq)]
+    #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
     pub enum PermissionsMaskKind {
         Or,
-        And
+        And,
     }
 
-    #[derive(Debug,Clone,Serialize,Deserialize)]
-    pub struct AccessGrant {
-        pub kind: AccessGrantKind,
-        pub on_point: AddressKindPattern,
-        pub to_point: AddressKindPattern,
-        pub by_particle: Address,
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub struct AccessGrantDef<Priv, PermMask, Point, PointSelector> {
+        pub kind: AccessGrantKindDef<Priv, PermMask>,
+        pub on_point: PointSelector,
+        pub to_point: PointSelector,
+        pub by_particle: Point,
     }
 
-    #[derive(Debug,Clone,Serialize,Deserialize)]
-    pub enum AccessGrantKind {
+    pub type AccessGrant = AccessGrantDef<Privilege, PermissionsMask, Address, AddressKindPattern>;
+    pub type AccessGrantKind = AccessGrantKindDef<Privilege, PermissionsMask>;
+    pub type AccessGrantKindSubst = AccessGrantKindDef<Subst<Privilege>, Subst<PermissionsMask>>;
+    pub type AccessGrantSubst = AccessGrantDef<
+        Subst<Privilege>,
+        Subst<PermissionsMask>,
+        Subst<Address>,
+        Subst<AddressKindPattern>,
+    >;
+
+    impl ToVal<AccessGrantKind> for AccessGrantKindSubst {
+        fn to_val(self, map: &HashMap<String, String>) -> Result<AccessGrantKind, MsgErr> {
+            match self {
+                AccessGrantKindSubst::Super => {
+                    Ok(AccessGrantKind::Super)
+                }
+                AccessGrantKindSubst::Privilege(privilege) => {
+                    Ok(AccessGrantKind::Privilege(privilege.to_val(map)?))
+                }
+                AccessGrantKindSubst::PermissionsMask(perms) => {
+                    Ok(AccessGrantKind::PermissionsMask(perms.to_val(map)?))
+                }
+            }
+        }
+    }
+
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub enum AccessGrantKindDef<Priv, PermMask> {
         Super,
-        Privilege(Privilege),
-        PermissionsMask(PermissionsMask),
+        Privilege(Priv),
+        PermissionsMask(PermMask),
     }
 
-    impl ToString for AccessGrantKind {
+    impl<Priv, PermMask> ToString for AccessGrantKindDef<Priv, PermMask> {
         fn to_string(&self) -> String {
             match self {
-                AccessGrantKind::Super => "super".to_string(),
-                AccessGrantKind::Privilege(_) => "priv".to_string(),
-                AccessGrantKind::PermissionsMask(_) => "perm".to_string()
+                AccessGrantKindDef::Super => "super".to_string(),
+                AccessGrantKindDef::Privilege(_) => "priv".to_string(),
+                AccessGrantKindDef::PermissionsMask(_) => "perm".to_string(),
             }
         }
     }
 }
-
-
 
 pub mod frame {
     use std::convert::TryInto;
@@ -4300,9 +4378,9 @@ pub mod payload {
     use crate::version::v0_0_1::pattern::TksPattern;
     use crate::version::v0_0_1::resource::{Resource, ResourceStub, Status};
     use crate::version::v0_0_1::util::{ValueMatcher, ValuePattern};
+    use http::{Method, Uri};
     use std::str::FromStr;
     use std::sync::Arc;
-    use http::{Method, Uri};
 
     #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, strum_macros::Display)]
     pub enum Payload {
@@ -4313,7 +4391,6 @@ pub mod payload {
     }
 
     impl Payload {
-
         pub fn to_text(self) -> Result<String, MsgErr> {
             if let Payload::Primitive(Primitive::Text(text)) = self {
                 Ok(text)
@@ -4321,7 +4398,6 @@ pub mod payload {
                 Err("not a 'Text' payload".into())
             }
         }
-
 
         pub fn is_some(&self) -> bool {
             if let Self::Empty = self {
@@ -4354,10 +4430,10 @@ pub mod payload {
         }
     }
 
-    impl TryInto<HashMap<String,Payload>> for Payload {
+    impl TryInto<HashMap<String, Payload>> for Payload {
         type Error = MsgErr;
 
-        fn try_into(self) -> Result<HashMap<String,Payload>, Self::Error> {
+        fn try_into(self) -> Result<HashMap<String, Payload>, Self::Error> {
             match self {
                 Payload::Map(map) => Ok(map.map),
                 _ => Err("Payload type must a Map".into()),
@@ -4371,14 +4447,11 @@ pub mod payload {
         fn try_into(self) -> Result<String, Self::Error> {
             match self {
                 Payload::Primitive(Primitive::Text(text)) => Ok(text),
-                Payload::Primitive(Primitive::Bin(bin)) => {
-                    Ok(String::from_utf8(bin.to_vec())?)
-                },
+                Payload::Primitive(Primitive::Bin(bin)) => Ok(String::from_utf8(bin.to_vec())?),
                 _ => Err("Payload type must an Text".into()),
             }
         }
     }
-
 
     impl TryInto<Address> for Payload {
         type Error = MsgErr;
@@ -4586,7 +4659,6 @@ pub mod payload {
             }
         }
     }
-
 
     impl TryInto<String> for Primitive {
         type Error = MsgErr;
@@ -4933,7 +5005,7 @@ pub mod payload {
                 HttpMethodType::Head => HttpMethod::HEAD,
                 HttpMethodType::Connect => HttpMethod::CONNECT,
                 HttpMethodType::Options => HttpMethod::OPTIONS,
-                HttpMethodType::Trace => HttpMethod::TRACE
+                HttpMethodType::Trace => HttpMethod::TRACE,
             }
         }
     }
@@ -5329,25 +5401,17 @@ pub mod command {
         }
 
         impl PropertyMod {
-            pub fn set_or<E>( &self, err: E) -> Result<String,E> {
+            pub fn set_or<E>(&self, err: E) -> Result<String, E> {
                 match self {
-                    Self::Set { key, value, lock } => {
-                        Ok(value.clone())
-                    },
-                    Self::UnSet(_) => {
-                        Err(err)
-                    }
+                    Self::Set { key, value, lock } => Ok(value.clone()),
+                    Self::UnSet(_) => Err(err),
                 }
             }
 
             pub fn opt(&self) -> Option<String> {
                 match self {
-                    Self::Set { key, value, lock } => {
-                        Some(value.clone())
-                    },
-                    Self::UnSet(_) => {
-                        None
-                    }
+                    Self::Set { key, value, lock } => Some(value.clone()),
+                    Self::UnSet(_) => None,
                 }
             }
         }
@@ -5440,8 +5504,8 @@ pub mod msg {
     use crate::version::v0_0_1::entity::response::ResponseCore;
     use crate::version::v0_0_1::id::Meta;
     use crate::version::v0_0_1::payload::{Errors, Payload, Primitive};
-    use serde::{Deserialize, Serialize};
     use http::{HeaderMap, StatusCode, Uri};
+    use serde::{Deserialize, Serialize};
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct MsgRequest {
@@ -5816,11 +5880,10 @@ pub mod config {
         }
 
         pub mod parse {
-            use std::borrow::Borrow;
-            use std::ops::{Deref, DerefMut};
+            use crate::error::MsgErr;
             use crate::version::v0_0_1::config::bind::{
-                Pipeline, PipelineSegment, PipelineStep, PipelineStop, PipelinesSubScope,
-                ProtoBind, ConfigScope, Selector, StepKind,
+                ConfigScope, Pipeline, PipelineSegment, PipelineStep, PipelineStop,
+                PipelinesSubScope, ProtoBind, Selector, StepKind,
             };
             use crate::version::v0_0_1::entity::EntityType;
             use crate::version::v0_0_1::parse::{capture_address, Res};
@@ -5836,68 +5899,88 @@ pub mod config {
             use nom::error::{context, ContextError, ErrorKind, ParseError};
             use nom::multi::{many0, many1};
             use nom::sequence::{delimited, preceded, tuple};
-            use nom::{AsChar, Compare, IResult, InputIter, InputLength, InputTake, Parser, UnspecializedInput, InputTakeAtPosition, FindToken, Err};
+            use nom::{
+                AsChar, Compare, Err, FindToken, IResult, InputIter, InputLength, InputTake,
+                InputTakeAtPosition, Parser, UnspecializedInput,
+            };
             use nom_supreme::error::{ErrorTree, StackContext};
             use nom_supreme::final_parser::final_parser;
             use nom_supreme::ParserExt;
-            use crate::error::MsgErr;
+            use std::borrow::Borrow;
+            use std::ops::{Deref, DerefMut};
 
-            pub fn final_bind(input: &str) -> Result<ProtoBind,String>
-            {
-                final_parser(delimited( multispace0,bind,multispace0 ) )(input).map_err( |err| final_bind_error(err) )
+            pub fn final_bind(input: &str) -> Result<ProtoBind, String> {
+                final_parser(delimited(multispace0, bind, multispace0))(input)
+                    .map_err(|err| final_bind_error(err))
             }
 
             fn final_bind_error(error: ErrorTree<&str>) -> String {
                 match find_error_stack(&error) {
                     Ok(stack) => {
-println!("initial stack: {}",stack.to_string());
+                        println!("initial stack: {}", stack.to_string());
                         match stack.normalize() {
                             Ok(normalized) => {
                                 let seg = normalized.final_segment();
                                 let hierarchy = normalized.hierarchy();
-println!("hierarch: {}", hierarchy);
+                                println!("hierarch: {}", hierarchy);
                                 match final_bind_error_message(normalized) {
-                                    Ok(error) => {
-                                        format_error( seg.location,hierarchy, error)
-                                    }
-                                    Err(error) => {
-                                        format_error( seg.location,hierarchy, format!("internal Bind parser error: {} ",error))
-                                    }
+                                    Ok(error) => format_error(seg.location, hierarchy, error),
+                                    Err(error) => format_error(
+                                        seg.location,
+                                        hierarchy,
+                                        format!("internal Bind parser error: {} ", error),
+                                    ),
                                 }
                             }
                             Err(_) => {
-                                return "internal Bind parser error: could not unwrap error stack".to_string()
+                                return "internal Bind parser error: could not unwrap error stack"
+                                    .to_string()
                             }
                         }
                     }
                     Err(_) => {
-                        return "internal Bind parser error: could not find context stack".to_string()
+                        return "internal Bind parser error: could not find context stack"
+                            .to_string()
                     }
                 }
             }
 
-            fn final_bind_error_message( stack: ErrorStack<&str> ) -> Result<String,String> {
+            fn final_bind_error_message(stack: ErrorStack<&str>) -> Result<String, String> {
                 let hierarchy = stack.hierarchy();
-println!("HIERARCHY {}", hierarchy);
-println!("CONTEXT   {}", stack.final_segment().context);
-println!("STACK {}", stack.to_string() );
+                println!("HIERARCHY {}", hierarchy);
+                println!("CONTEXT   {}", stack.final_segment().context);
+                println!("STACK {}", stack.to_string());
 
                 match hierarchy.as_str() {
-                        "Bind.Pipelines" =>match stack.final_segment().context {
-                            "multi_select_scope"=>{return Ok("expecting 'Rc', 'Msg' or 'Http' (pipelines selectors) or '}' (close Pipelines scope)".to_string());},
-                            "selector"=>{return Ok("expecting 'Pipelines' (Pipelines selector)".to_string());},
-                            "scope:open"=>{return Ok("expecting '{' (Pipelines open scope)".to_string());},
+                    "Bind.Pipelines" => match stack.final_segment().context {
+                        "multi_select_scope" => {
+                            return Ok("expecting 'Rc', 'Msg' or 'Http' (pipelines selectors) or '}' (close Pipelines scope)".to_string());
+                        }
+                        "selector" => {
+                            return Ok("expecting 'Pipelines' (Pipelines selector)".to_string());
+                        }
+                        "scope:open" => {
+                            return Ok("expecting '{' (Pipelines open scope)".to_string());
+                        }
+                        _ => {}
+                    },
+                    "Bind.Pipelines.Http.Pipeline.Step" => {
+                        match stack.final_segment().context {
+                            "!select-block" => return Ok(
+                                "expected '->' (forward request) or '-[' (RequestPayloadFilter)"
+                                    .to_string(),
+                            ),
                             _ => {}
                         }
-                        "Bind.Pipelines.Http.Pipeline.Step" => match stack.final_segment().context {
-                            "!select-block" => return Ok("expected '->' (forward request) or '-[' (RequestPayloadFilter)".to_string()),
-                            _ => {}
-                        }
+                    }
                     _ => {}
                 }
 
                 if hierarchy.ends_with(".Stop") {
-                    return Ok("expected valid pipeline stop \"{{ }}\" (Core) or valid Address".to_string());
+                    return Ok(
+                        "expected valid pipeline stop \"{{ }}\" (Core) or valid Address"
+                            .to_string(),
+                    );
                 }
 
                 match stack.final_segment().context {
@@ -5917,27 +6000,38 @@ println!("STACK {}", stack.to_string() );
                     }
                     what => Err(format!("unrecognized parse error context: '{}'",what))
                 }
-
-
             }
 
-            pub fn format_error( input: &str, hierarchy: String, message: String ) -> String {
-               format!("{}\n\n{}: {}", extract_problem_line(input),hierarchy,message )
+            pub fn format_error(input: &str, hierarchy: String, message: String) -> String {
+                format!(
+                    "{}\n\n{}: {}",
+                    extract_problem_line(input),
+                    hierarchy,
+                    message
+                )
             }
 
-            pub fn find_error_stack<'a>(error: &'a ErrorTree<&str>) -> Result<ErrorStack<&'a str>,()> {
-println!("find_error_stack");
+            pub fn find_error_stack<'a>(
+                error: &'a ErrorTree<&str>,
+            ) -> Result<ErrorStack<&'a str>, ()> {
+                println!("find_error_stack");
                 let mut segs = find_error_segments(error)?;
-println!("Segs count: {}", segs.len() );
+                println!("Segs count: {}", segs.len());
                 segs.reverse();
                 let stack = ErrorStack::new(segs)?;
                 Ok(stack)
             }
 
-            pub fn find_error_segments<'a>(error: &'a ErrorTree<&str>) -> Result<Vec<ErrorSegment<&'a str>>,()> {
+            pub fn find_error_segments<'a>(
+                error: &'a ErrorTree<&str>,
+            ) -> Result<Vec<ErrorSegment<&'a str>>, ()> {
                 match error {
                     ErrorTree::Base { location, kind } => {
-                        println!("found error kind: {} location: {}", kind.to_string(), location);
+                        println!(
+                            "found error kind: {} location: {}",
+                            kind.to_string(),
+                            location
+                        );
                         Err(())
                     }
                     ErrorTree::Stack { base, contexts } => {
@@ -5949,7 +6043,7 @@ println!("Segs count: {}", segs.len() );
                                 stack.append(&mut to_error_segments(contexts));
                                 return Ok(stack);
                             } else if context.starts_with("!") {
-                                return Ok(to_error_segments(contexts))
+                                return Ok(to_error_segments(contexts));
                             }
                         }
 
@@ -5958,7 +6052,7 @@ println!("Segs count: {}", segs.len() );
                             println!("finding error segments: ");
                             let mut stack = match find_error_segments(base.as_ref()) {
                                 Ok(stack) => stack,
-                                Err(_) => vec![]
+                                Err(_) => vec![],
                             };
                             stack.append(&mut to_error_segments(contexts));
                             Ok(stack)
@@ -5966,32 +6060,33 @@ println!("Segs count: {}", segs.len() );
                     }
                     ErrorTree::Alt(alts) => {
                         println!("alts");
-                        Ok(vec!(find_selected_alt_branch(alts)?))
+                        Ok(vec![find_selected_alt_branch(alts)?])
                     }
                 }
             }
 
-
             // if the context terminates with selector then do NOT choose it (meaning the selector did not match)
-            pub fn find_selected_alt_branch<'a>(alts: &'a Vec<ErrorTree<&str>>) -> Result<ErrorSegment<&'a str>,()> {
+            pub fn find_selected_alt_branch<'a>(
+                alts: &'a Vec<ErrorTree<&str>>,
+            ) -> Result<ErrorSegment<&'a str>, ()> {
                 for alt in alts {
                     match alt {
                         ErrorTree::Base { location, kind } => {}
                         ErrorTree::Stack { base, contexts } => {
                             if !contexts.is_empty() {
-                                let (location,context) = contexts.first().expect("first context");
+                                let (location, context) = contexts.first().expect("first context");
                                 if let StackContext::Context(context) = context {
                                     // if context IS selector that is an indication that parsing
                                     // failed or errored as the alt was being selected, meaning, this is not the right branch
                                     if *context != "selector" {
                                         return Ok(ErrorSegment {
                                             location: *location,
-                                            context:  *context
+                                            context: *context,
                                         });
                                     }
                                 }
                             }
-                       }
+                        }
                         ErrorTree::Alt(alts) => {
                             return find_selected_alt_branch(alts);
                         }
@@ -6000,55 +6095,57 @@ println!("Segs count: {}", segs.len() );
                 Err(())
             }
 
-
-            pub fn find_select_error<'a>(error: &'a ErrorTree<&str>) -> Result<Vec<ErrorSegment<&'a str>>,()> {
+            pub fn find_select_error<'a>(
+                error: &'a ErrorTree<&str>,
+            ) -> Result<Vec<ErrorSegment<&'a str>>, ()> {
                 println!("find_select_error...");
                 match error {
                     ErrorTree::Base { location, kind } => {
-                        println!("found error kind: {}", kind.to_string() );
+                        println!("found error kind: {}", kind.to_string());
                         Err(())
                     }
                     ErrorTree::Stack { base, contexts } => {
                         diagnose_contexts(contexts);
                         println!("find_Select_error::Stack...");
 
-                        if let StackContext::Context(context) = first_context(contexts)?  {
-
+                        if let StackContext::Context(context) = first_context(contexts)? {
                             if "selector" == context {
                                 // if there is an error in the actual selector then this alt is aborted
                                 diagnose_contexts(contexts);
                                 println!("abort...");
                                 return Err(());
                             } else if context.starts_with("!") {
-                                return Ok(to_error_segments(contexts))
+                                return Ok(to_error_segments(contexts));
                             }
                         }
                         {
                             match base.as_ref() {
-                                ErrorTree::Base {..} => {
-                                    Ok(to_error_segments(contexts))
-                                }
+                                ErrorTree::Base { .. } => Ok(to_error_segments(contexts)),
                                 _ => {
                                     let mut stack = find_error_segments(base)?;
-                                    stack.append( & mut to_error_segments(contexts) );
+                                    stack.append(&mut to_error_segments(contexts));
                                     Ok(stack)
                                 }
                             }
                         }
                     }
-                    ErrorTree::Alt(alts) => {
-                        Ok(vec![find_selected_alt_branch(alts)?])
-                    }
+                    ErrorTree::Alt(alts) => Ok(vec![find_selected_alt_branch(alts)?]),
                 }
             }
 
             #[derive(Clone)]
-            pub struct ErrorStack<I> where I: Clone{
-                pub list: Vec<ErrorSegment<I>>
+            pub struct ErrorStack<I>
+            where
+                I: Clone,
+            {
+                pub list: Vec<ErrorSegment<I>>,
             }
 
-            impl <I> ErrorStack<I> where I:Clone {
-                pub fn new(mut list: Vec<ErrorSegment<I>>)->Result<Self,()> {
+            impl<I> ErrorStack<I>
+            where
+                I: Clone,
+            {
+                pub fn new(mut list: Vec<ErrorSegment<I>>) -> Result<Self, ()> {
                     if list.is_empty() {
                         return Err(());
                     } else {
@@ -6056,10 +6153,10 @@ println!("Segs count: {}", segs.len() );
                     }
                 }
 
-                pub fn normalize(&self) -> Result<Self,()> {
+                pub fn normalize(&self) -> Result<Self, ()> {
                     let mut list = vec![];
                     for seg in self.list.iter() {
-                        list.push(seg.clone() );
+                        list.push(seg.clone());
                         // @ indicates the context is a wrapper meaning
                         // all its children will be wrapped in that error message
                         if seg.context.starts_with("@") {
@@ -6073,7 +6170,11 @@ println!("Segs count: {}", segs.len() );
                     let mut list = vec![];
                     for seg in self.list.iter() {
                         if !seg.context.is_empty() {
-                            let c = seg.context.chars().next().expect("expected first character");
+                            let c = seg
+                                .context
+                                .chars()
+                                .next()
+                                .expect("expected first character");
                             if c.is_alpha() && c.is_uppercase() {
                                 list.push(seg.context)
                             }
@@ -6082,7 +6183,7 @@ println!("Segs count: {}", segs.len() );
                     let mut rtn = String::new();
                     for (index, seg) in list.iter().enumerate() {
                         rtn.push_str(seg);
-                        if index < list.len()-1 {
+                        if index < list.len() - 1 {
                             rtn.push_str(".")
                         }
                     }
@@ -6090,22 +6191,22 @@ println!("Segs count: {}", segs.len() );
                 }
             }
 
-
-            impl <'a> ErrorStack<&'a str> {
+            impl<'a> ErrorStack<&'a str> {
                 pub fn final_segment(&self) -> ErrorSegment<&'a str> {
-                    match self.list.last()  {
-                        None => {
-                            ErrorSegment{
-                                context: "?",
-                                location: "?"
-                            }
-                        }
-                        Some(seg) => {seg.clone()}
+                    match self.list.last() {
+                        None => ErrorSegment {
+                            context: "?",
+                            location: "?",
+                        },
+                        Some(seg) => seg.clone(),
                     }
                 }
             }
 
-            impl <I> Deref for ErrorStack<I> where I: Clone {
+            impl<I> Deref for ErrorStack<I>
+            where
+                I: Clone,
+            {
                 type Target = Vec<ErrorSegment<I>>;
 
                 fn deref(&self) -> &Self::Target {
@@ -6113,40 +6214,50 @@ println!("Segs count: {}", segs.len() );
                 }
             }
 
-            impl <I> DerefMut for ErrorStack<I> where I: Clone {
+            impl<I> DerefMut for ErrorStack<I>
+            where
+                I: Clone,
+            {
                 fn deref_mut(&mut self) -> &mut Self::Target {
                     &mut self.list
                 }
             }
 
-            impl <I> ToString for ErrorStack<I> where I: Clone{
+            impl<I> ToString for ErrorStack<I>
+            where
+                I: Clone,
+            {
                 fn to_string(&self) -> String {
                     let mut rtn = String::new();
-                    for (index,seg) in self.list.iter().enumerate() {
-                       rtn.push_str(seg.context);
-                       if index < self.list.len()-1 {
-                           rtn.push_str(".")
-                       }
+                    for (index, seg) in self.list.iter().enumerate() {
+                        rtn.push_str(seg.context);
+                        if index < self.list.len() - 1 {
+                            rtn.push_str(".")
+                        }
                     }
                     rtn
                 }
             }
 
-
-
             #[derive(Clone)]
-            pub struct ErrorSegment<I> where I: Clone{
+            pub struct ErrorSegment<I>
+            where
+                I: Clone,
+            {
                 pub context: &'static str,
-                pub location: I
+                pub location: I,
             }
 
-            fn to_error_segments<I>(contexts: &Vec<(I, StackContext)> ) -> Vec<ErrorSegment<I>> where I: Clone{
+            fn to_error_segments<I>(contexts: &Vec<(I, StackContext)>) -> Vec<ErrorSegment<I>>
+            where
+                I: Clone,
+            {
                 let mut rtn = vec![];
-                for (location,context) in contexts {
+                for (location, context) in contexts {
                     if let StackContext::Context(context) = context {
                         let seg = ErrorSegment {
                             location: location.clone(),
-                            context
+                            context,
                         };
                         rtn.push(seg);
                     }
@@ -6154,9 +6265,7 @@ println!("Segs count: {}", segs.len() );
                 rtn
             }
 
-
-
-            fn first_context(contexts: &Vec<(&str, StackContext)>) -> Result<StackContext,()> {
+            fn first_context(contexts: &Vec<(&str, StackContext)>) -> Result<StackContext, ()> {
                 if contexts.is_empty() {
                     Err(())
                 } else {
@@ -6164,7 +6273,7 @@ println!("Segs count: {}", segs.len() );
                 }
             }
 
-            fn second_context(contexts: &Vec<(&str, StackContext)>) -> Result<StackContext,()> {
+            fn second_context(contexts: &Vec<(&str, StackContext)>) -> Result<StackContext, ()> {
                 if contexts.len() < 2 {
                     Err(())
                 } else {
@@ -6175,57 +6284,59 @@ println!("Segs count: {}", segs.len() );
             fn diagnose_contexts(contexts: &Vec<(&str, StackContext)>) {
                 for context in contexts.iter().rev() {
                     let c = match context.1 {
-                        StackContext::Kind(_) => {"?"}
-                        StackContext::Context(ctx) => {ctx}
+                        StackContext::Kind(_) => "?",
+                        StackContext::Context(ctx) => ctx,
                     };
-                    print!("{}.",c);
+                    print!("{}.", c);
                 }
                 println!();
             }
 
-
-
-            fn extract_problem_line( input: &str ) -> String {
+            fn extract_problem_line(input: &str) -> String {
                 if input.trim().is_empty() {
                     return "Problem: \"\"".to_string();
                 }
 
                 if input.len() < 80 {
-                    return format!("Problem: \"{}\"",input.trim_end().lines().next().expect("line"));
+                    return format!(
+                        "Problem: \"{}\"",
+                        input.trim_end().lines().next().expect("line")
+                    );
                 }
 
-                format!("Problem: \"{}\"",input[0..80].trim_end().lines().next().expect("line"))
+                format!(
+                    "Problem: \"{}\"",
+                    input[0..80].trim_end().lines().next().expect("line")
+                )
             }
 
-            fn contexts_to_error( mut contexts: Vec<(&str,StackContext)>) -> String {
-
+            fn contexts_to_error(mut contexts: Vec<(&str, StackContext)>) -> String {
                 if contexts.is_empty() {
                     return "internal parsing error: could not create usable error message because of missing context".to_string();
                 }
 
                 let (input, context) = contexts.remove(0);
 
-                fn parent( contexts: &Vec<(&str,StackContext)>) -> String {
+                fn parent(contexts: &Vec<(&str, StackContext)>) -> String {
                     match contexts.first() {
-                        None => {"?"}
-                        Some((_,context)) => {
-                            match context {
-                                StackContext::Kind(_) => {"!"}
-                                StackContext::Context(context) => {context}
-                            }
-                        }
-                    }.to_string()
+                        None => "?",
+                        Some((_, context)) => match context {
+                            StackContext::Kind(_) => "!",
+                            StackContext::Context(context) => context,
+                        },
+                    }
+                    .to_string()
                 }
 
                 let message = match context {
                     StackContext::Kind(kind) => {
-                         format!(": parse error: '{}'",kind.description())
+                        format!(": parse error: '{}'", kind.description())
                     }
                     StackContext::Context(context) => {
                         if context.starts_with("!") {
                             context[1..].to_string()
                         } else if context == "scope:expect-selector" {
-                            format!( "expected '{}' (scope selector)", parent(&contexts) )
+                            format!("expected '{}' (scope selector)", parent(&contexts))
                         } else {
                             match context {
                                 what => {
@@ -6239,7 +6350,7 @@ println!("Segs count: {}", segs.len() );
                 contexts.reverse();
                 let mut hierarchy = String::new();
                 let len = contexts.len();
-                for (index, (_,context)) in contexts.into_iter().enumerate() {
+                for (index, (_, context)) in contexts.into_iter().enumerate() {
                     match context {
                         StackContext::Kind(kind) => {
                             return format!("{}\n\ninternal parsing error: unexpected kind error when processing context hierarchy: '{}'", extract_problem_line(input),kind.description() );
@@ -6253,7 +6364,12 @@ println!("Segs count: {}", segs.len() );
                     }
                 }
 
-                format!("{}\n\n{}: {}", extract_problem_line(input), hierarchy, message )
+                format!(
+                    "{}\n\n{}: {}",
+                    extract_problem_line(input),
+                    hierarchy,
+                    message
+                )
             }
 
             pub fn bind(input: &str) -> Res<&str, ProtoBind> {
@@ -6264,14 +6380,15 @@ println!("Segs count: {}", segs.len() );
                 })
             }
 
-
-
-            pub fn many_until0<I, O, O2, E, F,U>(mut f: F, mut until: U) -> impl FnMut(I) -> IResult<I, Vec<O>, E>
-                where
-                    I: Clone + InputLength+std::fmt::Display,
-                    F: Parser<I, O, E>,
-                    U: Parser<I, O2, E>,
-                    E: ParseError<I>,
+            pub fn many_until0<I, O, O2, E, F, U>(
+                mut f: F,
+                mut until: U,
+            ) -> impl FnMut(I) -> IResult<I, Vec<O>, E>
+            where
+                I: Clone + InputLength + std::fmt::Display,
+                F: Parser<I, O, E>,
+                U: Parser<I, O2, E>,
+                E: ParseError<I>,
             {
                 move |mut i: I| {
                     let mut acc = vec![];
@@ -6290,12 +6407,15 @@ println!("Segs count: {}", segs.len() );
                         match f.parse(i.clone()) {
                             Err(nom::Err::Error(e)) => {
                                 return Err(nom::Err::Error(e));
-                            },
+                            }
                             Err(e) => return Err(e),
                             Ok((i1, o)) => {
                                 // infinite loop check: the parser must always consume
                                 if i1.input_len() == len {
-                                    return Err(nom::Err::Error(E::from_error_kind(i, ErrorKind::Many0)));
+                                    return Err(nom::Err::Error(E::from_error_kind(
+                                        i,
+                                        ErrorKind::Many0,
+                                    )));
                                 }
                                 i = i1;
                                 acc.push(o);
@@ -6305,15 +6425,17 @@ println!("Segs count: {}", segs.len() );
                 }
             }
 
-
-            pub fn select0<I, O, O2, E, F,U>(mut f: F, mut until: U) -> impl FnMut(I) -> IResult<I, Vec<O>, E>
-                where
-                    I: Clone + InputLength+std::fmt::Display,
-                    F: Parser<I, O, E>,
-                    U: Parser<I, O2, E>,
-                    E: ParseError<I>+ContextError<I>,
+            pub fn select0<I, O, O2, E, F, U>(
+                mut f: F,
+                mut until: U,
+            ) -> impl FnMut(I) -> IResult<I, Vec<O>, E>
+            where
+                I: Clone + InputLength + std::fmt::Display,
+                F: Parser<I, O, E>,
+                U: Parser<I, O2, E>,
+                E: ParseError<I> + ContextError<I>,
             {
-                context("select",many_until0(f,context("scope:close",until)) )
+                context("select", many_until0(f, context("scope:close", until)))
             }
 
             /// successfully parse at least one branch or fail
@@ -6321,38 +6443,39 @@ println!("Segs count: {}", segs.len() );
             pub fn alt_fail<I: Clone, O, E: ParseError<I>, List: Alt<I, O, E>>(
                 mut l: List,
             ) -> impl FnMut(I) -> IResult<I, O, E> {
-                move |i: I| {
-                    match l.choice(i.clone()) {
-                        Ok(ok) => {Ok(ok)}
-                        Err(_) => {
-                            let e = E::from_error_kind(i,ErrorKind::Alt );
-                            Err(Err::Failure(e))
-                        }
+                move |i: I| match l.choice(i.clone()) {
+                    Ok(ok) => Ok(ok),
+                    Err(_) => {
+                        let e = E::from_error_kind(i, ErrorKind::Alt);
+                        Err(Err::Failure(e))
                     }
                 }
             }
 
+            pub struct SelectBlock<S, F>(pub S, pub F);
 
-            pub struct SelectBlock<S,F>(pub S,pub F);
-
-            pub fn select_block<I, E, S,F, O, O2>(
+            pub fn select_block<I, E, S, F, O, O2>(
                 mut select_blocks: Vec<SelectBlock<S, F>>,
             ) -> impl FnMut(I) -> IResult<I, O, E>
-                where
-                    I: Clone+InputTake+InputLength+InputIter+ Compare<&'static str>+InputTakeAtPosition+ToString,
-                    <I as InputIter>::Item: AsChar,
-                    <I as InputIter>::Item: Clone,
-                    <I as InputTakeAtPosition>::Item: AsChar + Clone,
-                    F: Parser<I, O, E>,
-                    S: Parser<I, O2, E>,
-                    E: ParseError<I> + ContextError<I>,
+            where
+                I: Clone
+                    + InputTake
+                    + InputLength
+                    + InputIter
+                    + Compare<&'static str>
+                    + InputTakeAtPosition
+                    + ToString,
+                <I as InputIter>::Item: AsChar,
+                <I as InputIter>::Item: Clone,
+                <I as InputTakeAtPosition>::Item: AsChar + Clone,
+                F: Parser<I, O, E>,
+                S: Parser<I, O2, E>,
+                E: ParseError<I> + ContextError<I>,
             {
-                let parser = move | i: I | {
-
+                let parser = move |i: I| {
                     for mut select_block in select_blocks.iter_mut() {
-                        match select_block.0.parse(i.clone())
-                        {
-                            Ok((i,_)) => {
+                        match select_block.0.parse(i.clone()) {
+                            Ok((i, _)) => {
                                 return select_block.1.parse(i.clone());
                             }
                             Err(_) => {}
@@ -6361,31 +6484,36 @@ println!("Segs count: {}", segs.len() );
 
                     // if a block hasn't been selected yet then we have an error
 
-                    let e = E::from_error_kind(i.clone(),ErrorKind::Tag);
-                    let e = E::add_context(i, "!select-block", e );
-                    return Err(Err::Failure(e))
+                    let e = E::from_error_kind(i.clone(), ErrorKind::Tag);
+                    let e = E::add_context(i, "!select-block", e);
+                    return Err(Err::Failure(e));
                 };
 
                 parser
             }
 
-            pub fn multi_select_scope<I, E, S,F, O, O2>(
+            pub fn multi_select_scope<I, E, S, F, O, O2>(
                 mut selectors: S,
                 mut f: F,
             ) -> impl FnMut(I) -> IResult<I, O, E>
-                where
-                    I: Clone+InputTake+InputLength+InputIter+ Compare<&'static str>+InputTakeAtPosition+ToString,
-                    <I as InputIter>::Item: AsChar,
-                    <I as InputIter>::Item: Clone,
-                    <I as InputTakeAtPosition>::Item: AsChar + Clone,
-                    F: Parser<I, O, E>,
-                    S: Parser<I, O2, E>,
-                    E: ParseError<I> + ContextError<I>,
+            where
+                I: Clone
+                    + InputTake
+                    + InputLength
+                    + InputIter
+                    + Compare<&'static str>
+                    + InputTakeAtPosition
+                    + ToString,
+                <I as InputIter>::Item: AsChar,
+                <I as InputIter>::Item: Clone,
+                <I as InputTakeAtPosition>::Item: AsChar + Clone,
+                F: Parser<I, O, E>,
+                S: Parser<I, O2, E>,
+                E: ParseError<I> + ContextError<I>,
             {
-                let parser = move | i: I | {
-
+                let parser = move |i: I| {
                     // first remove any whitespace
-                    let (i,_) = multispace0(i.clone())?;
+                    let (i, _) = multispace0(i.clone())?;
 
                     // next if we hit the until condition return Error (instead of Failure)
                     match not(tag("}"))(i.clone()) {
@@ -6398,21 +6526,21 @@ println!("Segs count: {}", segs.len() );
                     }
 
                     match selectors.parse(i.clone()) {
-                        Ok(_) => {
-                            f.parse(i)
-                        },
+                        Ok(_) => f.parse(i),
                         Err(e) => {
                             match e {
-                                Err::Incomplete(_) => {Err(e)}
+                                Err::Incomplete(_) => Err(e),
                                 Err::Error(e2) => {
-                                    Err(Err::Failure(E::add_context(i,"multi_select_scope", e2)))
-//                                    Err(Err::Failure(e2))
+                                    Err(Err::Failure(E::add_context(i, "multi_select_scope", e2)))
+                                    //                                    Err(Err::Failure(e2))
                                 }
-                                Err::Failure(e2) => {
-                                    Err(Err::Failure(E::add_context(i.clone(),"multi_select_scope", e2)))
-                                }
+                                Err::Failure(e2) => Err(Err::Failure(E::add_context(
+                                    i.clone(),
+                                    "multi_select_scope",
+                                    e2,
+                                ))),
                             }
-                        },
+                        }
                     }
                 };
 
@@ -6424,7 +6552,12 @@ println!("Segs count: {}", segs.len() );
                 mut f: F,
             ) -> impl FnMut(I) -> IResult<I, O, E>
             where
-                I: Clone+InputTake+InputLength+InputIter+ Compare<&'static str>+InputTakeAtPosition,
+                I: Clone
+                    + InputTake
+                    + InputLength
+                    + InputIter
+                    + Compare<&'static str>
+                    + InputTakeAtPosition,
                 <I as InputIter>::Item: AsChar,
                 <I as InputIter>::Item: Clone,
                 <I as InputTakeAtPosition>::Item: AsChar + Clone,
@@ -6432,84 +6565,103 @@ println!("Segs count: {}", segs.len() );
                 E: ParseError<I> + ContextError<I>,
             {
                 let parser = move |i: I| {
-                    let (next,_) = context("selector",tag(selection))(i)?;
-                    let (next,_) = multispace0(next)?;
-                    let (next,_) = context( "scope:open", tag("{"), )(next)?;
-                    let (next,_) = multispace0(next)?;
-                    let (next, rtn ) = f.parse(next)?;
-                    let (next,_) = multispace0(next)?;
-                    let (next,_) = context( "scope:close", tag("}"), )(next)?;
-                    Ok( (next, rtn))
+                    let (next, _) = context("selector", tag(selection))(i)?;
+                    let (next, _) = multispace0(next)?;
+                    let (next, _) = context("scope:open", tag("{"))(next)?;
+                    let (next, _) = multispace0(next)?;
+                    let (next, rtn) = f.parse(next)?;
+                    let (next, _) = multispace0(next)?;
+                    let (next, _) = context("scope:close", tag("}"))(next)?;
+                    Ok((next, rtn))
                 };
 
-                context(selection, parser )
+                context(selection, parser)
             }
 
-            fn scope<I,E, F, O, O2, O3, Open, Close>(
+            fn scope<I, E, F, O, O2, O3, Open, Close>(
                 mut open: Open,
                 mut f: F,
                 mut close: Close,
             ) -> impl FnMut(I) -> IResult<I, O, E>
-                where
-                    I: Clone+InputTake+InputLength+InputIter+ Compare<&'static str>+InputTakeAtPosition,
-                    <I as InputIter>::Item: AsChar,
-                    <I as InputIter>::Item: Clone,
-                    <I as InputTakeAtPosition>::Item: AsChar + Clone,
-                    F: Parser<I, O, E>,
-                    Open: Parser<I, O2, E>,
-                    Close: Parser<I, O3, E>,
-                    E: ParseError<I> + ContextError<I>,
+            where
+                I: Clone
+                    + InputTake
+                    + InputLength
+                    + InputIter
+                    + Compare<&'static str>
+                    + InputTakeAtPosition,
+                <I as InputIter>::Item: AsChar,
+                <I as InputIter>::Item: Clone,
+                <I as InputTakeAtPosition>::Item: AsChar + Clone,
+                F: Parser<I, O, E>,
+                Open: Parser<I, O2, E>,
+                Close: Parser<I, O3, E>,
+                E: ParseError<I> + ContextError<I>,
             {
                 move |i: I| {
-
-                    let (next,_) = open.parse(i)?;
-                    let (next,_) = multispace0(next)?;
-                    let (next, rtn ) = f.parse(next)?;
-                    let (next,_) = multispace0(next)?;
-                    let (next,_) = close.parse(next)?;
-                    Ok( (next, rtn))
+                    let (next, _) = open.parse(i)?;
+                    let (next, _) = multispace0(next)?;
+                    let (next, rtn) = f.parse(next)?;
+                    let (next, _) = multispace0(next)?;
+                    let (next, _) = close.parse(next)?;
+                    Ok((next, rtn))
                 }
             }
 
-
-            fn whitespace_until<I,E, F, O>(
-                mut f: F,
-            ) -> impl FnMut(I) -> IResult<I, O, E>
-                where
-                    I: Clone+InputTake+InputLength+InputIter+ Compare<&'static str>+InputTakeAtPosition,
-                    <I as InputIter>::Item: AsChar,
-                    <I as InputIter>::Item: Clone,
-                    <I as InputTakeAtPosition>::Item: AsChar + Clone,
-                    F: Parser<I, O, E>,
-                    E: ParseError<I> + ContextError<I>,
+            fn whitespace_until<I, E, F, O>(mut f: F) -> impl FnMut(I) -> IResult<I, O, E>
+            where
+                I: Clone
+                    + InputTake
+                    + InputLength
+                    + InputIter
+                    + Compare<&'static str>
+                    + InputTakeAtPosition,
+                <I as InputIter>::Item: AsChar,
+                <I as InputIter>::Item: Clone,
+                <I as InputTakeAtPosition>::Item: AsChar + Clone,
+                F: Parser<I, O, E>,
+                E: ParseError<I> + ContextError<I>,
             {
                 move |i: I| {
-                    let (next,_) = multispace0(i)?;
-                    let (next,rtn) = f.parse(next)?;
-                    Ok( (next, rtn))
+                    let (next, _) = multispace0(i)?;
+                    let (next, rtn) = f.parse(next)?;
+                    Ok((next, rtn))
                 }
             }
 
-            fn padded_curly_open<I>(input:I) -> Res<I,I>
-                where
-                    I: Clone+InputTake+InputLength+InputIter+ Compare<&'static str>+InputTakeAtPosition,
-                    <I as InputIter>::Item: AsChar,
-                    <I as InputIter>::Item: Clone,
-                    <I as InputTakeAtPosition>::Item: AsChar + Clone,
+            fn padded_curly_open<I>(input: I) -> Res<I, I>
+            where
+                I: Clone
+                    + InputTake
+                    + InputLength
+                    + InputIter
+                    + Compare<&'static str>
+                    + InputTakeAtPosition,
+                <I as InputIter>::Item: AsChar,
+                <I as InputIter>::Item: Clone,
+                <I as InputTakeAtPosition>::Item: AsChar + Clone,
             {
-                delimited(multispace0,context("!expected: '{'",tag("{")),multispace0)(input)
+                delimited(
+                    multispace0,
+                    context("!expected: '{'", tag("{")),
+                    multispace0,
+                )(input)
             }
 
-            fn padded_curly_close<I>(input:I) -> Res<I,I>
-                where
-                    I: Clone+InputTake+InputLength+InputIter+ Compare<&'static str>+InputTakeAtPosition,
-                    <I as InputIter>::Item: AsChar,
-                    <I as InputIter>::Item: Clone,
-                    <I as InputTakeAtPosition>::Item: AsChar + Clone,
+            fn padded_curly_close<I>(input: I) -> Res<I, I>
+            where
+                I: Clone
+                    + InputTake
+                    + InputLength
+                    + InputIter
+                    + Compare<&'static str>
+                    + InputTakeAtPosition,
+                <I as InputIter>::Item: AsChar,
+                <I as InputIter>::Item: Clone,
+                <I as InputTakeAtPosition>::Item: AsChar + Clone,
             {
-                preceded(multispace0,context("!expected: '}'",tag("}")))(input)
+                preceded(multispace0, context("!expected: '}'", tag("}")))(input)
             }
-
 
             pub fn select_pipelines(input: &str) -> Res<&str, Vec<PipelinesSubScope>> {
                 select_scope("Pipelines", select0(pipelines, whitespace_until(tag("}"))))(input)
@@ -6517,16 +6669,17 @@ println!("Segs count: {}", segs.len() );
 
             pub fn pipelines(input: &str) -> Res<&str, PipelinesSubScope> {
                 multi_select_scope(
-                    alt((tag("Rc"),tag("Msg"),tag("Http"))),
+                    alt((tag("Rc"), tag("Msg"), tag("Http"))),
                     alt((
                         select_msg_pipelines,
                         select_http_pipelines,
                         select_rc_pipelines,
-                )))(input)
+                    )),
+                )(input)
             }
 
             pub fn select_msg_pipelines(input: &str) -> Res<&str, PipelinesSubScope> {
-                select_scope("Msg", msg_selectors )(input).map(|(next, selectors)| {
+                select_scope("Msg", msg_selectors)(input).map(|(next, selectors)| {
                     (
                         next,
                         PipelinesSubScope::Msg(ConfigScope::new(EntityType::Msg, selectors)),
@@ -6553,13 +6706,19 @@ println!("Segs count: {}", segs.len() );
             }
 
             pub fn pipeline_step(input: &str) -> Res<&str, PipelineStep> {
-                context( "Step",tuple((
-                    select0(pipeline_step_block, alt((context("selector",tag("->")), context("selector",tag("=>")))) ),
-                    context(
-                        "!pipeline-step:exit",
-                        alt((tag("->"), tag("=>"), fail )),
-                    ),
-                )))(input)
+                context(
+                    "Step",
+                    tuple((
+                        select0(
+                            pipeline_step_block,
+                            alt((
+                                context("selector", tag("->")),
+                                context("selector", tag("=>")),
+                            )),
+                        ),
+                        context("!pipeline-step:exit", alt((tag("->"), tag("=>"), fail))),
+                    )),
+                )(input)
                 .map(|(next, (blocks, kind))| {
                     let kind = match kind {
                         "->" => StepKind::Request,
@@ -6571,34 +6730,40 @@ println!("Segs count: {}", segs.len() );
             }
 
             pub fn core_pipeline_stop(input: &str) -> Res<&str, PipelineStop> {
-                context("Core", delimited(
-                    tag("{{"),
-                    delimited(multispace0, opt(tag("*")), multispace0),
-                    tag("}}"),
-                ))(input)
+                context(
+                    "Core",
+                    delimited(
+                        tag("{{"),
+                        delimited(multispace0, opt(tag("*")), multispace0),
+                        tag("}}"),
+                    ),
+                )(input)
                 .map(|(next, _)| (next, PipelineStop::Internal))
             }
 
             pub fn return_pipeline_stop(input: &str) -> Res<&str, PipelineStop> {
-                tag("&")(input).map(|(next, _)| (next, PipelineStop::Respond ))
+                tag("&")(input).map(|(next, _)| (next, PipelineStop::Respond))
             }
 
             pub fn call_pipeline_stop(input: &str) -> Res<&str, PipelineStop> {
-                context("Call",call)(input).map(|(next, call)| (next, PipelineStop::Call(call)))
+                context("Call", call)(input).map(|(next, call)| (next, PipelineStop::Call(call)))
             }
 
             pub fn address_pipeline_stop(input: &str) -> Res<&str, PipelineStop> {
-                context("Address",capture_address)(input)
+                context("Address", capture_address)(input)
                     .map(|(next, address)| (next, PipelineStop::CaptureAddress(address)))
             }
 
             pub fn pipeline_stop(input: &str) -> Res<&str, PipelineStop> {
-                context("Stop", alt((
-                    core_pipeline_stop,
-                    return_pipeline_stop,
-                    call_pipeline_stop,
-                    address_pipeline_stop,
-                )))(input)
+                context(
+                    "Stop",
+                    alt((
+                        core_pipeline_stop,
+                        return_pipeline_stop,
+                        call_pipeline_stop,
+                        address_pipeline_stop,
+                    )),
+                )(input)
             }
 
             pub fn consume_pipeline_step(input: &str) -> Res<&str, PipelineStep> {
@@ -6621,7 +6786,11 @@ println!("Segs count: {}", segs.len() );
             }
 
             pub fn pipeline(input: &str) -> Res<&str, Pipeline> {
-                context("Pipeline",many_until0(pipeline_segment, tuple((multispace0,tag(";")))))(input).map(|(next, segments)| (next, Pipeline { segments }))
+                context(
+                    "Pipeline",
+                    many_until0(pipeline_segment, tuple((multispace0, tag(";")))),
+                )(input)
+                .map(|(next, segments)| (next, Pipeline { segments }))
             }
 
             pub fn consume_pipeline(input: &str) -> Res<&str, Pipeline> {
@@ -6633,15 +6802,24 @@ println!("Segs count: {}", segs.len() );
             }
 
             pub fn msg_selectors(input: &str) -> Res<&str, Vec<Selector<MsgPattern>>> {
-                select0(delimited(multispace0, msg_selector, multispace0),padded_curly_close)(input)
+                select0(
+                    delimited(multispace0, msg_selector, multispace0),
+                    padded_curly_close,
+                )(input)
             }
 
             pub fn http_pipelines(input: &str) -> Res<&str, Vec<Selector<HttpPattern>>> {
-                select0(delimited(multispace0, http_pipeline, multispace0), padded_curly_close)(input)
+                select0(
+                    delimited(multispace0, http_pipeline, multispace0),
+                    padded_curly_close,
+                )(input)
             }
 
             pub fn rc_selectors(input: &str) -> Res<&str, Vec<Selector<RcPattern>>> {
-                select0(delimited(multispace0, rc_selector, multispace0), padded_curly_close)(input)
+                select0(
+                    delimited(multispace0, rc_selector, multispace0),
+                    padded_curly_close,
+                )(input)
             }
 
             pub fn entity_selector(input: &str) -> Res<&str, Selector<EntityPattern>> {
@@ -6657,9 +6835,8 @@ println!("Segs count: {}", segs.len() );
             }
 
             pub fn final_http_pipeline(input: &str) -> Result<Selector<HttpPattern>, MsgErr> {
-                final_parser(http_pipeline)(input).map_err( |e:ErrorTree<&str>| {
-                    e.to_string().into()
-                })
+                final_parser(http_pipeline)(input)
+                    .map_err(|e: ErrorTree<&str>| e.to_string().into())
             }
 
             pub fn http_pipeline(input: &str) -> Res<&str, Selector<HttpPattern>> {
@@ -6692,10 +6869,7 @@ pub mod entity {
         Http,
     }
 
-
     pub mod request {
-        use http::{HeaderMap, Request, StatusCode, Uri};
-        use http::status::InvalidStatusCode;
         use crate::error::{MsgErr, StatusErr};
         use crate::version::v0_0_1::bin::Bin;
         use crate::version::v0_0_1::entity::request::create::Create;
@@ -6711,13 +6885,14 @@ pub mod entity {
         use crate::version::v0_0_1::pattern::TksPattern;
         use crate::version::v0_0_1::payload::{Errors, HttpMethod, Payload, Primitive};
         use crate::version::v0_0_1::util::ValueMatcher;
+        use http::status::InvalidStatusCode;
+        use http::{HeaderMap, Request, StatusCode, Uri};
         use serde::{Deserialize, Serialize};
-
 
         #[derive(Debug, Clone, Serialize, Deserialize)]
         pub enum Action {
             Rc(Rc),
-            Http(#[serde(with = "http_serde::method")]HttpMethod),
+            Http(#[serde(with = "http_serde::method")] HttpMethod),
             Msg(String),
         }
 
@@ -6726,7 +6901,7 @@ pub mod entity {
                 match self {
                     Action::Rc(_) => "Rc".to_string(),
                     Action::Http(method) => method.to_string(),
-                    Action::Msg(msg) => msg.to_string()
+                    Action::Msg(msg) => msg.to_string(),
                 }
             }
         }
@@ -6758,7 +6933,7 @@ pub mod entity {
                     headers: request.headers().clone(),
                     action: Action::Http(request.method().clone()),
                     uri: request.uri().clone(),
-                    body: Payload::Primitive(Primitive::Bin(request.body().clone()))
+                    body: Payload::Primitive(Primitive::Bin(request.body().clone())),
                 }
             }
         }
@@ -6766,12 +6941,13 @@ pub mod entity {
         impl TryInto<http::Request<Bin>> for RequestCore {
             type Error = MsgErr;
 
-            fn try_into(self) -> Result<http::Request<Bin>, MsgErr>{
+            fn try_into(self) -> Result<http::Request<Bin>, MsgErr> {
                 let mut builder = http::Request::builder();
-                for (name,value) in self.headers {
+                for (name, value) in self.headers {
                     match name {
                         Some(name) => {
-                            builder = builder.header(name.as_str(),value.to_str()?.to_string().as_str() );
+                            builder =
+                                builder.header(name.as_str(), value.to_str()?.to_string().as_str());
                         }
                         None => {}
                     }
@@ -6779,16 +6955,12 @@ pub mod entity {
                 match self.action {
                     Action::Http(method) => {
                         builder = builder.method(method).uri(self.uri);
-                        Ok(builder.body( self.body.to_bin()? )?)
+                        Ok(builder.body(self.body.to_bin()?)?)
                     }
-                    _ => {
-                        Err("cannot convert to http response".into())
-                    }
+                    _ => Err("cannot convert to http response".into()),
                 }
-
             }
         }
-
 
         impl Default for RequestCore {
             fn default() -> Self {
@@ -6840,9 +7012,9 @@ pub mod entity {
                 let errors = Errors::default(error.message().as_str());
                 let status = match StatusCode::from_u16(error.status()) {
                     Ok(status) => status,
-                    Err(_) => StatusCode::from_u16(500u16).unwrap()
+                    Err(_) => StatusCode::from_u16(500u16).unwrap(),
                 };
- println!("----->   returning STATUS of {}",status.as_str());
+                println!("----->   returning STATUS of {}", status.as_str());
                 ResponseCore {
                     headers: Default::default(),
                     status,
@@ -7024,7 +7196,7 @@ pub mod entity {
             #[derive(Debug, Clone, Serialize, Deserialize)]
             pub enum Require {
                 File(String),
-                Auth(String)
+                Auth(String),
             }
 
             #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -7160,7 +7332,6 @@ pub mod entity {
                             Ok(stubs)
                         }
                     }
-
                 }
             }
 
@@ -7293,7 +7464,7 @@ pub mod entity {
 
             #[derive(Debug, Clone, Serialize, Deserialize)]
             pub struct Update {
-                pub payload: Payload
+                pub payload: Payload,
             }
         }
 
@@ -7346,6 +7517,7 @@ pub mod entity {
 
     pub mod response {
         use crate::error::MsgErr;
+        use crate::version::v0_0_1::bin::Bin;
         use crate::version::v0_0_1::entity::request::RequestCore;
         use crate::version::v0_0_1::fail;
         use crate::version::v0_0_1::fail::Fail;
@@ -7353,11 +7525,10 @@ pub mod entity {
         use crate::version::v0_0_1::messaging::Response;
         use crate::version::v0_0_1::payload::{Errors, Payload, Primitive};
         use crate::version::v0_0_1::util::unique_id;
+        use http::response::Parts;
+        use http::{HeaderMap, StatusCode};
         use serde::{Deserialize, Serialize};
         use std::sync::Arc;
-        use http::{HeaderMap, StatusCode};
-        use http::response::Parts;
-        use crate::version::v0_0_1::bin::Bin;
 
         #[derive(Debug, Clone, Serialize, Deserialize)]
         pub struct ResponseCore {
@@ -7418,7 +7589,7 @@ pub mod entity {
             }
 
             pub fn is_ok(&self) -> bool {
-                return self.status.is_success()
+                return self.status.is_success();
             }
 
             pub fn into_response(
@@ -7441,13 +7612,13 @@ pub mod entity {
             type Error = MsgErr;
 
             fn try_into(self) -> Result<http::response::Builder, Self::Error> {
-
                 let mut builder = http::response::Builder::new();
 
-                for (name,value) in self.headers {
+                for (name, value) in self.headers {
                     match name {
                         Some(name) => {
-                            builder = builder.header(name.as_str(),value.to_str()?.to_string().as_str() );
+                            builder =
+                                builder.header(name.as_str(), value.to_str()?.to_string().as_str());
                         }
                         None => {}
                     }
@@ -7461,13 +7632,13 @@ pub mod entity {
             type Error = MsgErr;
 
             fn try_into(self) -> Result<http::Response<Bin>, Self::Error> {
-
                 let mut builder = http::response::Builder::new();
 
-                for (name,value) in self.headers {
+                for (name, value) in self.headers {
                     match name {
                         Some(name) => {
-                            builder = builder.header(name.as_str(),value.to_str()?.to_string().as_str() );
+                            builder =
+                                builder.header(name.as_str(), value.to_str()?.to_string().as_str());
                         }
                         None => {}
                     }
@@ -7525,7 +7696,7 @@ pub mod resource {
         Ready,        // ready to take requests
         Paused, // can not receive requests (probably because it is waiting for some other resource to make updates)...
         Resuming, // like Initializing but triggered after a pause is lifted, the resource may be doing something before it is ready to accept requests again.
-        Panic, // something is wrong... all requests are blocked and responses are cancelled.
+        Panic,    // something is wrong... all requests are blocked and responses are cancelled.
         Done, // this resource had a life span and has now completed succesfully it can no longer receive requests.
     }
 
@@ -7887,12 +8058,11 @@ pub mod util {
     pub enum MethodPattern {
         Any,
         None,
-        Pattern(#[serde(with = "http_serde::method")]HttpMethod),
+        Pattern(#[serde(with = "http_serde::method")] HttpMethod),
     }
 
-    impl MethodPattern{
-        pub fn is_match(&self, x: &HttpMethod) -> Result<(), MsgErr>
-        {
+    impl MethodPattern {
+        pub fn is_match(&self, x: &HttpMethod) -> Result<(), MsgErr> {
             match self {
                 Self::Any => Ok(()),
                 Self::Pattern(exact) => exact.is_match(x),
@@ -7900,8 +8070,7 @@ pub mod util {
             }
         }
 
-        pub fn is_match_opt(&self, x: Option<&HttpMethod>) -> Result<(), MsgErr>
-        {
+        pub fn is_match_opt(&self, x: Option<&HttpMethod>) -> Result<(), MsgErr> {
             match self {
                 Self::Any => Ok(()),
                 Self::Pattern(exact) => match x {
@@ -7923,7 +8092,7 @@ pub mod util {
         }
     }
 
-    #[derive(Debug, Clone, Serialize, Deserialize,Eq,PartialEq)]
+    #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
     pub enum ValuePattern<T> {
         Any,
         None,
@@ -8224,16 +8393,16 @@ pub mod fail {
         }
     }
 
-/*    impl Into<MsgErr> for Fail {
-        fn into(self) -> MsgErr {
-            MsgErr {
-                status: 500,
-                message: "Fail".to_string(),
-            }
-        }
-    }
+    /*    impl Into<MsgErr> for Fail {
+           fn into(self) -> MsgErr {
+               MsgErr {
+                   status: 500,
+                   message: "Fail".to_string(),
+               }
+           }
+       }
 
- */
+    */
 }
 
 pub mod parse {
@@ -8246,12 +8415,17 @@ pub mod parse {
     use nom::branch::alt;
     use nom::bytes::complete::tag;
     use nom::bytes::complete::{is_a, is_not};
-    use nom::character::complete::{alpha0, alpha1, alphanumeric1, char, digit1, multispace0, multispace1, space0, space1};
-    use nom::combinator::{all_consuming, fail, not, opt, recognize, value};
+    use nom::character::complete::{
+        alpha0, alpha1, alphanumeric1, char, digit1, multispace0, multispace1, space0, space1,
+    };
+    use nom::combinator::{all_consuming, fail, not, opt, peek, recognize, value, verify};
     use nom::error::{context, ErrorKind, ParseError, VerboseError};
     use nom::multi::{many0, separated_list0, separated_list1};
     use nom::sequence::{delimited, preceded, terminated, tuple};
-    use nom::{AsChar, IResult, InputTakeAtPosition, InputIter, InputLength, InputTake, Slice, Compare, UnspecializedInput};
+    use nom::{
+        AsChar, Compare, IResult, InputIter, InputLength, InputTake, InputTakeAtPosition, Slice,
+        UnspecializedInput,
+    };
     use nom_supreme::parse_from_str;
 
     use crate::error::MsgErr;
@@ -8267,19 +8441,23 @@ pub mod parse {
     use crate::version::v0_0_1::id::{
         Address, AddressSegment, CaptureAddress, RouteSegment, Version,
     };
+    use crate::version::v0_0_1::parse::error::{first_context, result};
     use crate::version::v0_0_1::pattern::parse::{
         address_kind_pattern, delim_kind, kind, resource_type, specific, specific_pattern, version,
     };
     use crate::version::v0_0_1::pattern::{
         skewer, upload_step, AddressKindPath, AddressKindSegment,
     };
+    use crate::version::v0_0_1::security::{
+        AccessGrant, AccessGrantKindDef, AccessGrantKindSubst, ChildPerms, ParticlePerms,
+        Permissions, PermissionsMask, PermissionsMaskKind, Privilege,
+    };
     use crate::version::v0_0_1::util::StringMatcher;
+    use crate::version::v0_0_1::Span;
     use nom::bytes::complete::take;
     use nom_locate::LocatedSpan;
     use nom_supreme::error::ErrorTree;
-    use crate::version::v0_0_1::parse::error::{first_context, result};
-    use crate::version::v0_0_1::security::{AccessGrant, ChildPerms, ParticlePerms, Permissions, PermissionsMask, PermissionsMaskKind, Privilege};
-    use crate::version::v0_0_1::Span;
+    use serde::{Deserialize, Serialize};
 
     pub struct Parser {}
 
@@ -8336,7 +8514,7 @@ pub mod parse {
     }
 
     pub fn local_route_segment(input: &str) -> Res<&str, RouteSegment> {
-        alt((recognize(tag(".::")),recognize(not(other_route_segment))))(input)
+        alt((recognize(tag(".::")), recognize(not(other_route_segment))))(input)
             .map(|(next, _)| (next, RouteSegment::Local))
     }
 
@@ -8356,19 +8534,11 @@ pub mod parse {
     }
 
     pub fn other_route_segment(input: &str) -> Res<&str, RouteSegment> {
-        alt((
-            tag_route_segment,
-            domain_route_segment,
-            mesh_route_segment,
-        ))(input)
+        alt((tag_route_segment, domain_route_segment, mesh_route_segment))(input)
     }
 
-
     pub fn route_segment(input: &str) -> Res<&str, RouteSegment> {
-        alt((
-            other_route_segment,
-            local_route_segment,
-        ))(input)
+        alt((other_route_segment, local_route_segment))(input)
     }
 
     pub fn space_address_segment(input: &str) -> Res<&str, AddressSegment> {
@@ -8456,13 +8626,19 @@ pub mod parse {
     }
 
     pub fn capture_address(input: &str) -> Res<&str, CaptureAddress> {
-        context( "Address", tuple((
-            tuple((route_segment, alt((root_address_capture_segment,space_address_capture_segment)))),
-            many0(base_address_capture_segment),
-            opt(version_address_segment),
-            opt(root_dir_address_segment),
-            many0(filesystem_address_capture_segment),
-        )))(input)
+        context(
+            "Address",
+            tuple((
+                tuple((
+                    route_segment,
+                    alt((root_address_capture_segment, space_address_capture_segment)),
+                )),
+                many0(base_address_capture_segment),
+                opt(version_address_segment),
+                opt(root_dir_address_segment),
+                many0(filesystem_address_capture_segment),
+            )),
+        )(input)
         .map(
             |(next, ((hub, space), mut bases, version, root, mut files))| {
                 let mut segments = vec![];
@@ -8491,10 +8667,8 @@ pub mod parse {
     }
 
     pub fn root_address_capture_segment(input: &str) -> Res<&str, AddressSegment> {
-        tag("ROOT")(input)
-            .map(|(next, space)| (next, AddressSegment::Root))
+        tag("ROOT")(input).map(|(next, space)| (next, AddressSegment::Root))
     }
-
 
     pub fn space_address_capture_segment(input: &str) -> Res<&str, AddressSegment> {
         space_chars_plus_capture(input)
@@ -8673,9 +8847,9 @@ pub mod parse {
     }
 
     pub fn skewer_colon<T>(i: T) -> Res<T, T>
-        where
-            T: InputTakeAtPosition + nom::InputLength,
-            <T as InputTakeAtPosition>::Item: AsChar,
+    where
+        T: InputTakeAtPosition + nom::InputLength,
+        <T as InputTakeAtPosition>::Item: AsChar,
     {
         i.split_at_position1_complete(
             |item| {
@@ -8683,7 +8857,7 @@ pub mod parse {
                 !(char_item == '-')
                     && !(char_item == ':')
                     && !((char_item.is_alpha() && char_item.is_lowercase())
-                    || char_item.is_dec_digit())
+                        || char_item.is_dec_digit())
             },
             ErrorKind::AlphaNumeric,
         )
@@ -8995,7 +9169,6 @@ pub mod parse {
         recognize(tuple((is_a("ABCDEFGHIJKLMNOPQRSTUVWXYZ"), alpha0)))(input)
         //recognize(alpha1)(input)
     }
-
 
     pub fn camel_case_to_string_matcher(input: &str) -> Res<&str, StringMatcher> {
         camel_case(input).map(|(next, camel)| (next, StringMatcher::new(camel.to_string())))
@@ -9415,54 +9588,43 @@ pub mod parse {
         Ok((next, create))
     }
 
-    #[derive(Debug,Clone,Eq,PartialEq,Hash)]
-    pub struct VariableName(String);
 
-    impl VariableName {
-        pub fn new( name: &str ) -> Self {
-            Self(name.to_string())
-        }
-    }
-
-    impl Deref for VariableName {
-        type Target = String;
-
-        fn deref(&self) -> &Self::Target {
-            &self.0
-        }
-    }
-
+    #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct Variable {
-        pub name: VariableName
+        pub name: String,
     }
 
     impl Variable {
-        pub fn new(name: VariableName )-> Self {
-            Self{name}
+        pub fn new(name: String ) -> Self {
+            Self { name }
         }
     }
 
-    pub enum Subst<V> where V:Clone+FromStr<Err=MsgErr> {
-        Var(Variable),
-        Val(V)
+    pub trait ToVal<Val> {
+        fn to_val( self, map: &HashMap<String,String> ) -> Result<Val,MsgErr>;
     }
 
-    impl <V> Subst<V> where V:Clone+FromStr<Err=MsgErr> {
-        pub fn resolve( &self, resolver: &HashMap<VariableName,String> ) -> Result<V,String> {
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub enum Subst<V>
+    where
+        V: Clone + FromStr<Err = MsgErr>,
+    {
+        Var(Variable),
+        Val(V),
+    }
+
+    impl<V> ToVal<V> for Subst<V> where V: Clone + FromStr<Err = MsgErr> {
+        fn to_val(self, map: &HashMap<String, String>) -> Result<V, MsgErr> {
             match self {
                 Subst::Var(var) => {
-                  let raw = resolver.get( &var.name ).ok_or(format!("cannot resolve variable '{}'", var.name.to_string()))?;
+                    let raw = map.get(&var.name).ok_or(format!(
+                        "cannot resolve variable '{}'",
+                        var.name.to_string()
+                    ))?;
 
-                    match V::from_str(raw.as_str()) {
-                        Ok(val) => {
-                            Ok(val)
-                        }
-                        Err(err) => {
-                            Err(err.to_string())
-                        }
-                    }
-               }
-                Subst::Val(val) => Ok(val.clone())
+                    V::from_str(raw.as_str())
+                }
+                Subst::Val(val) => Ok(val.clone()),
             }
         }
     }
@@ -9512,86 +9674,169 @@ pub mod parse {
     pub fn subst<I: Clone, O, E: ParseError<I>, F>(
         mut f: F,
     ) -> impl FnMut(I) -> IResult<I, Subst<O>, E>
-        where
-            I: ToString+InputLength + InputTake + Compare<&'static str>+InputIter+Clone+InputTakeAtPosition,<I as InputTakeAtPosition>::Item: AsChar  ,
-            F: nom::Parser<I, O, E>,
-            E: nom::error::ContextError<I>,
-            O: Clone+FromStr<Err=MsgErr>
+    where
+        I: ToString
+            + InputLength
+            + InputTake
+            + Compare<&'static str>
+            + InputIter
+            + Clone
+            + InputTakeAtPosition,
+        <I as InputTakeAtPosition>::Item: AsChar,
+        F: nom::Parser<I, O, E>,
+        E: nom::error::ContextError<I>,
+        O: Clone + FromStr<Err = MsgErr>,
     {
         move |input: I| match variable(input.clone()) {
             Ok((next, v)) => Ok((next, Subst::Var(v))),
-            Err(err) => f.parse(input.clone()).map( |(next, val)|(next, Subst::Val(val))),
+            Err(err) => f
+                .parse(input.clone())
+                .map(|(next, val)| (next, Subst::Val(val))),
         }
     }
 
-    pub fn variable<I>(input: I) -> Res<I, Variable>  where I: ToString+Clone+InputLength + InputTake + Compare<&'static str>+InputIter+InputTakeAtPosition,<I as InputTakeAtPosition>::Item: AsChar   {
-        preceded(tag("$"),context("variable",delimited(tag("("),variable_name,tag(")"))))(input)
-       .map(|(next,name)|{
-           (next, Variable::new(name))
-       })
+    pub fn variable<I>(input: I) -> Res<I, Variable>
+    where
+        I: ToString
+            + Clone
+            + InputLength
+            + InputTake
+            + Compare<&'static str>
+            + InputIter
+            + InputTakeAtPosition,
+        <I as InputTakeAtPosition>::Item: AsChar,
+    {
+        preceded(
+            tag("$"),
+            context("variable", delimited(tag("("), variable_name, tag(")"))),
+        )(input)
+        .map(|(next, name)| (next, Variable::new(name)))
     }
 
-    pub fn variable_name<I>(input: I) -> Res<I, VariableName>  where I: ToString+InputLength + InputTake + Compare<&'static str>+InputIter+Clone+InputTakeAtPosition,<I as InputTakeAtPosition>::Item: AsChar {
-        skewer_dot(input).map( |(next,name)|{
-            (next, VariableName(name.to_string()))
-        })
+    pub fn variable_name<I>(input: I) -> Res<I, String>
+    where
+        I: ToString
+            + InputLength
+            + InputTake
+            + Compare<&'static str>
+            + InputIter
+            + Clone
+            + InputTakeAtPosition,
+        <I as InputTakeAtPosition>::Item: AsChar,
+    {
+        skewer_dot(input).map(|(next, name)| (next, name.to_string()))
     }
 
-    pub fn privilege(input: Span) -> Res<Span,Privilege> {
-        context("privilege", alt((tag("*"),skewer_colon )))(input).map( |(next,prv)| {
+    /*    pub fn access_grant(input: Span) -> Res<Span,AccessGrant> {
+    /re
+        }
+
+     */
+
+    pub fn access_grant_kind(input: Span) -> Res<Span, AccessGrantKindSubst> {
+        tuple((
+            context("access_grant_kind", peek(alt((tuple((tag("perm"),space1)), tuple((tag("priv"),space1)))))),
+            alt((access_grant_kind_perm, access_grant_kind_priv)),
+        ))(input)
+        .map(|(next, (_, kind))| (next, kind))
+    }
+
+    pub fn access_grant_kind_priv(input: Span) -> Res<Span, AccessGrantKindSubst> {
+        tuple((
+            tag("priv"),
+            context("access_grant:priv", tuple((space1, subst(privilege)))),
+        ))(input)
+        .map(|(next, (_, (_, privilege)))| (next, AccessGrantKindDef::Privilege(privilege)))
+    }
+
+    pub fn access_grant_kind_perm(input: Span) -> Res<Span, AccessGrantKindSubst> {
+        tuple((
+            tag("perm"),
+            context(
+                "access_grant:perm",
+                tuple((space1, subst(permissions_mask))),
+            ),
+        ))(input)
+        .map(|(next, (_, (_, perms)))| (next, AccessGrantKindDef::PermissionsMask(perms)))
+    }
+
+    pub fn privilege(input: Span) -> Res<Span, Privilege> {
+        context("privilege", alt((tag("*"), skewer_colon)))(input).map(|(next, prv)| {
             let prv = match prv.to_string().as_str() {
                 "*" => Privilege::Full,
-                prv => Privilege::Single(prv.to_string())
+                prv => Privilege::Single(prv.to_string()),
             };
-            (next,prv)
+            (next, prv)
         })
     }
 
-    pub fn permissions_mask(input: Span) -> Res<Span, PermissionsMask>{
-        context("permissions_mask", tuple((alt((value(PermissionsMaskKind::Or,char('+')),value(PermissionsMaskKind::And,char('&')))),permissions)))(input).map( |(next,(kind,permissions))| {
-            let mask = PermissionsMask {
-                kind,
-                permissions
-            };
+    pub fn permissions_mask(input: Span) -> Res<Span, PermissionsMask> {
+        context(
+            "permissions_mask",
+            tuple((
+                alt((
+                    value(PermissionsMaskKind::Or, char('+')),
+                    value(PermissionsMaskKind::And, char('&')),
+                )),
+                permissions,
+            )),
+        )(input)
+        .map(|(next, (kind, permissions))| {
+            let mask = PermissionsMask { kind, permissions };
 
-            (next,mask)
+            (next, mask)
         })
     }
 
-
-    pub fn permissions(input: Span) -> Res<Span, Permissions>{
-        context("permissions",tuple((child_perms, tag("-"), particle_perms)))(input).map( |(next,(child,_,particle))| {
-            let permissions = Permissions {
-                child,
-                particle
-            };
-            (next,permissions)
+    pub fn permissions(input: Span) -> Res<Span, Permissions> {
+        context(
+            "permissions",
+            tuple((child_perms, tag("-"), particle_perms)),
+        )(input)
+        .map(|(next, (child, _, particle))| {
+            let permissions = Permissions { child, particle };
+            (next, permissions)
         })
     }
 
-    pub fn child_perms(input: Span) -> Res<Span, ChildPerms>  {
-        context("child_perms",alt( (tuple( (alt( (value(false,char('c')),value(true,char('C')))),
-                alt( (value(false,char('s')),value(true,char('S')))),
-                alt( (value(false,char('d')),value(true,char('D')))))),fail)))(input).map( |(next,(create, select, delete))|{
-            let block = ChildPerms{
+    pub fn child_perms(input: Span) -> Res<Span, ChildPerms> {
+        context(
+            "child_perms",
+            alt((
+                tuple((
+                    alt((value(false, char('c')), value(true, char('C')))),
+                    alt((value(false, char('s')), value(true, char('S')))),
+                    alt((value(false, char('d')), value(true, char('D')))),
+                )),
+                fail,
+            )),
+        )(input)
+        .map(|(next, (create, select, delete))| {
+            let block = ChildPerms {
                 create,
                 select,
                 delete,
             };
-            (next,block)
+            (next, block)
         })
     }
 
     pub fn particle_perms(input: Span) -> Res<Span, ParticlePerms> {
-        context( "particle_perms", tuple( (alt( (value(false,char('r')),value(true,char('R')))),
-                   alt( (value(false,char('w')),value(true,char('W')))),
-                   alt( (value(false,char('x')),value(true,char('X')))))))(input).map( |(next,(read,write,execute))|{
-          let block = ParticlePerms {
-              read,
-              write,
-              execute,
-          };
-            (next,block)
+        context(
+            "particle_perms",
+            tuple((
+                alt((value(false, char('r')), value(true, char('R')))),
+                alt((value(false, char('w')), value(true, char('W')))),
+                alt((value(false, char('x')), value(true, char('X')))),
+            )),
+        )(input)
+        .map(|(next, (read, write, execute))| {
+            let block = ParticlePerms {
+                read,
+                write,
+                execute,
+            };
+            (next, block)
         })
     }
 
@@ -9603,202 +9848,236 @@ pub mod parse {
      */
 
     pub mod error {
+        use crate::version::v0_0_1::Span;
         use nom::Err;
         use nom_supreme::error::{ErrorTree, StackContext};
-        use crate::version::v0_0_1::Span;
 
-        pub fn result<R>(result: Result<(Span, R),Err<ErrorTree<Span>>> ) -> Result<R,String> {
+        pub fn result<R>(result: Result<(Span, R), Err<ErrorTree<Span>>>) -> Result<R, String> {
             match result {
-                Ok((_,e)) => Ok(e),
-                Err(err) => {
-                    match find(err) {
-                        Ok((message,span)) => {
-                            Err(format!("parse error (line {}, column {}): {}", span.location_line(), span.get_column(), message))
-                        }
-                        Err(err) => {
-                            Err(format!("parsing error: could not find matching error message"))
-                        }
-                    }
-                }
+                Ok((_, e)) => Ok(e),
+                Err(err) => match find(&err) {
+                    Ok((message, span)) => Err(format!(
+                        "parse error (line {}, column {}): {}",
+                        span.location_line(),
+                        span.get_column(),
+                        message
+                    )),
+                    Err(err) => Err(format!(
+                        "parsing error: could not find matching error message"
+                    )),
+                },
             }
         }
 
-        pub fn just_msg<R,E:From<String>>(result: Result<(Span, R),Err<ErrorTree<Span>>> ) -> Result<R,E> {
+        pub fn just_msg<R, E: From<String>>(
+            result: Result<(Span, R), Err<ErrorTree<Span>>>,
+        ) -> Result<R, E> {
             match result {
-                Ok((_,e)) => Ok(e),
-                Err(err) => {
-                    match find(err) {
-                        Ok((message,_)) => {
-                            Err(E::from(message))
-                        }
-                        Err(err) => {
-                            Err(E::from(format!("parsing error: could not find matching error message")))
-                        }
-                    }
-                }
+                Ok((_, e)) => Ok(e),
+                Err(err) => match find(&err) {
+                    Ok((message, _)) => Err(E::from(message)),
+                    Err(err) => Err(E::from(format!(
+                        "parsing error: could not find matching error message"
+                    ))),
+                },
             }
         }
 
-        fn message( context: &str ) -> Result<String,()> {
-          let message =match context {
+        fn message(context: &str) -> Result<String, ()> {
+            let message =match context {
               "variable" => "variable name must be alphanumeric lowercase, dashes and dots.  Variables are preceded by the '$' operator and must be sorounded by parenthesis $(env.valid-variable-name)",
               "child_perms" => "expecting child permissions form csd (Create, Select, Delete) uppercase indicates set permission (CSD==full permission, csd==no permission)",
               "particle_perms" => "expecting particle permissions form rwx (Read, Write, Execute) uppercase indicates set permission (RWX==full permission, rwx==no permission)",
               "permissions" => "expecting permissions form 'csd-rwx' (Create,Select,Delete)-(Read,Write,Execute) uppercase indicates set permission (CSD-RWX==full permission, csd-rwx==no permission)",
               "permissions_mask" => "expecting permissions mask symbol '+' for 'Or' mask and '&' for 'And' mask. Example:  &csd-RwX removes ----R-X from current permission",
               "privilege" => "privilege name must be '*' for 'full' privileges or an alphanumeric lowercase, dashes and colons i.e. 'props:email:read'",
-              _ => {
+              "access_grant:perm" => "expecting permissions mask symbol '+' for 'Or' mask and '&' for 'And' mask. Example:  &csd-RwX removes ----R-X from current permission",
+              "access_grant:priv" => "privilege name must be '*' for 'full' privileges or an alphanumeric lowercase, dashes and colons i.e. 'props:email:read'",
+              "access_grant_kind" => {
+
+                  "expecting access grant kind ['super','perm','priv']"
+              },
+              what => {
+                  println!("don't have a message for context '{}'",what);
                   return Err(());
               }
           };
             Ok(message.to_string())
         }
 
-        pub fn find<I:Clone>(err: Err<ErrorTree<I>>) -> Result<(String, I),()> {
+        pub fn find<I: Clone>(err: &Err<ErrorTree<I>>) -> Result<(String, I), ()> {
             match err {
-                Err::Error(err) => {
-                   match err {
-                       ErrorTree::Stack { base, contexts } => {
-                           let (span,context) = contexts.first().unwrap();
-                           match context {
-                               StackContext::Context(context) => {
-println!("Context: {}", context);
-                                   match message(*context) {
-                                       Ok(message) => {
-                                           Ok((message,span.clone()))
-                                       }
-                                       Err(_) => Err(())
-                                   }
-                               }
-                               _ => Err(())
-                           }
-                       }
-                       _ => Err(())
-                   }
+                Err::Incomplete(_) => {
+                    Err(())
                 }
-                _ => Err(())
+                Err::Error(err) => {
+                    find_tree(err)
+                }
+                Err::Failure(err) => {
+                    find_tree(err)
+                }
             }
         }
 
-        pub fn first_context<I>(orig: Err<ErrorTree<I>>) -> Result<(String, Err<ErrorTree<I>>),()> {
-            match &orig {
-                Err::Error(err) => {
-                    match err {
-                        ErrorTree::Stack { base, contexts } => {
-                            let (_,context) = contexts.first().unwrap();
-                            match context {
-                                StackContext::Context(context) => {
-                                    Ok((context.to_string(), orig))
+        pub fn find_tree<I: Clone>(err: &ErrorTree<I>) -> Result<(String, I), ()> {
+            match err {
+                    ErrorTree::Stack { base, contexts } => {
+                        let (span, context) = contexts.first().unwrap();
+                        match context {
+                            StackContext::Context(context) => {
+                                println!("Context: {}", context);
+                                match message(*context) {
+                                    Ok(message) => Ok((message, span.clone())),
+                                    Err(_) => Err(()),
                                 }
-                                _ => Err(())
+                            }
+                            _ => Err(()),
+                        }
+                    }
+                    ErrorTree::Base { .. } => {
+                        Err(())
+                    }
+                    ErrorTree::Alt(alts) => {
+                        for alt in alts {
+                            match find_tree(alt) {
+                                Ok(r) => {
+                                    return Ok(r);
+                                },
+                                Err(_) => {
+
+                                }
                             }
                         }
-                        _ => Err(())
+
+                        Err(())
                     }
-                }
-                _ => Err(())
+            }
+        }
+
+        pub fn first_context<I>(
+            orig: Err<ErrorTree<I>>,
+        ) -> Result<(String, Err<ErrorTree<I>>), ()> {
+            match &orig {
+                Err::Error(err) => match err {
+                    ErrorTree::Stack { base, contexts } => {
+                        let (_, context) = contexts.first().unwrap();
+                        match context {
+                            StackContext::Context(context) => Ok((context.to_string(), orig)),
+                            _ => Err(()),
+                        }
+                    }
+                    _ => Err(()),
+                },
+                _ => Err(()),
             }
         }
     }
-
 }
 
 pub mod log {
-    use serde::{Serialize,Deserialize};
     use crate::version::v0_0_1::id::Address;
+    use serde::{Deserialize, Serialize};
 
-    #[derive(Debug,Clone,Serialize,Deserialize)]
+    #[derive(Debug, Clone, Serialize, Deserialize)]
     pub enum Level {
         Trace,
         Debug,
         Info,
         Warn,
-        Error
+        Error,
     }
 
-    #[derive(Debug,Clone,Serialize,Deserialize)]
+    #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct Log {
         pub point: Address,
         pub message: String,
-        pub level: Level
+        pub level: Level,
     }
 
     impl ToString for Log {
         fn to_string(&self) -> String {
-            format!("{} {}", self.point.to_string(), self.message )
+            format!("{} {}", self.point.to_string(), self.message)
         }
     }
 
     impl Log {
-        pub fn trace( point: Address, message: &str ) -> Self {
+        pub fn trace(point: Address, message: &str) -> Self {
             Self {
                 level: Level::Trace,
                 point,
-                message: message.to_string()
+                message: message.to_string(),
             }
         }
-        pub fn debug( point: Address, message: &str ) -> Self {
+        pub fn debug(point: Address, message: &str) -> Self {
             Self {
                 level: Level::Debug,
                 point,
-                message: message.to_string()
+                message: message.to_string(),
             }
         }
-        pub fn info( point: Address, message: &str ) -> Self {
+        pub fn info(point: Address, message: &str) -> Self {
             Self {
                 level: Level::Info,
                 point,
-                message: message.to_string()
+                message: message.to_string(),
             }
         }
-        pub fn warn( point: Address, message: &str ) -> Self {
+        pub fn warn(point: Address, message: &str) -> Self {
             Self {
                 level: Level::Warn,
                 point,
-                message: message.to_string()
+                message: message.to_string(),
             }
         }
-        pub fn error( point: Address, message: &str ) -> Self {
+        pub fn error(point: Address, message: &str) -> Self {
             Self {
                 level: Level::Error,
                 point,
-                message: message.to_string()
+                message: message.to_string(),
             }
         }
     }
 
     pub trait ParticleLogger {
-        fn log(&self, log: Log );
+        fn log(&self, log: Log);
     }
 }
 
 #[cfg(test)]
 pub mod test {
+    use http::Uri;
     use std::collections::HashMap;
     use std::str::FromStr;
-    use http::Uri;
 
     use nom::combinator::{all_consuming, recognize};
 
     use crate::error::MsgErr;
-    use crate::version::v0_0_1::config::bind::parse::{bind, final_bind, select_http_pipelines, http_pipeline, pipeline, pipeline_step, pipeline_stop};
+    use crate::version::v0_0_1::config::bind::parse::{
+        bind, final_bind, http_pipeline, pipeline, pipeline_step, pipeline_stop,
+        select_http_pipelines,
+    };
     use crate::version::v0_0_1::config::bind::{PipelinesSubScope, ProtoBind};
     use crate::version::v0_0_1::entity::request::{Action, RequestCore};
     use crate::version::v0_0_1::id::{Address, AddressSegment, RouteSegment};
-    use crate::version::v0_0_1::parse::{address, address_template, base_address_segment, camel_case, capture_address, create, file_address_capture_segment, publish, rec_skewer, route_segment, skewer_chars, version_address_segment, Res, particle_perms, permissions, permissions_mask, child_perms, subst, VariableName};
+    use crate::version::v0_0_1::parse::error::{find, result};
+    use crate::version::v0_0_1::parse::{access_grant_kind, address, address_template, base_address_segment, camel_case, capture_address, child_perms, create, file_address_capture_segment, particle_perms, permissions, permissions_mask, publish, rec_skewer, route_segment, skewer_chars, subst, version_address_segment, Res, ToVal};
     use crate::version::v0_0_1::pattern::parse::address_kind_pattern;
     use crate::version::v0_0_1::pattern::parse::version;
-    use crate::version::v0_0_1::pattern::{AddressKindPath, AddressKindPattern, http_method, http_method_pattern, http_pattern, http_pattern_scoped, upload_step};
+    use crate::version::v0_0_1::pattern::{
+        http_method, http_method_pattern, http_pattern, http_pattern_scoped, upload_step,
+        AddressKindPath, AddressKindPattern,
+    };
     use crate::version::v0_0_1::payload::{HttpMethod, Payload};
+    use crate::version::v0_0_1::security::{
+        ChildPerms, ParticlePerms, Permissions, PermissionsMask, PermissionsMaskKind,
+    };
     use crate::version::v0_0_1::util::ValueMatcher;
+    use crate::version::v0_0_1::Span;
     use nom::error::VerboseError;
     use nom::{Err, Offset};
     use nom_supreme::error::{BaseErrorKind, ErrorTree, StackContext};
     use nom_supreme::final_parser::ExtractContext;
     use regex::Regex;
-    use crate::version::v0_0_1::parse::error::{find, result};
-    use crate::version::v0_0_1::security::{ChildPerms, ParticlePerms, Permissions, PermissionsMask, PermissionsMaskKind};
-    use crate::version::v0_0_1::Span;
 
     #[test]
     pub fn test_address_kind_pattern_matching() -> Result<(), MsgErr> {
@@ -9812,11 +10091,16 @@ pub mod test {
     pub fn test_query_root() -> Result<(), MsgErr> {
         let inclusive_pattern = AddressKindPattern::from_str("localhost+:**")?;
         let exclusive_pattern = AddressKindPattern::from_str("localhost:**")?;
-        println!("inclusive: '{}'", inclusive_pattern.query_root().to_string());
-        println!("exclusive : '{}'", exclusive_pattern.query_root().to_string());
+        println!(
+            "inclusive: '{}'",
+            inclusive_pattern.query_root().to_string()
+        );
+        println!(
+            "exclusive : '{}'",
+            exclusive_pattern.query_root().to_string()
+        );
         Ok(())
     }
-
 
     #[test]
     pub fn test_inclusive() -> Result<(), MsgErr> {
@@ -9833,7 +10117,6 @@ pub mod test {
         assert!(inclusive_pattern.matches(&address2));
         Ok(())
     }
-
 
     #[test]
     pub fn test_inclusive2() -> Result<(), MsgErr> {
@@ -9852,8 +10135,6 @@ pub mod test {
         Ok(())
     }
 
-
-
     #[test]
     pub fn test_some_matches() -> Result<(), MsgErr> {
         let users = AddressKindPattern::from_str("**<User>")?;
@@ -9861,9 +10142,11 @@ pub mod test {
         let address2 = AddressKindPath::from_str("localhost<Space>:app<App>")?;
         let address3 = AddressKindPath::from_str("localhost<Space>:app<App>:mechtron<Mechtron>")?;
         let address4 = AddressKindPath::from_str("localhost<Space>:app<App>:users<UserBase>")?;
-        let address5 = AddressKindPath::from_str("localhost<Space>:app<App>:users<UserBase>:scott<User>")?;
+        let address5 =
+            AddressKindPath::from_str("localhost<Space>:app<App>:users<UserBase>:scott<User>")?;
         let address6 = AddressKindPath::from_str("localhost<Space>:users<UserBase>")?;
-        let address7 = AddressKindPath::from_str("localhost<Space>:users<UserBase>:superuser<User>")?;
+        let address7 =
+            AddressKindPath::from_str("localhost<Space>:users<UserBase>:superuser<User>")?;
 
         assert!(!users.matches(&address1));
         assert!(!users.matches(&address2));
@@ -9874,7 +10157,6 @@ pub mod test {
         assert!(users.matches(&address7));
         Ok(())
     }
-
 
     #[test]
     pub fn test_a_match() -> Result<(), MsgErr> {
@@ -9905,10 +10187,7 @@ pub mod test {
 
     #[test]
     pub fn test_address() -> Result<(), MsgErr> {
-        assert_eq!(
-            ("", RouteSegment::Local),
-            all_consuming(route_segment)("")?
-        );
+        assert_eq!(("", RouteSegment::Local), all_consuming(route_segment)("")?);
 
         all_consuming(address)("[root]")?;
         all_consuming(address)("hello:kitty")?;
@@ -10001,24 +10280,26 @@ pub mod test {
         all_consuming(address_kind_pattern)("space+:**")?;
         Ok(())
     }
+
     #[cfg(test)]
-    pub mod bind{
+    pub mod bind {
         use crate::error::MsgErr;
         use crate::version::v0_0_1::config::bind::parse::{bind, final_bind};
         use crate::version::v0_0_1::config::bind::ProtoBind;
 
         #[test]
         pub fn test_expect_pipelines_scope_selector() -> Result<(), MsgErr> {
-            match final_bind(
-                r#"Bind{Msg{}}"#,
-            ) {
+            match final_bind(r#"Bind{Msg{}}"#) {
                 Ok(_) => {
                     panic!("should not be ok")
                 }
                 Err(err) => {
-assert_eq!(r#"Problem: "Msg{}}"
+                    assert_eq!(
+                        r#"Problem: "Msg{}}"
 
-Bind.Pipelines: expecting 'Pipelines' (Pipelines selector)"#, err );
+Bind.Pipelines: expecting 'Pipelines' (Pipelines selector)"#,
+                        err
+                    );
                     Ok(())
                 }
             }
@@ -10026,16 +10307,17 @@ Bind.Pipelines: expecting 'Pipelines' (Pipelines selector)"#, err );
 
         #[test]
         pub fn test_expect_pipelines_scope_selector_open() -> Result<(), MsgErr> {
-            match final_bind(
-                r#"Bind{Pipelines}"#,
-            ) {
+            match final_bind(r#"Bind{Pipelines}"#) {
                 Ok(_) => {
                     panic!("should not be ok")
                 }
                 Err(err) => {
-                    assert_eq!(r#"Problem: "}"
+                    assert_eq!(
+                        r#"Problem: "}"
 
-Bind.Pipelines: expecting '{' (Pipelines open scope)"#, err);
+Bind.Pipelines: expecting '{' (Pipelines open scope)"#,
+                        err
+                    );
                     Ok(())
                 }
             }
@@ -10044,9 +10326,7 @@ Bind.Pipelines: expecting '{' (Pipelines open scope)"#, err);
         #[test]
         pub fn test_expect_pipelines_scope_selector_empty() -> Result<(), MsgErr> {
             match final_bind(r#"Bind{Pipelines{ }}"#) {
-                Ok(_) => {
-                    Ok(())
-                }
+                Ok(_) => Ok(()),
                 Err(err) => {
                     println!("{}", err);
                     panic!("{}", err)
@@ -10054,12 +10334,9 @@ Bind.Pipelines: expecting '{' (Pipelines open scope)"#, err);
             }
         }
 
-
         #[test]
         pub fn test_expect_pipelines_scope_selector_enumeration() -> Result<(), MsgErr> {
-            match final_bind(
-                r#"Bind{Pipelines{Blah{ } }}"#,
-            ) {
+            match final_bind(r#"Bind{Pipelines{Blah{ } }}"#) {
                 Ok(_) => {
                     panic!("should not be ok")
                 }
@@ -10075,12 +10352,8 @@ Bind.Pipelines: expecting 'Rc', 'Msg' or 'Http' (pipelines selectors) or '}' (cl
 
         #[test]
         pub fn test_expect_pipelines_scope_selector_msg() -> Result<(), MsgErr> {
-            match final_bind(
-                r#"Bind{ Pipelines{ Msg{ } }}"#,
-            ) {
-                Ok(_) => {
-                    Ok(())
-                }
+            match final_bind(r#"Bind{ Pipelines{ Msg{ } }}"#) {
+                Ok(_) => Ok(()),
                 Err(err) => {
                     panic!("{}", err);
                 }
@@ -10098,9 +10371,7 @@ Bind.Pipelines: expecting 'Rc', 'Msg' or 'Http' (pipelines selectors) or '}' (cl
     }
 }"#,
             ) {
-                Ok(_) => {
-                    Ok(())
-                }
+                Ok(_) => Ok(()),
                 Err(err) => {
                     let expected = r#"Problem: "Bad> -> something;"
 
@@ -10111,11 +10382,10 @@ Bind.Pipelines.Http: expecting '*' or valid HttpMethod: 'Get', 'Post', 'Put', 'D
             }
         }
 
-
         #[test]
         pub fn test_good() -> Result<(), MsgErr> {
             final_bind(
-      r#"
+                r#"
             Bind{
                 Pipelines{
                     Http {
@@ -10123,10 +10393,10 @@ Bind.Pipelines.Http: expecting '*' or valid HttpMethod: 'Get', 'Post', 'Put', 'D
                         <Post>/(.*) -[ Bin ]-> another:what => &;
                     }
                 }
-            }"#)?;
+            }"#,
+            )?;
             Ok(())
         }
-
 
         #[test]
         pub fn test_open_angle_bracket() -> Result<(), MsgErr> {
@@ -10138,14 +10408,18 @@ Bind.Pipelines.Http: expecting '*' or valid HttpMethod: 'Get', 'Post', 'Put', 'D
                         Get -> something;
                     }
                 }
-            }"#) {
+            }"#,
+            ) {
                 Ok(_) => {
                     panic!("expected failure")
                 }
                 Err(err) => {
-                    assert_eq!(r#"Problem: "Get -> something;"
+                    assert_eq!(
+                        r#"Problem: "Get -> something;"
 
-Bind.Pipelines: expecting: '<' (open angle bracket)"#,err);
+Bind.Pipelines: expecting: '<' (open angle bracket)"#,
+                        err
+                    );
                     Ok(())
                 }
             }
@@ -10161,20 +10435,23 @@ Bind.Pipelines: expecting: '<' (open angle bracket)"#,err);
                         <Get -> something;
                     }
                 }
-            }"#) {
+            }"#,
+            ) {
                 Ok(_) => {
                     panic!("expected failure")
                 }
                 Err(err) => {
-                    println!("{}",err);
-                    assert_eq!(r#"Problem: " -> something;"
+                    println!("{}", err);
+                    assert_eq!(
+                        r#"Problem: " -> something;"
 
-Bind.Pipelines: expecting: '>' (close angle bracket)"#,err);
+Bind.Pipelines: expecting: '>' (close angle bracket)"#,
+                        err
+                    );
                     Ok(())
                 }
             }
         }
-
 
         #[test]
         pub fn test_missing_pipeline_stop() -> Result<(), MsgErr> {
@@ -10186,19 +10463,24 @@ Bind.Pipelines: expecting: '>' (close angle bracket)"#,err);
                         <Get> -> ;
                     }
                 }
-            }"#) {
+            }"#,
+            ) {
                 Ok(_) => {
                     panic!("expected failure")
                 }
                 Err(err) => {
-                    println!("{}",err);
-                    assert_eq!(r#"Problem: ";"
+                    println!("{}", err);
+                    assert_eq!(
+                        r#"Problem: ";"
 
-Bind.Pipelines.Stop: expected valid pipeline stop "{{ }}" (Core) or valid Address"#,err);
+Bind.Pipelines.Stop: expected valid pipeline stop "{{ }}" (Core) or valid Address"#,
+                        err
+                    );
                     Ok(())
                 }
             }
         }
+
         #[test]
         pub fn test_invalid_address() -> Result<(), MsgErr> {
             match final_bind(
@@ -10209,15 +10491,19 @@ Bind.Pipelines.Stop: expected valid pipeline stop "{{ }}" (Core) or valid Addres
                         <Get> -> Bad;
                     }
                 }
-            }"#) {
+            }"#,
+            ) {
                 Ok(_) => {
                     panic!("expected failure")
                 }
                 Err(err) => {
-                    println!("{}",err);
-                    assert_eq!(r#"Problem: "> something;"
+                    println!("{}", err);
+                    assert_eq!(
+                        r#"Problem: "> something;"
 
-Bind.Pipelines.Http.Pipeline.Step: expected '->' (forward request) or '-[' (RequestPayloadFilter)"#, err);
+Bind.Pipelines.Http.Pipeline.Step: expected '->' (forward request) or '-[' (RequestPayloadFilter)"#,
+                        err
+                    );
                     Ok(())
                 }
             }
@@ -10233,15 +10519,19 @@ Bind.Pipelines.Http.Pipeline.Step: expected '->' (forward request) or '-[' (Requ
                         <Get> > something;
                     }
                 }
-            }"#) {
+            }"#,
+            ) {
                 Ok(_) => {
                     panic!("expected failure")
                 }
                 Err(err) => {
-println!("{}",err);
-assert_eq!(r#"Problem: "> something;"
+                    println!("{}", err);
+                    assert_eq!(
+                        r#"Problem: "> something;"
 
-Bind.Pipelines.Http.Pipeline.Step: expected '->' (forward request) or '-[' (RequestPayloadFilter)"#, err);
+Bind.Pipelines.Http.Pipeline.Step: expected '->' (forward request) or '-[' (RequestPayloadFilter)"#,
+                        err
+                    );
                     Ok(())
                 }
             }
@@ -10257,17 +10547,17 @@ Bind.Pipelines.Http.Pipeline.Step: expected '->' (forward request) or '-[' (Requ
                         <Get> -[ Bad ]-> something;
                     }
                 }
-            }"#) {
+            }"#,
+            ) {
                 Ok(_) => {
                     panic!("expected failure")
                 }
                 Err(err) => {
-                    println!("{}",err);
+                    println!("{}", err);
                     Ok(())
                 }
             }
         }
-
 
         #[test]
         pub fn test_bind() -> Result<(), MsgErr> {
@@ -10350,21 +10640,21 @@ Bind.Pipelines.Http.Pipeline.Step: expected '->' (forward request) or '-[' (Requ
         let get_some = RequestCore {
             action: Action::Http(HttpMethod::GET),
             headers: Default::default(),
-            uri: Uri::from_static( "/some"),
+            uri: Uri::from_static("/some"),
             body: Payload::Empty,
         };
 
         let get_some_plus = RequestCore {
             action: Action::Http(HttpMethod::GET),
             headers: Default::default(),
-            uri: Uri::from_static( "/some/plus" ),
+            uri: Uri::from_static("/some/plus"),
             body: Payload::Empty,
         };
 
         let post_some = RequestCore {
             action: Action::Http(HttpMethod::POST),
             headers: Default::default(),
-            uri: Uri::from_static( "/some"),
+            uri: Uri::from_static("/some"),
             body: Payload::Empty,
         };
 
@@ -10377,33 +10667,34 @@ Bind.Pipelines.Http.Pipeline.Step: expected '->' (forward request) or '-[' (Requ
         assert!(post_some_selector.is_match(&post_some).is_ok());
         Ok(())
     }
+
     #[test]
     pub fn test_scope() -> Result<(), MsgErr> {
         let get_some = RequestCore {
             action: Action::Http(HttpMethod::GET),
             headers: Default::default(),
-            uri: Uri::from_static( "/some" ),
+            uri: Uri::from_static("/some"),
             body: Payload::Empty,
         };
 
         let get_some_plus = RequestCore {
             action: Action::Http(HttpMethod::GET),
             headers: Default::default(),
-            uri: Uri::from_static( "/some/plus" ),
+            uri: Uri::from_static("/some/plus"),
             body: Payload::Empty,
         };
 
         let post_some = RequestCore {
             action: Action::Http(HttpMethod::POST),
             headers: Default::default(),
-            uri: Uri::from_static( "/some" ),
+            uri: Uri::from_static("/some"),
             body: Payload::Empty,
         };
 
         let delete_some = RequestCore {
             action: Action::Http(HttpMethod::DELETE),
             headers: Default::default(),
-            uri: Uri::from_static( "/some" ),
+            uri: Uri::from_static("/some"),
             body: Payload::Empty,
         };
 
@@ -10453,23 +10744,44 @@ Bind.Pipelines.Http.Pipeline.Step: expected '->' (forward request) or '-[' (Requ
 
     #[test]
     pub fn test_permission_block() -> Result<(), MsgErr> {
-       let span = Span::new("rWx-");
-       let perm = particle_perms(span)?;
-        let (span,block) = perm;
-        println!("offset : {}",span.location_offset());
+        let span = Span::new("rWx-");
+        let perm = particle_perms(span)?;
+        let (span, block) = perm;
+        println!("offset : {}", span.location_offset());
 
-        assert_eq!(block, ParticlePerms {read:false,write:true,execute:false});
-       Ok(())
+        assert_eq!(
+            block,
+            ParticlePerms {
+                read: false,
+                write: true,
+                execute: false
+            }
+        );
+        Ok(())
     }
 
     #[test]
     pub fn test_permissions() -> Result<(), MsgErr> {
         let span = Span::new("cSd-RwX");
         let result = permissions(span)?;
-        let (span,permissions) = result;
-        println!("offset : {}",span.location_offset());
+        let (span, permissions) = result;
+        println!("offset : {}", span.location_offset());
 
-        assert_eq!(permissions, crate::version::v0_0_1::security::Permissions {child: ChildPerms{create:false,select:true,delete:false}, particle: ParticlePerms {read:true,write:false,execute:true}});
+        assert_eq!(
+            permissions,
+            crate::version::v0_0_1::security::Permissions {
+                child: ChildPerms {
+                    create: false,
+                    select: true,
+                    delete: false
+                },
+                particle: ParticlePerms {
+                    read: true,
+                    write: false,
+                    execute: true
+                }
+            }
+        );
         Ok(())
     }
 
@@ -10477,33 +10789,43 @@ Bind.Pipelines.Http.Pipeline.Step: expected '->' (forward request) or '-[' (Requ
     pub fn test_permissions_mask() -> Result<(), MsgErr> {
         let span = Span::new("&cSd-RwX");
         let result = permissions_mask(span)?;
-        let (span,mask) = result;
-        let permissions = crate::version::v0_0_1::security::Permissions {child: ChildPerms{create:false,select:true,delete:false}, particle: ParticlePerms {read:true,write:false,execute:true}};
+        let (span, mask) = result;
+        let permissions = crate::version::v0_0_1::security::Permissions {
+            child: ChildPerms {
+                create: false,
+                select: true,
+                delete: false,
+            },
+            particle: ParticlePerms {
+                read: true,
+                write: false,
+                execute: true,
+            },
+        };
         let mask2 = PermissionsMask {
             kind: PermissionsMaskKind::And,
-            permissions
+            permissions,
         };
         assert_eq!(mask, mask2);
         Ok(())
     }
 
     #[test]
-    pub fn test_root_pattern_match() -> Result<(),MsgErr>{
+    pub fn test_root_pattern_match() -> Result<(), MsgErr> {
         let pattern = AddressKindPattern::from_str("+:**")?;
         assert!(pattern.matches_root());
         Ok(())
     }
 
-
     #[test]
-    pub fn test_perms() -> Result<(),MsgErr> {
+    pub fn test_perms() -> Result<(), MsgErr> {
         let span = Span::new("Csd-rxy");
         println!("{}", result(permissions(span)).err().unwrap());
         Ok(())
     }
 
     #[test]
-    pub fn test_perm_mask() -> Result<(),MsgErr> {
+    pub fn test_perm_mask() -> Result<(), MsgErr> {
         let span = Span::new("Csd-rxy");
         println!("{}", result(permissions_mask(span)).err().unwrap());
         Ok(())
@@ -10512,22 +10834,27 @@ Bind.Pipelines.Http.Pipeline.Step: expected '->' (forward request) or '-[' (Requ
     #[test]
     pub fn test_subst() -> Result<(), MsgErr> {
         let val = Span::new("&cSd-RwX");
-        let var= Span::new("$(env.some-var)");
+        let var = Span::new("$(env.some-var)");
         let val = result(subst(permissions_mask)(val))?;
         let var = result(subst(permissions_mask)(var))?;
 
         let mut map = HashMap::new();
-        map.insert( VariableName::new("env.some-var"), "bad+CSD-RWX".to_string() );
+        map.insert("env.some-var".to_string(), "+CSD-RWX".to_string());
 
-        let val = val.resolve(&map)?;
-        let var = var.resolve(&map)?;
+        let val = val.to_val(&map)?;
+        let var = var.to_val(&map)?;
 
-        println!("val {}", val.to_string() );
-        println!("var {}", var.to_string() );
+        println!("val {}", val.to_string());
+        println!("var {}", var.to_string());
 
         Ok(())
     }
 
+    #[test]
+    pub fn test_access_grant_kind() -> Result<(), MsgErr> {
+        let s = Span::new("perm &rCsd-rwx");
+        let result = result(access_grant_kind(s))?;
 
+        Ok(())
+    }
 }
-

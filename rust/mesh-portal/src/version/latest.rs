@@ -177,7 +177,7 @@ pub mod security {
     pub type ChildPerms = current::security::ChildPerms;
     pub type ParticlePerms = current::security::ParticlePerms;
     pub type AccessGrant = current::security::AccessGrant;
-    pub type AccessGrantKind = current::security::AccessGrantKind;
+    pub type AccessGrantKind = current::security::AccessGrantKindDef;
 }
 
 
