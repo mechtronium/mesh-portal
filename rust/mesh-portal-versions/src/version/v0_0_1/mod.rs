@@ -8226,7 +8226,10 @@ pub mod fail {
 }
 
 pub mod parse {
-    use std::ops::RangeFrom;
+    use core::fmt;
+    use std::collections::HashMap;
+    use std::fmt::Formatter;
+    use std::ops::{Deref, RangeFrom};
     use std::str::FromStr;
 
     use nom::branch::alt;
@@ -8237,7 +8240,7 @@ pub mod parse {
     use nom::error::{context, ErrorKind, ParseError, VerboseError};
     use nom::multi::{many0, separated_list0, separated_list1};
     use nom::sequence::{delimited, preceded, terminated, tuple};
-    use nom::{AsChar, IResult, InputTakeAtPosition, InputIter, InputLength, InputTake, Slice};
+    use nom::{AsChar, IResult, InputTakeAtPosition, InputIter, InputLength, InputTake, Slice, Compare};
     use nom_supreme::parse_from_str;
 
     use crate::error::MsgErr;
@@ -8262,6 +8265,7 @@ pub mod parse {
     use crate::version::v0_0_1::util::StringMatcher;
     use nom::bytes::complete::take;
     use nom_supreme::error::ErrorTree;
+    use crate::version::v0_0_1::parse::error::{first_context, result};
     use crate::version::v0_0_1::security::{AccessGrant, ChildPerms, ParticlePerms, Permissions, PermissionsMask, PermissionsMaskKind};
     use crate::version::v0_0_1::Span;
 
@@ -9381,6 +9385,101 @@ pub mod parse {
         Ok((next, create))
     }
 
+    #[derive(Debug,Clone,Eq,PartialEq,Hash)]
+    pub struct VariableName(String);
+
+    impl Deref for VariableName {
+        type Target = String;
+
+        fn deref(&self) -> &Self::Target {
+            &self.0
+        }
+    }
+
+    pub struct Variable {
+        pub name: VariableName
+    }
+
+    impl Variable {
+        pub fn new(name: VariableName )-> Self {
+            Self{name}
+        }
+    }
+
+    pub enum Subst<I,V> where I:Clone, V:Clone {
+        Variable{
+            variable: Variable,
+            parser: Box<dyn nom::Parser<I, V, ErrorTree<I>>>
+        },
+        Value(V)
+    }
+
+    impl <I,V> Subst<I,V> where I:Clone, V:Clone {
+        pub fn resolve( &self, resolver: HashMap<VariableName,String> ) -> Result<V,String> {
+            match self {
+                Subst::Variable { variable,parser } => {
+                  let raw = resolver.get( &variable.name ).ok_or(format!("cannot resolve variable '{}'", variable.name.to_string()))?;
+                  let span = Span::new(raw);
+                  result((parser.deref())(span))
+               }
+                Subst::Value(value) => Ok(value.clone())
+            }
+        }
+    }
+
+
+    pub fn subst<I,O,F>(
+        mut f: F,
+    ) -> impl FnMut(I) -> Res<I,Subst<I,O>>
+        where F: 'static+nom::Parser<I, O, ErrorTree<I>>+Clone, I: Clone, O: Clone
+    {
+        move |input:I| {
+            let result = variable(input.clone());
+
+            match result {
+                Ok((next, variable)) => {
+                    Ok((next, Subst::Variable { variable, parser: Box::new(f.clone()) }))
+                }
+                Err(err) => {
+                    match first_context(err) {
+                        Ok((context, err)) => {
+                            // this means that a $ was encountered, but the variable was invalid...
+                            // we don't want to confuse with additional info from the parser
+                            if context == "variable" {
+                                return Err(err);
+                            }
+                        }
+                        Err(_) => {
+                            // looks like the error was something unrelated to variables... let's
+                            // give the next parser a chance
+                        }
+                    }
+                    match f.parse(input) {
+                        Ok((next, v)) => {
+                            Ok((next, Subst::Value(v)))
+                        }
+                        Err(err) => {
+                            Err(err)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    pub fn variable<I>(input: I) -> Res<I, Variable> where I: Clone{
+        preceded(tag("$"),context("variable",delimited(tag("("),variable_name,tag(")"))))(input)
+       .map(|(next,name)|{
+           (next, Variable::new(name))
+       })
+    }
+
+    pub fn variable_name<I>(input: I) -> Res<I,VariableName> where I: Clone{
+        skewer_dot(input).map( |(next,name)|{
+            (next, VariableName(name.to_string()))
+        })
+    }
+
     pub fn permissions_mask(input: Span) -> Res<Span, PermissionsMask>{
         context("permissions_mask", tuple((alt((value(PermissionsMaskKind::Or,char('+')),value(PermissionsMaskKind::And,char('&')))),permissions)))(input).map( |(next,(kind,permissions))| {
             let mask = PermissionsMask {
@@ -9459,6 +9558,7 @@ pub mod parse {
 
         fn message( context: &str ) -> Result<String,()> {
           let message =match context {
+              "variable" => "variable name must be alphanumeric lowercase, dashes and dots.  Variables are preceded by the '$' operator and must be sorounded by parenthesis $(env.valid-variable-name)",
               "child_perms" => "expecting child permissions form csd (Create, Select, Delete) uppercase indicates set permission (CSD==full permission, csd==no permission)",
               "particle_perms" => "expecting particle permissions form rwx (Read, Write, Execute) uppercase indicates set permission (RWX==full permission, rwx==no permission)",
               "permissions" => "expecting permissions form 'csd-rwx' (Create,Select,Delete)-(Read,Write,Execute) uppercase indicates set permission (CSD-RWX==full permission, csd-rwx==no permission)",
@@ -9491,6 +9591,26 @@ println!("Context: {}", context);
                        }
                        _ => Err(())
                    }
+                }
+                _ => Err(())
+            }
+        }
+
+        pub fn first_context<I>(orig: Err<ErrorTree<I>>) -> Result<(String, Err<ErrorTree<I>>),()> {
+            match &orig {
+                Err::Error(err) => {
+                    match err {
+                        ErrorTree::Stack { base, contexts } => {
+                            let (_,context) = contexts.first().unwrap();
+                            match context {
+                                StackContext::Context(context) => {
+                                    Ok((context.to_string(), orig))
+                                }
+                                _ => Err(())
+                            }
+                        }
+                        _ => Err(())
+                    }
                 }
                 _ => Err(())
             }
@@ -9580,7 +9700,7 @@ pub mod test {
     use crate::version::v0_0_1::config::bind::{PipelinesSubScope, ProtoBind};
     use crate::version::v0_0_1::entity::request::{Action, RequestCore};
     use crate::version::v0_0_1::id::{Address, AddressSegment, RouteSegment};
-    use crate::version::v0_0_1::parse::{address, address_template, base_address_segment, camel_case, capture_address, create, file_address_capture_segment, publish, rec_skewer, route_segment, skewer_chars, version_address_segment, Res, particle_perms, permissions, permissions_mask, child_perms};
+    use crate::version::v0_0_1::parse::{address, address_template, base_address_segment, camel_case, capture_address, create, file_address_capture_segment, publish, rec_skewer, route_segment, skewer_chars, version_address_segment, Res, particle_perms, permissions, permissions_mask, child_perms, subst};
     use crate::version::v0_0_1::pattern::parse::address_kind_pattern;
     use crate::version::v0_0_1::pattern::parse::version;
     use crate::version::v0_0_1::pattern::{AddressKindPath, AddressKindPattern, http_method, http_method_pattern, http_pattern, http_pattern_scoped, upload_step};
@@ -10301,6 +10421,13 @@ Bind.Pipelines.Http.Pipeline.Step: expected '->' (forward request) or '-[' (Requ
     pub fn test_perm_mask() -> Result<(),MsgErr> {
         let span = Span::new("Csd-rxy");
         println!("{}", result(permissions_mask(span)).err().unwrap());
+        Ok(())
+    }
+
+    #[test]
+    pub fn test_subst() -> Result<(), MsgErr> {
+        let span = Span::new("&cSd-RwX");
+        let result = result(subst(permissions_mask)(span))?;
         Ok(())
     }
 

@@ -1,3 +1,4 @@
+#![feature(unboxed_closures)]
 #[no_std]
 
 #[macro_use]
@@ -5,7 +6,7 @@ extern crate lazy_static;
 
 #[macro_use]
 extern crate strum_macros;
-
+extern crate core;
 
 
 use std::collections::HashMap;
