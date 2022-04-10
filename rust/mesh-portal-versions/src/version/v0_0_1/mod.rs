@@ -3566,6 +3566,7 @@ pub mod messaging {
     }
 
     impl Scope {
+        /*
         pub fn mask( &self, on: &AddressKindPath ) -> Access {
             match self {
                 Scope::Full => {
@@ -3589,6 +3590,8 @@ pub mod messaging {
                 }
             }
         }
+
+         */
     }
 
     impl Default for Scope {
@@ -3788,7 +3791,7 @@ pub mod security {
                 Access::Super(_)=> Ok(()),
                 Access::Owner=> Ok(()),
                 Access::Enumerated(enumerated) => {
-                    match enumerated.privileges.contains(privilege) {
+                    match enumerated.privileges.has(privilege).is_ok() {
                         true => Ok(()),
                         false => Err(format!("'{}'",privilege).into())
                     }
@@ -3814,7 +3817,7 @@ pub mod security {
         }
 
         pub fn none() -> Self {
-            Self{ set: HashSet::new() }
+            Self::Enumerated(EnumeratedPrivileges::none())
         }
 
         pub fn or( mut self, other: &Self ) -> Self  {
@@ -3825,7 +3828,7 @@ pub mod security {
                 Privileges::Enumerated(privileges) => {
                     match other {
                         Privileges::Full => {
-                            Priviledges::Full
+                            Privileges::Full
                         }
                         Privileges::Enumerated(other) => {
                             Privileges::Enumerated(privileges.or(other))
@@ -3840,13 +3843,13 @@ pub mod security {
                 Privileges::Full => {
                     self
                 },
-                Privileges::Enumerated(other) => {
+                Privileges::Enumerated(enumerated_other) => {
                     match self {
                         Privileges::Full => {
                             other.clone()
                         }
                         Privileges::Enumerated(enumerated_self) => {
-                            Privileges::Enumerated(enumerated_self.and(other))
+                            Privileges::Enumerated(enumerated_self.and(enumerated_other))
                         }
                     }
                 }
@@ -3854,7 +3857,12 @@ pub mod security {
         }
 
         pub fn add( &mut self, privilege: &str ) {
-            self.set.insert(privilege.to_string() );
+            match self {
+                Self::Full => {},
+                Self::Enumerated(privileges) => {
+                    privileges.add(privilege)
+                }
+            }
         }
 
     }
@@ -3877,15 +3885,15 @@ pub mod security {
 
         pub fn or( mut self, other: &Self ) -> Self {
             for p in other.set.iter() {
-                if !self.contains(p) {
-                    self.insert(p.clone());
+                if self.has(p).is_err() {
+                    self.add(p.as_str() );
                 }
             }
             self
         }
 
         pub fn and( mut self, other: &Self ) -> Self {
-            self.retain( |p| other.contains(p) );
+            self.set.retain( |p| other.has(p).is_ok() );
             self
         }
 
@@ -3949,11 +3957,11 @@ pub mod security {
 
         pub fn and( &mut self, access: &Self ) {
             self.permissions.and(&access.permissions);
-            self.privileges = self.privileges.and(&access.privileges);
+            self.privileges = self.privileges.clone().and(&access.privileges);
         }
 
         pub fn clear_privs(&mut self) {
-            self.privileges.clear();
+            self.privileges = Privileges::none()
         }
 
         pub fn add(&mut self, grant: &AccessGrant ) {
@@ -3962,7 +3970,14 @@ pub mod security {
                     // we can't mask Super with Enumerated... it does nothing
                 }
                 AccessGrantKind::Privilege(prv) => {
-                    self.privileges.insert(prv.clone());
+                    match prv {
+                        Privilege::Full => {
+                            self.privileges = Privileges::Full;
+                        }
+                        Privilege::Single(prv) => {
+                            self.privileges.add(prv.as_str());
+                        }
+                    }
                 }
                 AccessGrantKind::PermissionsMask(mask) => {
                     match mask.kind {
@@ -6554,7 +6569,7 @@ println!("Segs count: {}", segs.len() );
             }
 
             pub fn return_pipeline_stop(input: &str) -> Res<&str, PipelineStop> {
-                tag("&")(input).map(|(next, _)| (next, PipelineStop::Return))
+                tag("&")(input).map(|(next, _)| (next, PipelineStop::Respond ))
             }
 
             pub fn call_pipeline_stop(input: &str) -> Res<&str, PipelineStop> {
@@ -6691,9 +6706,18 @@ pub mod entity {
         #[derive(Debug, Clone, Serialize, Deserialize)]
         pub enum Action {
             Rc(Rc),
-
             Http(#[serde(with = "http_serde::method")]HttpMethod),
             Msg(String),
+        }
+
+        impl ToString for Action {
+            fn to_string(&self) -> String {
+                match self {
+                    Action::Rc(_) => "Rc".to_string(),
+                    Action::Http(method) => method.to_string(),
+                    Action::Msg(msg) => msg.to_string()
+                }
+            }
         }
 
         impl Into<RequestCore> for Action {
@@ -8202,17 +8226,18 @@ pub mod fail {
 }
 
 pub mod parse {
+    use std::ops::RangeFrom;
     use std::str::FromStr;
 
     use nom::branch::alt;
     use nom::bytes::complete::tag;
     use nom::bytes::complete::{is_a, is_not};
     use nom::character::complete::{alpha0, alpha1, alphanumeric1, char, digit1, multispace0, multispace1, space0, space1};
-    use nom::combinator::{all_consuming, not, opt, recognize, value};
+    use nom::combinator::{all_consuming, fail, not, opt, recognize, value};
     use nom::error::{context, ErrorKind, ParseError, VerboseError};
     use nom::multi::{many0, separated_list0, separated_list1};
     use nom::sequence::{delimited, preceded, terminated, tuple};
-    use nom::{AsChar, IResult, InputTakeAtPosition};
+    use nom::{AsChar, IResult, InputTakeAtPosition, InputIter, InputLength, InputTake, Slice};
     use nom_supreme::parse_from_str;
 
     use crate::error::MsgErr;
@@ -8237,7 +8262,7 @@ pub mod parse {
     use crate::version::v0_0_1::util::StringMatcher;
     use nom::bytes::complete::take;
     use nom_supreme::error::ErrorTree;
-    use crate::version::v0_0_1::security::{ChildPerms, ParticlePerms, Permissions, PermissionsMask, PermissionsMaskKind};
+    use crate::version::v0_0_1::security::{AccessGrant, ChildPerms, ParticlePerms, Permissions, PermissionsMask, PermissionsMaskKind};
     use crate::version::v0_0_1::Span;
 
     pub struct Parser {}
@@ -9356,8 +9381,8 @@ pub mod parse {
         Ok((next, create))
     }
 
-    pub fn permissions_mask(input: Span) -> Res<Span, PermissionsMask> {
-        tuple((alt((value(PermissionsMaskKind::Or,char('+')),value(PermissionsMaskKind::And,char('&')))),permissions))(input).map( |(next,(kind,permissions))| {
+    pub fn permissions_mask(input: Span) -> Res<Span, PermissionsMask>{
+        context("permissions_mask", tuple((alt((value(PermissionsMaskKind::Or,char('+')),value(PermissionsMaskKind::And,char('&')))),permissions)))(input).map( |(next,(kind,permissions))| {
             let mask = PermissionsMask {
                 kind,
                 permissions
@@ -9368,8 +9393,8 @@ pub mod parse {
     }
 
 
-    pub fn permissions(input: Span) -> Res<Span, Permissions> {
-        tuple((child_perms, tag("-"), particle_perms))(input).map( |(next,(child,_,particle))| {
+    pub fn permissions(input: Span) -> Res<Span, Permissions>{
+        context("permissions",tuple((child_perms, tag("-"), particle_perms)))(input).map( |(next,(child,_,particle))| {
             let permissions = Permissions {
                 child,
                 particle
@@ -9378,10 +9403,10 @@ pub mod parse {
         })
     }
 
-    pub fn child_perms(input: Span) -> Res<Span, ChildPerms> {
-        tuple( (alt( (value(false,char('c')),value(true,char('C')))),
+    pub fn child_perms(input: Span) -> Res<Span, ChildPerms>  {
+        context("child_perms",alt( (tuple( (alt( (value(false,char('c')),value(true,char('C')))),
                 alt( (value(false,char('s')),value(true,char('S')))),
-                alt( (value(false,char('d')),value(true,char('D'))))))(input).map( |(next,(create, select, delete))|{
+                alt( (value(false,char('d')),value(true,char('D')))))),fail)))(input).map( |(next,(create, select, delete))|{
             let block = ChildPerms{
                 create,
                 select,
@@ -9392,9 +9417,9 @@ pub mod parse {
     }
 
     pub fn particle_perms(input: Span) -> Res<Span, ParticlePerms> {
-        tuple( (alt( (value(false,char('r')),value(true,char('R')))),
+        context( "particle_perms", tuple( (alt( (value(false,char('r')),value(true,char('R')))),
                    alt( (value(false,char('w')),value(true,char('W')))),
-                   alt( (value(false,char('x')),value(true,char('X'))))))(input).map( |(next,(read,write,execute))|{
+                   alt( (value(false,char('x')),value(true,char('X')))))))(input).map( |(next,(read,write,execute))|{
           let block = ParticlePerms {
               read,
               write,
@@ -9402,6 +9427,74 @@ pub mod parse {
           };
             (next,block)
         })
+    }
+
+    /*
+    pub fn grant<I>(input: I) -> Res<I,AccessGrant> where I:Clone+InputIter+InputLength+InputTake{
+
+    }
+
+     */
+
+    pub mod error {
+        use nom::Err;
+        use nom_supreme::error::{ErrorTree, StackContext};
+        use crate::version::v0_0_1::Span;
+
+        pub fn result<E>(result: Result<(Span, E),Err<ErrorTree<Span>>> ) -> Result<E,String> {
+            match result {
+                Ok((_,e)) => Ok(e),
+                Err(err) => {
+                    match find(err) {
+                        Ok((message,span)) => {
+                            Err(format!("parse error (line {}, column {}): {}", span.location_line(), span.get_column(), message))
+                        }
+                        Err(err) => {
+                            Err(format!("parsing error: could not find matching error message"))
+                        }
+                    }
+                }
+            }
+        }
+
+        fn message( context: &str ) -> Result<String,()> {
+          let message =match context {
+              "child_perms" => "expecting child permissions form csd (Create, Select, Delete) uppercase indicates set permission (CSD==full permission, csd==no permission)",
+              "particle_perms" => "expecting particle permissions form rwx (Read, Write, Execute) uppercase indicates set permission (RWX==full permission, rwx==no permission)",
+              "permissions" => "expecting permissions form 'csd-rwx' (Create,Select,Delete)-(Read,Write,Execute) uppercase indicates set permission (CSD-RWX==full permission, csd-rwx==no permission)",
+              "permissions_mask" => "expecting permissions mask symbol '+' for 'Or' mask and '&' for 'And' mask. Example:  &csd-RwX removes ----R-X from current permission",
+              _ => {
+                  return Err(());
+              }
+          };
+            Ok(message.to_string())
+        }
+
+        pub fn find(err: Err<ErrorTree<Span>>) -> Result<(String, Span),()> {
+            match err {
+                Err::Error(err) => {
+                   match err {
+                       ErrorTree::Stack { base, contexts } => {
+                           let (span,context) = contexts.first().unwrap();
+                           match context {
+                               StackContext::Context(context) => {
+println!("Context: {}", context);
+                                   match message(*context) {
+                                       Ok(message) => {
+                                           Ok((message,span.clone()))
+                                       }
+                                       Err(_) => Err(())
+                                   }
+                               }
+                               _ => Err(())
+                           }
+                       }
+                       _ => Err(())
+                   }
+                }
+                _ => Err(())
+            }
+        }
     }
 
 }
@@ -9487,7 +9580,7 @@ pub mod test {
     use crate::version::v0_0_1::config::bind::{PipelinesSubScope, ProtoBind};
     use crate::version::v0_0_1::entity::request::{Action, RequestCore};
     use crate::version::v0_0_1::id::{Address, AddressSegment, RouteSegment};
-    use crate::version::v0_0_1::parse::{address, address_template, base_address_segment, camel_case, capture_address, create, file_address_capture_segment, publish, rec_skewer, route_segment, skewer_chars, version_address_segment, Res, particle_perms, permissions, permissions_mask};
+    use crate::version::v0_0_1::parse::{address, address_template, base_address_segment, camel_case, capture_address, create, file_address_capture_segment, publish, rec_skewer, route_segment, skewer_chars, version_address_segment, Res, particle_perms, permissions, permissions_mask, child_perms};
     use crate::version::v0_0_1::pattern::parse::address_kind_pattern;
     use crate::version::v0_0_1::pattern::parse::version;
     use crate::version::v0_0_1::pattern::{AddressKindPath, AddressKindPattern, http_method, http_method_pattern, http_pattern, http_pattern_scoped, upload_step};
@@ -9495,9 +9588,10 @@ pub mod test {
     use crate::version::v0_0_1::util::ValueMatcher;
     use nom::error::VerboseError;
     use nom::{Err, Offset};
-    use nom_supreme::error::ErrorTree;
+    use nom_supreme::error::{BaseErrorKind, ErrorTree, StackContext};
     use nom_supreme::final_parser::ExtractContext;
     use regex::Regex;
+    use crate::version::v0_0_1::parse::error::{find, result};
     use crate::version::v0_0_1::security::{ChildPerms, ParticlePerms, Permissions, PermissionsMask, PermissionsMaskKind};
     use crate::version::v0_0_1::Span;
 
@@ -10194,5 +10288,22 @@ Bind.Pipelines.Http.Pipeline.Step: expected '->' (forward request) or '-[' (Requ
         assert!(pattern.matches_root());
         Ok(())
     }
+
+
+    #[test]
+    pub fn test_perms() -> Result<(),MsgErr> {
+        let span = Span::new("Csd-rxy");
+        println!("{}", result(permissions(span)).err().unwrap());
+        Ok(())
+    }
+
+    #[test]
+    pub fn test_perm_mask() -> Result<(),MsgErr> {
+        let span = Span::new("Csd-rxy");
+        println!("{}", result(permissions_mask(span)).err().unwrap());
+        Ok(())
+    }
+
+
 }
 
