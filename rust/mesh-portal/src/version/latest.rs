@@ -56,7 +56,7 @@ pub mod selector {
     pub type ExactSegment = current::selector::ExactPointSeg;
     pub type SpecificPattern = current::selector::SpecificSelector;
     pub type LabeledPrimitiveTypeDef = current::selector::LabeledPrimitiveTypeDef;
-    pub type PrimitiveTypeDef = current::selector::PrimitiveTypeDef;
+    pub type PrimitiveTypeDef = current::selector::PayloadTypeDef;
     pub type Format = current::selector::Format;
     pub type EntityPattern = current::selector::EntityPattern;
     pub type RcPattern = current::selector::RcPattern;
@@ -128,7 +128,7 @@ pub mod payload {
     pub type Payload = current::payload::Payload;
     pub type PayloadMap = current::payload::PayloadMap;
     pub type Primitive = current::payload::Primitive;
-    pub type PrimitiveList = current::payload::PrimitiveList;
+    pub type PrimitiveList = current::payload::PayloadList;
     pub type PrimitiveType = current::payload::PrimitiveType;
     pub type PayloadType = current::payload::PayloadType;
     pub type Errors = current::payload::Errors;
@@ -295,15 +295,15 @@ pub mod entity {
 pub mod resource {
     use mesh_portal_versions::version::v0_0_1 as current;
 
-    pub type StatusUpdate = current::resource::StatusUpdate;
-    pub type Status = current::resource::Status;
-    pub type Code = current::resource::Code;
-    pub type Progress = current::resource::Progress;
-    pub type Properties = current::resource::Properties;
-    pub type Archetype = current::resource::Archetype;
-    pub type ResourceStub = current::resource::ResourceStub;
-    pub type Resource = current::resource::Resource;
-    pub type Property = current::resource::Property;
+    pub type StatusUpdate = current::particle::StatusUpdate;
+    pub type Status = current::particle::Status;
+    pub type Code = current::particle::Code;
+    pub type Progress = current::particle::Progress;
+    pub type Properties = current::particle::Properties;
+    pub type Archetype = current::particle::Archetype;
+    pub type Stub = current::particle::Stub;
+    pub type Resource = current::particle::Particle;
+    pub type Property = current::particle::Property;
 }
 
 pub mod portal {

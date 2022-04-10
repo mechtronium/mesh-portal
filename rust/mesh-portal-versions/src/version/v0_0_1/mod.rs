@@ -107,7 +107,6 @@ pub mod id {
     }
 
     pub type Meta = HashMap<String, String>;
-    pub type PayloadClaim = String;
     pub type HostKey = String;
 
     #[derive(Debug, Clone, Eq, PartialEq, Hash)]
@@ -861,11 +860,7 @@ pub mod selector {
     use crate::version::v0_0_1::selector::specific::{
         ProductSelector, VariantSelector, VendorSelector,
     };
-    use crate::version::v0_0_1::payload::{
-        Call, CallKind, CallWithConfig, HttpCall, HttpMethod, HttpMethodType, ListPattern,
-        MapPattern, MsgCall, Payload, PayloadFormat, PayloadPattern, PayloadTypePattern, Primitive,
-        PrimitiveType, Range,
-    };
+    use crate::version::v0_0_1::payload::{Call, CallKind, CallWithConfig, HttpCall, HttpMethod, HttpMethodType, ListPattern, MapPattern, MsgCall, Payload, PayloadFormat, PayloadPattern, PayloadType, PayloadTypePattern, Primitive, PrimitiveType, Range};
     use crate::version::v0_0_1::util::{MethodPattern, StringMatcher, ValueMatcher, ValuePattern};
     use crate::{Deserialize, Serialize};
     use nom::branch::alt;
@@ -2078,11 +2073,11 @@ pub mod selector {
 
     pub struct LabeledPrimitiveTypeDef {
         pub label: String,
-        pub def: PrimitiveTypeDef,
+        pub def: PayloadTypeDef,
     }
 
-    pub struct PrimitiveTypeDef {
-        pub primitive: PrimitiveType,
+    pub struct PayloadTypeDef {
+        pub primitive: PayloadType,
         pub format: Option<PayloadFormat>,
         pub verifier: Option<CallWithConfig>,
     }
@@ -2245,7 +2240,7 @@ pub mod selector {
         }
     }
 
-    pub fn primitive(input: Span) -> Res<Span, PrimitiveType> {
+/*    pub fn primitive(input: Span) -> Res<Span, PrimitiveType> {
         let (next,primitive_type) = recognize(alpha1)(input)?;
         match PrimitiveType::from_str( primitive_type.to_string().as_str() ) {
             Ok(primitive_type) => {
@@ -2256,6 +2251,8 @@ pub mod selector {
             }
         }
     }
+
+ */
 
     pub fn format(input: Span) -> Res<Span, PayloadFormat> {
         let (next, format) = recognize(alpha1)(input)?;
@@ -2294,16 +2291,16 @@ pub mod selector {
 
 
 
-    pub fn primitive_def(input: Span) -> Res<Span, PrimitiveTypeDef> {
+    pub fn primitive_def(input: Span) -> Res<Span, PayloadTypeDef> {
         tuple((
-            primitive,
+            payload,
             opt(preceded(tag("~"), opt(format))),
             opt(preceded(tag("~"), call_with_config)),
         ))(input)
         .map(|(next, (primitive, format, verifier))| {
             (
                 next,
-                PrimitiveTypeDef {
+                PayloadTypeDef {
                     primitive,
                     format: match format {
                         Some(Some(format)) => Some(format),
@@ -2315,7 +2312,12 @@ pub mod selector {
         })
     }
 
-    pub fn consume_primitive_def(input: Span) -> Res<Span, PrimitiveTypeDef> {
+
+    pub fn payload(input: Span) -> Res<Span, PayloadType> {
+        parse_camel_case_str(input)
+    }
+
+    pub fn consume_primitive_def(input: Span) -> Res<Span, PayloadTypeDef> {
         all_consuming(primitive_def)(input)
     }
 
@@ -2460,7 +2462,7 @@ pub mod selector {
     }
 
     pub fn primitive_data_struct(input: Span) -> Res<Span, PayloadTypePattern> {
-        context("selector", primitive)(input)
+        context("selector", payload )(input)
             .map(|(next, primitive)| (next, PayloadTypePattern::Primitive(primitive)))
     }
 
@@ -2468,7 +2470,7 @@ pub mod selector {
         context(
             "selector",
             tuple((
-                primitive,
+                payload,
                 context("array", delimited(tag("["), range, tag("]"))),
             )),
         )(input)
@@ -2937,7 +2939,7 @@ pub mod selector {
         .map(|(next, (_, text, _))| {
             (
                 next,
-                Block::CreatePayload(Payload::Primitive(Primitive::Text(text.to_string()))),
+                Block::CreatePayload(Payload::Text(text.to_string())),
             )
         })
     }
@@ -3475,9 +3477,9 @@ pub mod messaging {
             let core = ResponseCore {
                 headers: Default::default(),
                 status: StatusCode::from_u16(500u16).unwrap(),
-                body: Payload::Primitive(Primitive::Errors(Errors::default(
+                body: Payload::Errors(Errors::default(
                     error.to_string().as_str(),
-                ))),
+                )),
             };
             let response = Response {
                 id: unique_id(),
@@ -3690,7 +3692,7 @@ pub mod messaging {
             if self.core.status.is_success() {
                 Ok(self)
             } else {
-                if let Payload::Primitive(Primitive::Text(error)) = self.core.body {
+                if let Payload::Text(error) = self.core.body {
                     Err(error.into())
                 } else {
                     Err(format!("error code: {}", self.core.status).into())
@@ -4546,26 +4548,64 @@ pub mod payload {
     use crate::version::v0_0_1::bin::Bin;
     use crate::version::v0_0_1::entity::request::{Action, Rc, RcCommandType, RequestCore};
     use crate::version::v0_0_1::id::{
-        Point, CaptureAddress, Meta, PayloadClaim, GenericKind, GenericKindBase,
+        Point, CaptureAddress, Meta,  GenericKind, GenericKindBase,
     };
     use crate::version::v0_0_1::selector::TksPattern;
-    use crate::version::v0_0_1::resource::{Resource, ResourceStub, Status};
+    use crate::version::v0_0_1::particle::{Particle, Stub, Status};
     use crate::version::v0_0_1::util::{ValueMatcher, ValuePattern};
     use http::{Method, Uri};
     use std::str::FromStr;
     use std::sync::Arc;
 
+    #[derive(
+    Debug,
+    Clone,
+    Serialize,
+    Deserialize,
+    Eq,
+    PartialEq,
+    strum_macros::Display,
+    strum_macros::EnumString,
+    )]
+    pub enum PayloadType {
+        Empty,
+        List,
+        Map,
+        Point,
+        Text,
+        Boolean,
+        Int,
+        Meta,
+        Bin,
+        Stub,
+        Status,
+        Particle,
+        Errors,
+        Json
+    }
+
+
     #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, strum_macros::Display)]
     pub enum Payload {
         Empty,
-        Primitive(Primitive),
-        List(PrimitiveList),
+        List(PayloadList),
         Map(PayloadMap),
+        Point(Point),
+        Text(String),
+        Stub(Stub),
+        Meta(Meta),
+        Bin(Bin),
+        Boolean(bool),
+        Int(i64),
+        Status(Status),
+        Particle(Particle),
+        Errors(Errors),
+        Json(serde_json::Value)
     }
 
     impl Payload {
         pub fn to_text(self) -> Result<String, MsgErr> {
-            if let Payload::Primitive(Primitive::Text(text)) = self {
+            if let Payload::Text(text) = self {
                 Ok(text)
             } else {
                 Err("not a 'Text' payload".into())
@@ -4581,24 +4621,36 @@ pub mod payload {
         }
 
         pub fn from_bin(bin: Bin) -> Self {
-            Self::Primitive(Primitive::Bin(bin))
+            Self::Bin(bin)
         }
 
         pub fn payload_type(&self) -> PayloadType {
             match self {
                 Payload::Empty => PayloadType::Empty,
-                Payload::Primitive(primitive) => PayloadType::Primitive,
                 Payload::List(list) => PayloadType::List,
                 Payload::Map(map) => PayloadType::Map,
+                Payload::Point(_) => PayloadType::Point,
+                Payload::Text(_) => PayloadType::Text,
+                Payload::Stub(_) =>  PayloadType::Stub,
+                Payload::Meta(_) =>  PayloadType::Meta,
+                Payload::Bin(_) =>  PayloadType::Bin,
+                Payload::Boolean(_) =>  PayloadType::Boolean,
+                Payload::Int(_) =>  PayloadType::Int,
+                Payload::Status(_) =>  PayloadType::Status,
+                Payload::Particle(_) =>  PayloadType::Particle,
+                Payload::Errors(_) =>  PayloadType::Errors,
+                Payload::Json(_) =>  PayloadType::Json,
             }
         }
 
         pub fn to_bin(self) -> Result<Bin, MsgErr> {
             match self {
                 Payload::Empty => Ok(Arc::new(vec![])),
-                Payload::Primitive(primitive) => primitive.to_bin(),
                 Payload::List(list) => list.to_bin(),
                 Payload::Map(map) => map.to_bin(),
+                _ => {
+                    Err("not supported".into())
+                }
             }
         }
     }
@@ -4619,8 +4671,8 @@ pub mod payload {
 
         fn try_into(self) -> Result<String, Self::Error> {
             match self {
-                Payload::Primitive(Primitive::Text(text)) => Ok(text),
-                Payload::Primitive(Primitive::Bin(bin)) => Ok(String::from_utf8(bin.to_vec())?),
+                Payload::Text(text) => Ok(text),
+                Payload::Bin(bin) => Ok(String::from_utf8(bin.to_vec())?),
                 _ => Err("Payload type must an Text".into()),
             }
         }
@@ -4631,19 +4683,8 @@ pub mod payload {
 
         fn try_into(self) -> Result<Point, Self::Error> {
             match self {
-                Payload::Primitive(Primitive::Point(point)) => Ok(point),
+                Payload::Point(point) => Ok(point),
                 _ => Err("Payload type must an Address".into()),
-            }
-        }
-    }
-
-    impl TryInto<Primitive> for Payload {
-        type Error = MsgErr;
-
-        fn try_into(self) -> Result<Primitive, Self::Error> {
-            match self {
-                Payload::Primitive(primitive) => Ok(primitive),
-                _ => Err("Payload type must be Primitive".into()),
             }
         }
     }
@@ -4760,13 +4801,13 @@ pub mod payload {
     pub enum Primitive {
         Text(String),
         Point(Point),
-        Stub(ResourceStub),
+        Stub(Stub),
         Meta(Meta),
         Bin(Bin),
         Boolean(bool),
         Int(i64),
         Status(Status),
-        Resource(Resource),
+        Particle(Particle),
         Errors(Errors),
     }
 
@@ -4781,7 +4822,7 @@ pub mod payload {
                 Primitive::Boolean(_) => PrimitiveType::Boolean,
                 Primitive::Int(_) => PrimitiveType::Int,
                 Primitive::Status(_) => PrimitiveType::Status,
-                Primitive::Resource(_) => PrimitiveType::Resource,
+                Primitive::Particle(_) => PrimitiveType::Resource,
                 Primitive::Errors(_) => PrimitiveType::Errors,
             }
         }
@@ -4805,7 +4846,7 @@ pub mod payload {
                     let status = status.to_string().into_bytes();
                     Ok(Arc::new(status))
                 }
-                Primitive::Resource(resource) => Ok(Arc::new(bincode::serialize(&resource)?)),
+                Primitive::Particle(resource) => Ok(Arc::new(bincode::serialize(&resource)?)),
                 Primitive::Errors(errors) => Ok(Arc::new(bincode::serialize(&errors)?)),
             }
         }
@@ -4845,52 +4886,36 @@ pub mod payload {
     }
 
     #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
-    pub struct PrimitiveList {
-        pub primitive_type: PrimitiveType,
-        pub list: Vec<Primitive>,
+    pub struct PayloadList {
+        pub list: Vec<Box<Payload>>,
     }
 
-    impl ToString for PrimitiveList {
+    impl ToString for PayloadList {
         fn to_string(&self) -> String {
-            format!("{}[]", self.primitive_type.to_string())
+            "[]".to_string()
         }
     }
 
-    impl PrimitiveList {
-        pub fn new(primitive_type: PrimitiveType) -> Self {
+    impl PayloadList {
+        pub fn new() -> Self {
             Self {
-                primitive_type,
                 list: vec![],
             }
         }
-        pub fn validate(&self) -> Result<(), MsgErr> {
-            for primitive in &self.list {
-                if primitive.primitive_type() != self.primitive_type {
-                    return Err(format!(
-                        "PrimitiveList type mismatch expected: {} received: {}",
-                        self.primitive_type.to_string(),
-                        primitive.primitive_type().to_string()
-                    )
-                    .into());
-                }
-            }
-            Ok(())
-        }
-
         pub fn to_bin(self) -> Result<Bin, MsgErr> {
             Ok(Arc::new(bincode::serialize(&self)?))
         }
     }
 
-    impl Deref for PrimitiveList {
-        type Target = Vec<Primitive>;
+    impl Deref for PayloadList {
+        type Target = Vec<Box<Payload>>;
 
         fn deref(&self) -> &Self::Target {
             &self.list
         }
     }
 
-    impl DerefMut for PrimitiveList {
+    impl DerefMut for PayloadList {
         fn deref_mut(&mut self) -> &mut Self::Target {
             &mut self.list
         }
@@ -4910,51 +4935,17 @@ pub mod payload {
         Errors,
     }
 
-    impl FromStr for PrimitiveType {
-        type Err = MsgErr;
 
-        fn from_str(s: &str) -> Result<Self, Self::Err> {
-            Ok(match s {
-                "Address" => Self::Address,
-                "Text" => Self::Text,
-                "Boolean" => Self::Boolean,
-                "Code" => Self::Code,
-                "Int" => Self::Int,
-                "Meta" => Self::Meta,
-                "Bin" => Self::Bin,
-                "Stub" => Self::Stub,
-                "Status" => Self::Status,
-                "Resource" => Self::Resource,
-                what => return Err(format!("unrecognized PrimitiveType: {}", what).into()),
-            })
-        }
-    }
-
-    #[derive(
-        Debug,
-        Clone,
-        Serialize,
-        Deserialize,
-        Eq,
-        PartialEq,
-        strum_macros::Display,
-        strum_macros::EnumString,
-    )]
-    pub enum PayloadType {
-        Empty,
-        Primitive,
-        List,
-        Map,
-    }
 
     #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
     pub struct ListPattern {
-        pub primitive: PrimitiveType,
+        pub primitive: PayloadType,
         pub range: Range,
     }
 
     impl ListPattern {
-        pub fn is_match(&self, list: &PrimitiveList) -> Result<(), MsgErr> {
+        pub fn is_match(&self, list: &PayloadList) -> Result<(), MsgErr> {
+            /*
             for i in &list.list {
                 if self.primitive != i.primitive_type() {
                     return Err(format!(
@@ -4967,6 +4958,9 @@ pub mod payload {
             }
 
             Ok(())
+
+             */
+            unimplemented!()
         }
     }
 
@@ -4980,13 +4974,15 @@ pub mod payload {
     #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
     pub enum PayloadTypePattern {
         Empty,
-        Primitive(PrimitiveType),
+        Primitive(PayloadType),
         List(ListPattern),
         Map(Box<MapPattern>),
     }
 
     impl PayloadTypePattern {
         pub fn is_match(&self, payload: &Payload) -> Result<(), MsgErr> {
+            unimplemented!();
+            /*
             match self {
                 PayloadTypePattern::Empty => {
                     if payload.payload_type() == PayloadType::Empty {
@@ -5044,6 +5040,8 @@ pub mod payload {
                     }
                 }
             }
+
+             */
         }
     }
 
@@ -5308,7 +5306,7 @@ pub mod payload {
                         Err("expected Status primitive".into())
                     }
                 }
-                Primitive::Resource(_) => {
+                Primitive::Particle(_) => {
                     if *self == Self::Resource {
                         Ok(())
                     } else {
@@ -5706,7 +5704,7 @@ pub mod msg {
             ResponseCore {
                 headers: Default::default(),
                 status: StatusCode::from_u16(500u16).unwrap(),
-                body: Payload::Primitive(Primitive::Errors(errors)),
+                body: Payload::Errors(errors),
             }
         }
     }
@@ -5737,8 +5735,8 @@ pub mod config {
 
     use crate::version::v0_0_1::config::bind::BindConfig;
     use crate::version::v0_0_1::id::{Point, GenericKind};
-    use crate::version::v0_0_1::resource;
-    use crate::version::v0_0_1::resource::ResourceStub;
+    use crate::version::v0_0_1::particle;
+    use crate::version::v0_0_1::particle::Stub;
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub enum PortalKind {
@@ -5757,7 +5755,7 @@ pub mod config {
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct Info {
-        pub stub: ResourceStub,
+        pub stub: Stub,
         pub kind: PortalKind,
     }
 
@@ -5783,7 +5781,7 @@ pub mod config {
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct Assign {
         pub config: Config<ResourceConfigBody>,
-        pub stub: resource::ResourceStub,
+        pub stub: particle::Stub,
     }
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -5820,7 +5818,6 @@ pub mod config {
             Block, EntityPattern, HttpPattern, MsgPattern, RcPattern,
         };
         use crate::version::v0_0_1::payload::Call;
-        use crate::version::v0_0_1::payload::PayloadType::Primitive;
         use crate::version::v0_0_1::payload::{Payload, PayloadPattern};
         use crate::version::v0_0_1::util::{ValueMatcher, ValuePattern};
         use serde::{Deserialize, Serialize};
@@ -6839,7 +6836,7 @@ pub mod entity {
         use crate::version::v0_0_1::entity::response::ResponseCore;
         use crate::version::v0_0_1::fail;
         use crate::version::v0_0_1::fail::{BadRequest, Fail, NotFound};
-        use crate::version::v0_0_1::id::{Point, Meta, PayloadClaim, GenericKind, GenericKindBase};
+        use crate::version::v0_0_1::id::{Point, Meta, GenericKind, GenericKindBase};
         use crate::version::v0_0_1::selector::TksPattern;
         use crate::version::v0_0_1::payload::{Errors, HttpMethod, Payload, Primitive};
         use crate::version::v0_0_1::util::ValueMatcher;
@@ -6891,7 +6888,7 @@ pub mod entity {
                     headers: request.headers().clone(),
                     action: Action::Http(request.method().clone()),
                     uri: request.uri().clone(),
-                    body: Payload::Primitive(Primitive::Bin(request.body().clone())),
+                    body: Payload::Bin(request.body().clone()),
                 }
             }
         }
@@ -6962,7 +6959,7 @@ pub mod entity {
                 ResponseCore {
                     headers: Default::default(),
                     status: StatusCode::from_u16(500u16).unwrap(),
-                    body: Payload::Primitive(Primitive::Errors(errors)),
+                    body: Payload::Errors(errors),
                 }
             }
 
@@ -6976,7 +6973,7 @@ pub mod entity {
                 ResponseCore {
                     headers: Default::default(),
                     status,
-                    body: Payload::Primitive(Primitive::Errors(errors)),
+                    body: Payload::Errors(errors),
                 }
             }
         }
@@ -7176,7 +7173,7 @@ pub mod entity {
                 pub fn fulfillment(mut self, bin: Bin) -> Create {
                     Create {
                         template: self.template,
-                        state: StateSrc::StatefulDirect(Payload::Primitive(Primitive::Bin(bin))),
+                        state: StateSrc::StatefulDirect(Payload::Bin(bin)),
                         properties: self.properties,
                         strategy: self.strategy,
                         registry: self.registry,
@@ -7249,10 +7246,8 @@ pub mod entity {
             use crate::version::v0_0_1::fail::{BadCoercion, Fail};
             use crate::version::v0_0_1::id::Point;
             use crate::version::v0_0_1::selector::{PointKindHierarchy, PointSelector, Hop};
-            use crate::version::v0_0_1::payload::{
-                MapPattern, Primitive, PrimitiveList, PrimitiveType,
-            };
-            use crate::version::v0_0_1::resource::ResourceStub;
+            use crate::version::v0_0_1::payload::{MapPattern, Primitive, PayloadList, PrimitiveType, Payload};
+            use crate::version::v0_0_1::particle::Stub;
             use crate::version::v0_0_1::util::ConvertFrom;
 
             #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -7264,27 +7259,25 @@ pub mod entity {
             impl SelectIntoPayload {
                 pub fn to_primitive(
                     &self,
-                    stubs: Vec<ResourceStub>,
-                ) -> Result<PrimitiveList, MsgErr> {
+                    stubs: Vec<Stub>,
+                ) -> Result<PayloadList, MsgErr> {
                     match self {
                         SelectIntoPayload::Stubs => {
-                            let stubs: Vec<Primitive> = stubs
+                            let stubs: Vec<Box<Payload>> = stubs
                                 .into_iter()
-                                .map(|stub| Primitive::Stub(stub))
+                                .map(|stub| Box::new(Payload::Stub(stub)))
                                 .collect();
-                            let stubs = PrimitiveList {
-                                primitive_type: PrimitiveType::Stub,
+                            let stubs = PayloadList {
                                 list: stubs,
                             };
                             Ok(stubs)
                         }
                         SelectIntoPayload::Addresses => {
-                            let pointes: Vec<Primitive> = stubs
+                            let pointes: Vec<Box<Payload>> = stubs
                                 .into_iter()
-                                .map(|stub| Primitive::Point(stub.point))
+                                .map(|stub| Box::new(Payload::Point(stub.point)))
                                 .collect();
-                            let stubs = PrimitiveList {
-                                primitive_type: PrimitiveType::Address,
+                            let stubs = PayloadList {
                                 list: pointes,
                             };
                             Ok(stubs)
@@ -7502,7 +7495,7 @@ pub mod entity {
         impl ResponseCore {
             pub fn ok_html(html: &str) -> Self {
                 let bin = Arc::new(html.to_string().into_bytes());
-                ResponseCore::ok(Payload::Primitive(Primitive::Bin(bin)))
+                ResponseCore::ok(Payload::Bin(bin))
             }
 
             pub fn new() -> Self {
@@ -7534,7 +7527,7 @@ pub mod entity {
                 Self {
                     headers: HeaderMap::new(),
                     status: StatusCode::from_u16(500u16).unwrap(),
-                    body: Payload::Primitive(Primitive::Errors(errors)),
+                    body: Payload::Errors(errors),
                 }
             }
 
@@ -7609,7 +7602,7 @@ pub mod entity {
     }
 }
 
-pub mod resource {
+pub mod particle {
     use std::collections::HashMap;
     use std::str::FromStr;
 
@@ -7733,14 +7726,14 @@ pub mod resource {
     }
 
     #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
-    pub struct ResourceStub {
+    pub struct Stub {
         pub point: Point,
         pub kind: GenericKind,
         pub properties: Properties,
         pub status: Status,
     }
 
-    impl ResourceStub {
+    impl Stub {
         pub fn point_and_kind(self) -> PointKind {
             PointKind {
                 point: self.point,
@@ -7750,8 +7743,8 @@ pub mod resource {
     }
 
     #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
-    pub struct Resource {
-        pub stub: ResourceStub,
+    pub struct Particle {
+        pub stub: Stub,
         pub state: Box<Payload>,
     }
 }
@@ -7801,7 +7794,7 @@ pub mod portal {
         use crate::version::v0_0_1::payload::Payload;
         use crate::version::v0_0_1::portal;
         use crate::version::v0_0_1::portal::Exchanger;
-        use crate::version::v0_0_1::resource::StatusUpdate;
+        use crate::version::v0_0_1::particle::StatusUpdate;
         use crate::version::v0_0_1::util::unique_id;
         use serde::{Deserialize, Serialize};
 
