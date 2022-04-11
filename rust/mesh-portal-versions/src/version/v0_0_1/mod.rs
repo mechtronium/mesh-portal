@@ -4,6 +4,7 @@ use std::convert::From;
 use std::convert::TryInto;
 use std::fmt::Debug;
 use std::hash::Hash;
+use std::rc::Rc;
 use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
@@ -12,7 +13,12 @@ use crate::error::MsgErr;
 use crate::version::v0_0_1::bin::Bin;
 
 pub type State = HashMap<String, Bin>;
-pub type Span<'a> = LocatedSpan<&'a str>;
+pub type Span<'a> = LocatedSpan<&'a str, SpanExtra>;
+pub type SpanExtra = Rc<String>;
+
+pub fn span(s: &str) -> Span {
+    Span::new_extra(s, Rc::new(s.to_string()))
+}
 
 extern "C" {
     pub fn mesh_portal_unique_id() -> String;
@@ -59,12 +65,15 @@ pub mod id {
     use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 
     use crate::error::MsgErr;
-    use crate::version::v0_0_1::parse::{BruteResolver, camel_case, consume_point_subst, NoResolver, point_subst, point_segment, Res, Resolver, route_segment,  Subst, ToResolved};
+    use crate::version::v0_0_1::parse::{
+        camel_case, consume_point, consume_point_subst, point_route_segment, point_segment,
+        point_subst, BruteResolver, NoResolver, Res, Resolver, Subst, ToResolved,
+    };
     use crate::version::v0_0_1::selector::parse::{
         generic_kind_base, kind, point_and_kind, specific,
     };
     use crate::version::v0_0_1::selector::{Pattern, PointSelector, SpecificSelector, VersionReq};
-    use crate::version::v0_0_1::Span;
+    use crate::version::v0_0_1::{span, Span};
 
     pub type GenericKindBase = String;
 
@@ -90,7 +99,7 @@ pub mod id {
         type Err = MsgErr;
 
         fn from_str(s: &str) -> Result<Self, Self::Err> {
-            let point_and_kind = match all_consuming(point_and_kind)(Span::new(s)) {
+            let point_and_kind = match all_consuming(point_and_kind)(span(s)) {
                 Ok((_, point_and_kind)) => point_and_kind,
                 Err(err) => {
                     return Err("could not parse PointKind".into());
@@ -243,12 +252,21 @@ pub mod id {
         Mesh(String),
     }
 
+    impl RouteSeg {
+        pub fn is_local(&self) -> bool {
+            match self {
+                RouteSeg::Local => true,
+                _ => false,
+            }
+        }
+    }
+
     impl FromStr for RouteSeg {
         type Err = MsgErr;
 
         fn from_str(s: &str) -> Result<Self, Self::Err> {
-            let s = Span::new(s);
-            Ok(all_consuming(route_segment)(s)?.1)
+            let s = span(s);
+            Ok(all_consuming(point_route_segment)(s)?.1)
         }
     }
 
@@ -276,34 +294,61 @@ pub mod id {
         Dir,
         File,
         Version,
-        PopSeg,
-        PopDir
+        Pop,
     }
 
     impl PointSegKind {
-        pub fn terminating_delim(&self) -> &'static str {
+        pub fn preceding_delim(&self, post_fileroot: bool) -> &'static str {
             match self {
-                Self::Space => ":",
+                Self::Space => "",
                 Self::Base => ":",
                 Self::Dir => "",
                 Self::File => "",
                 Self::Version => ":",
-                Self::FilesystemRootDir => "",
+                Self::FilesystemRootDir => ":",
                 Self::Root => "",
-                Self::PopSeg => ":",
-                Self::PopDir => "/",
+                Self::Pop => match post_fileroot {
+                    true => "",
+                    false => ":",
+                },
             }
         }
 
         pub fn is_normalized(&self) -> bool {
             match self {
-                Self::PopSeg => false,
-                Self::PopDir => false,
-                _ => true
+                Self::Pop => false,
+                _ => true,
+            }
+        }
+
+        pub fn is_filesystem_seg(&self) -> bool {
+            match self {
+                PointSegKind::Root => false,
+                PointSegKind::Space => false,
+                PointSegKind::Base => false,
+                PointSegKind::FilesystemRootDir => true,
+                PointSegKind::Dir => true,
+                PointSegKind::File => true,
+                PointSegKind::Version => false,
+                PointSegKind::Pop => true,
+            }
+        }
+
+        pub fn is_mesh_seg(&self) -> bool {
+            match self {
+                PointSegKind::Root => true,
+                PointSegKind::Space => true,
+                PointSegKind::Base => true,
+                PointSegKind::FilesystemRootDir => false,
+                PointSegKind::Dir => false,
+                PointSegKind::File => false,
+                PointSegKind::Version => true,
+                PointSegKind::Pop => true,
             }
         }
     }
 
+    pub type PointSegSubst = Subst<PointSeg>;
 
     #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
     pub enum PointSeg {
@@ -314,8 +359,7 @@ pub mod id {
         Dir(String),
         File(String),
         Version(Version),
-        PopSeg,
-        PopDir
+        Pop,
     }
 
     impl PointSeg {
@@ -328,13 +372,65 @@ pub mod id {
                 PointSeg::Dir(_) => PointSegKind::Dir,
                 PointSeg::File(_) => PointSegKind::File,
                 PointSeg::Version(_) => PointSegKind::Version,
-                PointSeg::PopSeg => PointSegKind::PopSeg,
-                PointSeg::PopDir => PointSegKind::PopDir
+                PointSeg::Pop => PointSegKind::Pop,
             }
         }
 
         pub fn is_normalized(&self) -> bool {
             self.kind().is_normalized()
+        }
+
+        pub fn is_filesystem_seg(&self) -> bool {
+            self.kind().is_filesystem_seg()
+        }
+    }
+
+    #[derive(Debug, Clone)]
+    pub enum PointSegDelim {
+        Empty,
+        Mesh,
+        File,
+    }
+
+    impl ToString for PointSegDelim {
+        fn to_string(&self) -> String {
+            match self {
+                PointSegDelim::Empty => "".to_string(),
+                PointSegDelim::Mesh => ":".to_string(),
+                PointSegDelim::File => "/".to_string(),
+            }
+        }
+    }
+
+    pub type PointSegPair = PointSegPairDef<PointSeg>;
+    pub type PointSegPairSubst = PointSegPairDef<Subst<PointSeg>>;
+
+    pub struct PointSegPairDef<Seg> {
+        pub delim: PointSegDelim,
+        pub seg: Seg,
+    }
+
+    impl<Seg> PointSegPairDef<Seg> {
+        pub fn new(delim: PointSegDelim, seg: Seg) -> Self {
+            Self { delim, seg }
+        }
+    }
+
+    impl ToResolved<String> for PointSegPairSubst {
+        fn to_resolved(self, resolver: &dyn Resolver) -> Result<String, MsgErr> {
+            match self.seg {
+                Subst::Symbol(symbol) => resolver.string(&symbol),
+                Subst::Resolved(resolved) => Ok(resolved.to_string()),
+            }
+        }
+    }
+
+    impl<Seg> ToString for PointSegPairDef<Seg>
+    where
+        Seg: ToString,
+    {
+        fn to_string(&self) -> String {
+            format!("{}{}", self.delim.to_string(), self.seg.to_string())
         }
     }
 
@@ -343,8 +439,8 @@ pub mod id {
         type Err = MsgErr;
 
         fn from_str(s: &str) -> Result<Self, Self::Err> {
-            let s = Span::new(s);
-            Ok(all_consuming(point_segment )(s)?.1)
+            let s = span(s);
+            Ok(all_consuming(point_segment)(s)?.1)
         }
     }
 
@@ -374,11 +470,11 @@ pub mod id {
                     Ok(PointSeg::File(dst))
                 }
                 PointSeg::Version(version) => Ok(PointSeg::Version(version)),
-                PointSeg::PopSeg => {unimplemented!()}
-                PointSeg::PopDir => {unimplemented!()}
+                PointSeg::Pop => {
+                    unimplemented!()
+                }
             }
         }
-
 
         pub fn is_version(&self) -> bool {
             match self {
@@ -411,8 +507,8 @@ pub mod id {
             }
         }
 
-        pub fn terminating_delim(&self) -> &'static str {
-            self.kind().terminating_delim()
+        pub fn preceding_delim(&self, filesystem: bool) -> &'static str {
+            self.kind().preceding_delim(filesystem)
         }
 
         pub fn is_filesystem_ref(&self) -> bool {
@@ -424,8 +520,7 @@ pub mod id {
                 PointSeg::Version(_) => false,
                 PointSeg::FilesystemRootDir => true,
                 PointSeg::Root => false,
-                PointSeg::PopSeg => false,
-                PointSeg::PopDir => true
+                PointSeg::Pop => false,
             }
         }
     }
@@ -440,14 +535,13 @@ pub mod id {
                 PointSeg::Version(version) => version.to_string(),
                 PointSeg::FilesystemRootDir => "/".to_string(),
                 PointSeg::Root => "".to_string(),
-                PointSeg::PopSeg => "..".to_string(),
-                PointSeg::PopDir => "..".to_string()
+                PointSeg::Pop => "..".to_string(),
             }
         }
     }
 
     pub type Point = PointDef<RouteSeg, PointSeg>;
-    pub type PointSubst = PointDef<Subst<RouteSeg>, Subst<PointSeg>>;
+    pub type PointSubst = PointDef<Subst<RouteSeg>, PointSegPairSubst>;
 
     #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
     pub struct PointDef<Route, Seg> {
@@ -457,53 +551,68 @@ pub mod id {
 
     impl BruteResolver<Point> for PointSubst {}
 
+    impl PointSubst {
+        pub fn check_resolved(&self) -> Result<(), ()> {
+            self.route.check_resolved()?;
+            for segment in &self.segments {
+                segment.seg.check_resolved()?;
+            }
+            Ok(())
+        }
+    }
+
     impl ToResolved<Point> for PointSubst {
         fn to_resolved(self, resolver: &dyn Resolver) -> Result<Point, MsgErr> {
             let mut point = String::new();
-            point.push_str(self.route.to_resolved_str(resolver)?.as_str() );
+
+            point.push_str(self.route.to_resolved_str(resolver)?.as_str());
             point.push_str("::");
 
-            for (index,segment) in self.segments.iter().enumerate() {
-                point.push_str( segment.clone().to_resolved_str(resolver)?.as_str() );
-
-                if index < self.segments.len()-1 {
-                    point.push_str(":" );
-                }
+            for segment in &self.segments {
+                point.push_str(segment.delim.to_string().as_str());
+                point.push_str(segment.seg.clone().to_resolved_str(resolver)?.as_str());
             }
-println!("created: {}", point);
+            println!("created: {}", point);
             let point = Point::from_str(point.as_str())?;
             let point = point.normalize()?;
-println!("normalized : {}", point.to_string());
+            println!("normalized : {}", point.to_string());
             Ok(point)
         }
     }
 
     impl Point {
-
-        pub fn normalize(self) -> Result<Point,MsgErr> {
+        pub fn normalize(self) -> Result<Point, MsgErr> {
             if self.is_normalized() {
                 return Ok(self);
             }
 
-            if !self.segments.first().expect("expected first segment").is_normalized() {
-                return Err(format!("absolute point paths cannot begin with '..' (reference parent segment) because there is no working point segment: '{}'",self.to_string()).into())
+            if !self
+                .segments
+                .first()
+                .expect("expected first segment")
+                .is_normalized()
+            {
+                return Err(format!("absolute point paths cannot begin with '..' (reference parent segment) because there is no working point segment: '{}'",self.to_string()).into());
             }
 
-            let mut segments = self.segments.clone();
+            let mut segments = vec![];
             for seg in &self.segments {
                 match seg.is_normalized() {
                     true => segments.push(seg.clone()),
                     false => {
                         if segments.pop().is_none() {
-                            return Err(format!("'..' too many pop segments directives: out of parents: '{}'",self.to_string()).into());
+                            return Err(format!(
+                                "'..' too many pop segments directives: out of parents: '{}'",
+                                self.to_string()
+                            )
+                            .into());
                         }
                     }
                 }
-
             }
             Ok(Point {
                 route: self.route,
-                segments
+                segments,
             })
         }
 
@@ -530,6 +639,18 @@ println!("normalized : {}", point.to_string());
 
         pub fn to_safe_filename(&self) -> String {
             self.to_string()
+        }
+
+        pub fn has_filesystem(&self) -> bool {
+            for segment in &self.segments {
+                match segment {
+                    PointSeg::FilesystemRootDir => {
+                        return true;
+                    }
+                    _ => {}
+                }
+            }
+            false
         }
 
         pub fn is_artifact_bundle_part(&self) -> bool {
@@ -589,8 +710,13 @@ println!("normalized : {}", point.to_string());
                         format!("{}:/", self.to_string())
                     }
                     PointSeg::File(_) => return Err("cannot append to a file".into()),
-                    PointSeg::PopSeg => format!("{}:{}", self.to_string(), segment),
-                        PointSeg::PopDir => format!("{}/{}", self.to_string(), segment),
+                    PointSeg::Pop => {
+                        if !self.has_filesystem() {
+                            format!("{}:{}", self.to_string(), segment)
+                        } else {
+                            format!("{}/{}", self.to_string(), segment)
+                        }
+                    }
                 };
                 Self::from_str(point.as_str())
             }
@@ -600,10 +726,20 @@ println!("normalized : {}", point.to_string());
             Self::from_str(format!("{}{}", self.to_string(), segment).as_str())
         }
 
-        pub fn push_segment(&self, segment: PointSeg) -> Self {
-            let mut point = self.clone();
-            point.segments.push(segment);
-            point
+        pub fn push_segment(&self, segment: PointSeg) -> Result<Self, MsgErr> {
+            if (self.has_filesystem() && segment.is_filesystem_seg())
+                || segment.kind().is_mesh_seg()
+            {
+                let mut point = self.clone();
+                point.segments.push(segment);
+                Ok(point)
+            } else {
+                if self.has_filesystem() {
+                    Err("cannot push a Mesh segment onto a point after the FileSystemRoot segment has been pushed".into())
+                } else {
+                    Err("cannot push a FileSystem segment onto a point until after the FileSystemRoot segment has been pushed".into())
+                }
+            }
         }
 
         pub fn last_segment(&self) -> Option<PointSeg> {
@@ -646,9 +782,7 @@ println!("normalized : {}", point.to_string());
         type Err = MsgErr;
 
         fn from_str(s: &str) -> Result<Self, Self::Err> {
-            let point = consume_point_subst(Span::new(s))?.1;
-            let point: Point = point.brute_resolve()?;
-            Ok(point)
+            consume_point(s)
         }
     }
 
@@ -667,53 +801,65 @@ println!("normalized : {}", point.to_string());
     }
 
     impl Point {
-        pub fn to_full_string(&self) -> String {
-            match self.route {
-                RouteSeg::Local => {
-                    let mut rtn = String::new();
-                    rtn.push_str(".::");
-                    if self.segments.is_empty() {
-                        rtn.push_str("ROOT");
-                    } else {
-                        for (i, segment) in self.segments.iter().enumerate() {
-                            rtn.push_str(segment.to_string().as_str());
-                            if i != self.segments.len() - 1 {
-                                rtn.push_str(segment.terminating_delim());
-                            }
-                        }
+        pub fn to_string_impl(&self, show_route: bool) -> String {
+            let mut rtn = String::new();
+
+            if show_route {
+                rtn.push_str(self.route.to_string().as_str());
+            }
+
+            let mut post_fileroot = false;
+
+            if self.segments.is_empty() {
+                "ROOT".to_string()
+            } else {
+                for (i, segment) in self.segments.iter().enumerate() {
+                    if let PointSeg::FilesystemRootDir = segment {
+                        post_fileroot = true;
                     }
-                    rtn.to_string()
+                    if i > 0 {
+                        rtn.push_str(segment.kind().preceding_delim(post_fileroot));
+                    }
+                    rtn.push_str(segment.to_string().as_str());
                 }
-                _ => self.to_string(),
+                rtn.to_string()
             }
         }
     }
 
     impl ToString for Point {
         fn to_string(&self) -> String {
+            self.to_string_impl(!self.route.is_local())
+        }
+    }
+
+    impl PointSubst {
+        pub fn hide_route(&self) -> bool {
+            match &self.route {
+                Subst::Symbol(_) => false,
+                Subst::Resolved(route) => match route {
+                    RouteSeg::Local => true,
+                    _ => false,
+                },
+            }
+        }
+    }
+
+    impl ToString for PointSubst {
+        fn to_string(&self) -> String {
             let mut rtn = String::new();
 
-            match &self.route {
-                RouteSeg::Local => {}
-                RouteSeg::Domain(domain) => {
-                    rtn.push_str(format!("{}::", domain).as_str());
-                }
-                RouteSeg::Tag(tag) => {
-                    rtn.push_str(format!("[{}]::", tag).as_str());
-                }
-                RouteSeg::Mesh(mesh) => {
-                    rtn.push_str(format!("<<{}>>::", mesh).as_str());
-                }
+            if !self.hide_route() {
+                let route = self.route.to_string();
+                rtn.push_str(route.as_str());
+                rtn.push_str("::");
             }
 
             if self.segments.is_empty() {
                 "ROOT".to_string()
             } else {
-                for (i, segment) in self.segments.iter().enumerate() {
+                for segment in &self.segments {
                     rtn.push_str(segment.to_string().as_str());
-                    if i != self.segments.len() - 1 {
-                        rtn.push_str(segment.terminating_delim());
-                    }
                 }
                 rtn.to_string()
             }
@@ -732,7 +878,6 @@ println!("normalized : {}", point.to_string());
                 segments,
             })
         }
-
 
         pub fn root() -> Self {
             Self {
@@ -799,7 +944,8 @@ println!("normalized : {}", point.to_string());
                 for (i, segment) in self.segments.iter().enumerate() {
                     rtn.push_str(segment.to_string().as_str());
                     if i != self.segments.len() - 1 {
-                        rtn.push_str(segment.terminating_delim());
+                        unimplemented!()
+                        //                        rtn.push_str(segment.preceding_delim());
                     }
                 }
                 rtn.to_string()
@@ -839,7 +985,7 @@ println!("normalized : {}", point.to_string());
         type Err = MsgErr;
 
         fn from_str(s: &str) -> Result<Self, Self::Err> {
-            let (_, kind) = all_consuming(kind)(Span::new(s))?;
+            let (_, kind) = all_consuming(kind)(span(s))?;
 
             Ok(kind)
         }
@@ -883,7 +1029,7 @@ println!("normalized : {}", point.to_string());
 pub mod path {
     use crate::error::MsgErr;
     use crate::version::v0_0_1::parse::consume_path;
-    use crate::version::v0_0_1::Span;
+    use crate::version::v0_0_1::{span, Span};
     use serde::{Deserialize, Serialize};
     use std::str::FromStr;
 
@@ -963,7 +1109,7 @@ pub mod path {
         type Err = MsgErr;
 
         fn from_str(s: &str) -> Result<Self, Self::Err> {
-            let (_, path) = consume_path(Span::new(s))?;
+            let (_, path) = consume_path(span(s))?;
             Ok(Self {
                 string: path.to_string(),
             })
@@ -994,7 +1140,10 @@ pub mod selector {
     use crate::version::v0_0_1::id::{
         GenericKind, GenericKindBase, Point, PointSeg, RouteSeg, Specific, Tks, Version,
     };
-    use crate::version::v0_0_1::parse::{camel_case, camel_case_to_string_matcher, capture_path, capture_point, consume_hierarchy, file_chars, path, path_regex, point, point_subst, Res};
+    use crate::version::v0_0_1::parse::{
+        camel_case, camel_case_to_string_matcher, capture_path, capture_point, consume_hierarchy,
+        file_chars, path, path_regex, point, point_subst, Res,
+    };
     use crate::version::v0_0_1::payload::{
         Call, CallKind, CallWithConfig, HttpCall, HttpMethod, HttpMethodType, ListPattern,
         MapPattern, MsgCall, Payload, PayloadFormat, PayloadPattern, PayloadType,
@@ -1005,7 +1154,7 @@ pub mod selector {
         ProductSelector, VariantSelector, VendorSelector,
     };
     use crate::version::v0_0_1::util::{MethodPattern, StringMatcher, ValueMatcher, ValuePattern};
-    use crate::version::v0_0_1::Span;
+    use crate::version::v0_0_1::{span, Span};
     use crate::{Deserialize, Serialize};
     use nom::branch::alt;
     use nom::bytes::complete::tag;
@@ -1083,7 +1232,7 @@ pub mod selector {
         type Err = MsgErr;
 
         fn from_str(s: &str) -> Result<Self, Self::Err> {
-            let (_, rtn) = all_consuming(point_selector)(Span::new(s))?;
+            let (_, rtn) = all_consuming(point_selector)(span(s))?;
             Ok(rtn)
         }
     }
@@ -1517,7 +1666,10 @@ pub mod selector {
         use crate::version::v0_0_1::id::{
             GenericKind, GenericKindBase, PointKind, PointSeg, Specific, Version,
         };
-        use crate::version::v0_0_1::parse::{camel_case, domain_chars, file_chars, point_subst, point_segment_chars, skewer_chars, version_chars, version_point_segment, version_req_chars, Res, point};
+        use crate::version::v0_0_1::parse::{
+            camel_case, domain_chars, file_chars, point, point_segment_chars, point_subst,
+            skewer_chars, version_chars, version_point_segment, version_req_chars, Res,
+        };
         use crate::version::v0_0_1::selector::specific::{
             ProductSelector, VariantSelector, VendorSelector,
         };
@@ -1526,7 +1678,7 @@ pub mod selector {
             PointSegSelector, PointSelector, SpecificSelector, TksPattern, VersionReq,
         };
         use crate::version::v0_0_1::util::ValuePattern;
-        use crate::version::v0_0_1::Span;
+        use crate::version::v0_0_1::{span, Span};
         use nom_supreme::error::ErrorTree;
         use nom_supreme::{parse_from_str, ParserExt};
 
@@ -1674,7 +1826,7 @@ pub mod selector {
             V: Parser<Span<'r>, O, E>,
         {
             move |input: Span| {
-                let x: Res<Span, Span> = tag("*")(input);
+                let x: Res<Span, Span> = tag("*")(input.clone());
                 match x {
                     Ok((next, _)) => Ok((next, Pattern::Any)),
                     Err(_) => {
@@ -1759,7 +1911,7 @@ pub mod selector {
                 parse_from_str(version_req_chars).parse(str_input);
 
             match rtn {
-                Ok((next, version_req)) => Ok((Span::new(next), version_req)),
+                Ok((next, version_req)) => Ok((span(next), version_req)),
                 Err(err) => {
                     let tree = Err::Error(ErrorTree::from_error_kind(input, ErrorKind::Fail));
                     Err(tree)
@@ -2091,7 +2243,7 @@ pub mod selector {
 
             match rtn {
                 Ok((next,version_req)) => {
-                    Ok((Span::new(next), version_req))
+                    Ok((span(next), version_req))
                 }
                 Err(err) => {
                     let tree = Err::Error(ErrorTree::from_error_kind(input, ErrorKind::Fail));
@@ -2108,7 +2260,7 @@ pub mod selector {
                 parse_from_str(version_chars).parse(str_input);
 
             match rtn {
-                Ok((next, version)) => Ok((Span::new(next), Version { version })),
+                Ok((next, version)) => Ok((span(next), Version { version })),
                 Err(err) => {
                     let tree = Err::Error(ErrorTree::from_error_kind(input, ErrorKind::Fail));
                     Err(tree)
@@ -2480,7 +2632,7 @@ pub mod selector {
         ))(input)
         .map(|(next, (action, path))| {
             let path = match path {
-                None => Span::new("/"),
+                None => span("/"),
                 Some(path) => path,
             };
             (
@@ -3022,7 +3174,7 @@ pub mod selector {
      */
 
     pub fn payload_filter_block_empty(input: Span) -> Res<Span, PatternBlock> {
-        multispace0(input).map(|(next, _)| (input, PatternBlock::None))
+        multispace0(input.clone()).map(|(next, _)| (input, PatternBlock::None))
     }
 
     pub fn payload_filter_block_any(input: Span) -> Res<Span, PatternBlock> {
@@ -3398,11 +3550,13 @@ pub mod selector {
                 }
             }
 
+            let mut post_fileroot = false;
             for (index, segment) in self.segments.iter().enumerate() {
-                rtn.push_str(segment.to_string().as_str());
-                if index < self.segments.len() - 1 {
-                    rtn.push_str(segment.segment.terminating_delim());
+                if let PointSeg::FilesystemRootDir = segment.segment {
+                    post_fileroot = true;
                 }
+                rtn.push_str(segment.segment.preceding_delim(post_fileroot));
+                rtn.push_str(segment.to_string().as_str());
             }
 
             rtn
@@ -3425,7 +3579,7 @@ pub mod selector {
         type Err = MsgErr;
 
         fn from_str(s: &str) -> Result<Self, Self::Err> {
-            Ok(consume_hierarchy(Span::new(s))?)
+            Ok(consume_hierarchy(span(s))?)
         }
     }
 }
@@ -4076,12 +4230,12 @@ pub mod security {
     use crate::error::MsgErr;
     use crate::version::v0_0_1::id::Point;
     use crate::version::v0_0_1::messaging::ScopeGrant;
-    use crate::version::v0_0_1::parse::error::{just_msg, result};
+    use crate::version::v0_0_1::parse::error::result;
     use crate::version::v0_0_1::parse::{
         particle_perms, permissions_mask, privilege, MapResolver, Resolver, Subst, ToResolved,
     };
     use crate::version::v0_0_1::selector::PointSelector;
-    use crate::version::v0_0_1::Span;
+    use crate::version::v0_0_1::{span, Span};
     use nom::combinator::all_consuming;
     use nom_supreme::parser_ext::MapRes;
     use serde::{Deserialize, Serialize};
@@ -4260,7 +4414,7 @@ pub mod security {
         type Err = MsgErr;
 
         fn from_str(s: &str) -> Result<Self, Self::Err> {
-            let span = Span::new(s);
+            let span = span(s);
             Ok(result(all_consuming(privilege)(span))?)
         }
     }
@@ -4328,8 +4482,8 @@ pub mod security {
         type Err = MsgErr;
 
         fn from_str(s: &str) -> Result<Self, Self::Err> {
-            let s = Span::new(s);
-            just_msg(all_consuming(permissions_mask)(s))
+            let s = span(s);
+            result(all_consuming(permissions_mask)(s))
         }
     }
 
@@ -4484,8 +4638,8 @@ pub mod security {
         type Err = MsgErr;
 
         fn from_str(s: &str) -> Result<Self, Self::Err> {
-            let s = Span::new(s);
-            just_msg(all_consuming(particle_perms)(s))
+            let s = span(s);
+            result(all_consuming(particle_perms)(s))
         }
     }
 
@@ -4569,9 +4723,9 @@ pub mod security {
                 AccessGrantKindSubst::Privilege(privilege) => {
                     Ok(AccessGrantKind::Privilege(privilege.to_resolved(resolver)?))
                 }
-                AccessGrantKindSubst::PermissionsMask(perms) => {
-                    Ok(AccessGrantKind::PermissionsMask(perms.to_resolved(resolver)?))
-                }
+                AccessGrantKindSubst::PermissionsMask(perms) => Ok(
+                    AccessGrantKind::PermissionsMask(perms.to_resolved(resolver)?),
+                ),
             }
         }
     }
@@ -6164,7 +6318,7 @@ pub mod config {
                 pipeline_step_block, rc_pattern_scoped, EntityPattern, HttpPattern, MsgPattern,
                 RcPattern,
             };
-            use crate::version::v0_0_1::Span;
+            use crate::version::v0_0_1::{span, Span};
             use nom::branch::{alt, Alt};
             use nom::bytes::complete::tag;
             use nom::character::complete::multispace0;
@@ -6411,7 +6565,7 @@ pub mod config {
                 for (index, (_, context)) in contexts.into_iter().enumerate() {
                     match context {
                         StackContext::Kind(kind) => {
-                            return format!("{}\n\ninternal parsing error: unexpected kind error when processing context hierarchy: '{}'", extract_problem_line(Span::new(input)),kind.description() );
+                            return format!("{}\n\ninternal parsing error: unexpected kind error when processing context hierarchy: '{}'", extract_problem_line(span(input)),kind.description() );
                         }
                         StackContext::Context(context) => {
                             hierarchy.push_str(context);
@@ -6424,7 +6578,7 @@ pub mod config {
 
                 format!(
                     "{}\n\n{}: {}",
-                    extract_problem_line(Span::new(input)),
+                    extract_problem_line(span(input)),
                     hierarchy,
                     message
                 )
@@ -7773,7 +7927,7 @@ pub mod particle {
     }
 
     pub fn error_code(input: Span) -> Res<Span, Code> {
-        let (next, err_code) = delimited(tag("Err("), digit1, tag(")"))(input)?;
+        let (next, err_code) = delimited(tag("Err("), digit1, tag(")"))(input.clone())?;
         Ok((
             next,
             Code::Error(match err_code.parse() {
@@ -8455,15 +8609,18 @@ pub mod parse {
     use nom::bytes::complete::tag;
     use nom::bytes::complete::{is_a, is_not};
     use nom::character::complete::{
-        alpha0, alpha1, alphanumeric1, char, digit1, multispace0, multispace1, space0, space1,
+        alpha0, alpha1, alphanumeric0, alphanumeric1, anychar, char, digit0, digit1, multispace0,
+        multispace1, one_of, space0, space1,
     };
-    use nom::combinator::{all_consuming, fail, not, opt, peek, recognize, value, verify};
+    use nom::combinator::{
+        all_consuming, cut, eof, fail, not, opt, peek, recognize, value, verify,
+    };
     use nom::error::{context, ContextError, ErrorKind, ParseError, VerboseError};
     use nom::multi::{many0, separated_list0, separated_list1};
     use nom::sequence::{delimited, pair, preceded, terminated, tuple};
     use nom::{
-        AsChar, Compare, IResult, InputIter, InputLength, InputTake, InputTakeAtPosition, Slice,
-        UnspecializedInput,
+        AsChar, Compare, FindToken, IResult, InputIter, InputLength, InputTake,
+        InputTakeAtPosition, Slice, UnspecializedInput,
     };
     use nom_supreme::parse_from_str;
 
@@ -8477,7 +8634,10 @@ pub mod parse {
     use crate::version::v0_0_1::entity::request::get::{Get, GetOp};
     use crate::version::v0_0_1::entity::request::select::{Select, SelectIntoPayload, SelectKind};
     use crate::version::v0_0_1::entity::request::set::Set;
-    use crate::version::v0_0_1::id::{CaptureAddress, Point, PointSeg, PointSegKind, PointSubst, RouteSeg, Version};
+    use crate::version::v0_0_1::id::{
+        CaptureAddress, Point, PointSeg, PointSegDelim, PointSegKind, PointSegPairSubst,
+        PointSegSubst, PointSubst, RouteSeg, Version,
+    };
     use crate::version::v0_0_1::parse::error::{first_context, result};
     use crate::version::v0_0_1::security::{
         AccessGrant, AccessGrantKindDef, AccessGrantKindSubst, AccessGrantSubst, ChildPerms,
@@ -8490,239 +8650,490 @@ pub mod parse {
         skewer, upload_step, PointKindHierarchy, PointKindSeg, PointSelector,
     };
     use crate::version::v0_0_1::util::StringMatcher;
-    use crate::version::v0_0_1::Span;
+    use crate::version::v0_0_1::{span, Span};
     use nom::bytes::complete::take;
     use nom_locate::LocatedSpan;
     use nom_supreme::error::ErrorTree;
     use serde::{Deserialize, Serialize};
 
-/*
-pub struct Parser {}
+    /*
+    pub struct Parser {}
 
-impl Parser {
-    pub fn point(input: Span) -> Res<Span, Point> {
-        point_subst(input)
-    }
+    impl Parser {
+        pub fn point(input: Span) -> Res<Span, Point> {
+            point_subst(input)
+        }
 
-    pub fn consume_point(input: Span) -> Result<Point, MsgErr> {
-        let (_, point) = all_consuming(point_subst)(input)?;
-        Ok(point)
-    }
-}
- */
-
-pub type Res<I, O> = IResult<I, O, ErrorTree<I>>;
-
-fn any_resource_path_segment<T>(i: T) -> Res<T, T>
-where
-    T: InputTakeAtPosition + nom::InputLength,
-    <T as InputTakeAtPosition>::Item: AsChar,
-{
-    i.split_at_position1_complete(
-        |item| {
-            let char_item = item.as_char();
-            !(char_item == '-')
-                && !(char_item == '.')
-                && !(char_item == '/')
-                && !(char_item == '_')
-                && !(char_item.is_alpha() || char_item.is_dec_digit())
-        },
-        ErrorKind::AlphaNumeric,
-    )
-}
-
-fn mesh_route_chars<T>(i: T) -> Res<T, T>
-where
-    T: InputTakeAtPosition + nom::InputLength,
-    <T as InputTakeAtPosition>::Item: AsChar,
-{
-    i.split_at_position1_complete(
-        |item| {
-            let char_item = item.as_char();
-            !(char_item == '-')
-                && !(char_item == '.')
-                && !(char_item == '/')
-                && !(char_item == '_')
-                && !(char_item == ':')
-                && !(char_item == '(')
-                && !(char_item == ')')
-                && !(char_item.is_alpha() || char_item.is_dec_digit())
-        },
-        ErrorKind::AlphaNumeric,
-    )
-}
-
-pub fn local_route_segment(input: Span) -> Res<Span, RouteSeg> {
-    alt((recognize(tag(".::")), recognize(not(other_route_segment))))(input)
-        .map(|(next, _)| (next, RouteSeg::Local))
-}
-
-pub fn domain_route_segment(input: Span) -> Res<Span, RouteSeg> {
-    terminated(domain_chars, tag("::"))(input)
-        .map(|(next, domain)| (next, RouteSeg::Domain(domain.to_string())))
-}
-
-pub fn tag_route_segment(input: Span) -> Res<Span, RouteSeg> {
-    terminated(delimited(tag("["), skewer_chars, tag("]")), tag("::"))(input)
-        .map(|(next, tag)| (next, RouteSeg::Tag(tag.to_string())))
-}
-
-pub fn mesh_route_segment(input: Span) -> Res<Span, RouteSeg> {
-    terminated(delimited(tag("<<"), mesh_route_chars, tag(">>")), tag("::"))(input)
-        .map(|(next, tag)| (next, RouteSeg::Tag(tag.to_string())))
-}
-
-pub fn other_route_segment(input: Span) -> Res<Span, RouteSeg> {
-    alt((tag_route_segment, domain_route_segment, mesh_route_segment))(input)
-}
-
-pub fn route_segment(input: Span) -> Res<Span, RouteSeg> {
-    alt((other_route_segment, local_route_segment))(input)
-}
-
-pub fn point_segment(input: Span) -> Res<Span, PointSeg> {
-    alt((base_point_segment,space_point_segment,version_point_segment,filesystem_point_segment,file_point_segment))(input)
-}
-
-
-pub fn space_point_segment(input: Span) -> Res<Span, PointSeg> {
-    space_chars(input).map(|(next, space)| (next, PointSeg::Space(space.to_string())))
-}
-
-pub fn pop_seg(input: Span) -> Res<Span, PointSeg> {
-    preceded(tag(":"), tuple((tag(".."), eos)))(input)
-        .map(|(next, base)| (next, PointSeg::PopSeg))
-}
-
-pub fn pop_dir(input: Span) -> Res<Span, PointSeg> {
-    tuple((tag(".."), eos))(input)
-        .map(|(next, base)| (next, PointSeg::PopDir))
-}
-
-pub fn base_point_segment(input: Span) -> Res<Span, PointSeg> {
-    alt((pop_seg,base_point_segment_normalized))(input)
-}
-
-pub fn base_point_segment_normalized(input: Span) -> Res<Span, PointSeg> {
-    preceded(tag(":"), rec_skewer)(input)
-        .map(|(next, base)| (next, PointSeg::Base(base.to_string())))
-}
-
-pub fn filesystem_point_segment(input: Span) -> Res<Span, PointSeg> {
-    alt((dir_point_segment, file_point_segment))(input)
-}
-
-pub fn dir_point_segment(input: Span) -> Res<Span, PointSeg> {
-    context("dir_point_segment", terminated(file_chars, tag("/")))(input)
-        .map(|(next, dir)| (next, PointSeg::Dir(format!("{}/", dir))))
-}
-
-pub fn root_dir_point_segment(input: Span) -> Res<Span, PointSeg> {
-    tag(":/")(input).map(|(next, _)| (next, PointSeg::FilesystemRootDir))
-}
-
-pub fn file_point_segment(input: Span) -> Res<Span, PointSeg> {
-    alt( (pop_dir,file_point_segment_normalized) )(input)
-}
-
-pub fn file_point_segment_normalized(input: Span) -> Res<Span, PointSeg> {
-    context("file_point_segment", file_chars)(input)
-        .map(|(next, filename)| (next, PointSeg::File(filename.to_string())))
-}
-
-pub fn version_point_segment(input: Span) -> Res<Span, PointSeg> {
-    preceded(tag(":"), version)(input).map(|(next, version)| (next, PointSeg::Version(version)))
-}
-
-pub fn root_point_subst(input: Span) -> Res<Span, PointSubst> {
-    tuple((var_subst(route_segment), tag("ROOT")))(input).map(|(next, (route, _))| {
-        let point = PointSubst {
-            route,
-            segments: vec![],
-        };
-        (next, point)
-    })
-}
-pub fn point_subst_non_root(input: Span) -> Res<Span, PointSubst> {
-
-    tuple((
-        tuple((var_subst(route_segment), first_seg_subst(space_point_segment))),
-        many0(var_subst(base_point_segment)),
-        opt(var_subst(version_point_segment)),
-        opt(no_subst(root_dir_point_segment)),
-        many0(var_subst(filesystem_point_segment)),
-    ))(input)
-    .map(
-        |(next, ((hub, space), mut bases, version, root, mut files))| {
-            let mut segments = vec![];
-            segments.push(space);
-            segments.append(&mut bases);
-            match version {
-                None => {}
-                Some(version) => {
-                    segments.push(version);
-                }
-            }
-
-            if let Option::Some(root) = root {
-                segments.push(root);
-                segments.append(&mut files);
-            }
-
-            let point = PointSubst {
-                route: hub,
-                segments,
-            };
-
-            (next, point)
-        },
-    )
-}
-
-
-pub fn consume_point(input: &str) -> Result<Point,MsgErr> {
-    let span = Span::new(input);
-    let point = all_consuming(point)(span)?.1;
-    Ok(point)
-}
-
-pub fn point(input: Span) -> Res<Span, Point> {
-    let (next,point) = point_subst(input.clone())?;
-    match point.brute_resolve() {
-        Ok(point) => Ok((next,point)),
-        Err(err) => {
-            let e = ErrorTree::from_error_kind(input.clone(), ErrorKind::Fail );
-            let e = ErrorTree::add_context(input, "point-subst-brute-force", e);
-            return Err(nom::Err::Failure(e));
+        pub fn consume_point(input: Span) -> Result<Point, MsgErr> {
+            let (_, point) = all_consuming(point_subst)(input)?;
+            Ok(point)
         }
     }
-}
+     */
 
+    pub type Res<I, O> = IResult<I, O, ErrorTree<I>>;
 
-pub fn point_subst(input: Span) -> Res<Span, PointSubst> {
-    alt((root_point_subst, point_subst_non_root))(input)
-}
+    fn any_resource_path_segment<T>(i: T) -> Res<T, T>
+    where
+        T: InputTakeAtPosition + nom::InputLength,
+        <T as InputTakeAtPosition>::Item: AsChar,
+    {
+        i.split_at_position1_complete(
+            |item| {
+                let char_item = item.as_char();
+                !(char_item == '-')
+                    && !(char_item == '.')
+                    && !(char_item == '/')
+                    && !(char_item == '_')
+                    && !(char_item.is_alpha() || char_item.is_dec_digit())
+            },
+            ErrorKind::AlphaNumeric,
+        )
+    }
 
-pub fn consume_point_subst(input: Span) -> Res<Span, PointSubst> {
-    all_consuming(point_subst)(input)
-}
+    fn mesh_route_chars<T>(i: T) -> Res<T, T>
+    where
+        T: InputTakeAtPosition + nom::InputLength,
+        <T as InputTakeAtPosition>::Item: AsChar,
+    {
+        i.split_at_position1_complete(
+            |item| {
+                let char_item = item.as_char();
+                !(char_item == '-')
+                    && !(char_item == '.')
+                    && !(char_item == '/')
+                    && !(char_item == '_')
+                    && !(char_item == ':')
+                    && !(char_item == '(')
+                    && !(char_item == ')')
+                    && !(char_item.is_alpha() || char_item.is_dec_digit())
+            },
+            ErrorKind::AlphaNumeric,
+        )
+    }
 
-pub fn capture_point(input: Span) -> Res<Span, CaptureAddress> {
-    context(
-        "Address",
+    pub fn local_route_segment(input: Span) -> Res<Span, RouteSeg> {
+        alt((recognize(tag(".")), recognize(not(other_route_segment))))(input)
+            .map(|(next, _)| (next, RouteSeg::Local))
+    }
+
+    pub fn domain_route_segment(input: Span) -> Res<Span, RouteSeg> {
+        domain_chars(input).map(|(next, domain)| (next, RouteSeg::Domain(domain.to_string())))
+    }
+
+    pub fn tag_route_segment(input: Span) -> Res<Span, RouteSeg> {
+        delimited(tag("["), skewer_chars, tag("]"))(input)
+            .map(|(next, tag)| (next, RouteSeg::Tag(tag.to_string())))
+    }
+
+    pub fn mesh_route_segment(input: Span) -> Res<Span, RouteSeg> {
+        delimited(tag("<<"), mesh_route_chars, tag(">>"))(input)
+            .map(|(next, tag)| (next, RouteSeg::Tag(tag.to_string())))
+    }
+
+    pub fn other_route_segment(input: Span) -> Res<Span, RouteSeg> {
+        alt((tag_route_segment, domain_route_segment, mesh_route_segment))(input)
+    }
+
+    pub fn point_route_segment(input: Span) -> Res<Span, RouteSeg> {
+        alt((local_route_segment, other_route_segment))(input)
+    }
+
+    pub fn point_segment(input: Span) -> Res<Span, PointSeg> {
+        alt((
+            base_point_segment,
+            space_point_segment,
+            version_point_segment,
+            filesystem_point_segment,
+            file_point_segment,
+        ))(input)
+    }
+
+    pub fn mesh_eos(input: Span) -> Res<Span, Span> {
+        peek(alt((tag(":"), eop)))(input)
+    }
+
+    pub fn fs_trailing(input: Span) -> Res<Span, Span> {
+        peek(pair(
+            recognize(tag(":")),
+            context("point:version:root_not_trailing", cut(tag("/"))),
+        ))(input)
+        .map(|(next, (rtn, _))| (next, rtn))
+    }
+
+    // version end of segment
+    pub fn ver_eos(input: Span) -> Res<Span, Span> {
+        peek(alt((fs_trailing, tag(":/"), eop)))(input)
+    }
+
+    // end of point
+    pub fn eop(input: Span) -> Res<Span, Span> {
+        peek(alt((
+            eof,
+            multispace1,
+            tag("\""),
+            tag("'"),
+            tag("]"),
+            tag(")"),
+            tag("}"),
+            tag("^"),
+            tag("["),
+            tag("("),
+            tag("{"),
+        )))(input)
+    }
+
+    pub fn space_point_segment(input: Span) -> Res<Span, PointSeg> {
+        context("point:space_segment", cut(pair(space_chars, mesh_eos)))(input)
+            .map(|(next, (space, _))| (next, PointSeg::Space(space.to_string())))
+    }
+
+    pub fn base_point_segment(input: Span) -> Res<Span, PointSeg> {
+        preceded(
+            peek(lowercase1),
+            context("point:base_segment", cut(pair(rec_skewer, mesh_eos))),
+        )(input)
+        .map(|(next, (base, _))| (next, PointSeg::Base(base.to_string())))
+    }
+
+    pub fn version_point_segment(input: Span) -> Res<Span, PointSeg> {
+        preceded(
+            peek(digit0),
+            context("point:version_segment", cut(tuple((version, ver_eos)))),
+        )(input)
+        .map(|(next, (version, _))| (next, PointSeg::Version(version)))
+    }
+
+    pub fn dir_pop(input: Span) -> Res<Span, PointSeg> {
+        context("point:dir_pop", tuple((tag(".."), opt(tag("/")))))(input)
+            .map(|(next, _)| (next, PointSeg::Pop))
+    }
+
+    pub fn filesystem_point_segment(input: Span) -> Res<Span, PointSeg> {
         tuple((
+            peek(not(eop)),
+            context(
+                "point:file_or_directory",
+                cut(alt((dir_pop, dir_point_segment, file_point_segment))),
+            ),
+        ))(input)
+        .map(|(next, (_, seg))| (next, seg))
+    }
+
+    pub fn dir_point_segment(input: Span) -> Res<Span, PointSeg> {
+        context("point:dir_segment", terminated(file_chars, tag("/")))(input)
+            .map(|(next, dir)| (next, PointSeg::Dir(format!("{}/", dir))))
+    }
+
+    pub fn root_dir_point_segment(input: Span) -> Res<Span, PointSeg> {
+        context("point:root_filesystem_segment", tag(":/"))(input)
+            .map(|(next, _)| (next, PointSeg::FilesystemRootDir))
+    }
+
+    pub fn file_point_segment(input: Span) -> Res<Span, PointSeg> {
+        context("point:file_segment", file_chars)(input)
+            .map(|(next, filename)| (next, PointSeg::File(filename.to_string())))
+    }
+
+    pub fn point_subst(input: Span) -> Res<Span, PointSubst> {
+        alt((root_point_subst, point_non_root_subst))(input)
+    }
+
+    pub fn point(input: Span) -> Res<Span, Point> {
+        context(
+            "point",
+            tuple((alt((root_point, point_non_root)), peek(space1))),
+        )(input)
+        .map(|(next, (point, _))| (next, point))
+    }
+
+    pub fn root_point(input: Span) -> Res<Span, Point> {
+        tuple((opt(terminated(point_route_segment, tag("::"))), tag("ROOT")))(input).map(
+            |(next, (route, _))| {
+                let route = route.unwrap_or(RouteSeg::Local);
+                let point = Point {
+                    route,
+                    segments: vec![],
+                };
+                (next, point)
+            },
+        )
+    }
+
+    pub fn root_point_subst(input: Span) -> Res<Span, PointSubst> {
+        tuple((
+            opt(terminated(var_subst(point_route_segment), tag("::"))),
+            tag("ROOT"),
+        ))(input)
+        .map(|(next, (route, _))| {
+            let route = route.unwrap_or(Subst::Resolved(RouteSeg::Local));
+            let point = PointSubst {
+                route,
+                segments: vec![],
+            };
+            (next, point)
+        })
+    }
+
+    pub fn point_non_root(input: Span) -> Res<Span, Point> {
+        context(
+            "point",
             tuple((
-                route_segment,
-                alt((root_point_capture_segment, space_point_capture_segment)),
+                context(
+                    "point_route",
+                    opt(terminated(point_route_segment, tag("::"))),
+                ),
+                space_point_segment,
+                many0(tuple((seg_delim,peek(context("point:bad_leading",cut(alt((lowercase1,digit1))))),base_point_segment))),
+                opt(mesh_seg(version_point_segment)),
+                opt(tuple((
+                    root_dir_point_segment,
+                    many0(filesystem_point_segment),
+                    eop,
+                ))),
+                eop,
             )),
-            many0(base_point_capture_segment),
-            opt(version_point_segment),
-            opt(root_dir_point_segment),
-            many0(filesystem_point_capture_segment),
-        )),
-    )(input)
-    .map(
-        |(next, ((hub, space), mut bases, version, root, mut files))| {
+        )(input)
+        .map(
+            |(next, (route, space, mut bases, version, filesystem, _))| {
+                let route = route.unwrap_or(RouteSeg::Local);
+                let mut segments = vec![];
+                let mut bases = bases.into_iter().map(|(_,_,seg)|seg).collect();
+                segments.push(space);
+                segments.append(&mut bases);
+                match version {
+                    None => {}
+                    Some(version) => {
+                        segments.push(version);
+                    }
+                }
+
+                if let Option::Some((fsroot, mut files, _)) = filesystem {
+                    segments.push(fsroot);
+                    segments.append(&mut files);
+                }
+
+                let point = Point { route, segments };
+
+                (next, point)
+            },
+        )
+    }
+
+    pub fn point_non_root_subst(input: Span) -> Res<Span, PointSubst> {
+        context(
+            "point_subst",
+            tuple((
+                context(
+                    "point_subst_route",
+                    opt(terminated(var_subst(point_route_segment), tag("::"))),
+                ),
+                first_seg_subst(space_point_segment),
+                many0(subst_seg(base_point_segment)),
+                opt(subst_seg(version_point_segment)),
+                opt(no_subst(root_dir_point_segment)),
+                many0(subst_seg(filesystem_point_segment)),
+            )),
+        )(input)
+        .map(
+            |(next, (route, space, mut bases, version, fsroot, mut files))| {
+                let route = match route {
+                    None => Subst::Resolved(RouteSeg::Local),
+                    Some(route) => route,
+                };
+                let space = PointSegPairSubst::new(PointSegDelim::Empty, space);
+                let mut segments = vec![];
+                segments.push(space);
+                segments.append(&mut bases);
+                match version {
+                    None => {}
+                    Some(version) => {
+                        segments.push(version);
+                    }
+                }
+
+                if let Option::Some(root) = fsroot {
+                    segments.push(PointSegPairSubst::new(PointSegDelim::Mesh, root));
+                    segments.append(&mut files);
+                }
+
+                let point = PointSubst { route, segments };
+
+                (next, point)
+            },
+        )
+    }
+
+    pub fn consume_point(input: &str) -> Result<Point, MsgErr> {
+        let span = span(input);
+        let point = result(all_consuming(point)(span))?;
+        Ok(point)
+    }
+
+    pub fn point_old(input: Span) -> Res<Span, Point> {
+        let (next, point) = point_subst(input.clone())?;
+        match point.brute_resolve() {
+            Ok(point) => Ok((next, point)),
+            Err(err) => {
+                let e = ErrorTree::from_error_kind(input.clone(), ErrorKind::Fail);
+                let e = ErrorTree::add_context(input, "point-subst-brute-force", e);
+                return Err(nom::Err::Failure(e));
+            }
+        }
+    }
+
+    pub fn consume_point_subst(input: Span) -> Res<Span, PointSubst> {
+        all_consuming(point_subst)(input)
+    }
+
+    pub fn capture_point(input: Span) -> Res<Span, CaptureAddress> {
+        context(
+            "Address",
+            tuple((
+                tuple((
+                    point_route_segment,
+                    alt((root_point_capture_segment, space_point_capture_segment)),
+                )),
+                many0(base_point_capture_segment),
+                opt(version_point_segment),
+                opt(root_dir_point_segment),
+                many0(filesystem_point_capture_segment),
+            )),
+        )(input)
+        .map(
+            |(next, ((hub, space), mut bases, version, root, mut files))| {
+                let mut segments = vec![];
+                segments.push(space);
+                segments.append(&mut bases);
+                match version {
+                    None => {}
+                    Some(version) => {
+                        segments.push(version);
+                    }
+                }
+
+                if let Option::Some(root) = root {
+                    segments.push(root);
+                    segments.append(&mut files);
+                }
+
+                let point = CaptureAddress {
+                    route: hub,
+                    segments,
+                };
+
+                (next, point)
+            },
+        )
+    }
+
+    pub fn root_point_capture_segment(input: Span) -> Res<Span, PointSeg> {
+        tag("ROOT")(input).map(|(next, space)| (next, PointSeg::Root))
+    }
+
+    pub fn space_point_capture_segment(input: Span) -> Res<Span, PointSeg> {
+        space_chars_plus_capture(input)
+            .map(|(next, space)| (next, PointSeg::Space(space.to_string())))
+    }
+
+    pub fn base_point_capture_segment(input: Span) -> Res<Span, PointSeg> {
+        preceded(tag(":"), rec_skewer_capture)(input)
+            .map(|(next, base)| (next, PointSeg::Base(base.to_string())))
+    }
+
+    pub fn filesystem_point_capture_segment(input: Span) -> Res<Span, PointSeg> {
+        alt((dir_point_capture_segment, file_point_capture_segment))(input)
+    }
+
+    pub fn dir_point_capture_segment(input: Span) -> Res<Span, PointSeg> {
+        context(
+            "dir_point_capture_segment",
+            terminated(file_chars_plus_capture, tag("/")),
+        )(input)
+        .map(|(next, dir)| (next, PointSeg::Dir(format!("{}/", dir))))
+    }
+
+    pub fn file_point_capture_segment(input: Span) -> Res<Span, PointSeg> {
+        context("file_point_capture_segment", file_chars_plus_capture)(input)
+            .map(|(next, filename)| (next, PointSeg::File(filename.to_string())))
+    }
+
+    pub fn space_point_kind_segment(input: Span) -> Res<Span, PointKindSeg> {
+        tuple((space_point_segment, delim_kind))(input).map(|(next, (point_segment, kind))| {
+            (
+                next,
+                PointKindSeg {
+                    segment: point_segment,
+                    kind,
+                },
+            )
+        })
+    }
+
+    pub fn base_point_kind_segment(input: Span) -> Res<Span, PointKindSeg> {
+        tuple((base_point_segment, delim_kind))(input).map(|(next, (point_segment, kind))| {
+            (
+                next,
+                PointKindSeg {
+                    segment: point_segment,
+                    kind,
+                },
+            )
+        })
+    }
+
+    pub fn filepath_point_kind_segment(input: Span) -> Res<Span, PointKindSeg> {
+        alt((file_point_kind_segment, dir_point_kind_segment))(input)
+    }
+    pub fn dir_point_kind_segment(input: Span) -> Res<Span, PointKindSeg> {
+        tuple((dir_point_segment, delim_kind))(input).map(|(next, (point_segment, kind))| {
+            (
+                next,
+                PointKindSeg {
+                    segment: point_segment,
+                    kind,
+                },
+            )
+        })
+    }
+
+    pub fn file_point_kind_segment(input: Span) -> Res<Span, PointKindSeg> {
+        tuple((file_point_segment, delim_kind))(input).map(|(next, (point_segment, kind))| {
+            (
+                next,
+                PointKindSeg {
+                    segment: point_segment,
+                    kind,
+                },
+            )
+        })
+    }
+
+    pub fn version_point_kind_segment(input: Span) -> Res<Span, PointKindSeg> {
+        tuple((version_point_segment, delim_kind))(input).map(|(next, (point_segment, kind))| {
+            (
+                next,
+                PointKindSeg {
+                    segment: point_segment,
+                    kind,
+                },
+            )
+        })
+    }
+
+    pub fn consume_hierarchy(input: Span) -> Result<PointKindHierarchy, MsgErr> {
+        let (_, rtn) = all_consuming(point_kind_hierarchy)(input)?;
+        Ok(rtn)
+    }
+
+    pub fn point_kind_hierarchy(input: Span) -> Res<Span, PointKindHierarchy> {
+        tuple((
+            tuple((point_route_segment, space_point_kind_segment)),
+            many0(base_point_kind_segment),
+            opt(version_point_kind_segment),
+            many0(file_point_kind_segment),
+        ))(input)
+        .map(|(next, ((hub, space), mut bases, version, mut files))| {
             let mut segments = vec![];
             segments.push(space);
             segments.append(&mut bases);
@@ -8732,2138 +9143,2277 @@ pub fn capture_point(input: Span) -> Res<Span, CaptureAddress> {
                     segments.push(version);
                 }
             }
+            segments.append(&mut files);
 
-            if let Option::Some(root) = root {
-                segments.push(root);
-                segments.append(&mut files);
-            }
-
-            let point = CaptureAddress {
-                route: hub,
-                segments,
-            };
+            let point = PointKindHierarchy::new(hub, segments);
 
             (next, point)
-        },
-    )
-}
+        })
+    }
 
-pub fn root_point_capture_segment(input: Span) -> Res<Span, PointSeg> {
-    tag("ROOT")(input).map(|(next, space)| (next, PointSeg::Root))
-}
+    pub fn asterisk<T, E: nom::error::ParseError<T>>(input: T) -> IResult<T, T, E>
+    where
+        T: InputTakeAtPosition + nom::InputLength,
+        <T as InputTakeAtPosition>::Item: AsChar,
+    {
+        input.split_at_position_complete(|item| item.as_char() != '*')
+    }
 
-pub fn space_point_capture_segment(input: Span) -> Res<Span, PointSeg> {
-    space_chars_plus_capture(input)
-        .map(|(next, space)| (next, PointSeg::Space(space.to_string())))
-}
+    pub fn upper<T, E: nom::error::ParseError<T>>(input: T) -> IResult<T, T, E>
+    where
+        T: InputTakeAtPosition + nom::InputLength,
+        <T as InputTakeAtPosition>::Item: AsChar,
+    {
+        input.split_at_position_complete(|item| {
+            let char_item = item.as_char();
 
-pub fn base_point_capture_segment(input: Span) -> Res<Span, PointSeg> {
-    preceded(tag(":"), rec_skewer_capture)(input)
-        .map(|(next, base)| (next, PointSeg::Base(base.to_string())))
-}
+            !char_item.is_uppercase()
+        })
+    }
 
-pub fn filesystem_point_capture_segment(input: Span) -> Res<Span, PointSeg> {
-    alt((dir_point_capture_segment, file_point_capture_segment))(input)
-}
+    /*    fn any_resource_path_segment<T>(i: T) -> Res<T, T>
+           where
+               T: InputTakeAtPosition+nom::InputLength,
+               <T as InputTakeAtPosition>::Item: AsChar,
+       {
+           i.split_at_position1_complete(
+               |item| {
+                   let char_item = item.as_char();
+                   !(char_item == '-')
+                       && !(char_item == '.')
+                       && !(char_item == '/')
+                       && !(char_item == '_')
+                       && !(char_item.is_alpha() || char_item.is_dec_digit())
+               },
+               ErrorKind::AlphaNumeric,
+           )
+       }
 
-pub fn dir_point_capture_segment(input: Span) -> Res<Span, PointSeg> {
-    context(
-        "dir_point_capture_segment",
-        terminated(file_chars_plus_capture, tag("/")),
-    )(input)
-    .map(|(next, dir)| (next, PointSeg::Dir(format!("{}/", dir))))
-}
+    */
 
-pub fn file_point_capture_segment(input: Span) -> Res<Span, PointSeg> {
-    context("file_point_capture_segment", file_chars_plus_capture)(input)
-        .map(|(next, filename)| (next, PointSeg::File(filename.to_string())))
-}
-
-pub fn space_point_kind_segment(input: Span) -> Res<Span, PointKindSeg> {
-    tuple((space_point_segment, delim_kind))(input).map(|(next, (point_segment, kind))| {
-        (
-            next,
-            PointKindSeg {
-                segment: point_segment,
-                kind,
+    pub fn in_double_quotes<T>(i: T) -> Res<T, T>
+    where
+        T: InputTakeAtPosition + nom::InputLength,
+        <T as InputTakeAtPosition>::Item: AsChar,
+    {
+        i.split_at_position1_complete(
+            |item| {
+                let char_item = item.as_char();
+                char_item == '\"'
             },
+            ErrorKind::AlphaNumeric,
         )
-    })
-}
+    }
 
-pub fn base_point_kind_segment(input: Span) -> Res<Span, PointKindSeg> {
-    tuple((base_point_segment, delim_kind))(input).map(|(next, (point_segment, kind))| {
-        (
-            next,
-            PointKindSeg {
-                segment: point_segment,
-                kind,
+    pub fn skewer_colon<T>(i: T) -> Res<T, T>
+    where
+        T: InputTakeAtPosition + nom::InputLength,
+        <T as InputTakeAtPosition>::Item: AsChar,
+    {
+        i.split_at_position1_complete(
+            |item| {
+                let char_item = item.as_char();
+                !(char_item == '-')
+                    && !(char_item == ':')
+                    && !((char_item.is_alpha() && char_item.is_lowercase())
+                        || char_item.is_dec_digit())
             },
+            ErrorKind::AlphaNumeric,
         )
-    })
-}
+    }
 
-pub fn filepath_point_kind_segment(input: Span) -> Res<Span, PointKindSeg> {
-    alt((file_point_kind_segment, dir_point_kind_segment))(input)
-}
-pub fn dir_point_kind_segment(input: Span) -> Res<Span, PointKindSeg> {
-    tuple((dir_point_segment, delim_kind))(input).map(|(next, (point_segment, kind))| {
-        (
-            next,
-            PointKindSeg {
-                segment: point_segment,
-                kind,
+    pub fn skewer_dot<I, E>(i: I) -> IResult<I, I, E>
+    where
+        I: InputTakeAtPosition + nom::InputLength,
+        <I as InputTakeAtPosition>::Item: AsChar,
+        E: nom::error::ContextError<I> + nom::error::ParseError<I>,
+    {
+        i.split_at_position1_complete(
+            |item| {
+                let char_item = item.as_char();
+                !(char_item == '-')
+                    && !(char_item == '.')
+                    && !((char_item.is_alpha() && char_item.is_lowercase())
+                        || char_item.is_dec_digit())
             },
+            ErrorKind::AlphaNumeric,
         )
-    })
-}
+    }
 
-pub fn file_point_kind_segment(input: Span) -> Res<Span, PointKindSeg> {
-    tuple((file_point_segment, delim_kind))(input).map(|(next, (point_segment, kind))| {
-        (
-            next,
-            PointKindSeg {
-                segment: point_segment,
-                kind,
+    pub fn domain<T>(i: T) -> Res<T, T>
+    where
+        T: InputTakeAtPosition + nom::InputLength,
+        <T as InputTakeAtPosition>::Item: AsChar,
+    {
+        i.split_at_position1_complete(
+            |item| {
+                let char_item = item.as_char();
+                !(char_item == '-')
+                    && !(char_item == '.')
+                    && !((char_item.is_alpha() && char_item.is_lowercase())
+                        || char_item.is_dec_digit())
             },
+            ErrorKind::AlphaNumeric,
         )
-    })
-}
+    }
 
-pub fn version_point_kind_segment(input: Span) -> Res<Span, PointKindSeg> {
-    tuple((version_point_segment, delim_kind))(input).map(|(next, (point_segment, kind))| {
-        (
-            next,
-            PointKindSeg {
-                segment: point_segment,
-                kind,
+    pub fn point_segment_chars<T>(i: T) -> Res<T, T>
+    where
+        T: InputTakeAtPosition + nom::InputLength,
+        <T as InputTakeAtPosition>::Item: AsChar,
+    {
+        i.split_at_position1_complete(
+            |item| {
+                let char_item = item.as_char();
+                !(char_item == '-')
+                    && !(char_item == '.')
+                    && !(char_item.is_alpha() || char_item.is_dec_digit())
             },
+            ErrorKind::AlphaNumeric,
         )
-    })
-}
+    }
 
-pub fn consume_hierarchy(input: Span) -> Result<PointKindHierarchy, MsgErr> {
-    let (_, rtn) = all_consuming(point_kind_hierarchy)(input)?;
-    Ok(rtn)
-}
+    pub fn version_chars<T>(i: T) -> Res<T, T>
+    where
+        T: InputTakeAtPosition + nom::InputLength,
+        <T as InputTakeAtPosition>::Item: AsChar,
+    {
+        i.split_at_position1_complete(
+            |item| {
+                let char_item = item.as_char();
+                char_item != '.'
+                    && char_item != '-'
+                    && !char_item.is_digit(10)
+                    && !(char_item.is_alpha() && char_item.is_lowercase())
+            },
+            ErrorKind::AlphaNumeric,
+        )
+    }
 
-pub fn point_kind_hierarchy(input: Span) -> Res<Span, PointKindHierarchy> {
-    tuple((
-        tuple((route_segment, space_point_kind_segment)),
-        many0(base_point_kind_segment),
-        opt(version_point_kind_segment),
-        many0(file_point_kind_segment),
-    ))(input)
-    .map(|(next, ((hub, space), mut bases, version, mut files))| {
+    pub fn version_req_chars<T>(i: T) -> Res<T, T>
+    where
+        T: InputTakeAtPosition + nom::InputLength,
+        <T as InputTakeAtPosition>::Item: AsChar,
+    {
+        i.split_at_position1_complete(
+            |item| {
+                let char_item = item.as_char();
+                !(char_item == '-')
+                    && !(char_item == '>')
+                    && !(char_item == '<')
+                    && !(char_item == '^')
+                    && !(char_item == '=')
+                    && !((char_item.is_alpha() && char_item.is_lowercase())
+                        || char_item.is_dec_digit())
+            },
+            ErrorKind::AlphaNumeric,
+        )
+    }
+
+    pub fn lowercase1<T>(i: T) -> Res<T, T>
+    where
+        T: InputTakeAtPosition + nom::InputLength,
+        <T as InputTakeAtPosition>::Item: AsChar,
+    {
+        i.split_at_position1_complete(
+            |item| {
+                let char_item = item.as_char();
+                !(char_item.is_alpha() && char_item.is_lowercase())
+            },
+            ErrorKind::AlphaNumeric,
+        )
+    }
+
+    pub fn rec_skewer(input: Span) -> Res<Span, Span> {
+        recognize(tuple((lowercase1, opt(skewer_chars))))(input)
+    }
+
+    pub fn rec_skewer_capture(input: Span) -> Res<Span, Span> {
+        recognize(tuple((lowercase1, opt(skewer_chars_plus_capture))))(input)
+    }
+
+    pub fn skewer_chars<T>(i: T) -> Res<T, T>
+    where
+        T: InputTakeAtPosition + nom::InputLength,
+        <T as InputTakeAtPosition>::Item: AsChar,
+    {
+        i.split_at_position1_complete(
+            |item| {
+                let char_item = item.as_char();
+                char_item != '-'
+                    && !char_item.is_digit(10)
+                    && !(char_item.is_alpha() && char_item.is_lowercase())
+            },
+            ErrorKind::AlphaNumeric,
+        )
+    }
+
+    pub fn skewer_chars_plus_capture<T>(i: T) -> Res<T, T>
+    where
+        T: InputTakeAtPosition + nom::InputLength,
+        <T as InputTakeAtPosition>::Item: AsChar,
+    {
+        i.split_at_position1_complete(
+            |item| {
+                let char_item = item.as_char();
+                char_item != '-'
+                    && char_item != '$'
+                    && !char_item.is_digit(10)
+                    && !(char_item.is_alpha() && char_item.is_lowercase())
+            },
+            ErrorKind::AlphaNumeric,
+        )
+    }
+
+    pub fn skewer_chars_template<T>(i: T) -> Res<T, T>
+    where
+        T: InputTakeAtPosition + nom::InputLength,
+        <T as InputTakeAtPosition>::Item: AsChar,
+    {
+        i.split_at_position1_complete(
+            |item| {
+                let char_item = item.as_char();
+                char_item != '-'
+                    && char_item.as_char() != '%'
+                    && !char_item.is_digit(10)
+                    && !(char_item.is_alpha() && char_item.is_lowercase())
+            },
+            ErrorKind::AlphaNumeric,
+        )
+    }
+
+    pub fn space_chars<T>(i: T) -> Res<T, T>
+    where
+        T: InputTakeAtPosition + nom::InputLength,
+        <T as InputTakeAtPosition>::Item: AsChar,
+    {
+        i.split_at_position1_complete(
+            |item| {
+                let char_item = item.as_char();
+                !(char_item == '-')
+                    && !(char_item == '.')
+                    && !((char_item.is_alpha() && char_item.is_lowercase())
+                        || char_item.is_dec_digit())
+            },
+            ErrorKind::AlphaNumeric,
+        )
+    }
+
+    pub fn space_chars_plus_capture<T>(i: T) -> Res<T, T>
+    where
+        T: InputTakeAtPosition + nom::InputLength,
+        <T as InputTakeAtPosition>::Item: AsChar,
+    {
+        i.split_at_position1_complete(
+            |item| {
+                let char_item = item.as_char();
+                !(char_item == '-')
+                    && !(char_item == '.')
+                    && !(char_item == '$')
+                    && !((char_item.is_alpha() && char_item.is_lowercase())
+                        || char_item.is_dec_digit())
+            },
+            ErrorKind::AlphaNumeric,
+        )
+    }
+
+    pub fn domain_chars<T>(i: T) -> Res<T, T>
+    where
+        T: InputTakeAtPosition + nom::InputLength,
+        <T as InputTakeAtPosition>::Item: AsChar,
+    {
+        i.split_at_position1_complete(
+            |item| {
+                let char_item = item.as_char();
+                !(char_item == '-')
+                    && !(char_item == '.')
+                    && !((char_item.is_alpha() && char_item.is_lowercase())
+                        || char_item.is_dec_digit())
+            },
+            ErrorKind::AlphaNumeric,
+        )
+    }
+
+    pub fn filepath_chars<T>(i: T) -> Res<T, T>
+    where
+        T: InputTakeAtPosition + nom::InputLength,
+        <T as InputTakeAtPosition>::Item: AsChar,
+    {
+        i.split_at_position1_complete(
+            |item| {
+                let char_item = item.as_char();
+                !(char_item == '-')
+                    && !(char_item == '.')
+                    && !(char_item == '/')
+                    && !(char_item == ':')
+                    && !(char_item == '_')
+                    && !(char_item.is_alpha() || char_item.is_dec_digit())
+            },
+            ErrorKind::AlphaNumeric,
+        )
+    }
+
+    pub fn file_chars_plus_capture<T>(i: T) -> Res<T, T>
+    where
+        T: InputTakeAtPosition + nom::InputLength,
+        <T as InputTakeAtPosition>::Item: AsChar,
+    {
+        i.split_at_position1_complete(
+            |item| {
+                let char_item = item.as_char();
+                !(char_item == '-')
+                    && !(char_item == '.')
+                    && !(char_item == '_')
+                    && !(char_item == '$')
+                    && !(char_item.is_alpha() || char_item.is_dec_digit())
+            },
+            ErrorKind::AlphaNumeric,
+        )
+    }
+
+    pub fn file_chars<T>(i: T) -> Res<T, T>
+    where
+        T: InputTakeAtPosition + nom::InputLength,
+        <T as InputTakeAtPosition>::Item: AsChar,
+    {
+        i.split_at_position1_complete(
+            |item| {
+                let char_item = item.as_char();
+                !(char_item == '-')
+                    && !(char_item == '.')
+                    && !(char_item == '_')
+                    && !(char_item.is_alpha() || char_item.is_dec_digit())
+            },
+            ErrorKind::AlphaNumeric,
+        )
+    }
+
+    pub fn file_chars_template<T>(i: T) -> Res<T, T>
+    where
+        T: InputTakeAtPosition + nom::InputLength,
+        <T as InputTakeAtPosition>::Item: AsChar,
+    {
+        i.split_at_position1_complete(
+            |item| {
+                let char_item = item.as_char();
+                !(char_item == '-')
+                    && !(char_item == '.')
+                    && !(char_item == '_')
+                    && !(char_item == '%')
+                    && !(char_item.is_alpha() || char_item.is_dec_digit())
+            },
+            ErrorKind::AlphaNumeric,
+        )
+    }
+
+    pub fn not_space(input: Span) -> Res<Span, Span> {
+        is_not(" \n\r\t")(input)
+    }
+
+    pub fn path(input: Span) -> Res<Span, Span> {
+        recognize(tuple((tag("/"), opt(filepath_chars))))(input)
+    }
+
+    pub fn capture_path(input: Span) -> Res<Span, Span> {
+        recognize(tuple((tag("/"), opt(file_chars_plus_capture))))(input)
+    }
+
+    pub fn consume_path(input: Span) -> Res<Span, Span> {
+        all_consuming(path)(input)
+    }
+
+    pub fn path_regex(input: Span) -> Res<Span, Span> {
+        recognize(opt(not_space))(input)
+    }
+    pub fn camel_case(input: Span) -> Res<Span, Span> {
+        recognize(tuple((is_a("ABCDEFGHIJKLMNOPQRSTUVWXYZ"), alphanumeric0)))(input)
+        //recognize(alpha1)(input)
+    }
+
+    pub fn skewer_case(input: Span) -> Res<Span, Span> {
+        recognize(tuple((lowercase1, skewer)))(input)
+        //recognize(alpha1)(input)
+    }
+
+    pub fn single_lowercase<T, Input, Error: ParseError<Input>>(
+        arr: T,
+    ) -> impl Fn(Input) -> IResult<Input, Input, Error>
+    where
+        Input: InputTakeAtPosition,
+        T: FindToken<<Input as InputTakeAtPosition>::Item>,
+    {
+        move |i: Input| {
+            let e: ErrorKind = ErrorKind::IsA;
+            i.split_at_position1_complete(|c| !arr.find_token(c), e)
+        }
+    }
+
+    pub fn single_lowerscase(input: Span) -> Res<Span, Span> {
+        is_a("abcdefghijklmnopqrstuvwxyz")(input)
+    }
+    pub fn single_digit(input: Span) -> Res<Span, Span> {
+        is_a("abcdefghijklmnopqrstuvwxyz")(input)
+    }
+
+    pub fn camel_case_to_string_matcher(input: Span) -> Res<Span, StringMatcher> {
+        camel_case(input).map(|(next, camel)| (next, StringMatcher::new(camel.to_string())))
+    }
+
+    fn parse_version_major_minor_patch(input: Span) -> Res<Span, (Span, Span, Span)> {
+        context(
+            "version_major_minor_patch",
+            tuple((
+                terminated(digit1, tag(".")),
+                terminated(digit1, tag(".")),
+                terminated(digit1, not(digit1)),
+            )),
+        )(input)
+    }
+
+    pub fn parse_version(input: Span) -> Res<Span, ((Span, Span, Span), Option<Span>)> {
+        tuple((
+            parse_version_major_minor_patch,
+            opt(preceded(tag("-"), skewer_chars)),
+        ))(input)
+    }
+
+    pub fn rec_version(input: Span) -> Res<Span, Span> {
+        recognize(parse_version)(input)
+    }
+
+    pub fn base_point_segment_wildcard(input: Span) -> Res<Span, PointTemplateSeg> {
+        preceded(
+            tag(":"),
+            recognize(tuple((many0(skewer), tag("%"), many0(skewer)))),
+        )(input)
+        .map(|(next, base)| (next, PointTemplateSeg::Wildcard(base.to_string())))
+    }
+
+    pub fn base_point_segment_template(input: Span) -> Res<Span, PointTemplateSeg> {
+        preceded(tag(":"), rec_skewer)(input).map(|(next, base)| {
+            (
+                next,
+                PointTemplateSeg::ExactSeg(PointSeg::Base(base.to_string())),
+            )
+        })
+    }
+
+    pub fn filepath_point_segment_wildcard(input: Span) -> Res<Span, PointTemplateSeg> {
+        recognize(tuple((
+            many0(filepath_chars),
+            tag("%"),
+            many0(filepath_chars),
+        )))(input)
+        .map(|(next, base)| (next, PointTemplateSeg::Wildcard(base.to_string())))
+    }
+
+    pub fn filepath_point_segment_template(input: Span) -> Res<Span, PointTemplateSeg> {
+        filesystem_point_segment(input)
+            .map(|(next, segment)| (next, PointTemplateSeg::ExactSeg(segment)))
+    }
+
+    pub fn point_template(input: Span) -> Res<Span, PointTemplate> {
+        let (next, ((hub, space), mut bases, version, root, mut files)) = tuple((
+            tuple((point_route_segment, space_point_segment)),
+            many0(alt((
+                base_point_segment_wildcard,
+                base_point_segment_template,
+            ))),
+            opt(version_point_segment),
+            opt(root_dir_point_segment),
+            many0(alt((
+                filepath_point_segment_wildcard,
+                filepath_point_segment_template,
+            ))),
+        ))(input.clone())?;
+
+        let mut base_wildcard = false;
+        for (index, segment) in bases.iter().enumerate() {
+            if segment.is_wildcard() {
+                if index != bases.len() - 1 {
+                    return Err(nom::Err::Error(ErrorTree::from_error_kind(
+                        input,
+                        ErrorKind::Tag,
+                    )));
+                } else {
+                    base_wildcard = true;
+                }
+            }
+        }
+
+        if base_wildcard && version.is_some() {
+            return Err(nom::Err::Error(ErrorTree::from_error_kind(
+                input,
+                ErrorKind::Tag,
+            )));
+        }
+
+        if base_wildcard && root.is_some() {
+            return Err(nom::Err::Error(ErrorTree::from_error_kind(
+                input,
+                ErrorKind::Tag,
+            )));
+        }
+
+        let mut files_wildcard = false;
+        for (index, segment) in files.iter().enumerate() {
+            if segment.is_wildcard() {
+                if index != files.len() - 1 {
+                    return Err(nom::Err::Error(ErrorTree::from_error_kind(
+                        input.clone(),
+                        ErrorKind::Tag,
+                    )));
+                } else {
+                    files_wildcard = true;
+                }
+            }
+        }
+
+        let mut space_last = false;
+        let last = if !files.is_empty() {
+            match files.remove(files.len() - 1) {
+                PointTemplateSeg::ExactSeg(exact) => PointSegFactory::Exact(exact.to_string()),
+                PointTemplateSeg::Wildcard(pattern) => PointSegFactory::Pattern(pattern),
+            }
+        } else if root.is_some() {
+            PointSegFactory::Exact("/".to_string())
+        } else if let Option::Some(version) = &version {
+            PointSegFactory::Exact(version.to_string())
+        } else if !bases.is_empty() {
+            match bases.remove(bases.len() - 1) {
+                PointTemplateSeg::ExactSeg(exact) => PointSegFactory::Exact(exact.to_string()),
+                PointTemplateSeg::Wildcard(pattern) => PointSegFactory::Pattern(pattern),
+            }
+        } else {
+            space_last = true;
+            PointSegFactory::Exact(space.to_string())
+        };
+
+        let mut bases: Vec<PointSeg> = bases
+            .into_iter()
+            .map(|b| match b {
+                PointTemplateSeg::ExactSeg(seg) => seg,
+                PointTemplateSeg::Wildcard(_) => {
+                    panic!("should have filtered wildcards already!")
+                }
+            })
+            .collect();
+
+        let mut files: Vec<PointSeg> = files
+            .into_iter()
+            .map(|b| match b {
+                PointTemplateSeg::ExactSeg(seg) => seg,
+                PointTemplateSeg::Wildcard(_) => {
+                    panic!("should have filtered wildcards already!")
+                }
+            })
+            .collect();
+
         let mut segments = vec![];
-        segments.push(space);
+
+        if !space_last {
+            segments.push(space);
+        }
+
         segments.append(&mut bases);
+
         match version {
             None => {}
             Some(version) => {
                 segments.push(version);
             }
         }
-        segments.append(&mut files);
 
-        let point = PointKindHierarchy::new(hub, segments);
+        if let Option::Some(root) = root {
+            segments.push(root);
+            segments.append(&mut files);
+        }
 
-        (next, point)
-    })
-}
+        let point = Point {
+            route: hub,
+            segments,
+        };
 
-pub fn asterisk<T, E: nom::error::ParseError<T>>(input: T) -> IResult<T, T, E>
-where
-    T: InputTakeAtPosition + nom::InputLength,
-    <T as InputTakeAtPosition>::Item: AsChar,
-{
-    input.split_at_position_complete(|item| item.as_char() != '*')
-}
+        let point_template = PointTemplate {
+            parent: point,
+            child_segment_template: last,
+        };
 
-pub fn upper<T, E: nom::error::ParseError<T>>(input: T) -> IResult<T, T, E>
-where
-    T: InputTakeAtPosition + nom::InputLength,
-    <T as InputTakeAtPosition>::Item: AsChar,
-{
-    input.split_at_position_complete(|item| {
-        let char_item = item.as_char();
+        Ok((next, point_template))
+    }
 
-        !char_item.is_uppercase()
-    })
-}
-
-/*    fn any_resource_path_segment<T>(i: T) -> Res<T, T>
-       where
-           T: InputTakeAtPosition+nom::InputLength,
-           <T as InputTakeAtPosition>::Item: AsChar,
-   {
-       i.split_at_position1_complete(
-           |item| {
-               let char_item = item.as_char();
-               !(char_item == '-')
-                   && !(char_item == '.')
-                   && !(char_item == '/')
-                   && !(char_item == '_')
-                   && !(char_item.is_alpha() || char_item.is_dec_digit())
-           },
-           ErrorKind::AlphaNumeric,
-       )
-   }
-
-*/
-
-pub fn in_double_quotes<T>(i: T) -> Res<T, T>
-where
-    T: InputTakeAtPosition + nom::InputLength,
-    <T as InputTakeAtPosition>::Item: AsChar,
-{
-    i.split_at_position1_complete(
-        |item| {
-            let char_item = item.as_char();
-            char_item == '\"'
-        },
-        ErrorKind::AlphaNumeric,
-    )
-}
-
-pub fn skewer_colon<T>(i: T) -> Res<T, T>
-where
-    T: InputTakeAtPosition + nom::InputLength,
-    <T as InputTakeAtPosition>::Item: AsChar,
-{
-    i.split_at_position1_complete(
-        |item| {
-            let char_item = item.as_char();
-            !(char_item == '-')
-                && !(char_item == ':')
-                && !((char_item.is_alpha() && char_item.is_lowercase())
-                    || char_item.is_dec_digit())
-        },
-        ErrorKind::AlphaNumeric,
-    )
-}
-
-pub fn skewer_dot<I,E>(i: I) -> IResult<I,I,E>
-where
-    I: InputTakeAtPosition + nom::InputLength,
-    <I as InputTakeAtPosition>::Item: AsChar,
-    E: nom::error::ContextError<I>+nom::error::ParseError<I>,
-{
-    i.split_at_position1_complete(
-        |item| {
-            let char_item = item.as_char();
-            !(char_item == '-')
-                && !(char_item == '.')
-                && !((char_item.is_alpha() && char_item.is_lowercase())
-                    || char_item.is_dec_digit())
-        },
-        ErrorKind::AlphaNumeric,
-    )
-}
-
-pub fn domain<T>(i: T) -> Res<T, T>
-where
-    T: InputTakeAtPosition + nom::InputLength,
-    <T as InputTakeAtPosition>::Item: AsChar,
-{
-    i.split_at_position1_complete(
-        |item| {
-            let char_item = item.as_char();
-            !(char_item == '-')
-                && !(char_item == '.')
-                && !((char_item.is_alpha() && char_item.is_lowercase())
-                    || char_item.is_dec_digit())
-        },
-        ErrorKind::AlphaNumeric,
-    )
-}
-
-pub fn point_segment_chars<T>(i: T) -> Res<T, T>
-where
-    T: InputTakeAtPosition + nom::InputLength,
-    <T as InputTakeAtPosition>::Item: AsChar,
-{
-    i.split_at_position1_complete(
-        |item| {
-            let char_item = item.as_char();
-            !(char_item == '-')
-                && !(char_item == '.')
-                && !(char_item.is_alpha() || char_item.is_dec_digit())
-        },
-        ErrorKind::AlphaNumeric,
-    )
-}
-
-pub fn version_chars<T>(i: T) -> Res<T, T>
-where
-    T: InputTakeAtPosition + nom::InputLength,
-    <T as InputTakeAtPosition>::Item: AsChar,
-{
-    i.split_at_position1_complete(
-        |item| {
-            let char_item = item.as_char();
-            char_item != '.'
-                && char_item != '-'
-                && !char_item.is_digit(10)
-                && !(char_item.is_alpha() && char_item.is_lowercase())
-        },
-        ErrorKind::AlphaNumeric,
-    )
-}
-
-pub fn version_req_chars<T>(i: T) -> Res<T, T>
-where
-    T: InputTakeAtPosition + nom::InputLength,
-    <T as InputTakeAtPosition>::Item: AsChar,
-{
-    i.split_at_position1_complete(
-        |item| {
-            let char_item = item.as_char();
-            !(char_item == '-')
-                && !(char_item == '>')
-                && !(char_item == '<')
-                && !(char_item == '^')
-                && !(char_item == '=')
-                && !((char_item.is_alpha() && char_item.is_lowercase())
-                    || char_item.is_dec_digit())
-        },
-        ErrorKind::AlphaNumeric,
-    )
-}
-
-pub fn lowercase1<T>(i: T) -> Res<T, T>
-where
-    T: InputTakeAtPosition + nom::InputLength,
-    <T as InputTakeAtPosition>::Item: AsChar,
-{
-    i.split_at_position1_complete(
-        |item| {
-            let char_item = item.as_char();
-            !(char_item.is_alpha() && char_item.is_lowercase())
-        },
-        ErrorKind::AlphaNumeric,
-    )
-}
-
-pub fn rec_skewer(input: Span) -> Res<Span, Span> {
-    recognize(tuple((lowercase1, opt(skewer_chars))))(input)
-}
-
-pub fn rec_skewer_capture(input: Span) -> Res<Span, Span> {
-    recognize(tuple((lowercase1, opt(skewer_chars_plus_capture))))(input)
-}
-
-pub fn skewer_chars<T>(i: T) -> Res<T, T>
-where
-    T: InputTakeAtPosition + nom::InputLength,
-    <T as InputTakeAtPosition>::Item: AsChar,
-{
-    i.split_at_position1_complete(
-        |item| {
-            let char_item = item.as_char();
-            char_item != '-'
-                && !char_item.is_digit(10)
-                && !(char_item.is_alpha() && char_item.is_lowercase())
-        },
-        ErrorKind::AlphaNumeric,
-    )
-}
-
-pub fn skewer_chars_plus_capture<T>(i: T) -> Res<T, T>
-where
-    T: InputTakeAtPosition + nom::InputLength,
-    <T as InputTakeAtPosition>::Item: AsChar,
-{
-    i.split_at_position1_complete(
-        |item| {
-            let char_item = item.as_char();
-            char_item != '-'
-                && char_item != '$'
-                && !char_item.is_digit(10)
-                && !(char_item.is_alpha() && char_item.is_lowercase())
-        },
-        ErrorKind::AlphaNumeric,
-    )
-}
-
-pub fn skewer_chars_template<T>(i: T) -> Res<T, T>
-where
-    T: InputTakeAtPosition + nom::InputLength,
-    <T as InputTakeAtPosition>::Item: AsChar,
-{
-    i.split_at_position1_complete(
-        |item| {
-            let char_item = item.as_char();
-            char_item != '-'
-                && char_item.as_char() != '%'
-                && !char_item.is_digit(10)
-                && !(char_item.is_alpha() && char_item.is_lowercase())
-        },
-        ErrorKind::AlphaNumeric,
-    )
-}
-
-pub fn space_chars<T>(i: T) -> Res<T, T>
-where
-    T: InputTakeAtPosition + nom::InputLength,
-    <T as InputTakeAtPosition>::Item: AsChar,
-{
-    i.split_at_position1_complete(
-        |item| {
-            let char_item = item.as_char();
-            !(char_item == '-')
-                && !(char_item == '.')
-                && !((char_item.is_alpha() && char_item.is_lowercase())
-                    || char_item.is_dec_digit())
-        },
-        ErrorKind::AlphaNumeric,
-    )
-}
-
-pub fn space_chars_plus_capture<T>(i: T) -> Res<T, T>
-where
-    T: InputTakeAtPosition + nom::InputLength,
-    <T as InputTakeAtPosition>::Item: AsChar,
-{
-    i.split_at_position1_complete(
-        |item| {
-            let char_item = item.as_char();
-            !(char_item == '-')
-                && !(char_item == '.')
-                && !(char_item == '$')
-                && !((char_item.is_alpha() && char_item.is_lowercase())
-                    || char_item.is_dec_digit())
-        },
-        ErrorKind::AlphaNumeric,
-    )
-}
-
-pub fn domain_chars<T>(i: T) -> Res<T, T>
-where
-    T: InputTakeAtPosition + nom::InputLength,
-    <T as InputTakeAtPosition>::Item: AsChar,
-{
-    i.split_at_position1_complete(
-        |item| {
-            let char_item = item.as_char();
-            !(char_item == '-')
-                && !(char_item == '.')
-                && !((char_item.is_alpha() && char_item.is_lowercase())
-                    || char_item.is_dec_digit())
-        },
-        ErrorKind::AlphaNumeric,
-    )
-}
-
-pub fn filepath_chars<T>(i: T) -> Res<T, T>
-where
-    T: InputTakeAtPosition + nom::InputLength,
-    <T as InputTakeAtPosition>::Item: AsChar,
-{
-    i.split_at_position1_complete(
-        |item| {
-            let char_item = item.as_char();
-            !(char_item == '-')
-                && !(char_item == '.')
-                && !(char_item == '/')
-                && !(char_item == ':')
-                && !(char_item == '_')
-                && !(char_item.is_alpha() || char_item.is_dec_digit())
-        },
-        ErrorKind::AlphaNumeric,
-    )
-}
-
-pub fn file_chars_plus_capture<T>(i: T) -> Res<T, T>
-where
-    T: InputTakeAtPosition + nom::InputLength,
-    <T as InputTakeAtPosition>::Item: AsChar,
-{
-    i.split_at_position1_complete(
-        |item| {
-            let char_item = item.as_char();
-            !(char_item == '-')
-                && !(char_item == '.')
-                && !(char_item == '_')
-                && !(char_item == '$')
-                && !(char_item.is_alpha() || char_item.is_dec_digit())
-        },
-        ErrorKind::AlphaNumeric,
-    )
-}
-
-pub fn file_chars<T>(i: T) -> Res<T, T>
-where
-    T: InputTakeAtPosition + nom::InputLength,
-    <T as InputTakeAtPosition>::Item: AsChar,
-{
-    i.split_at_position1_complete(
-        |item| {
-            let char_item = item.as_char();
-            !(char_item == '-')
-                && !(char_item == '.')
-                && !(char_item == '_')
-                && !(char_item.is_alpha() || char_item.is_dec_digit())
-        },
-        ErrorKind::AlphaNumeric,
-    )
-}
-
-pub fn file_chars_template<T>(i: T) -> Res<T, T>
-where
-    T: InputTakeAtPosition + nom::InputLength,
-    <T as InputTakeAtPosition>::Item: AsChar,
-{
-    i.split_at_position1_complete(
-        |item| {
-            let char_item = item.as_char();
-            !(char_item == '-')
-                && !(char_item == '.')
-                && !(char_item == '_')
-                && !(char_item == '%')
-                && !(char_item.is_alpha() || char_item.is_dec_digit())
-        },
-        ErrorKind::AlphaNumeric,
-    )
-}
-
-pub fn not_space(input: Span) -> Res<Span, Span> {
-    is_not(" \n\r\t")(input)
-}
-
-pub fn path(input: Span) -> Res<Span, Span> {
-    recognize(tuple((tag("/"), opt(filepath_chars))))(input)
-}
-
-pub fn capture_path(input: Span) -> Res<Span, Span> {
-    recognize(tuple((tag("/"), opt(file_chars_plus_capture))))(input)
-}
-
-pub fn consume_path(input: Span) -> Res<Span, Span> {
-    all_consuming(path)(input)
-}
-
-pub fn path_regex(input: Span) -> Res<Span, Span> {
-    recognize(opt(not_space))(input)
-}
-pub fn camel_case(input: Span) -> Res<Span, Span> {
-    recognize(tuple((is_a("ABCDEFGHIJKLMNOPQRSTUVWXYZ"), alpha0)))(input)
-    //recognize(alpha1)(input)
-}
-
-pub fn camel_case_to_string_matcher(input: Span) -> Res<Span, StringMatcher> {
-    camel_case(input).map(|(next, camel)| (next, StringMatcher::new(camel.to_string())))
-}
-
-fn parse_version_major_minor_patch(input: Span) -> Res<Span, (Span, Span, Span)> {
-    context(
-        "version_major_minor_patch",
+    pub fn kind_template(input: Span) -> Res<Span, KindTemplate> {
         tuple((
-            terminated(digit1, tag(".")),
-            terminated(digit1, tag(".")),
-            terminated(digit1, not(digit1)),
-        )),
-    )(input)
-}
-
-pub fn parse_version(input: Span) -> Res<Span, ((Span, Span, Span), Option<Span>)> {
-    tuple((
-        parse_version_major_minor_patch,
-        opt(preceded(tag("-"), skewer_chars)),
-    ))(input)
-}
-
-pub fn rec_version(input: Span) -> Res<Span, Span> {
-    recognize(parse_version)(input)
-}
-
-pub fn base_point_segment_wildcard(input: Span) -> Res<Span, PointTemplateSeg> {
-    preceded(
-        tag(":"),
-        recognize(tuple((many0(skewer), tag("%"), many0(skewer)))),
-    )(input)
-    .map(|(next, base)| (next, PointTemplateSeg::Wildcard(base.to_string())))
-}
-
-pub fn base_point_segment_template(input: Span) -> Res<Span, PointTemplateSeg> {
-    preceded(tag(":"), rec_skewer)(input).map(|(next, base)| {
-        (
-            next,
-            PointTemplateSeg::ExactSeg(PointSeg::Base(base.to_string())),
-        )
-    })
-}
-
-pub fn filepath_point_segment_wildcard(input: Span) -> Res<Span, PointTemplateSeg> {
-    recognize(tuple((
-        many0(filepath_chars),
-        tag("%"),
-        many0(filepath_chars),
-    )))(input)
-    .map(|(next, base)| (next, PointTemplateSeg::Wildcard(base.to_string())))
-}
-
-pub fn filepath_point_segment_template(input: Span) -> Res<Span, PointTemplateSeg> {
-    filesystem_point_segment(input)
-        .map(|(next, segment)| (next, PointTemplateSeg::ExactSeg(segment)))
-}
-
-pub fn point_template(input: Span) -> Res<Span, PointTemplate> {
-    let (next, ((hub, space), mut bases, version, root, mut files)) = tuple((
-        tuple((route_segment, space_point_segment)),
-        many0(alt((
-            base_point_segment_wildcard,
-            base_point_segment_template,
-        ))),
-        opt(version_point_segment),
-        opt(root_dir_point_segment),
-        many0(alt((
-            filepath_point_segment_wildcard,
-            filepath_point_segment_template,
-        ))),
-    ))(input)?;
-
-    let mut base_wildcard = false;
-    for (index, segment) in bases.iter().enumerate() {
-        if segment.is_wildcard() {
-            if index != bases.len() - 1 {
-                return Err(nom::Err::Error(ErrorTree::from_error_kind(
-                    input,
-                    ErrorKind::Tag,
-                )));
-            } else {
-                base_wildcard = true;
-            }
-        }
-    }
-
-    if base_wildcard && version.is_some() {
-        return Err(nom::Err::Error(ErrorTree::from_error_kind(
-            input,
-            ErrorKind::Tag,
-        )));
-    }
-
-    if base_wildcard && root.is_some() {
-        return Err(nom::Err::Error(ErrorTree::from_error_kind(
-            input,
-            ErrorKind::Tag,
-        )));
-    }
-
-    let mut files_wildcard = false;
-    for (index, segment) in files.iter().enumerate() {
-        if segment.is_wildcard() {
-            if index != files.len() - 1 {
-                return Err(nom::Err::Error(ErrorTree::from_error_kind(
-                    input,
-                    ErrorKind::Tag,
-                )));
-            } else {
-                files_wildcard = true;
-            }
-        }
-    }
-
-    let mut space_last = false;
-    let last = if !files.is_empty() {
-        match files.remove(files.len() - 1) {
-            PointTemplateSeg::ExactSeg(exact) => PointSegFactory::Exact(exact.to_string()),
-            PointTemplateSeg::Wildcard(pattern) => PointSegFactory::Pattern(pattern),
-        }
-    } else if root.is_some() {
-        PointSegFactory::Exact("/".to_string())
-    } else if let Option::Some(version) = &version {
-        PointSegFactory::Exact(version.to_string())
-    } else if !bases.is_empty() {
-        match bases.remove(bases.len() - 1) {
-            PointTemplateSeg::ExactSeg(exact) => PointSegFactory::Exact(exact.to_string()),
-            PointTemplateSeg::Wildcard(pattern) => PointSegFactory::Pattern(pattern),
-        }
-    } else {
-        space_last = true;
-        PointSegFactory::Exact(space.to_string())
-    };
-
-    let mut bases: Vec<PointSeg> = bases
-        .into_iter()
-        .map(|b| match b {
-            PointTemplateSeg::ExactSeg(seg) => seg,
-            PointTemplateSeg::Wildcard(_) => {
-                panic!("should have filtered wildcards already!")
-            }
-        })
-        .collect();
-
-    let mut files: Vec<PointSeg> = files
-        .into_iter()
-        .map(|b| match b {
-            PointTemplateSeg::ExactSeg(seg) => seg,
-            PointTemplateSeg::Wildcard(_) => {
-                panic!("should have filtered wildcards already!")
-            }
-        })
-        .collect();
-
-    let mut segments = vec![];
-
-    if !space_last {
-        segments.push(space);
-    }
-
-    segments.append(&mut bases);
-
-    match version {
-        None => {}
-        Some(version) => {
-            segments.push(version);
-        }
-    }
-
-    if let Option::Some(root) = root {
-        segments.push(root);
-        segments.append(&mut files);
-    }
-
-    let point = Point {
-        route: hub,
-        segments,
-    };
-
-    let point_template = PointTemplate {
-        parent: point,
-        child_segment_template: last,
-    };
-
-    Ok((next, point_template))
-}
-
-pub fn kind_template(input: Span) -> Res<Span, KindTemplate> {
-    tuple((
-        generic_kind_base,
-        opt(delimited(
-            tag("<"),
-            tuple((
-                camel_case,
-                opt(delimited(tag("<"), specific_selector, tag(">"))),
+            generic_kind_base,
+            opt(delimited(
+                tag("<"),
+                tuple((
+                    camel_case,
+                    opt(delimited(tag("<"), specific_selector, tag(">"))),
+                )),
+                tag(">"),
             )),
-            tag(">"),
-        )),
-    ))(input)
-    .map(|(next, (resource_type, more))| {
-        let mut parts = KindTemplate {
-            resource_type,
-            kind: None,
-            specific: None,
+        ))(input)
+        .map(|(next, (resource_type, more))| {
+            let mut parts = KindTemplate {
+                resource_type,
+                kind: None,
+                specific: None,
+            };
+
+            match more {
+                Some((kind, specific)) => {
+                    parts.kind = Option::Some(kind.to_string());
+                    parts.specific = specific;
+                }
+                None => {}
+            }
+
+            (next, parts)
+        })
+    }
+
+    pub fn template(input: Span) -> Res<Span, Template> {
+        tuple((point_template, delimited(tag("<"), kind_template, tag(">"))))(input)
+            .map(|(next, (point, kind))| (next, Template { point, kind }))
+    }
+
+    pub fn set_property_mod(input: Span) -> Res<Span, PropertyMod> {
+        tuple((tag("+"), skewer_dot, tag("="), property_value))(input).map(
+            |(next, (_, key, _, value))| {
+                (
+                    next,
+                    PropertyMod::Set {
+                        key: key.to_string(),
+                        value: value.to_string(),
+                        lock: false,
+                    },
+                )
+            },
+        )
+    }
+
+    pub fn set_property_mod_lock(input: Span) -> Res<Span, PropertyMod> {
+        tuple((tag("+@"), skewer_dot, tag("="), property_value))(input).map(
+            |(next, (_, key, _, value))| {
+                (
+                    next,
+                    PropertyMod::Set {
+                        key: key.to_string(),
+                        value: value.to_string(),
+                        lock: true,
+                    },
+                )
+            },
+        )
+    }
+
+    pub fn property_value_not_space_or_comma(input: Span) -> Res<Span, Span> {
+        is_not(" \n\r\t,")(input)
+    }
+
+    pub fn property_value_single_quotes(input: Span) -> Res<Span, Span> {
+        delimited(tag("'"), is_not("'"), tag("'"))(input)
+    }
+
+    pub fn property_value_double_quotes(input: Span) -> Res<Span, Span> {
+        delimited(tag("\""), is_not("\""), tag("\""))(input)
+    }
+
+    pub fn property_value(input: Span) -> Res<Span, Span> {
+        alt((
+            property_value_single_quotes,
+            property_value_double_quotes,
+            property_value_not_space_or_comma,
+        ))(input)
+    }
+
+    pub fn unset_property_mod(input: Span) -> Res<Span, PropertyMod> {
+        tuple((tag("!"), skewer_dot))(input)
+            .map(|(next, (_, name))| (next, PropertyMod::UnSet(name.to_string())))
+    }
+
+    pub fn property_mod(input: Span) -> Res<Span, PropertyMod> {
+        alt((set_property_mod, unset_property_mod))(input)
+    }
+
+    pub fn set_properties(input: Span) -> Res<Span, SetProperties> {
+        separated_list0(tag(","), tuple((multispace0, property_mod, multispace0)))(input).map(
+            |(next, properties)| {
+                let mut set_properties = SetProperties::new();
+                for (_, property, _) in properties {
+                    set_properties.push(property);
+                }
+                (next, set_properties)
+            },
+        )
+    }
+
+    pub fn get_properties(input: Span) -> Res<Span, Vec<String>> {
+        separated_list0(tag(","), tuple((multispace0, skewer, multispace0)))(input).map(
+            |(next, keys)| {
+                let keys: Vec<String> = keys.iter().map(|(_, key, _)| key.to_string()).collect();
+                (next, keys)
+            },
+        )
+    }
+
+    pub fn create(input: Span) -> Res<Span, Create> {
+        tuple((template, opt(delimited(tag("{"), set_properties, tag("}")))))(input).map(
+            |(next, (template, properties))| {
+                let properties = match properties {
+                    Some(properties) => properties,
+                    None => SetProperties::new(),
+                };
+                let create = Create {
+                    template,
+                    state: StateSrc::Stateless,
+                    properties,
+                    strategy: Strategy::Create,
+                    registry: Default::default(),
+                };
+                (next, create)
+            },
+        )
+    }
+
+    pub fn set(input: Span) -> Res<Span, Set> {
+        tuple((point, delimited(tag("{"), set_properties, tag("}"))))(input).map(
+            |(next, (point, properties))| {
+                let set = Set { point, properties };
+                (next, set)
+            },
+        )
+    }
+
+    pub fn get(input: Span) -> Res<Span, Get> {
+        tuple((point, opt(delimited(tag("{"), get_properties, tag("}")))))(input).map(
+            |(next, (point, keys))| {
+                let op = match keys {
+                    None => GetOp::State,
+                    Some(keys) => GetOp::Properties(keys),
+                };
+                let get = Get { point, op };
+
+                (next, get)
+            },
+        )
+    }
+
+    pub fn select(input: Span) -> Res<Span, Select> {
+        point_selector(input).map(|(next, point_kind_pattern)| {
+            let select = Select {
+                pattern: point_kind_pattern,
+                properties: Default::default(),
+                into_payload: SelectIntoPayload::Stubs,
+                kind: SelectKind::Initial,
+            };
+            (next, select)
+        })
+    }
+
+    pub fn publish(input: Span) -> Res<Span, CreateOp> {
+        let (next, (upload, _, point)) = tuple((upload_step, space1, point))(input.clone())?;
+
+        let parent = match point.parent() {
+            None => {
+                return Err(nom::Err::Error(ErrorTree::from_error_kind(
+                    input,
+                    ErrorKind::Tag,
+                )));
+            }
+            Some(parent) => parent,
         };
 
-        match more {
-            Some((kind, specific)) => {
-                parts.kind = Option::Some(kind.to_string());
-                parts.specific = specific;
+        let last = match point.last_segment() {
+            None => {
+                return Err(nom::Err::Error(ErrorTree::from_error_kind(
+                    input.clone(),
+                    ErrorKind::Tag,
+                )));
             }
-            None => {}
-        }
+            Some(last) => last,
+        };
 
-        (next, parts)
-    })
-}
+        let template = Template {
+            point: PointTemplate {
+                parent,
+                child_segment_template: PointSegFactory::Exact(last.to_string()),
+            },
+            kind: KindTemplate {
+                resource_type: "ArtifactBundle".to_string(),
+                kind: None,
+                specific: None,
+            },
+        };
 
-pub fn template(input: Span) -> Res<Span, Template> {
-    tuple((point_template, delimited(tag("<"), kind_template, tag(">"))))(input)
-        .map(|(next, (point, kind))| (next, Template { point, kind }))
-}
-
-pub fn set_property_mod(input: Span) -> Res<Span, PropertyMod> {
-    tuple((tag("+"), skewer_dot, tag("="), property_value))(input).map(
-        |(next, (_, key, _, value))| {
-            (
-                next,
-                PropertyMod::Set {
-                    key: key.to_string(),
-                    value: value.to_string(),
-                    lock: false,
-                },
-            )
-        },
-    )
-}
-
-pub fn set_property_mod_lock(input: Span) -> Res<Span, PropertyMod> {
-    tuple((tag("+@"), skewer_dot, tag("="), property_value))(input).map(
-        |(next, (_, key, _, value))| {
-            (
-                next,
-                PropertyMod::Set {
-                    key: key.to_string(),
-                    value: value.to_string(),
-                    lock: true,
-                },
-            )
-        },
-    )
-}
-
-pub fn property_value_not_space_or_comma(input: Span) -> Res<Span, Span> {
-    is_not(" \n\r\t,")(input)
-}
-
-pub fn property_value_single_quotes(input: Span) -> Res<Span, Span> {
-    delimited(tag("'"), is_not("'"), tag("'"))(input)
-}
-
-pub fn property_value_double_quotes(input: Span) -> Res<Span, Span> {
-    delimited(tag("\""), is_not("\""), tag("\""))(input)
-}
-
-pub fn property_value(input: Span) -> Res<Span, Span> {
-    alt((
-        property_value_single_quotes,
-        property_value_double_quotes,
-        property_value_not_space_or_comma,
-    ))(input)
-}
-
-pub fn unset_property_mod(input: Span) -> Res<Span, PropertyMod> {
-    tuple((tag("!"), skewer_dot))(input)
-        .map(|(next, (_, name))| (next, PropertyMod::UnSet(name.to_string())))
-}
-
-pub fn property_mod(input: Span) -> Res<Span, PropertyMod> {
-    alt((set_property_mod, unset_property_mod))(input)
-}
-
-pub fn set_properties(input: Span) -> Res<Span, SetProperties> {
-    separated_list0(tag(","), tuple((multispace0, property_mod, multispace0)))(input).map(
-        |(next, properties)| {
-            let mut set_properties = SetProperties::new();
-            for (_, property, _) in properties {
-                set_properties.push(property);
-            }
-            (next, set_properties)
-        },
-    )
-}
-
-pub fn get_properties(input: Span) -> Res<Span, Vec<String>> {
-    separated_list0(tag(","), tuple((multispace0, skewer, multispace0)))(input).map(
-        |(next, keys)| {
-            let keys: Vec<String> = keys.iter().map(|(_, key, _)| key.to_string()).collect();
-            (next, keys)
-        },
-    )
-}
-
-pub fn create(input: Span) -> Res<Span, Create> {
-    tuple((template, opt(delimited(tag("{"), set_properties, tag("}")))))(input).map(
-        |(next, (template, properties))| {
-            let properties = match properties {
-                Some(properties) => properties,
-                None => SetProperties::new(),
-            };
-            let create = Create {
-                template,
-                state: StateSrc::Stateless,
-                properties,
-                strategy: Strategy::Create,
-                registry: Default::default(),
-            };
-            (next, create)
-        },
-    )
-}
-
-pub fn set(input: Span) -> Res<Span, Set> {
-    tuple((point, delimited(tag("{"), set_properties, tag("}"))))(input).map(
-        |(next, (point, properties))| {
-            let set = Set { point, properties };
-            (next, set)
-        },
-    )
-}
-
-pub fn get(input: Span) -> Res<Span, Get> {
-    tuple((point, opt(delimited(tag("{"), get_properties, tag("}")))))(input).map(
-        |(next, (point, keys))| {
-            let op = match keys {
-                None => GetOp::State,
-                Some(keys) => GetOp::Properties(keys),
-            };
-            let get = Get { point, op };
-
-            (next, get)
-        },
-    )
-}
-
-pub fn select(input: Span) -> Res<Span, Select> {
-    point_selector(input).map(|(next, point_kind_pattern)| {
-        let select = Select {
-            pattern: point_kind_pattern,
+        let create = CreateOp {
+            template,
+            state: StateSrc::Stateless,
             properties: Default::default(),
-            into_payload: SelectIntoPayload::Stubs,
-            kind: SelectKind::Initial,
+            strategy: Strategy::Create,
+            registry: Default::default(),
+            requirements: vec![Require::File(upload.name)],
         };
-        (next, select)
-    })
-}
 
-pub fn publish(input: Span) -> Res<Span, CreateOp> {
-    let (next, (upload, _, point)) = tuple((upload_step, space1, point))(input)?;
-
-    let parent = match point.parent() {
-        None => {
-            return Err(nom::Err::Error(ErrorTree::from_error_kind(
-                input,
-                ErrorKind::Tag,
-            )));
-        }
-        Some(parent) => parent,
-    };
-
-    let last = match point.last_segment() {
-        None => {
-            return Err(nom::Err::Error(ErrorTree::from_error_kind(
-                input,
-                ErrorKind::Tag,
-            )));
-        }
-        Some(last) => last,
-    };
-
-    let template = Template {
-        point: PointTemplate {
-            parent,
-            child_segment_template: PointSegFactory::Exact(last.to_string()),
-        },
-        kind: KindTemplate {
-            resource_type: "ArtifactBundle".to_string(),
-            kind: None,
-            specific: None,
-        },
-    };
-
-    let create = CreateOp {
-        template,
-        state: StateSrc::Stateless,
-        properties: Default::default(),
-        strategy: Strategy::Create,
-        registry: Default::default(),
-        requirements: vec![Require::File(upload.name)],
-    };
-
-    Ok((next, create))
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum Symbol {
-    Var(String),
-    Ctx(Ctx)
-}
-
-impl Symbol {
-
-    pub fn named(name: String) -> Self{
-        Self::Var(name)
+        Ok((next, create))
     }
 
-    pub fn ctx(ctx: Ctx) -> Self{
-        Self::Ctx(ctx)
-    }
-}
-
-
-
-#[derive(Debug,Clone,Serialize,Deserialize)]
-pub enum Ctx{
-    WorkingPoint,
-    WorkingPointOneAbove
-}
-
-impl ToString for Ctx{
-    fn to_string(&self) -> String {
-        match self {
-            Ctx::WorkingPoint => ".".to_string(),
-            Ctx::WorkingPointOneAbove => "..".to_string()
-        }
-    }
-}
-
-pub trait Resolver {
-    fn string(&self, symbol: &Symbol ) -> Result<String, MsgErr> {
-        match symbol {
-            Symbol::Var(var) => self.val(var.as_str() ),
-            Symbol::Ctx(ctx) => self.ctx(ctx)
-        }
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub enum Symbol {
+        Var(String),
+        Ctx(Ctx),
     }
 
-    fn val(&self, id: &str) -> Result<String, MsgErr> {
-        Err(format!("variable '{}' not found", id).into())
-    }
-    fn ctx(&self, ctx: &Ctx) -> Result<String, MsgErr> {
-        Err(format!("context operation '{}' not available here", ctx.to_string()).into())
-    }
-}
-
-pub struct NoResolver;
-
-impl NoResolver{
-    pub fn new() -> Self {
-        Self{}
-    }
-}
-
-impl Resolver for NoResolver{
-    fn val(&self, id: &str) -> Result<String, MsgErr> {
-        Err(format!("unexpected variable '{}'. variables not expected here",id).into())
-    }
-    fn ctx(&self, ctx: &Ctx) -> Result<String, MsgErr> {
-        match ctx {
-            Ctx::WorkingPoint => {
-                Err("context operators '.' (reference to WorkingPoint) not expected here".into())
-            }
-            Ctx::WorkingPointOneAbove => {
-                Err("context operator '..' (reference to WorkingPointAboveOne) not expected here".into())
+    impl ToString for Symbol {
+        fn to_string(&self) -> String {
+            match self {
+                Symbol::Var(var) => format!("$({})", var),
+                Symbol::Ctx(ctx) => ctx.to_string(),
             }
         }
     }
-}
 
+    impl Symbol {
+        pub fn named(name: String) -> Self {
+            Self::Var(name)
+        }
 
-pub struct MapResolver {
-    pub working_point: Point,
-    pub map: HashMap<String, String>,
-}
-
-impl MapResolver {
-    pub fn new() -> Self {
-        Self {
-            map: HashMap::new(),
-            working_point: Point::root()
+        pub fn ctx(ctx: Ctx) -> Self {
+            Self::Ctx(ctx)
         }
     }
 
-    pub fn insert(&mut self, key: &str, value: &str) {
-        self.map.insert(key.to_string(), value.to_string());
-    }
-}
-
-impl Resolver for MapResolver {
-    fn val(&self, id: &str) -> Result<String, MsgErr> {
-        self.map
-            .get(id)
-            .cloned()
-            .ok_or(format!("variable not found: '{}'", id).into())
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub enum Ctx {
+        RelativePoint,
+        RelativePointPop,
     }
 
-    fn ctx(&self, ctx: &Ctx) -> Result<String, MsgErr> {
-        match ctx {
-            Ctx::WorkingPoint => Ok(self.working_point.to_string()),
-            Ctx::WorkingPointOneAbove => Ok(self.working_point.parent().ok_or("already at the root point cannot pop any further.")?.to_string())
-        }
-    }
-}
-
-pub trait ToResolved<Resolved> where Self: Sized {
-    fn to_resolved(self, resolver: &dyn Resolver) -> Result<Resolved, MsgErr>;
-    fn to_resolved_str(self, resolver: &dyn Resolver) -> Result<String, MsgErr> {
-        Err("string representation not supported".into())
-    }
-}
-
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum Subst<Resolved>
-where
-    Resolved: Clone + FromStr<Err = MsgErr>
-{
-    Symbol(Symbol),
-    Resolved(Resolved),
-}
-
-pub trait BruteResolver<Resolved> where Self: Sized+ToResolved<Resolved>
-{
-    fn brute_resolve(self) -> Result<Resolved,MsgErr> {
-        let resolver = NoResolver::new();
-        Ok(self.to_resolved(&resolver)?)
-    }
-}
-
-
-
-impl<Resolved> ToResolved<Resolved> for Subst<Resolved>
-where
-    Resolved: Clone + FromStr<Err = MsgErr>+ToString
-{
-    fn to_resolved(self, resolver: &dyn Resolver) -> Result<Resolved, MsgErr> {
-        match self {
-            Subst::Symbol(symbol) => {
-                let raw = resolver.string(&symbol)?;
-                Resolved::from_str(raw.as_str())
+    impl ToString for Ctx {
+        fn to_string(&self) -> String {
+            match self {
+                Ctx::RelativePoint => ".".to_string(),
+                Ctx::RelativePointPop => "..".to_string(),
             }
-            Subst::Resolved(val) => Ok(val.clone()),
         }
     }
 
-    fn to_resolved_str(self, resolver: &dyn Resolver) -> Result<String, MsgErr> {
-        match &self {
-            Subst::Symbol(var) => Ok(resolver.string(var)?),
-            Subst::Resolved(val) => Ok(val.to_string()),
-        }
-    }
-}
-
-/*
-pub fn subst<'a,I,O,F>(
-    mut f: F,
-) -> impl FnMut(I) -> Res<I,Subst<O>>
-    where F: 'static+nom::Parser<String, O, ErrorTree<String>>+Clone,O: Clone, I: Clone+ToString
-{
-    move |input:I| {
-        let result = variable(Span::new(input.to_string().as_str()) );
-
-        match result {
-            Ok((next, variable)) => {
-                Ok((next, Subst::Variable { variable, /*parser: Box::new(f.clone())*/ }))
+    pub trait Resolver {
+        fn string(&self, symbol: &Symbol) -> Result<String, MsgErr> {
+            match symbol {
+                Symbol::Var(var) => self.val(var.as_str()),
+                Symbol::Ctx(ctx) => self.ctx(ctx),
             }
-            Err(err) => {
-                match first_context(err) {
-                    Ok((context, err)) => {
-                        // this means that a $ was encountered, but the variable was invalid...
-                        // we don't want to confuse with additional info from the parser
-                        if context == "variable" {
-                            return Err(err);
+        }
+
+        fn val(&self, id: &str) -> Result<String, MsgErr> {
+            Err(format!("variable '{}' not found", id).into())
+        }
+        fn ctx(&self, ctx: &Ctx) -> Result<String, MsgErr> {
+            Err(format!("context operation '{}' not available here", ctx.to_string()).into())
+        }
+    }
+
+    pub struct NoResolver;
+
+    impl NoResolver {
+        pub fn new() -> Self {
+            Self {}
+        }
+    }
+
+    impl Resolver for NoResolver {
+        fn val(&self, id: &str) -> Result<String, MsgErr> {
+            Err(format!("unexpected variable '{}'. variables not expected here", id).into())
+        }
+        fn ctx(&self, ctx: &Ctx) -> Result<String, MsgErr> {
+            match ctx {
+                Ctx::RelativePoint => Err(
+                    "context operators '.' (reference to WorkingPoint) not expected here".into(),
+                ),
+                Ctx::RelativePointPop => Err(
+                    "context operator '..' (reference to WorkingPointAboveOne) not expected here"
+                        .into(),
+                ),
+            }
+        }
+    }
+
+    pub struct MapResolver {
+        pub working_point: Point,
+        pub map: HashMap<String, String>,
+    }
+
+    impl MapResolver {
+        pub fn new() -> Self {
+            Self {
+                map: HashMap::new(),
+                working_point: Point::root(),
+            }
+        }
+
+        pub fn insert(&mut self, key: &str, value: &str) {
+            self.map.insert(key.to_string(), value.to_string());
+        }
+    }
+
+    impl Resolver for MapResolver {
+        fn val(&self, id: &str) -> Result<String, MsgErr> {
+            self.map
+                .get(id)
+                .cloned()
+                .ok_or(format!("variable not found: '{}'", id).into())
+        }
+
+        fn ctx(&self, ctx: &Ctx) -> Result<String, MsgErr> {
+            match ctx {
+                Ctx::RelativePoint => Ok(self.working_point.to_string()),
+                Ctx::RelativePointPop => Ok(self
+                    .working_point
+                    .parent()
+                    .ok_or("already at the root point cannot pop any further.")?
+                    .to_string()),
+            }
+        }
+    }
+
+    pub trait ToResolved<Resolved>
+    where
+        Self: Sized,
+    {
+        fn to_resolved(self, resolver: &dyn Resolver) -> Result<Resolved, MsgErr>;
+        fn to_resolved_str(self, resolver: &dyn Resolver) -> Result<String, MsgErr> {
+            Err("string representation not supported".into())
+        }
+    }
+
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub enum Subst<Resolved>
+    where
+        Resolved: Clone,
+    {
+        Symbol(Symbol),
+        Resolved(Resolved),
+    }
+
+    impl<Resolved> Subst<Resolved>
+    where
+        Resolved: Clone,
+    {
+        pub fn resolved(&self) -> Result<Resolved, ()> {
+            match self {
+                Self::Symbol(_) => Err(()),
+                Self::Resolved(resolved) => Ok(resolved.clone()),
+            }
+        }
+
+        pub fn check_resolved(&self) -> Result<(), ()> {
+            match self {
+                Self::Symbol(_) => Err(()),
+                Self::Resolved(_) => Ok(()),
+            }
+        }
+    }
+
+    impl<Resolved> ToString for Subst<Resolved>
+    where
+        Resolved: ToString + Clone + FromStr<Err = MsgErr>,
+    {
+        fn to_string(&self) -> String {
+            match self {
+                Subst::Symbol(symbol) => symbol.to_string(),
+                Subst::Resolved(resolved) => resolved.to_string(),
+            }
+        }
+    }
+
+    pub trait BruteResolver<Resolved>
+    where
+        Self: Sized + ToResolved<Resolved>,
+    {
+        fn brute_resolve(self) -> Result<Resolved, MsgErr> {
+            let resolver = NoResolver::new();
+            Ok(self.to_resolved(&resolver)?)
+        }
+    }
+
+    impl<Resolved> ToResolved<Resolved> for Subst<Resolved>
+    where
+        Resolved: Clone + FromStr<Err = MsgErr> + ToString,
+    {
+        fn to_resolved(self, resolver: &dyn Resolver) -> Result<Resolved, MsgErr> {
+            match self {
+                Subst::Symbol(symbol) => {
+                    let raw = resolver.string(&symbol)?;
+                    Resolved::from_str(raw.as_str())
+                }
+                Subst::Resolved(val) => Ok(val.clone()),
+            }
+        }
+
+        fn to_resolved_str(self, resolver: &dyn Resolver) -> Result<String, MsgErr> {
+            match &self {
+                Subst::Symbol(var) => Ok(resolver.string(var)?),
+                Subst::Resolved(val) => Ok(val.to_string()),
+            }
+        }
+    }
+
+    /*
+    pub fn subst<'a,I,O,F>(
+        mut f: F,
+    ) -> impl FnMut(I) -> Res<I,Subst<O>>
+        where F: 'static+nom::Parser<String, O, ErrorTree<String>>+Clone,O: Clone, I: Clone+ToString
+    {
+        move |input:I| {
+            let result = variable(span(input.to_string().as_str()) );
+
+            match result {
+                Ok((next, variable)) => {
+                    Ok((next, Subst::Variable { variable, /*parser: Box::new(f.clone())*/ }))
+                }
+                Err(err) => {
+                    match first_context(err) {
+                        Ok((context, err)) => {
+                            // this means that a $ was encountered, but the variable was invalid...
+                            // we don't want to confuse with additional info from the parser
+                            if context == "variable" {
+                                return Err(err);
+                            }
+                        }
+                        Err(_) => {
+                            // looks like the error was something unrelated to variables... let's
+                            // give the next parser a chance
                         }
                     }
-                    Err(_) => {
-                        // looks like the error was something unrelated to variables... let's
-                        // give the next parser a chance
-                    }
-                }
-                match f.parse(input.to_string()) {
-                    Ok((next, v)) => {
-                        Ok((Span::new(next.as_str()), Subst::Value(v)))
-                    }
-                    Err(err) => {
-                        Err(nom::Err::Error(ErrorTree::Alt(vec!())))
+                    match f.parse(input.to_string()) {
+                        Ok((next, v)) => {
+                            Ok((span(next.as_str()), Subst::Value(v)))
+                        }
+                        Err(err) => {
+                            Err(nom::Err::Error(ErrorTree::Alt(vec!())))
+                        }
                     }
                 }
             }
         }
     }
-}
- */
+     */
 
-
-pub fn no_subst<I: Clone, O, E: ParseError<I>, F>(
-    mut f: F,
-) -> impl FnMut(I) -> IResult<I, Subst<O>, E>
+    pub fn no_subst<I: Clone, O, E: ParseError<I>, F>(
+        mut f: F,
+    ) -> impl FnMut(I) -> IResult<I, Subst<O>, E>
     where
         I: ToString
-        + InputLength
-        + InputTake
-        + Compare<&'static str>
-        + InputIter
-        + Clone
-        + InputTakeAtPosition,
+            + InputLength
+            + InputTake
+            + Compare<&'static str>
+            + InputIter
+            + Clone
+            + InputTakeAtPosition,
         <I as InputTakeAtPosition>::Item: AsChar,
         F: nom::Parser<I, O, E>,
         E: nom::error::ContextError<I>,
         O: Clone + FromStr<Err = MsgErr>,
-{
-    move |input: I| { f.parse(input).map(|(next, val)| (next, Subst::Resolved(val))) }
-}
-
-
-pub fn var_subst<I: Clone, O, E: ParseError<I>, F>(
-    mut f: F,
-) -> impl FnMut(I) -> IResult<I, Subst<O>, E>
-where
-    I: ToString
-        + InputLength
-        + InputTake
-        + Compare<&'static str>
-        + InputIter
-        + Clone
-        + InputTakeAtPosition,
-    <I as InputTakeAtPosition>::Item: AsChar,
-    F: nom::Parser<I, O, E>,
-    E: nom::error::ContextError<I>,
-    O: Clone + FromStr<Err = MsgErr>,
-{
-    move |input: I| match var(input.clone()) {
-        Ok((next, v)) => Ok((next, Subst::Symbol(v))),
-        Err(err) => f
-            .parse(input.clone())
-            .map(|(next, val)| (next, Subst::Resolved(val))),
+    {
+        move |input: I| {
+            f.parse(input)
+                .map(|(next, val)| (next, Subst::Resolved(val)))
+        }
     }
-}
 
-
-pub fn first_seg_subst<I: Clone, O, E: ParseError<I>, F>(
-    mut f: F,
-) -> impl FnMut(I) -> IResult<I, Subst<O>, E>
+    pub fn var_subst<I: Clone, O, E: ParseError<I>, F>(
+        mut f: F,
+    ) -> impl FnMut(I) -> IResult<I, Subst<O>, E>
     where
         I: ToString
-        + InputLength
-        + InputTake
-        + Compare<&'static str>
-        + InputIter
-        + Clone
-        + InputTakeAtPosition,
-        <I as InputTakeAtPosition>::Item: AsChar+Clone,
+            + InputLength
+            + InputTake
+            + Compare<&'static str>
+            + InputIter
+            + Clone
+            + InputTakeAtPosition,
+        <I as InputTakeAtPosition>::Item: AsChar,
         F: nom::Parser<I, O, E>,
         E: nom::error::ContextError<I>,
         O: Clone + FromStr<Err = MsgErr>,
-{
-    move |input: I| match alt((ctx, var))(input.clone()) {
-        Ok((next, v)) => Ok((next, Subst::Symbol(v))),
-        Err(err) => f
-            .parse(input.clone())
-            .map(|(next, val)| (next, Subst::Resolved(val))),
+    {
+        move |input: I| match var(input.clone()) {
+            Ok((next, v)) => Ok((next, Subst::Symbol(v))),
+            Err(err) => f
+                .parse(input.clone())
+                .map(|(next, val)| (next, Subst::Resolved(val))),
+        }
     }
-}
 
-// end of segment
-pub fn eos<I,E>(input: I) -> IResult<I, (), E>
-where
-    I: ToString
-        + Clone
-        + InputLength
-        + InputTake
-        + Compare<&'static str>
-        + InputIter
-        + InputTakeAtPosition,
-    <I as InputTakeAtPosition>::Item: AsChar+Clone,
-    E: nom::error::ContextError<I>+nom::error::ParseError<I>,
-
-{
-    peek(alt((tag("/"), tag(":"), space1)))(input).map(|(next,_)|{
-        (next,())
-    })
-}
-
-pub fn var<I>(input: I) -> Res<I, Symbol>
-where
-    I: ToString
-        + Clone
-        + InputLength
-        + InputTake
-        + Compare<&'static str>
-        + InputIter
-        + InputTakeAtPosition,
-    <I as InputTakeAtPosition>::Item: AsChar,
-{
-    preceded(
-        tag("$"),
-        context("variable", delimited(tag("("), variable_name, tag(")"))),
-    )(input)
-    .map(|(next, name)| (next, Symbol::named(name.to_string())))
-}
-
-pub fn ctx<I>(input: I) -> Res<I, Symbol>
+    pub fn pop<I: Clone, E: ParseError<I>, F>(mut f: F) -> impl FnMut(I) -> IResult<I, PointSeg, E>
     where
         I: ToString
-        + Clone
-        + InputLength
-        + InputTake
-        + Compare<&'static str>
-        + InputIter
-        + InputTakeAtPosition,
-        <I as InputTakeAtPosition>::Item: AsChar+Clone,
-{
-    alt((
-        value(
-            Ctx::WorkingPointOneAbove,
-            tuple((tag(".."), eos)),
-        ),
-        value(
-            Ctx::WorkingPoint,
-            tuple((tag("."), eos)),
-        ),
-    ))(input).map(|(next, ctx)| (next, Symbol::ctx(ctx)))
-}
+            + InputLength
+            + InputTake
+            + Compare<&'static str>
+            + InputIter
+            + Clone
+            + InputTakeAtPosition,
+        <I as InputTakeAtPosition>::Item: AsChar,
+        F: nom::Parser<I, PointSeg, E>,
+        E: nom::error::ContextError<I>,
+    {
+        move |input: I| match tag::<&str, I, E>("..")(input.clone()) {
+            Ok((next, v)) => Ok((next, PointSeg::Pop)),
+            Err(err) => f.parse(input.clone()),
+        }
+    }
 
-pub fn variable_name<I,E>(input: I) -> IResult<I, I,E>
-where
-    I: ToString
-        + InputLength
-        + InputTake
-        + Compare<&'static str>
-        + InputIter
-        + Clone
-        + InputTakeAtPosition,
-    <I as InputTakeAtPosition>::Item: AsChar,
-    E: nom::error::ContextError<I>+nom::error::ParseError<I>
-{
-    skewer_dot(input).map(|(next, name)| (next, name))
-}
+    pub fn mesh_seg<I: Clone, E: ParseError<I>, F>(
+        mut f: F,
+    ) -> impl FnMut(I) -> IResult<I, PointSeg, E>
+    where
+        I: ToString
+            + InputLength
+            + InputTake
+            + Compare<&'static str>
+            + InputIter
+            + Clone
+            + InputTakeAtPosition,
+        <I as InputTakeAtPosition>::Item: AsChar + Clone,
+        F: nom::Parser<I, PointSeg, E> + Clone,
+        E: nom::error::ContextError<I>,
+    {
+        move |input: I| {
+            tuple((seg_delim, pop(f.clone())))(input).map(|(next, (delim, seg))| (next, seg))
+        }
+    }
 
-pub fn access_grant(input: Span) -> Res<Span, AccessGrantSubst> {
-    tuple((
-        access_grant_kind,
-        context(
-            "access_grant:on",
-            pair(
-                delimited(multispace1, tag("on"), multispace1),
-                var_subst(point_selector),
-            ),
-        ),
-        context(
-            "access_grant:to",
-            pair(
-                delimited(multispace1, tag("to"), multispace1),
-                var_subst(point_selector),
-            ),
-        ),
-    ))(input)
-    .map(|(next, (kind, (_, on_point), (_, to_point)))| {
-        let by_particle = Subst::Symbol(Symbol::named("by-particle".to_string()));
-        (
-            next,
-            AccessGrantSubst {
-                kind,
-                on_point,
-                to_point,
-                by_particle,
-            },
-        )
-    })
-}
+    pub fn subst_seg<I: Clone, E: ParseError<I>, F>(
+        mut f: F,
+    ) -> impl FnMut(I) -> IResult<I, PointSegPairSubst, E>
+    where
+        I: ToString
+            + InputLength
+            + InputTake
+            + Compare<&'static str>
+            + InputIter
+            + Clone
+            + InputTakeAtPosition,
+        <I as InputTakeAtPosition>::Item: AsChar + Clone,
+        F: nom::Parser<I, PointSeg, E> + Clone,
+        E: nom::error::ContextError<I>,
+    {
+        move |input: I| {
+            tuple((seg_delim, var_subst(pop(f.clone()))))(input)
+                .map(|(next, (delim, seg))| (next, PointSegPairSubst::new(delim, seg)))
+        }
+    }
 
-pub fn access_grant_kind(input: Span) -> Res<Span, AccessGrantKindSubst> {
-    tuple((
-        context(
-            "access_grant_kind",
-            peek(alt((
-                tuple((tag("perm"), space1)),
-                tuple((tag("priv"), space1)),
-            ))),
-        ),
-        alt((access_grant_kind_perm, access_grant_kind_priv)),
-    ))(input)
-    .map(|(next, (_, kind))| (next, kind))
-}
+    pub fn first_seg_subst<I: Clone, O, E: ParseError<I>, F>(
+        mut f: F,
+    ) -> impl FnMut(I) -> IResult<I, Subst<O>, E>
+    where
+        I: ToString
+            + InputLength
+            + InputTake
+            + Compare<&'static str>
+            + InputIter
+            + Clone
+            + InputTakeAtPosition,
+        <I as InputTakeAtPosition>::Item: AsChar + Clone,
+        F: nom::Parser<I, O, E>,
+        E: nom::error::ContextError<I>,
+        O: Clone + FromStr<Err = MsgErr>,
+    {
+        move |input: I| match alt((ctx, var))(input.clone()) {
+            Ok((next, v)) => Ok((next, Subst::Symbol(v))),
+            Err(err) => f
+                .parse(input.clone())
+                .map(|(next, val)| (next, Subst::Resolved(val))),
+        }
+    }
 
-pub fn access_grant_kind_priv(input: Span) -> Res<Span, AccessGrantKindSubst> {
-    tuple((
-        tag("priv"),
-        context("access_grant:priv", tuple((space1, var_subst(privilege)))),
-    ))(input)
-    .map(|(next, (_, (_, privilege)))| (next, AccessGrantKindDef::Privilege(privilege)))
-}
-
-pub fn access_grant_kind_perm(input: Span) -> Res<Span, AccessGrantKindSubst> {
-    tuple((
-        tag("perm"),
-        context(
-            "access_grant:perm",
-            tuple((space1, var_subst(permissions_mask))),
-        ),
-    ))(input)
-    .map(|(next, (_, (_, perms)))| (next, AccessGrantKindDef::PermissionsMask(perms)))
-}
-
-pub fn privilege(input: Span) -> Res<Span, Privilege> {
-    context("privilege", alt((tag("*"), skewer_colon)))(input).map(|(next, prv)| {
-        let prv = match prv.to_string().as_str() {
-            "*" => Privilege::Full,
-            prv => Privilege::Single(prv.to_string()),
-        };
-        (next, prv)
-    })
-}
-
-pub fn permissions_mask(input: Span) -> Res<Span, PermissionsMask> {
-    context(
-        "permissions_mask",
-        tuple((
-            alt((
-                value(PermissionsMaskKind::Or, char('+')),
-                value(PermissionsMaskKind::And, char('&')),
-            )),
-            permissions,
-        )),
-    )(input)
-    .map(|(next, (kind, permissions))| {
-        let mask = PermissionsMask { kind, permissions };
-
-        (next, mask)
-    })
-}
-
-pub fn permissions(input: Span) -> Res<Span, Permissions> {
-    context(
-        "permissions",
-        tuple((child_perms, tag("-"), particle_perms)),
-    )(input)
-    .map(|(next, (child, _, particle))| {
-        let permissions = Permissions { child, particle };
-        (next, permissions)
-    })
-}
-
-pub fn child_perms(input: Span) -> Res<Span, ChildPerms> {
-    context(
-        "child_perms",
+    // end of segment
+    pub fn seg_delim<I, E>(input: I) -> IResult<I, PointSegDelim, E>
+    where
+        I: ToString
+            + Clone
+            + InputLength
+            + InputTake
+            + Compare<&'static str>
+            + InputIter
+            + InputTakeAtPosition,
+        <I as InputTakeAtPosition>::Item: AsChar + Clone,
+        E: nom::error::ContextError<I> + nom::error::ParseError<I>,
+    {
         alt((
-            tuple((
-                alt((value(false, char('c')), value(true, char('C')))),
-                alt((value(false, char('s')), value(true, char('S')))),
-                alt((value(false, char('d')), value(true, char('D')))),
-            )),
-            fail,
-        )),
-    )(input)
-    .map(|(next, (create, select, delete))| {
-        let block = ChildPerms {
-            create,
-            select,
-            delete,
-        };
-        (next, block)
-    })
-}
+            value(PointSegDelim::File, tag("/")),
+            value(PointSegDelim::Mesh, tag(":")),
+        ))(input)
+        .map(|(next, delim)| (next, delim))
+    }
 
-pub fn particle_perms(input: Span) -> Res<Span, ParticlePerms> {
-    context(
-        "particle_perms",
+    // end of segment
+    pub fn eos<I, E>(input: I) -> IResult<I, (), E>
+    where
+        I: ToString
+            + Clone
+            + InputLength
+            + InputTake
+            + Compare<&'static str>
+            + InputIter
+            + InputTakeAtPosition,
+        <I as InputTakeAtPosition>::Item: AsChar + Clone,
+        E: nom::error::ContextError<I> + nom::error::ParseError<I>,
+    {
+        peek(alt((tag("/"), tag(":"), space1)))(input).map(|(next, _)| (next, ()))
+    }
+
+    pub fn var<I>(input: I) -> Res<I, Symbol>
+    where
+        I: ToString
+            + Clone
+            + InputLength
+            + InputTake
+            + Compare<&'static str>
+            + InputIter
+            + InputTakeAtPosition,
+        <I as InputTakeAtPosition>::Item: AsChar,
+    {
+        preceded(
+            tag("$"),
+            context("variable", delimited(tag("("), variable_name, tag(")"))),
+        )(input)
+        .map(|(next, name)| (next, Symbol::named(name.to_string())))
+    }
+
+    pub fn ctx<I>(input: I) -> Res<I, Symbol>
+    where
+        I: ToString
+            + Clone
+            + InputLength
+            + InputTake
+            + Compare<&'static str>
+            + InputIter
+            + InputTakeAtPosition,
+        <I as InputTakeAtPosition>::Item: AsChar + Clone,
+    {
+        alt((
+            value(Ctx::RelativePointPop, tuple((tag(".."), eos))),
+            value(Ctx::RelativePoint, tuple((tag("."), eos))),
+        ))(input)
+        .map(|(next, ctx)| (next, Symbol::ctx(ctx)))
+    }
+
+    pub fn variable_name<I, E>(input: I) -> IResult<I, I, E>
+    where
+        I: ToString
+            + InputLength
+            + InputTake
+            + Compare<&'static str>
+            + InputIter
+            + Clone
+            + InputTakeAtPosition,
+        <I as InputTakeAtPosition>::Item: AsChar,
+        E: nom::error::ContextError<I> + nom::error::ParseError<I>,
+    {
+        skewer_dot(input).map(|(next, name)| (next, name))
+    }
+
+    pub fn access_grant(input: Span) -> Res<Span, AccessGrantSubst> {
         tuple((
-            alt((value(false, char('r')), value(true, char('R')))),
-            alt((value(false, char('w')), value(true, char('W')))),
-            alt((value(false, char('x')), value(true, char('X')))),
-        )),
-    )(input)
-    .map(|(next, (read, write, execute))| {
-        let block = ParticlePerms {
-            read,
-            write,
-            execute,
-        };
-        (next, block)
-    })
-}
-
-/*
-pub fn grant<I>(input: I) -> Res<I,AccessGrant> where I:Clone+InputIter+InputLength+InputTake{
-
-}
-
- */
-
-pub mod error {
-    use crate::version::v0_0_1::Span;
-    use nom::Err;
-    use nom_supreme::error::{ErrorTree, StackContext};
-
-    pub fn result<R>(result: Result<(Span, R), Err<ErrorTree<Span>>>) -> Result<R, String> {
-        match result {
-            Ok((_, e)) => Ok(e),
-            Err(err) => match find(&err) {
-                Ok((message, span)) => Err(format!(
-                    "parse error (line {}, column {}): {}",
-                    span.location_line(),
-                    span.get_column(),
-                    message
-                )),
-                Err(err) => Err(format!(
-                    "parsing error: could not find matching error message"
-                )),
-            },
-        }
+            access_grant_kind,
+            context(
+                "access_grant:on",
+                pair(
+                    delimited(multispace1, tag("on"), multispace1),
+                    var_subst(point_selector),
+                ),
+            ),
+            context(
+                "access_grant:to",
+                pair(
+                    delimited(multispace1, tag("to"), multispace1),
+                    var_subst(point_selector),
+                ),
+            ),
+        ))(input)
+        .map(|(next, (kind, (_, on_point), (_, to_point)))| {
+            let by_particle = Subst::Symbol(Symbol::named("by-particle".to_string()));
+            (
+                next,
+                AccessGrantSubst {
+                    kind,
+                    on_point,
+                    to_point,
+                    by_particle,
+                },
+            )
+        })
     }
 
-    pub fn just_msg<R, E: From<String>>(
-        result: Result<(Span, R), Err<ErrorTree<Span>>>,
-    ) -> Result<R, E> {
-        match result {
-            Ok((_, e)) => Ok(e),
-            Err(err) => match find(&err) {
-                Ok((message, _)) => Err(E::from(message)),
-                Err(err) => Err(E::from(format!(
-                    "parsing error: could not find matching error message"
+    pub fn access_grant_kind(input: Span) -> Res<Span, AccessGrantKindSubst> {
+        tuple((
+            context(
+                "access_grant_kind",
+                peek(alt((
+                    tuple((tag("perm"), space1)),
+                    tuple((tag("priv"), space1)),
                 ))),
-            },
-        }
+            ),
+            alt((access_grant_kind_perm, access_grant_kind_priv)),
+        ))(input)
+        .map(|(next, (_, kind))| (next, kind))
     }
 
-    fn message(context: &str) -> Result<String, ()> {
-        let message =match context {
-          "variable" => "variable name must be alphanumeric lowercase, dashes and dots.  Variables are preceded by the '$' operator and must be sorounded by parenthesis $(env.valid-variable-name)",
-          "child_perms" => "expecting child permissions form csd (Create, Select, Delete) uppercase indicates set permission (CSD==full permission, csd==no permission)",
-          "particle_perms" => "expecting particle permissions form rwx (Read, Write, Execute) uppercase indicates set permission (RWX==full permission, rwx==no permission)",
-          "permissions" => "expecting permissions form 'csd-rwx' (Create,Select,Delete)-(Read,Write,Execute) uppercase indicates set permission (CSD-RWX==full permission, csd-rwx==no permission)",
-          "permissions_mask" => "expecting permissions mask symbol '+' for 'Or' mask and '&' for 'And' mask. Example:  &csd-RwX removes ----R-X from current permission",
-          "privilege" => "privilege name must be '*' for 'full' privileges or an alphanumeric lowercase, dashes and colons i.e. 'props:email:read'",
-          "access_grant:perm" => "expecting permissions mask symbol '+' for 'Or' mask and '&' for 'And' mask. Example:  &csd-RwX removes ----R-X from current permission",
-          "access_grant:priv" => "privilege name must be '*' for 'full' privileges or an alphanumeric lowercase, dashes and colons i.e. 'props:email:read'",
-          "access_grant:on" => "expecting grant 'on' i.e.: 'grant perm +cSd+RwX on localhost:app:** to localhost:app:users:**<User>'",
-          "access_grant:to" => "expecting grant 'to' i.e.: 'grant perm +cSd+RwX on localhost:app:** to localhost:app:users:**<User>'",
-           "point-subst-brute-force" => "not expecting variables or working point context '.'/'..' in this point",
-          "access_grant_kind" => {
+    pub fn access_grant_kind_priv(input: Span) -> Res<Span, AccessGrantKindSubst> {
+        tuple((
+            tag("priv"),
+            context("access_grant:priv", tuple((space1, var_subst(privilege)))),
+        ))(input)
+        .map(|(next, (_, (_, privilege)))| (next, AccessGrantKindDef::Privilege(privilege)))
+    }
 
-              "expecting access grant kind ['super','perm','priv']"
+    pub fn access_grant_kind_perm(input: Span) -> Res<Span, AccessGrantKindSubst> {
+        tuple((
+            tag("perm"),
+            context(
+                "access_grant:perm",
+                tuple((space1, var_subst(permissions_mask))),
+            ),
+        ))(input)
+        .map(|(next, (_, (_, perms)))| (next, AccessGrantKindDef::PermissionsMask(perms)))
+    }
+
+    pub fn privilege(input: Span) -> Res<Span, Privilege> {
+        context("privilege", alt((tag("*"), skewer_colon)))(input).map(|(next, prv)| {
+            let prv = match prv.to_string().as_str() {
+                "*" => Privilege::Full,
+                prv => Privilege::Single(prv.to_string()),
+            };
+            (next, prv)
+        })
+    }
+
+    pub fn permissions_mask(input: Span) -> Res<Span, PermissionsMask> {
+        context(
+            "permissions_mask",
+            tuple((
+                alt((
+                    value(PermissionsMaskKind::Or, char('+')),
+                    value(PermissionsMaskKind::And, char('&')),
+                )),
+                permissions,
+            )),
+        )(input)
+        .map(|(next, (kind, permissions))| {
+            let mask = PermissionsMask { kind, permissions };
+
+            (next, mask)
+        })
+    }
+
+    pub fn permissions(input: Span) -> Res<Span, Permissions> {
+        context(
+            "permissions",
+            tuple((child_perms, tag("-"), particle_perms)),
+        )(input)
+        .map(|(next, (child, _, particle))| {
+            let permissions = Permissions { child, particle };
+            (next, permissions)
+        })
+    }
+
+    pub fn child_perms(input: Span) -> Res<Span, ChildPerms> {
+        context(
+            "child_perms",
+            alt((
+                tuple((
+                    alt((value(false, char('c')), value(true, char('C')))),
+                    alt((value(false, char('s')), value(true, char('S')))),
+                    alt((value(false, char('d')), value(true, char('D')))),
+                )),
+                fail,
+            )),
+        )(input)
+        .map(|(next, (create, select, delete))| {
+            let block = ChildPerms {
+                create,
+                select,
+                delete,
+            };
+            (next, block)
+        })
+    }
+
+    pub fn particle_perms(input: Span) -> Res<Span, ParticlePerms> {
+        context(
+            "particle_perms",
+            tuple((
+                alt((value(false, char('r')), value(true, char('R')))),
+                alt((value(false, char('w')), value(true, char('W')))),
+                alt((value(false, char('x')), value(true, char('X')))),
+            )),
+        )(input)
+        .map(|(next, (read, write, execute))| {
+            let block = ParticlePerms {
+                read,
+                write,
+                execute,
+            };
+            (next, block)
+        })
+    }
+
+    /*
+    pub fn grant<I>(input: I) -> Res<I,AccessGrant> where I:Clone+InputIter+InputLength+InputTake{
+
+    }
+
+     */
+
+    pub mod error {
+        use crate::error::MsgErr;
+        use crate::version::v0_0_1::Span;
+        use ariadne::Report;
+        use ariadne::{Label, ReportKind, Source};
+        use nom::{Err, Slice};
+        use nom_supreme::error::{BaseErrorKind, ErrorTree, StackContext};
+
+        pub fn result<R>(result: Result<(Span, R), Err<ErrorTree<Span>>>) -> Result<R, MsgErr> {
+            match result {
+                Ok((_, e)) => Ok(e),
+                Err(err) => Err(find(&err)),
+            }
+        }
+
+        /*
+        pub fn just_msg<R, E: From<String>>(
+            result: Result<(Span, R), Err<ErrorTree<Span>>>,
+        ) -> Result<R, E> {
+            match result {
+                Ok((_, e)) => Ok(e),
+                Err(err) => match find(&err) {
+                    Ok((message, _)) => Err(E::from(message)),
+                    Err(err) => Err(E::from(err)),
+                },
+            }
+        }
+
+         */
+
+        fn report(context: &str, loc: Span) -> MsgErr {
+            let source = Source::from(loc.extra.to_string().as_str());
+
+            let mut builder = Report::build(ReportKind::Error, (), 23);
+
+            let builder = match context {
+             "point" => {
+                    builder.with_message("Invalid Point").with_label(Label::new(loc.location_offset()..loc.location_offset()).with_message("Invalid Point"))
+                },
+                "point:version:root_not_trailing" =>{ builder.with_message("Root filesystem is the only segment allowed to follow a bundle version i.e. 'space:base:2.0.0-version:/dir/somefile.txt'").with_label(Label::new(loc.location_offset()..loc.location_offset()).with_message("Only root file segment ':/' allowed here"))}
+                "point:space_segment" => {builder.with_message("A Point Space Segment must be all lowercase, alphanumeric with dashes and dots.  It follows Host and Domain name rules i.e. 'localhost', 'mechtron.io'").with_label(Label::new(loc.location_offset()..loc.location_offset()).with_message("Invalid Space Segment Character"))}
+                "point:bad_leading" => {builder.with_message("The leading character must be a lowercase letter (for Base Segments) or a digit (for Version Segments)").with_label(Label::new(loc.location_offset()..loc.location_offset()).with_message("Invalid Leading Character"))}
+                "point:base_segment" => {builder.with_message("A Point Base Segment must be 'skewer-case': all lowercase alphanumeric with dashes. The leading character must be a letter.").with_label(Label::new(loc.location_offset()..loc.location_offset()).with_message("Invalid Base Segment Character"))}
+                "point:dir_pop" => {builder.with_message("A Point Directory Pop '..'").with_label(Label::new(loc.location_offset()..loc.location_offset()).with_message("Something is Wrong"))}
+                "point:dir_segment" => {builder.with_message("A Point Dir Segment follows legal filesystem characters and must end in a '/'").with_label(Label::new(loc.location_offset()..loc.location_offset()).with_message("Illegal Character"))}
+                "point:root_filesystem_segment" => {builder.with_message("Root FileSystem ':/'").with_label(Label::new(loc.location_offset()..loc.location_offset()).with_message("Illegal Character"))}
+                "point:file_segment" => {builder.with_message("A Point File Segment follows legal filesystem characters").with_label(Label::new(loc.location_offset()..loc.location_offset()).with_message("Illegal Character"))}
+                "point:file_or_directory"=> {builder.with_message("A Point File Segment (Files & Directories) follows legal filesystem characters").with_label(Label::new(loc.location_offset()..loc.location_offset()).with_message("Illegal Character"))}
+                "point:version_segment" => {builder.with_message("A Version Segment allows all legal SemVer characters").with_label(Label::new(loc.location_offset()..loc.location_offset()).with_message("Illegal Character"))}
+          "variable" => {
+              builder.with_message("variable name must be alphanumeric lowercase, dashes and dots.  Variables are preceded by the '$' operator and must be sorounded by parenthesis $(env.valid-variable-name)")
+          },
+          "child_perms" => {
+              builder.with_message("expecting child permissions form csd (Create, Select, Delete) uppercase indicates set permission (CSD==full permission, csd==no permission)")
+          },
+          "particle_perms" => {
+              builder.with_message("expecting particle permissions form rwx (Read, Write, Execute) uppercase indicates set permission (RWX==full permission, rwx==no permission)")
+          },
+          "permissions" => {
+              builder.with_message("expecting permissions form 'csd-rwx' (Create,Select,Delete)-(Read,Write,Execute) uppercase indicates set permission (CSD-RWX==full permission, csd-rwx==no permission)")
+          }
+          "permissions_mask" => {
+              builder.with_message("expecting permissions mask symbol '+' for 'Or' mask and '&' for 'And' mask. Example:  &csd-RwX removes ----R-X from current permission")
+          }
+          "privilege" => {
+              builder.with_message("privilege name must be '*' for 'full' privileges or an alphanumeric lowercase, dashes and colons i.e. 'props:email:read'")
+          },
+          "access_grant:perm" => {
+              builder.with_message("expecting permissions mask symbol '+' for 'Or' mask and '&' for 'And' mask. Example:  &csd-RwX removes ----R-X from current permission")
+          },
+          "access_grant:priv" => {
+              builder.with_message("privilege name must be '*' for 'full' privileges or an alphanumeric lowercase, dashes and colons i.e. 'props:email:read'")
+          },
+          "access_grant:on" => {
+              builder.with_message("expecting grant 'on' i.e.: 'grant perm +cSd+RwX on localhost:app:** to localhost:app:users:**<User>'")
+          },
+          "access_grant:to" => {
+              builder.with_message("expecting grant 'to' i.e.: 'grant perm +cSd+RwX on localhost:app:** to localhost:app:users:**<User>'")
+          },
+           "point-subst-brute-force" => {
+               builder.with_message("not expecting variables or working point context '.'/'..' in this point")
+           },
+          "access_grant_kind" => {
+              builder.with_message("expecting access grant kind ['super','perm','priv']")
           },
           what => {
-              println!("don't have a message for context '{}'",what);
-              return Err(());
+              builder.with_message(format!("internal parser error: cannot determine an error message for parse context: {}",what))
           }
       };
-        Ok(message.to_string())
-    }
 
-    pub fn find<I: Clone>(err: &Err<ErrorTree<I>>) -> Result<(String, I), ()> {
-        match err {
-            Err::Incomplete(_) => Err(()),
-            Err::Error(err) => find_tree(err),
-            Err::Failure(err) => find_tree(err),
+
+            //            let source = String::from_utf8(loc.get_line_beginning().to_vec() ).unwrap_or("could not parse utf8 of original source".to_string() );
+            MsgErr::Report {
+                report: builder.finish(),
+                source: loc.extra.to_string(),
+            }
         }
-    }
 
-    pub fn find_tree<I: Clone>(err: &ErrorTree<I>) -> Result<(String, I), ()> {
-        match err {
-            ErrorTree::Stack { base, contexts } => {
-                let (span, context) = contexts.first().unwrap();
-                match context {
-                    StackContext::Context(context) => {
-                        println!("Context: {}", context);
-                        match message(*context) {
-                            Ok(message) => Ok((message, span.clone())),
-                            Err(_) => Err(()),
+        pub fn find(err: &Err<ErrorTree<Span>>) -> MsgErr {
+            match err {
+                Err::Incomplete(_) => "internal parser error: Incomplete".into(),
+                Err::Error(err) => find_tree(err),
+                Err::Failure(err) => find_tree(err),
+            }
+        }
+
+        pub enum ErrFind {
+            Context(String),
+            Message(String),
+        }
+
+        pub fn find_tree(err: &ErrorTree<Span>) -> MsgErr {
+            match err {
+                ErrorTree::Stack { base, contexts } => {
+                    let (span, context) = contexts.first().unwrap();
+                    match context {
+                        StackContext::Context(context) => {
+                            report(*context, span.clone())
+                        }
+                        _ => "internal parser error: could not find a parse context in order to generate a useful error message".into()
+                    }
+                }
+                ErrorTree::Base { location, kind } => format!("Base kind: {}", kind).into(),
+                ErrorTree::Alt(alts) => {
+                    for alt in alts {
+                        return find_tree(alt);
+                    }
+
+                    "internal parser error: ErrorTree::Alt could not find a suitable context error in the various alts".into()
+                }
+            }
+        }
+
+        pub fn first_context<I>(
+            orig: Err<ErrorTree<I>>,
+        ) -> Result<(String, Err<ErrorTree<I>>), ()> {
+            match &orig {
+                Err::Error(err) => match err {
+                    ErrorTree::Stack { base, contexts } => {
+                        let (_, context) = contexts.first().unwrap();
+                        match context {
+                            StackContext::Context(context) => Ok((context.to_string(), orig)),
+                            _ => Err(()),
                         }
                     }
                     _ => Err(()),
-                }
-            }
-            ErrorTree::Base { .. } => Err(()),
-            ErrorTree::Alt(alts) => {
-                for alt in alts {
-                    match find_tree(alt) {
-                        Ok(r) => {
-                            return Ok(r);
-                        }
-                        Err(_) => {}
-                    }
-                }
-
-                Err(())
-            }
-        }
-    }
-
-    pub fn first_context<I>(
-        orig: Err<ErrorTree<I>>,
-    ) -> Result<(String, Err<ErrorTree<I>>), ()> {
-        match &orig {
-            Err::Error(err) => match err {
-                ErrorTree::Stack { base, contexts } => {
-                    let (_, context) = contexts.first().unwrap();
-                    match context {
-                        StackContext::Context(context) => Ok((context.to_string(), orig)),
-                        _ => Err(()),
-                    }
-                }
+                },
                 _ => Err(()),
-            },
-            _ => Err(()),
+            }
         }
     }
-}
 }
 
 pub mod log {
-use crate::version::v0_0_1::id::Point;
-use serde::{Deserialize, Serialize};
+    use crate::version::v0_0_1::id::Point;
+    use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum Level {
-    Trace,
-    Debug,
-    Info,
-    Warn,
-    Error,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Log {
-    pub point: Point,
-    pub message: String,
-    pub level: Level,
-}
-
-impl ToString for Log {
-    fn to_string(&self) -> String {
-        format!("{} {}", self.point.to_string(), self.message)
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub enum Level {
+        Trace,
+        Debug,
+        Info,
+        Warn,
+        Error,
     }
-}
 
-impl Log {
-    pub fn trace(point: Point, message: &str) -> Self {
-        Self {
-            level: Level::Trace,
-            point,
-            message: message.to_string(),
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub struct Log {
+        pub point: Point,
+        pub message: String,
+        pub level: Level,
+    }
+
+    impl ToString for Log {
+        fn to_string(&self) -> String {
+            format!("{} {}", self.point.to_string(), self.message)
         }
     }
-    pub fn debug(point: Point, message: &str) -> Self {
-        Self {
-            level: Level::Debug,
-            point,
-            message: message.to_string(),
-        }
-    }
-    pub fn info(point: Point, message: &str) -> Self {
-        Self {
-            level: Level::Info,
-            point,
-            message: message.to_string(),
-        }
-    }
-    pub fn warn(point: Point, message: &str) -> Self {
-        Self {
-            level: Level::Warn,
-            point,
-            message: message.to_string(),
-        }
-    }
-    pub fn error(point: Point, message: &str) -> Self {
-        Self {
-            level: Level::Error,
-            point,
-            message: message.to_string(),
-        }
-    }
-}
 
-pub trait ParticleLogger {
-    fn log(&self, log: Log);
-}
+    impl Log {
+        pub fn trace(point: Point, message: &str) -> Self {
+            Self {
+                level: Level::Trace,
+                point,
+                message: message.to_string(),
+            }
+        }
+        pub fn debug(point: Point, message: &str) -> Self {
+            Self {
+                level: Level::Debug,
+                point,
+                message: message.to_string(),
+            }
+        }
+        pub fn info(point: Point, message: &str) -> Self {
+            Self {
+                level: Level::Info,
+                point,
+                message: message.to_string(),
+            }
+        }
+        pub fn warn(point: Point, message: &str) -> Self {
+            Self {
+                level: Level::Warn,
+                point,
+                message: message.to_string(),
+            }
+        }
+        pub fn error(point: Point, message: &str) -> Self {
+            Self {
+                level: Level::Error,
+                point,
+                message: message.to_string(),
+            }
+        }
+    }
+
+    pub trait ParticleLogger {
+        fn log(&self, log: Log);
+    }
 }
 
 #[cfg(test)]
 pub mod test {
-use http::Uri;
-use std::collections::HashMap;
-use std::str::FromStr;
+    use http::Uri;
+    use std::collections::HashMap;
+    use std::str::FromStr;
 
-use nom::combinator::{all_consuming, recognize};
+    use nom::combinator::{all_consuming, recognize};
 
-use crate::error::MsgErr;
-use crate::version::v0_0_1::config::bind::parse::{
-    bind, final_bind, http_pipeline, pipeline, pipeline_step, pipeline_stop,
-    select_http_pipelines,
-};
-use crate::version::v0_0_1::config::bind::{PipelinesSubScope, ProtoBind};
-use crate::version::v0_0_1::entity::request::{Action, RequestCore};
-use crate::version::v0_0_1::id::{Point, PointSeg, RouteSeg};
-use crate::version::v0_0_1::parse::error::{find, result};
-use crate::version::v0_0_1::parse::{access_grant, access_grant_kind, base_point_segment, camel_case, capture_point, child_perms, create, file_point_capture_segment, particle_perms, permissions, permissions_mask, point_subst, point_template, publish, rec_skewer, route_segment, skewer_chars, var_subst, version_point_segment, MapResolver, Res, ToResolved, point};
-use crate::version::v0_0_1::payload::{HttpMethod, Payload};
-use crate::version::v0_0_1::security::{
-    ChildPerms, ParticlePerms, Permissions, PermissionsMask, PermissionsMaskKind,
-};
-use crate::version::v0_0_1::selector::parse::point_selector;
-use crate::version::v0_0_1::selector::parse::version;
-use crate::version::v0_0_1::selector::{
-    http_method, http_method_pattern, http_pattern, http_pattern_scoped, upload_step,
-    PointKindHierarchy, PointSelector,
-};
-use crate::version::v0_0_1::util::ValueMatcher;
-use crate::version::v0_0_1::Span;
-use nom::error::VerboseError;
-use nom::{Err, Offset};
-use nom_supreme::error::{BaseErrorKind, ErrorTree, StackContext};
-use nom_supreme::final_parser::ExtractContext;
-use regex::Regex;
-
-#[test]
-pub fn test_point_kind_pattern_matching() -> Result<(), MsgErr> {
-    let pattern = PointSelector::from_str("**")?;
-    let point = PointKindHierarchy::from_str("localhost<Space>:mechtron<Mechtron>")?;
-    assert!(pattern.matches(&point));
-    Ok(())
-}
-
-#[test]
-pub fn test_query_root() -> Result<(), MsgErr> {
-    let inclusive_pattern = PointSelector::from_str("localhost+:**")?;
-    let exclusive_pattern = PointSelector::from_str("localhost:**")?;
-    println!(
-        "inclusive: '{}'",
-        inclusive_pattern.query_root().to_string()
-    );
-    println!(
-        "exclusive : '{}'",
-        exclusive_pattern.query_root().to_string()
-    );
-    Ok(())
-}
-
-#[test]
-pub fn test_inclusive() -> Result<(), MsgErr> {
-    // if a hop is 'inclusive' then this will match to true.  We do this for cases like:
-    // localhost+:**   // Here we want everything under localhost INCLUDING localhost to be matched
-    let inclusive_pattern = PointSelector::from_str("localhost+:**")?;
-    let exclusive_pattern = PointSelector::from_str("localhost:**")?;
-    let point1 = PointKindHierarchy::from_str("localhost<Space>")?;
-    let point2 = PointKindHierarchy::from_str("localhost<Space>:mechtron<Mechtron>")?;
-
-    assert!(!exclusive_pattern.matches(&point1));
-    assert!(exclusive_pattern.matches(&point2));
-    assert!(inclusive_pattern.matches(&point1));
-    assert!(inclusive_pattern.matches(&point2));
-    Ok(())
-}
-
-#[test]
-pub fn test_inclusive2() -> Result<(), MsgErr> {
-    let inclusive_pattern = PointSelector::from_str("localhost+:app+:**")?;
-    let exclusive_pattern = PointSelector::from_str("localhost:app:**")?;
-    let point1 = PointKindHierarchy::from_str("localhost<Space>")?;
-    let point2 = PointKindHierarchy::from_str("localhost<Space>:app<App>")?;
-    let point3 = PointKindHierarchy::from_str("localhost<Space>:app<App>:mechtron<Mechtron>")?;
-
-    assert!(!exclusive_pattern.matches(&point1));
-    assert!(!exclusive_pattern.matches(&point2));
-    assert!(exclusive_pattern.matches(&point3));
-    assert!(inclusive_pattern.matches(&point1));
-    assert!(inclusive_pattern.matches(&point2));
-    assert!(inclusive_pattern.matches(&point3));
-    Ok(())
-}
-
-#[test]
-pub fn test_some_matches() -> Result<(), MsgErr> {
-    let users = PointSelector::from_str("**<User>")?;
-    let point1 = PointKindHierarchy::from_str("localhost<Space>")?;
-    let point2 = PointKindHierarchy::from_str("localhost<Space>:app<App>")?;
-    let point3 = PointKindHierarchy::from_str("localhost<Space>:app<App>:mechtron<Mechtron>")?;
-    let point4 = PointKindHierarchy::from_str("localhost<Space>:app<App>:users<UserBase>")?;
-    let point5 =
-        PointKindHierarchy::from_str("localhost<Space>:app<App>:users<UserBase>:scott<User>")?;
-    let point6 = PointKindHierarchy::from_str("localhost<Space>:users<UserBase>")?;
-    let point7 =
-        PointKindHierarchy::from_str("localhost<Space>:users<UserBase>:superuser<User>")?;
-
-    assert!(!users.matches(&point1));
-    assert!(!users.matches(&point2));
-    assert!(!users.matches(&point3));
-    assert!(!users.matches(&point4));
-    assert!(users.matches(&point5));
-    assert!(!users.matches(&point6));
-    assert!(users.matches(&point7));
-    Ok(())
-}
-
-#[test]
-pub fn test_a_match() -> Result<(), MsgErr> {
-    let pattern = PointSelector::from_str("localhost:app+:**")?;
-    let point = PointKindHierarchy::from_str("localhost<Space>:app<App>")?;
-
-    assert!(pattern.matches(&point));
-    Ok(())
-}
-
-#[test]
-pub fn test_skewer_chars() -> Result<(), MsgErr> {
-    match all_consuming(rec_skewer)(Span::new("317")) {
-        Ok(ok) => {
-            return Err("should not have parsed 317".into());
-        }
-        Err(_) => {}
-    }
-    /*
-    assert_eq!( rec_skewer("hello1"), Ok(("","hello1")) );
-    assert_eq!( all_consuming(rec_skewer)("hello-kitty"), Ok(("","hello-kitty")) );
-    assert_eq!( all_consuming(rec_skewer)("hello-kitty123"), Ok(("","hello-kitty123")) );
-    assert_eq!( rec_skewer("hello-kitty.1.2.3"), Ok((".1.2.3","hello-kitty")) );
-    assert_eq!( rec_skewer("skewer-takes-no-Caps"), Ok(("Caps","skewer-takes-no-")) );
-     */
-    Ok(())
-}
-
-#[test]
-pub fn test_point() -> Result<(), MsgErr> {
-    assert_eq!(
-        (Span::new(""), RouteSeg::Local),
-        all_consuming(route_segment)(Span::new(""))?
-    );
-
-    all_consuming(point)(Span::new("[root]"))?;
-    all_consuming(point)(Span::new("hello:kitty"))?;
-    all_consuming(point)(Span::new("hello.com:kitty"))?;
-    all_consuming(point)(Span::new("hello:kitty:/file.txt"))?;
-    all_consuming(point)(Span::new("hello.com:kitty:/file.txt"))?;
-    all_consuming(point)(Span::new("hello.com:kitty:/"))?;
-    //all_consuming(point)("hello.com:kitty:/greater-glory/file.txt")?;
-    all_consuming(point)(Span::new("hello.com:kitty:base"))?;
-
-    all_consuming(version)(Span::new("1.0.0"))?;
-    let (next, version) = all_consuming(version_point_segment)(Span::new(":1.2.3"))?;
-    println!("next: '{}' segment: '{}'", next, version.to_string());
-    all_consuming(point)(Span::new("hello.com:bundle:1.2.3"))?;
-    let (next, addy) = all_consuming(point)(Span::new("hello.com:bundle:1.2.3:/"))?;
-    println!("{}", addy.last_segment().unwrap().to_string());
-    let (next, addy) = all_consuming(point)(Span::new("hello.com:bundle:1.2.3"))?;
-    //       let (next, addy) = all_consuming(point)("hello.com:bundle:1.2.3:/some/file.txt")?;
-    let (next, addy) =
-        all_consuming(point)(Span::new("hello.com:bundle:1.2.3:/greater-glory/file.txt"))?;
-    println!("{}", addy.to_string());
-    println!("{}", addy.parent().unwrap().to_string());
-    println!("{}", addy.last_segment().unwrap().to_string());
-
-    Ok(())
-}
-
-#[test]
-pub fn test_point_template() -> Result<(), MsgErr> {
-    all_consuming(point_template)(Span::new("hello:kitty"))?;
-    all_consuming(point_template)(Span::new("hello:kitty-%"))?;
-    all_consuming(point_template)(Span::new("hello:kitty:bob:/some-%-time"))?;
-    Ok(())
-}
-
-#[test]
-pub fn test_create() -> Result<(), MsgErr> {
-    all_consuming(create)(Span::new("hello:kitty<App>"))?;
-    all_consuming(create)(Span::new(
-        "hello:kitty<App>{ +config='some:config:1.0.0:/blah.conf' }",
-    ))?;
-    Ok(())
-}
-
-#[test]
-pub fn test_publish() -> Result<(), MsgErr> {
-    let (_, block) = all_consuming(upload_step)(Span::new("^[ bundle.zip ]->"))?;
-    assert_eq!("bundle.zip", block.name.as_str());
-    all_consuming(publish)(Span::new("^[ bundle.zip ]-> space.org:hello:1.0.0"))?;
-    Ok(())
-}
-
-#[test]
-pub fn test_pipeline_stop() -> Result<(), MsgErr> {
-    pipeline_stop(Span::new("apps:my-app^Http<Get>/*"))?;
-    Ok(())
-}
-
-#[test]
-pub fn test_pipeline() -> Result<(), MsgErr> {
-    pipeline(Span::new("-> apps:my-app^Http<Get>/users/$1 => &"))?;
-    pipeline(Span::new("-> apps:bundle:1.0.0:/html/$1 => &"))?;
-    Ok(())
-}
-
-#[test]
-pub fn test_capture_point() -> Result<(), MsgErr> {
-    file_point_capture_segment(Span::new("$1"))?;
-
-    let point = all_consuming(capture_point)(Span::new("apps:bundle:1.0.0:/html/$1"))?.1;
-    let regex = Regex::new("/(.*)")?;
-    let point = point.to_point(regex.captures("/index.html").unwrap())?;
-    Ok(())
-}
-
-#[test]
-pub fn test_point_kind_pattern() -> Result<(), MsgErr> {
-    all_consuming(point_selector)(Span::new("*"))?;
-    all_consuming(point_selector)(Span::new("space"))?;
-    all_consuming(point_selector)(Span::new("space:base"))?;
-    all_consuming(point_selector)(Span::new("space:my-files:/"))?;
-    all_consuming(point_selector)(Span::new("space:my-files:/file.txt"))?;
-    all_consuming(point_selector)(Span::new("space:my-files:/dir/file.txt"))?;
-    all_consuming(point_selector)(Span::new("space<Space>:base"))?;
-    all_consuming(point_selector)(Span::new("**:*<Base>"))?;
-    all_consuming(point_selector)(Span::new("space<Space>:base<Base>"))?;
-    all_consuming(point_selector)(Span::new("space:base:blah"))?;
-    all_consuming(point_selector)(Span::new("space:base:*"))?;
-    all_consuming(point_selector)(Span::new("space<Space>:**<Base>"))?;
-    all_consuming(point_selector)(Span::new("space:series:1.0.0:/some/file.txt"))?;
-    all_consuming(point_selector)(Span::new("space+"))?;
-    all_consuming(point_selector)(Span::new("space+:**"))?;
-    Ok(())
-}
-
-#[cfg(test)]
-pub mod bind {
     use crate::error::MsgErr;
-    use crate::version::v0_0_1::config::bind::parse::{bind, final_bind};
-    use crate::version::v0_0_1::config::bind::ProtoBind;
-    use crate::version::v0_0_1::Span;
-}
-
-#[test]
-pub fn test_http_pattern() -> Result<(), MsgErr> {
-    let any_pattern = all_consuming(http_pattern)(Span::new("Http<*>"))?.1;
-    let get_any_pattern = all_consuming(http_pattern)(Span::new("Http<Get>"))?.1;
-    let get_some_pattern = all_consuming(http_pattern)(Span::new("Http<Get>^/some$"))?.1;
-    let get_some_star_pattern = all_consuming(http_pattern)(Span::new("Http<Get>^/some/*"))?.1;
-    let get_some_capture_pattern =
-        all_consuming(http_pattern)(Span::new("Http<Get>^/some/(.*)"))?.1;
-
-    let get_some = RequestCore {
-        action: Action::Http(HttpMethod::GET),
-        headers: Default::default(),
-        uri: Uri::from_static("/some"),
-        body: Payload::Empty,
+    use crate::version::v0_0_1::config::bind::parse::{
+        bind, final_bind, http_pipeline, pipeline, pipeline_step, pipeline_stop,
+        select_http_pipelines,
     };
-
-    let get_some_plus = RequestCore {
-        action: Action::Http(HttpMethod::GET),
-        headers: Default::default(),
-        uri: Uri::from_static("/some/plus"),
-        body: Payload::Empty,
+    use crate::version::v0_0_1::config::bind::{PipelinesSubScope, ProtoBind};
+    use crate::version::v0_0_1::entity::request::{Action, RequestCore};
+    use crate::version::v0_0_1::id::{Point, PointSeg, PointSubst, RouteSeg};
+    use crate::version::v0_0_1::parse::error::{find, result};
+    use crate::version::v0_0_1::parse::{
+        access_grant, access_grant_kind, base_point_segment, camel_case, capture_point,
+        child_perms, consume_point, create, file_point_capture_segment, particle_perms,
+        permissions, permissions_mask, point, point_route_segment, point_subst, point_template,
+        publish, rec_skewer, skewer_chars, var, var_subst, version_point_segment, MapResolver, Res,
+        ToResolved,
     };
-
-    let post_some = RequestCore {
-        action: Action::Http(HttpMethod::POST),
-        headers: Default::default(),
-        uri: Uri::from_static("/some"),
-        body: Payload::Empty,
+    use crate::version::v0_0_1::payload::{HttpMethod, Payload};
+    use crate::version::v0_0_1::security::{
+        ChildPerms, ParticlePerms, Permissions, PermissionsMask, PermissionsMaskKind,
     };
-
-    assert_eq!(any_pattern.is_match(&get_some), Ok(()));
-    assert_eq!(any_pattern.is_match(&post_some), Ok(()));
-    assert_eq!(get_any_pattern.is_match(&get_some), Ok(()));
-    assert_eq!(get_any_pattern.is_match(&get_some_plus), Ok(()));
-    assert_eq!(get_some_pattern.is_match(&get_some), Ok(()));
-    assert!(get_some_pattern.is_match(&post_some).is_err());
-    assert!(get_some_pattern.is_match(&get_some_plus).is_err());
-    assert!(get_some_star_pattern.is_match(&get_some_plus).is_ok());
-    assert!(get_some_capture_pattern.is_match(&get_some_plus).is_ok());
-
-    Ok(())
-}
-
-#[test]
-pub fn test_selector() -> Result<(), MsgErr> {
-    let get_some = RequestCore {
-        action: Action::Http(HttpMethod::GET),
-        headers: Default::default(),
-        uri: Uri::from_static("/some"),
-        body: Payload::Empty,
+    use crate::version::v0_0_1::selector::parse::point_selector;
+    use crate::version::v0_0_1::selector::parse::version;
+    use crate::version::v0_0_1::selector::{
+        http_method, http_method_pattern, http_pattern, http_pattern_scoped, upload_step,
+        PointKindHierarchy, PointSelector,
     };
+    use crate::version::v0_0_1::util::ValueMatcher;
+    use crate::version::v0_0_1::{span, Span};
+    use nom::error::VerboseError;
+    use nom::{Err, Offset};
+    use nom_supreme::error::{BaseErrorKind, ErrorTree, StackContext};
+    use nom_supreme::final_parser::ExtractContext;
+    use regex::Regex;
 
-    let get_some_plus = RequestCore {
-        action: Action::Http(HttpMethod::GET),
-        headers: Default::default(),
-        uri: Uri::from_static("/some/plus"),
-        body: Payload::Empty,
-    };
+    #[test]
+    pub fn test_point_kind_pattern_matching() -> Result<(), MsgErr> {
+        let pattern = PointSelector::from_str("**")?;
+        let point = PointKindHierarchy::from_str("localhost<Space>:mechtron<Mechtron>")?;
+        assert!(pattern.matches(&point));
+        Ok(())
+    }
 
-    let post_some = RequestCore {
-        action: Action::Http(HttpMethod::POST),
-        headers: Default::default(),
-        uri: Uri::from_static("/some"),
-        body: Payload::Empty,
-    };
+    #[test]
+    pub fn test_query_root() -> Result<(), MsgErr> {
+        let inclusive_pattern = PointSelector::from_str("localhost+:**")?;
+        let exclusive_pattern = PointSelector::from_str("localhost:**")?;
+        println!(
+            "inclusive: '{}'",
+            inclusive_pattern.query_root().to_string()
+        );
+        println!(
+            "exclusive : '{}'",
+            exclusive_pattern.query_root().to_string()
+        );
+        Ok(())
+    }
 
-    let get_selector = all_consuming(http_pipeline)(Span::new("<Get> -> {{}};"))?.1;
-    let get_some_selector =
-        all_consuming(http_pipeline)(Span::new("<Get>^/some -> {{}} => &;"))?.1;
-    let post_some_selector =
-        all_consuming(http_pipeline)(Span::new("<Post>^/some -> {{}} => &;"))?.1;
+    #[test]
+    pub fn test_inclusive() -> Result<(), MsgErr> {
+        // if a hop is 'inclusive' then this will match to true.  We do this for cases like:
+        // localhost+:**   // Here we want everything under localhost INCLUDING localhost to be matched
+        let inclusive_pattern = PointSelector::from_str("localhost+:**")?;
+        let exclusive_pattern = PointSelector::from_str("localhost:**")?;
+        let point1 = PointKindHierarchy::from_str("localhost<Space>")?;
+        let point2 = PointKindHierarchy::from_str("localhost<Space>:mechtron<Mechtron>")?;
 
-    assert!(get_selector.is_match(&get_some).is_ok());
-    assert!(get_some_selector.is_match(&get_some).is_ok());
-    assert!(post_some_selector.is_match(&post_some).is_ok());
-    Ok(())
-}
+        assert!(!exclusive_pattern.matches(&point1));
+        assert!(exclusive_pattern.matches(&point2));
+        assert!(inclusive_pattern.matches(&point1));
+        assert!(inclusive_pattern.matches(&point2));
+        Ok(())
+    }
 
-#[test]
-pub fn test_scope() -> Result<(), MsgErr> {
-    let get_some = RequestCore {
-        action: Action::Http(HttpMethod::GET),
-        headers: Default::default(),
-        uri: Uri::from_static("/some"),
-        body: Payload::Empty,
-    };
+    #[test]
+    pub fn test_inclusive2() -> Result<(), MsgErr> {
+        let inclusive_pattern = PointSelector::from_str("localhost+:app+:**")?;
+        let exclusive_pattern = PointSelector::from_str("localhost:app:**")?;
+        let point1 = PointKindHierarchy::from_str("localhost<Space>")?;
+        let point2 = PointKindHierarchy::from_str("localhost<Space>:app<App>")?;
+        let point3 = PointKindHierarchy::from_str("localhost<Space>:app<App>:mechtron<Mechtron>")?;
 
-    let get_some_plus = RequestCore {
-        action: Action::Http(HttpMethod::GET),
-        headers: Default::default(),
-        uri: Uri::from_static("/some/plus"),
-        body: Payload::Empty,
-    };
+        assert!(!exclusive_pattern.matches(&point1));
+        assert!(!exclusive_pattern.matches(&point2));
+        assert!(exclusive_pattern.matches(&point3));
+        assert!(inclusive_pattern.matches(&point1));
+        assert!(inclusive_pattern.matches(&point2));
+        assert!(inclusive_pattern.matches(&point3));
+        Ok(())
+    }
 
-    let post_some = RequestCore {
-        action: Action::Http(HttpMethod::POST),
-        headers: Default::default(),
-        uri: Uri::from_static("/some"),
-        body: Payload::Empty,
-    };
+    #[test]
+    pub fn test_some_matches() -> Result<(), MsgErr> {
+        let users = PointSelector::from_str("**<User>")?;
+        let point1 = PointKindHierarchy::from_str("localhost<Space>")?;
+        let point2 = PointKindHierarchy::from_str("localhost<Space>:app<App>")?;
+        let point3 = PointKindHierarchy::from_str("localhost<Space>:app<App>:mechtron<Mechtron>")?;
+        let point4 = PointKindHierarchy::from_str("localhost<Space>:app<App>:users<UserBase>")?;
+        let point5 =
+            PointKindHierarchy::from_str("localhost<Space>:app<App>:users<UserBase>:scott<User>")?;
+        let point6 = PointKindHierarchy::from_str("localhost<Space>:users<UserBase>")?;
+        let point7 =
+            PointKindHierarchy::from_str("localhost<Space>:users<UserBase>:superuser<User>")?;
 
-    let delete_some = RequestCore {
-        action: Action::Http(HttpMethod::DELETE),
-        headers: Default::default(),
-        uri: Uri::from_static("/some"),
-        body: Payload::Empty,
-    };
+        assert!(!users.matches(&point1));
+        assert!(!users.matches(&point2));
+        assert!(!users.matches(&point3));
+        assert!(!users.matches(&point4));
+        assert!(users.matches(&point5));
+        assert!(!users.matches(&point6));
+        assert!(users.matches(&point7));
+        Ok(())
+    }
 
-    let section = all_consuming(select_http_pipelines)(Span::new(
-        r#"Http {
+    #[test]
+    pub fn test_a_match() -> Result<(), MsgErr> {
+        let pattern = PointSelector::from_str("localhost:app+:**")?;
+        let point = PointKindHierarchy::from_str("localhost<Space>:app<App>")?;
+
+        assert!(pattern.matches(&point));
+        Ok(())
+    }
+
+    #[test]
+    pub fn test_skewer_chars() -> Result<(), MsgErr> {
+        match all_consuming(rec_skewer)(span("317")) {
+            Ok(ok) => {
+                return Err("should not have parsed 317".into());
+            }
+            Err(_) => {}
+        }
+        /*
+        assert_eq!( rec_skewer("hello1"), Ok(("","hello1")) );
+        assert_eq!( all_consuming(rec_skewer)("hello-kitty"), Ok(("","hello-kitty")) );
+        assert_eq!( all_consuming(rec_skewer)("hello-kitty123"), Ok(("","hello-kitty123")) );
+        assert_eq!( rec_skewer("hello-kitty.1.2.3"), Ok((".1.2.3","hello-kitty")) );
+        assert_eq!( rec_skewer("skewer-takes-no-Caps"), Ok(("Caps","skewer-takes-no-")) );
+         */
+        Ok(())
+    }
+
+    #[test]
+    pub fn test_point() -> Result<(), MsgErr> {
+        assert_eq!(
+            (span(""), RouteSeg::Local),
+            all_consuming(point_route_segment)(span(""))?
+        );
+
+        all_consuming(point)(span("[root]"))?;
+        all_consuming(point)(span("hello:kitty"))?;
+        all_consuming(point)(span("hello.com:kitty"))?;
+        all_consuming(point)(span("hello:kitty:/file.txt"))?;
+        all_consuming(point)(span("hello.com:kitty:/file.txt"))?;
+        all_consuming(point)(span("hello.com:kitty:/"))?;
+        //all_consuming(point)("hello.com:kitty:/greater-glory/file.txt")?;
+        all_consuming(point)(span("hello.com:kitty:base"))?;
+
+        all_consuming(version)(span("1.0.0"))?;
+        let (next, version) = all_consuming(version_point_segment)(span(":1.2.3"))?;
+        println!("next: '{}' segment: '{}'", next, version.to_string());
+        all_consuming(point)(span("hello.com:bundle:1.2.3"))?;
+        let (next, addy) = all_consuming(point)(span("hello.com:bundle:1.2.3:/"))?;
+        println!("{}", addy.last_segment().unwrap().to_string());
+        let (next, addy) = all_consuming(point)(span("hello.com:bundle:1.2.3"))?;
+        //       let (next, addy) = all_consuming(point)("hello.com:bundle:1.2.3:/some/file.txt")?;
+        let (next, addy) =
+            all_consuming(point)(span("hello.com:bundle:1.2.3:/greater-glory/file.txt"))?;
+        println!("{}", addy.to_string());
+        println!("{}", addy.parent().unwrap().to_string());
+        println!("{}", addy.last_segment().unwrap().to_string());
+
+        Ok(())
+    }
+
+    #[test]
+    pub fn test_point_template() -> Result<(), MsgErr> {
+        all_consuming(point_template)(span("hello:kitty"))?;
+        all_consuming(point_template)(span("hello:kitty-%"))?;
+        all_consuming(point_template)(span("hello:kitty:bob:/some-%-time"))?;
+        Ok(())
+    }
+
+    #[test]
+    pub fn test_create() -> Result<(), MsgErr> {
+        all_consuming(create)(span("hello:kitty<App>"))?;
+        all_consuming(create)(span(
+            "hello:kitty<App>{ +config='some:config:1.0.0:/blah.conf' }",
+        ))?;
+        Ok(())
+    }
+
+    #[test]
+    pub fn test_publish() -> Result<(), MsgErr> {
+        let (_, block) = all_consuming(upload_step)(span("^[ bundle.zip ]->"))?;
+        assert_eq!("bundle.zip", block.name.as_str());
+        all_consuming(publish)(span("^[ bundle.zip ]-> space.org:hello:1.0.0"))?;
+        Ok(())
+    }
+
+    #[test]
+    pub fn test_pipeline_stop() -> Result<(), MsgErr> {
+        pipeline_stop(span("apps:my-app^Http<Get>/*"))?;
+        Ok(())
+    }
+
+    #[test]
+    pub fn test_pipeline() -> Result<(), MsgErr> {
+        pipeline(span("-> apps:my-app^Http<Get>/users/$1 => &"))?;
+        pipeline(span("-> apps:bundle:1.0.0:/html/$1 => &"))?;
+        Ok(())
+    }
+
+    #[test]
+    pub fn test_capture_point() -> Result<(), MsgErr> {
+        file_point_capture_segment(span("$1"))?;
+
+        let point = all_consuming(capture_point)(span("apps:bundle:1.0.0:/html/$1"))?.1;
+        let regex = Regex::new("/(.*)")?;
+        let point = point.to_point(regex.captures("/index.html").unwrap())?;
+        Ok(())
+    }
+
+    #[test]
+    pub fn test_point_kind_pattern() -> Result<(), MsgErr> {
+        all_consuming(point_selector)(span("*"))?;
+        all_consuming(point_selector)(span("space"))?;
+        all_consuming(point_selector)(span("space:base"))?;
+        all_consuming(point_selector)(span("space:my-files:/"))?;
+        all_consuming(point_selector)(span("space:my-files:/file.txt"))?;
+        all_consuming(point_selector)(span("space:my-files:/dir/file.txt"))?;
+        all_consuming(point_selector)(span("space<Space>:base"))?;
+        all_consuming(point_selector)(span("**:*<Base>"))?;
+        all_consuming(point_selector)(span("space<Space>:base<Base>"))?;
+        all_consuming(point_selector)(span("space:base:blah"))?;
+        all_consuming(point_selector)(span("space:base:*"))?;
+        all_consuming(point_selector)(span("space<Space>:**<Base>"))?;
+        all_consuming(point_selector)(span("space:series:1.0.0:/some/file.txt"))?;
+        all_consuming(point_selector)(span("space+"))?;
+        all_consuming(point_selector)(span("space+:**"))?;
+        Ok(())
+    }
+
+    #[cfg(test)]
+    pub mod bind {
+        use crate::error::MsgErr;
+        use crate::version::v0_0_1::config::bind::parse::{bind, final_bind};
+        use crate::version::v0_0_1::config::bind::ProtoBind;
+        use crate::version::v0_0_1::Span;
+    }
+
+    #[test]
+    pub fn test_http_pattern() -> Result<(), MsgErr> {
+        let any_pattern = all_consuming(http_pattern)(span("Http<*>"))?.1;
+        let get_any_pattern = all_consuming(http_pattern)(span("Http<Get>"))?.1;
+        let get_some_pattern = all_consuming(http_pattern)(span("Http<Get>^/some$"))?.1;
+        let get_some_star_pattern = all_consuming(http_pattern)(span("Http<Get>^/some/*"))?.1;
+        let get_some_capture_pattern = all_consuming(http_pattern)(span("Http<Get>^/some/(.*)"))?.1;
+
+        let get_some = RequestCore {
+            action: Action::Http(HttpMethod::GET),
+            headers: Default::default(),
+            uri: Uri::from_static("/some"),
+            body: Payload::Empty,
+        };
+
+        let get_some_plus = RequestCore {
+            action: Action::Http(HttpMethod::GET),
+            headers: Default::default(),
+            uri: Uri::from_static("/some/plus"),
+            body: Payload::Empty,
+        };
+
+        let post_some = RequestCore {
+            action: Action::Http(HttpMethod::POST),
+            headers: Default::default(),
+            uri: Uri::from_static("/some"),
+            body: Payload::Empty,
+        };
+
+        assert!(any_pattern.is_match(&get_some).is_ok());
+        assert!(any_pattern.is_match(&post_some).is_ok());
+        assert!(get_any_pattern.is_match(&get_some).is_ok());
+        assert!(get_any_pattern.is_match(&get_some_plus).is_ok());
+        assert!(get_some_pattern.is_match(&get_some).is_ok());
+        assert!(get_some_pattern.is_match(&post_some).is_err());
+        assert!(get_some_pattern.is_match(&get_some_plus).is_err());
+        assert!(get_some_star_pattern.is_match(&get_some_plus).is_ok());
+        assert!(get_some_capture_pattern.is_match(&get_some_plus).is_ok());
+
+        Ok(())
+    }
+
+    #[test]
+    pub fn test_selector() -> Result<(), MsgErr> {
+        let get_some = RequestCore {
+            action: Action::Http(HttpMethod::GET),
+            headers: Default::default(),
+            uri: Uri::from_static("/some"),
+            body: Payload::Empty,
+        };
+
+        let get_some_plus = RequestCore {
+            action: Action::Http(HttpMethod::GET),
+            headers: Default::default(),
+            uri: Uri::from_static("/some/plus"),
+            body: Payload::Empty,
+        };
+
+        let post_some = RequestCore {
+            action: Action::Http(HttpMethod::POST),
+            headers: Default::default(),
+            uri: Uri::from_static("/some"),
+            body: Payload::Empty,
+        };
+
+        let get_selector = all_consuming(http_pipeline)(span("<Get> -> {{}};"))?.1;
+        let get_some_selector = all_consuming(http_pipeline)(span("<Get>^/some -> {{}} => &;"))?.1;
+        let post_some_selector =
+            all_consuming(http_pipeline)(span("<Post>^/some -> {{}} => &;"))?.1;
+
+        assert!(get_selector.is_match(&get_some).is_ok());
+        assert!(get_some_selector.is_match(&get_some).is_ok());
+        assert!(post_some_selector.is_match(&post_some).is_ok());
+        Ok(())
+    }
+
+    #[test]
+    pub fn test_scope() -> Result<(), MsgErr> {
+        let get_some = RequestCore {
+            action: Action::Http(HttpMethod::GET),
+            headers: Default::default(),
+            uri: Uri::from_static("/some"),
+            body: Payload::Empty,
+        };
+
+        let get_some_plus = RequestCore {
+            action: Action::Http(HttpMethod::GET),
+            headers: Default::default(),
+            uri: Uri::from_static("/some/plus"),
+            body: Payload::Empty,
+        };
+
+        let post_some = RequestCore {
+            action: Action::Http(HttpMethod::POST),
+            headers: Default::default(),
+            uri: Uri::from_static("/some"),
+            body: Payload::Empty,
+        };
+
+        let delete_some = RequestCore {
+            action: Action::Http(HttpMethod::DELETE),
+            headers: Default::default(),
+            uri: Uri::from_static("/some"),
+            body: Payload::Empty,
+        };
+
+        let section = all_consuming(select_http_pipelines)(span(
+            r#"Http {
       <Get>^/(.*) -> {{}} => &;
       <Get>^/some -> {{ }} => &;
       <Post>^/some -> {{ }} => &;
     }"#,
-    ))?
-    .1;
+        ))?
+        .1;
 
-    if let PipelinesSubScope::Http(scope) = section {
-        assert!(scope.find_match(&get_some).is_ok());
-        assert!(scope.find_match(&get_some).is_ok());
-        assert!(scope.find_match(&post_some).is_ok());
-        assert!(scope.find_match(&delete_some).is_err());
-    } else {
-        return Err("expected Http Section".into());
+        if let PipelinesSubScope::Http(scope) = section {
+            assert!(scope.find_match(&get_some).is_ok());
+            assert!(scope.find_match(&get_some).is_ok());
+            assert!(scope.find_match(&post_some).is_ok());
+            assert!(scope.find_match(&delete_some).is_err());
+        } else {
+            return Err("expected Http Section".into());
+        }
+
+        Ok(())
     }
 
-    Ok(())
-}
+    #[test]
+    pub fn test_http_method() -> Result<(), MsgErr> {
+        http_method(span("Get"))?;
+        assert!(http_method(span("Bad")).is_err());
+        Ok(())
+    }
 
-#[test]
-pub fn test_http_method() -> Result<(), MsgErr> {
-    http_method(Span::new("Get"))?;
-    assert!(http_method(Span::new("Bad")).is_err());
-    Ok(())
-}
-
-#[test]
-pub fn test_http_method_pattern() -> Result<(), MsgErr> {
-    http_method_pattern(Span::new("*"))?;
-    http_method_pattern(Span::new("Get"))?;
-    assert!(http_method_pattern(Span::new("Bad")).is_err());
-    /*        match http_method_pattern("Bad") {
-               Ok(_) => {}
-               Err(err) => {
-                   err.context
+    #[test]
+    pub fn test_http_method_pattern() -> Result<(), MsgErr> {
+        http_method_pattern(span("*"))?;
+        http_method_pattern(span("Get"))?;
+        assert!(http_method_pattern(span("Bad")).is_err());
+        /*        match http_method_pattern("Bad") {
+                   Ok(_) => {}
+                   Err(err) => {
+                       err.context
+                   }
                }
-           }
 
-    */
-    Ok(())
-}
+        */
+        Ok(())
+    }
 
-#[test]
-pub fn test_permission_block() -> Result<(), MsgErr> {
-    let span = Span::new("rWx-");
-    let perm = particle_perms(span)?;
-    let (span, block) = perm;
-    println!("offset : {}", span.location_offset());
+    #[test]
+    pub fn test_permission_block() -> Result<(), MsgErr> {
+        let span = span("rWx-");
+        let perm = particle_perms(span)?;
+        let (span, block) = perm;
+        println!("offset : {}", span.location_offset());
 
-    assert_eq!(
-        block,
-        ParticlePerms {
-            read: false,
-            write: true,
-            execute: false
-        }
-    );
-    Ok(())
-}
+        assert_eq!(
+            block,
+            ParticlePerms {
+                read: false,
+                write: true,
+                execute: false
+            }
+        );
+        Ok(())
+    }
 
-#[test]
-pub fn test_permissions() -> Result<(), MsgErr> {
-    let span = Span::new("cSd-RwX");
-    let result = permissions(span)?;
-    let (span, permissions) = result;
-    println!("offset : {}", span.location_offset());
+    #[test]
+    pub fn test_permissions() -> Result<(), MsgErr> {
+        let span = span("cSd-RwX");
+        let result = permissions(span)?;
+        let (span, permissions) = result;
+        println!("offset : {}", span.location_offset());
 
-    assert_eq!(
-        permissions,
-        crate::version::v0_0_1::security::Permissions {
+        assert_eq!(
+            permissions,
+            crate::version::v0_0_1::security::Permissions {
+                child: ChildPerms {
+                    create: false,
+                    select: true,
+                    delete: false
+                },
+                particle: ParticlePerms {
+                    read: true,
+                    write: false,
+                    execute: true
+                }
+            }
+        );
+        Ok(())
+    }
+
+    #[test]
+    pub fn test_permissions_mask() -> Result<(), MsgErr> {
+        let span = span("&cSd-RwX");
+        let result = permissions_mask(span)?;
+        let (span, mask) = result;
+        let permissions = crate::version::v0_0_1::security::Permissions {
             child: ChildPerms {
                 create: false,
                 select: true,
-                delete: false
+                delete: false,
             },
             particle: ParticlePerms {
                 read: true,
                 write: false,
-                execute: true
+                execute: true,
+            },
+        };
+        let mask2 = PermissionsMask {
+            kind: PermissionsMaskKind::And,
+            permissions,
+        };
+        assert_eq!(mask, mask2);
+        Ok(())
+    }
+
+    #[test]
+    pub fn test_root_pattern_match() -> Result<(), MsgErr> {
+        let pattern = PointSelector::from_str("+:**")?;
+        assert!(pattern.matches_root());
+        Ok(())
+    }
+
+    #[test]
+    pub fn test_perms() -> Result<(), MsgErr> {
+        let span = span("Csd-rxy");
+        println!("{}", result(permissions(span)).err().unwrap());
+        Ok(())
+    }
+
+    #[test]
+    pub fn test_perm_mask() -> Result<(), MsgErr> {
+        let span = span("Csd-rxy");
+        println!("{}", result(permissions_mask(span)).err().unwrap());
+        Ok(())
+    }
+
+    #[test]
+    pub fn test_subst() -> Result<(), MsgErr> {
+        let val = span("&cSd-RwX");
+        let var = span("$(env.some-var)");
+        let val = result(var_subst(permissions_mask)(val))?;
+        let var = result(var_subst(permissions_mask)(var))?;
+
+        let mut map = MapResolver::new();
+        map.insert("env.some-var", "+CSD-RWX");
+
+        let val = val.to_resolved(&map)?;
+        let var = var.to_resolved(&map)?;
+
+        println!("val {}", val.to_string());
+        println!("var {}", var.to_string());
+
+        Ok(())
+    }
+
+    #[test]
+    pub fn test_access_grant_kind() -> Result<(), MsgErr> {
+        let s = span("perm &rCsd-rwx");
+        let result = result(access_grant_kind(s))?;
+
+        Ok(())
+    }
+
+    #[test]
+    pub fn test_access_grant() -> Result<(), MsgErr> {
+        let s = span("perm &rCsd-rwx xon localhost:app");
+        let result = result(access_grant(s))?;
+
+        Ok(())
+    }
+
+    #[test]
+    pub fn test_point_subst() -> Result<(), MsgErr> {
+        let s = span("$(some):other:$(user):uppy:..:/dir/file.txt");
+
+        let result = result(point_subst(s));
+
+        match result {
+            Ok(point) => {
+                println!("{}", point.to_string());
+                let mut map = MapResolver::new();
+                map.insert("some", "yesterday");
+                map.insert("user", "scott");
+                match point.to_resolved(&map) {
+                    Ok(point) => {
+                        println!("{}", point.to_string())
+                    }
+                    Err(err) => {
+                        println!("{}", err.to_string())
+                    }
+                }
+            }
+            Err(err) => {
+                println!("{}", err)
             }
         }
-    );
-    Ok(())
-}
 
-#[test]
-pub fn test_permissions_mask() -> Result<(), MsgErr> {
-    let span = Span::new("&cSd-RwX");
-    let result = permissions_mask(span)?;
-    let (span, mask) = result;
-    let permissions = crate::version::v0_0_1::security::Permissions {
-        child: ChildPerms {
-            create: false,
-            select: true,
-            delete: false,
-        },
-        particle: ParticlePerms {
-            read: true,
-            write: false,
-            execute: true,
-        },
-    };
-    let mask2 = PermissionsMask {
-        kind: PermissionsMaskKind::And,
-        permissions,
-    };
-    assert_eq!(mask, mask2);
-    Ok(())
-}
+        Ok(())
+    }
+    #[test]
+    pub fn test_var() -> Result<(), MsgErr> {
+        let s = span("$(users)");
 
-#[test]
-pub fn test_root_pattern_match() -> Result<(), MsgErr> {
-    let pattern = PointSelector::from_str("+:**")?;
-    assert!(pattern.matches_root());
-    Ok(())
-}
+        let var = result(var(s))?;
 
-#[test]
-pub fn test_perms() -> Result<(), MsgErr> {
-    let span = Span::new("Csd-rxy");
-    println!("{}", result(permissions(span)).err().unwrap());
-    Ok(())
-}
+        println!("{}", var.to_string());
 
-#[test]
-pub fn test_perm_mask() -> Result<(), MsgErr> {
-    let span = Span::new("Csd-rxy");
-    println!("{}", result(permissions_mask(span)).err().unwrap());
-    Ok(())
-}
+        Ok(())
+    }
 
-#[test]
-pub fn test_subst() -> Result<(), MsgErr> {
-    let val = Span::new("&cSd-RwX");
-    let var = Span::new("$(env.some-var)");
-    let val = result(var_subst(permissions_mask)(val))?;
-    let var = result(var_subst(permissions_mask)(var))?;
+    #[test]
+    pub fn test_subst2() -> Result<(), MsgErr> {
+        let s = span("$(users)");
 
-    let mut map = MapResolver::new();
-    map.insert("env.some-var", "+CSD-RWX");
+        let (next, val) = var_subst(point)(s).unwrap();
+        println!("err {}", val.to_string());
 
-    let val = val.to_resolved(&map)?;
-    let var = var.to_resolved(&map)?;
+        Ok(())
+    }
+    #[test]
+    pub fn test_point_normalize() -> Result<(), MsgErr> {
+        let addr = ".::yesterday:other:..:scott:uppy:/hello/../dir/files.txt";
+        let point = result(point(span(addr)))?;
+        let point = consume_point(addr)?;
+        let norm = point.clone().normalize()?;
+        assert_eq!(
+            "yesterday:scott:uppy:/dir/files.txt".to_string(),
+            norm.to_string()
+        );
+        Ok(())
+    }
 
-    println!("val {}", val.to_string());
-    println!("var {}", var.to_string());
+    #[test]
+    pub fn test_error_output() -> Result<(), MsgErr> {
+        consume_point("spAce:base").err().unwrap().print();
+        consume_point("space:ba?se").err().unwrap().print();
+        consume_point("space.com:-base").err().unwrap().print();
+        consume_point("space.com:-base:7.7.0")
+            .err()
+            .unwrap()
+            .print();
+        consume_point("space.com:base:3.7?").err().unwrap().print();
 
-    Ok(())
-}
+        consume_point("space.com:base:3.7.0:/unh*ppy-file")
+            .err()
+            .unwrap()
+            .print();
+        consume_point("space.com:base:3.7.0:/unhappy-d?r/")
+            .err()
+            .unwrap()
+            .print();
+        consume_point("space.com:base:3.7.0:/all-good/under-thunder.txt ")
+            .err()
+            .unwrap()
+            .print();
 
-#[test]
-pub fn test_access_grant_kind() -> Result<(), MsgErr> {
-    let s = Span::new("perm &rCsd-rwx");
-    let result = result(access_grant_kind(s))?;
-
-    Ok(())
-}
-
-#[test]
-pub fn test_access_grant() -> Result<(), MsgErr> {
-    let s = Span::new("perm &rCsd-rwx xon localhost:app");
-    let result = result(access_grant(s))?;
-
-    Ok(())
-}
+        consume_point("space.com:base:3.7.0:don-t-pine-for-the-old-days")
+            .err()
+            .unwrap()
+            .print();
+        // make sure artifact bundle itself works (when eof is reached)
+        consume_point("space.com:base:3.7.0").err().unwrap().print();
+        Ok(())
+    }
 }
