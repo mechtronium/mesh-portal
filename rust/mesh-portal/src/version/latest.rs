@@ -330,32 +330,39 @@ pub mod resource {
 
 pub mod portal {
     use mesh_portal_versions::version::v0_0_1 as current;
+    use mesh_portal_versions::version::v0_0_1::portal;
 
-    pub type Exchanger<T> = current::portal::Exchanger<T>;
+    pub type Exchanger<T> = portal::portal::Exchanger<T>;
 
     pub mod inlet {
         use mesh_portal_versions::version::v0_0_1 as current;
+        use mesh_portal_versions::version::v0_0_1::portal;
 
-        pub type Log = current::portal::inlet::Log;
-        pub type Frame = current::portal::inlet::Frame;
-        pub type AssignRequest = current::portal::inlet::AssignRequest;
+        pub type Log = portal::portal::inlet::Log;
+        pub type Frame = portal::portal::inlet::Frame;
+        pub type AssignRequest = portal::portal::inlet::AssignRequest;
     }
 
     pub mod outlet {
         use mesh_portal_versions::version::v0_0_1 as current;
+        use mesh_portal_versions::version::v0_0_1::portal;
 
-        pub type Frame = current::portal::outlet::Frame;
+        pub type Frame = portal::portal::outlet::Frame;
     }
 
     pub mod initin {
         use mesh_portal_versions::version::v0_0_1 as current;
-        pub type Frame = current::portal::initin::Frame;
-        pub type PortalAuth = current::portal::initin::PortalAuth;
+        use mesh_portal_versions::version::v0_0_1::portal;
+
+        pub type Frame = portal::portal::initin::Frame;
+        pub type PortalAuth = portal::portal::initin::PortalAuth;
     }
 
     pub mod initout{
         use mesh_portal_versions::version::v0_0_1 as current;
-        pub type Frame = current::portal::initout::Frame;
+        use mesh_portal_versions::version::v0_0_1::portal;
+
+        pub type Frame = portal::portal::initout::Frame;
     }
 }
 

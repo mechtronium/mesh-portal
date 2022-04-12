@@ -1,9 +1,10 @@
+use std::ops::Deref;
 use serde_json::Value;
 use crate::error::MsgErr;
 use crate::version::v0_0_1::id::id::Point;
 use crate::version::v0_0_1::selector::selector::parse::delim_kind;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize,strum_macros::Display)]
 pub enum Level {
     Trace,
     Debug,
@@ -19,17 +20,41 @@ impl Default for Level {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PointLog {
-     point: Point,
-     payload: LogPayload,
-     level: Level,
+pub struct Log {
+     pub point: Point,
+     pub payload: LogPayload,
+     pub level: Level,
+}
+
+impl Log {
+    pub fn timestamp<T>(self, timestamp: T) -> TimestampedLog<T> where T: ToString {
+        TimestampedLog {
+            log: self,
+            timestamp
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Log {
-    content: LogPayload,
-    level: Level,
+pub struct TimestampedLog<T> where T: ToString{
+    pub log: Log,
+    pub timestamp: T
 }
+
+impl Deref for ShellLog {
+    type Target = Log;
+
+    fn deref(&self) -> &Self::Target {
+        &self.log
+    }
+}
+
+impl ToString for Log {
+    fn to_string(&self) -> String {
+        format!("{} {} {}", self.point.to_string(), self.level.to_string(), self.payload.to_string())
+    }
+}
+
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PointlessLog {
@@ -44,13 +69,23 @@ pub enum LogPayload {
     Both{message:String,json:Value}
 }
 
-impl ToString for PointLog {
+impl ToString for LogPayload {
+    fn to_string(&self) -> String {
+        match self {
+            LogPayload::Message(message) => message.clone(),
+            LogPayload::Json(json) => json.to_string(),
+            LogPayload::Both { json, message } => { format!("{} {}",json.to_string(), message.clone() )}
+        }
+    }
+}
+
+impl ToString for Log {
     fn to_string(&self) -> String {
         format!("{} {}", self.point.to_string(), self.message)
     }
 }
 
-impl PointLog {
+impl Log {
     fn trace(point: Point, message: &str) -> Self {
         Self {
             level: Level::Trace,
@@ -205,7 +240,7 @@ impl <P,L> LogBuilder<P,L> where P: TryInto<Point,Error=MsgErr>, L: Logger {
             let point = self.point.expect("point");
             match point.try_into() {
                 Ok(point) => {
-                    let log  = PointLog {
+                    let log  = Log {
                         point,
                         level: self.level.expect("level"),
                         payload: content
@@ -230,11 +265,17 @@ impl <P,L> LogBuilder<P,L> where P: TryInto<Point,Error=MsgErr>, L: Logger {
 
 
  trait Logger: Clone+Sized {
-     fn log(&self, log: PointLog);
+     fn log(&self, log: Log);
 
      /// PointlessLog is used for error diagnosis of the logging system itself, particularly
      /// where there is parsing error due to a bad point
      fn pointless(&self, log: PointlessLog);
+
+     /// it seems like you would want ALL logs to be timestamped, but in some cases, like in
+     /// Wasm system time is not available, so it is the Wasm Host that upgrades to a TimestampedLog
+     /// but if you are worried about the small delay of the log traveling though the portal and
+     /// your implementation has access to system time then timestamped is what you want.
+     fn timestamped(&self, log: Log);
 
      // optionally return the point being logged
      fn get_logging_point(&self) -> Option<Point>;
@@ -255,6 +296,8 @@ impl <P,L> LogBuilder<P,L> where P: TryInto<Point,Error=MsgErr>, L: Logger {
          }
      }
 
+     fn audit( &self, point: Point, metric: String, value: String );
+
      fn point_logger( &self, point: Point ) -> PointLogger {
          PointLogger {
              logger: Box::new(self.clone()),
@@ -271,7 +314,7 @@ pub struct PointLogger {
 
 impl PointLogger {
     fn trace<M>(&self, message: M) where M: ToString{
-        self.logger.log( PointLog {
+        self.logger.log( Log {
             point: self.point.clone(),
             level: Level::Trace,
             payload: LogPayload::Message(message.to_string())
@@ -279,7 +322,7 @@ impl PointLogger {
     }
 
     fn debug(&self, message: &str) {
-        self.logger.log( PointLog {
+        self.logger.log( Log {
             point: self.point.clone(),
             level: Level::Debug,
             payload: LogPayload::Message(message.to_string())
@@ -287,7 +330,7 @@ impl PointLogger {
     }
 
     fn info(&self, message: &str) {
-        self.logger.log( PointLog {
+        self.logger.log( Log {
             point: self.point.clone(),
             level: Level::Info,
             payload: LogPayload::Message(message.to_string())
@@ -295,7 +338,7 @@ impl PointLogger {
     }
 
     fn warn(&self, message: &str) {
-        self.logger.log( PointLog {
+        self.logger.log( Log {
             point: self.point.clone(),
             level: Level::Warn,
             payload: LogPayload::Message(message.to_string())
@@ -303,11 +346,19 @@ impl PointLogger {
     }
 
     fn error(&self, message: &str) {
-        self.logger.log( PointLog {
+        self.logger.log( Log {
             point: self.point.clone(),
             level: Level::Error,
             payload: LogPayload::Message(message.to_string())
         })
+    }
+
+    fn timestamped( &self, log: Log ) where T:ToString {
+        self.logger.timestamped(log);
+    }
+
+    fn audit( &self,  metric: String, value: String ) {
+        self.logger.audit(self.point.clone(), metric, value );
     }
 
     fn builder<L>(&self) -> PointLogBuilder<L> {
@@ -354,5 +405,17 @@ impl <L> PointLogBuilder<L> where  L: Logger {
 
     pub fn commit(mut self) {
         self.builder.commit();
+    }
+}
+
+pub mod audit {
+    use crate::version::v0_0_1::id::id::Point;
+    use crate::version::v0_0_1::log::PointLogger;
+
+    pub struct AuditLog {
+        pub point: Point,
+        pub timestamp: Timestamp,
+        pub metric: String,
+        pub value: String
     }
 }
