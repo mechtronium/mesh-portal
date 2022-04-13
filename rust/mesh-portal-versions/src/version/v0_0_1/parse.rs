@@ -2045,18 +2045,20 @@ pub fn grant<I>(input: I) -> Res<I,AccessGrant> where I:Clone+InputIter+InputLen
 /// it accounts for multiple embedded blocks of the same kind but NOT of differing kinds
 pub fn rough_block(kind: BlockKind) -> impl FnMut(Span) -> Res<Span, Block> {
     move |input: Span| {
-        let (next, content) = context(kind.context(),delimited(
-            context(kind.open_context(),tag(kind.open())),
-            recognize(many0(tuple((
-                not(peek(tag(kind.close()))),
-                    alt((recognize(pair(
-                        peek(tag(kind.open())),
-                        rough_block(kind.clone()),
+        let (next, content) = context(
+            kind.context(),
+            delimited(
+                context(kind.open_context(), tag(kind.open())),
+                recognize(many0(tuple((
+                    not(peek(tag(kind.close()))),
+                    alt((
+                        recognize(pair(peek(tag(kind.open())), rough_block(kind.clone()))),
+                        recognize(anychar),
                     )),
-                    recognize(anychar)))
-            )))),
-            context(kind.close_context(),cut(tag(kind.close()))),
-        ))(input)?;
+                )))),
+                context(kind.close_context(), cut(tag(kind.close()))),
+            ),
+        )(input)?;
         let block = Block { kind, content };
         Ok((next, block))
     }
@@ -2064,52 +2066,60 @@ pub fn rough_block(kind: BlockKind) -> impl FnMut(Span) -> Res<Span, Block> {
 
 pub fn block(kind: BlockKind) -> impl FnMut(Span) -> Res<Span, Block> {
     move |input: Span| {
-        let (next, content) = context(kind.context(),delimited(
-            context(kind.open_context(),tag(kind.open())),
-            recognize(many0(tuple((
-                not(peek(tag(kind.close()))),
-                cut(peek(expected_block_terminator_or_non_terminator(kind.clone()))),
-                alt((recognize(pair(
-                    peek(block_open ),
-                    any_block
-                )),
-                     recognize(anychar)))
-            )))),
-            context(kind.close_context(),cut(tag(kind.close()))),
-        ))(input)?;
+        let (next, content) = context(
+            kind.context(),
+            delimited(
+                context(kind.open_context(), tag(kind.open())),
+                recognize(many0(tuple((
+                    not(peek(tag(kind.close()))),
+                    context(kind.unpaired_closing_scope(), cut(peek(expected_block_terminator_or_non_terminator(
+                        kind.clone(),
+                    )))),
+                    alt((
+                        recognize(pair(peek(block_open), any_block)),
+                        recognize(anychar),
+                    )),
+                )))),
+                context(kind.close_context(), cut(tag(kind.close()))),
+            ),
+        )(input)?;
         let block = Block { kind, content };
         Ok((next, block))
     }
 }
 
-fn block_open(input: Span) -> Res<Span,BlockKind> {
-    alt((value(BlockKind::Curly,tag(BlockKind::Curly.open())),
-         value(BlockKind::Angle,tag(BlockKind::Angle.open())),
-         value(BlockKind::Parens,tag(BlockKind::Parens.open())),
-         value(BlockKind::Square,tag(BlockKind::Square.open()))
-    ) )(input)
+fn block_open(input: Span) -> Res<Span, BlockKind> {
+    alt((
+        value(BlockKind::Curly, tag(BlockKind::Curly.open())),
+        value(BlockKind::Angle, tag(BlockKind::Angle.open())),
+        value(BlockKind::Parens, tag(BlockKind::Parens.open())),
+        value(BlockKind::Square, tag(BlockKind::Square.open())),
+    ))(input)
 }
 
-fn any_block(input: Span) -> Res<Span,Block> {
-    alt((block(BlockKind::Curly),block(BlockKind::Angle),block(BlockKind::Parens),block(BlockKind::Square)))(input)
+fn any_block(input: Span) -> Res<Span, Block> {
+    alt((
+        block(BlockKind::Curly),
+        block(BlockKind::Angle),
+        block(BlockKind::Parens),
+        block(BlockKind::Square),
+    ))(input)
 }
 
-
-
-pub fn expected_block_terminator_or_non_terminator(expect: BlockKind) -> impl FnMut(Span) -> Res<Span, ()> {
-    move |input:Span| -> Res<Span,()> { verify( anychar, move |c| {
-
-        if BlockKind::is_block_terminator(*c) {
-            *c == expect.close_as_char()
-        } else {
-            true
-        }
-
-    } )(input).map( |(next,_)| {
-        (next,())
-    } ) }
+pub fn expected_block_terminator_or_non_terminator(
+    expect: BlockKind,
+) -> impl FnMut(Span) -> Res<Span, ()> {
+    move |input: Span| -> Res<Span, ()> {
+        verify(anychar, move |c| {
+            if BlockKind::is_block_terminator(*c) {
+                *c == expect.close_as_char()
+            } else {
+                true
+            }
+        })(input)
+        .map(|(next, _)| (next, ()))
+    }
 }
-
 
 pub mod model {
     use crate::version::v0_0_1::Span;
@@ -2119,7 +2129,7 @@ pub mod model {
         pub content: Span<'a>,
     }
 
-    #[derive(Copy, Clone,strum_macros::Display,strum_macros::EnumString)]
+    #[derive(Copy, Clone, strum_macros::Display, strum_macros::EnumString)]
     pub enum BlockKind {
         Curly,
         Parens,
@@ -2128,14 +2138,43 @@ pub mod model {
     }
 
     impl BlockKind {
-
-        pub fn is_block_terminator(  c: char ) -> bool {
-            match c{
+        pub fn is_block_terminator(c: char) -> bool {
+            match c {
                 '}' => true,
                 ')' => true,
                 ']' => true,
                 '>' => true,
-                _ => false
+                _ => false,
+            }
+        }
+
+        pub fn error_message(span: &Span, context: &str) -> Result<&'static str, ()> {
+            if Self::Curly.open_context() == context {
+                Ok("expecting '{' (open scope block)")
+            } else if Self::Parens.open_context() == context {
+                Ok("expecting '(' (open scope block)")
+            } else if Self::Angle.open_context() == context {
+                Ok("expecting '<' (open scope block)")
+            } else if Self::Square.open_context() == context {
+                Ok("expecting '[' (open scope block)")
+            } else if Self::Curly.close_context() == context {
+                Ok("expecting '}' (close scope block)")
+            } else if Self::Parens.close_context() == context {
+                Ok("expecting ')' (close scope block)")
+            } else if Self::Angle.close_context() == context {
+                Ok("expecting '>' (close scope block)")
+            } else if Self::Square.close_context() == context {
+                Ok("expecting ']' (close scope block)")
+            } else if Self::Curly.unpaired_closing_scope() == context {
+                Ok("closing scope without an opening scope")
+            } else if Self::Parens.unpaired_closing_scope() == context {
+                Ok("closing scope without an opening scope")
+            } else if Self::Angle.unpaired_closing_scope() == context {
+                Ok("closing scope without an opening scope")
+            } else if Self::Square.unpaired_closing_scope() == context {
+                Ok("closing scope without an opening scope")
+            } else {
+                Err(())
             }
         }
 
@@ -2147,7 +2186,6 @@ pub mod model {
                 BlockKind::Angle => "block:<>",
             }
         }
-
 
         pub fn open_context(&self) -> &'static str {
             match self {
@@ -2167,6 +2205,14 @@ pub mod model {
             }
         }
 
+        pub fn unpaired_closing_scope(&self) -> &'static str {
+            match self {
+                BlockKind::Curly => "block:close-before-open:}",
+                BlockKind::Parens => "block:close-before-open:)",
+                BlockKind::Square => "block:close-before-open:]",
+                BlockKind::Angle => "block:close-before-open:>",
+            }
+        }
 
         pub fn open(&self) -> &'static str {
             match self {
@@ -2187,11 +2233,11 @@ pub mod model {
         }
 
         pub fn open_as_char(&self) -> char {
-            match self  {
+            match self {
                 BlockKind::Curly => '{',
                 BlockKind::Parens => '(',
                 BlockKind::Square => '[',
-                BlockKind::Angle => '<'
+                BlockKind::Angle => '<',
             }
         }
 
@@ -2213,6 +2259,7 @@ pub mod error {
     use ariadne::{Label, ReportKind, Source};
     use nom::{Err, Slice};
     use nom_supreme::error::{BaseErrorKind, ErrorTree, StackContext};
+    use crate::version::v0_0_1::parse::model::BlockKind;
 
     pub fn result<R>(result: Result<(Span, R), Err<ErrorTree<Span>>>) -> Result<R, MsgErr> {
         match result {
@@ -2240,6 +2287,17 @@ pub mod error {
         let source = Source::from(loc.extra.to_string().as_str());
 
         let mut builder = Report::build(ReportKind::Error, (), 23);
+
+        match BlockKind::error_message(&loc, context ) {
+            Ok(message) => {
+                let builder = builder.with_message(message).with_label(Label::new(loc.location_offset()..loc.location_offset()).with_message(message));
+                return MsgErr::Report {
+                    report: builder.finish(),
+                    source: loc.extra.to_string(),
+                };
+            }
+            Err(_) => {}
+        }
 
         let builder = match context {
                 "point" => {
@@ -2360,11 +2418,14 @@ pub mod error {
 
 #[cfg(test)]
 pub mod test {
-    use nom::combinator::all_consuming;
     use crate::error::MsgErr;
     use crate::version::v0_0_1::parse::model::BlockKind;
-    use crate::version::v0_0_1::parse::{block, expected_block_terminator_or_non_terminator, rough_block};
+    use crate::version::v0_0_1::parse::{
+        block, expected_block_terminator_or_non_terminator, rough_block,
+    };
     use crate::version::v0_0_1::span;
+    use nom::combinator::all_consuming;
+    use crate::version::v0_0_1::parse::error::result;
 
     #[test]
     pub fn test_rough_block() -> Result<(), MsgErr> {
@@ -2373,6 +2434,22 @@ pub mod test {
         assert!(all_consuming(rough_block(BlockKind::Curly))(span("{ } }")).is_err());
         // this is allowed by rough_block
         all_consuming(rough_block(BlockKind::Curly))(span("{ ] }"))?;
+
+
+        result(rough_block(BlockKind::Curly)(span(r#"x blah
+
+
+Hello my friend
+
+
+        }"#))).err().unwrap().print();
+
+        result(rough_block(BlockKind::Curly)(span(r#"{
+
+Hello my friend
+
+
+        "#))).err().unwrap().print();
         Ok(())
     }
 
@@ -2385,6 +2462,14 @@ pub mod test {
         assert!(expected_block_terminator_or_non_terminator(BlockKind::Curly)(span("]")).is_err());
         assert!(expected_block_terminator_or_non_terminator(BlockKind::Square)(span("x")).is_ok());
         assert!(block(BlockKind::Curly)(span("{ ] }")).is_err());
+        result(block(BlockKind::Curly)(span(r#"{
+
+
+
+        ]
+
+
+        }"#))).err().unwrap().print();
         Ok(())
     }
 }
