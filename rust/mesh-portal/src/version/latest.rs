@@ -65,7 +65,7 @@ pub mod selector {
     pub type RcPattern = selector::selector::RcPattern;
     pub type MsgPattern = selector::selector::MsgPattern;
     pub type HttpPattern = selector::selector::HttpPattern;
-    pub type Block = selector::selector::Block;
+    pub type Block = selector::selector::PayloadBlock;
     pub type UploadBlock = selector::selector::UploadBlock;
     pub type CreateBlock = selector::selector::CreateBlock;
     pub type PatternBlock = selector::selector::PatternBlock;

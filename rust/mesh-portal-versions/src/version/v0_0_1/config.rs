@@ -88,7 +88,7 @@ pub mod config {
         use crate::version::v0_0_1::payload::payload::Call;
         use crate::version::v0_0_1::payload::payload::{Payload, PayloadPattern};
         use crate::version::v0_0_1::selector::selector::{
-            Block, EntityPattern, HttpPattern, MsgPattern, RcPattern,
+            PayloadBlock, EntityPattern, HttpPattern, MsgPattern, RcPattern,
         };
         use crate::version::v0_0_1::util::{ValueMatcher, ValuePattern};
         use serde::{Deserialize, Serialize};
@@ -218,7 +218,7 @@ pub mod config {
         #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
         pub struct PipelineStep {
             pub kind: StepKind,
-            pub blocks: Vec<Block>,
+            pub blocks: Vec<PayloadBlock>,
         }
 
         impl PipelineStep {

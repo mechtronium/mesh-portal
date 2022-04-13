@@ -1554,7 +1554,7 @@ pub mod selector {
     }
 
     #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
-    pub enum Block {
+    pub enum PayloadBlock {
         Upload(UploadBlock),
         RequestPattern(PatternBlock),
         ResponsePattern(PatternBlock),
@@ -2074,7 +2074,7 @@ pub mod selector {
         })
     }
 
-    pub fn text_payload_block(input: Span) -> Res<Span, Block> {
+    pub fn text_payload_block(input: Span) -> Res<Span, PayloadBlock> {
         delimited(
             tag("+["),
             tuple((
@@ -2084,10 +2084,10 @@ pub mod selector {
             )),
             tag("]"),
         )(input)
-        .map(|(next, (_, text, _))| (next, Block::CreatePayload(Payload::Text(text.to_string()))))
+        .map(|(next, (_, text, _))| (next, PayloadBlock::CreatePayload(Payload::Text(text.to_string()))))
     }
 
-    pub fn upload_payload_block(input: Span) -> Res<Span, Block> {
+    pub fn upload_payload_block(input: Span) -> Res<Span, PayloadBlock> {
         delimited(
             tag("^["),
             tuple((multispace0, file_chars, multispace0)),
@@ -2096,7 +2096,7 @@ pub mod selector {
         .map(|(next, (_, filename, _))| {
             (
                 next,
-                Block::Upload(UploadBlock {
+                PayloadBlock::Upload(UploadBlock {
                     name: filename.to_string(),
                 }),
             )
@@ -2105,7 +2105,7 @@ pub mod selector {
 
     pub fn upload_step(input: Span) -> Res<Span, UploadBlock> {
         terminated(upload_payload_block, tag("->"))(input).map(|(next, block)| {
-            if let Block::Upload(block) = block {
+            if let PayloadBlock::Upload(block) = block {
                 (next, block)
             } else {
                 panic!("it should have been an UploadBlock!");
@@ -2113,7 +2113,7 @@ pub mod selector {
         })
     }
 
-    pub fn request_payload_filter_block(input: Span) -> Res<Span, Block> {
+    pub fn request_payload_filter_block(input: Span) -> Res<Span, PayloadBlock> {
         context(
             "request-payload-filter-block",
             terminated(
@@ -2130,10 +2130,10 @@ pub mod selector {
                 tag("]"),
             ),
         )(input)
-        .map(|(next, (_, block, _))| (next, Block::RequestPattern(block)))
+        .map(|(next, (_, block, _))| (next, PayloadBlock::RequestPattern(block)))
     }
 
-    pub fn response_payload_filter_block(input: Span) -> Res<Span, Block> {
+    pub fn response_payload_filter_block(input: Span) -> Res<Span, PayloadBlock> {
         context(
             "response-payload-filter-block",
             terminated(
@@ -2150,16 +2150,16 @@ pub mod selector {
                 tag("]"),
             ),
         )(input)
-        .map(|(next, (_, block, _))| (next, Block::ResponsePattern(block)))
+        .map(|(next, (_, block, _))| (next, PayloadBlock::ResponsePattern(block)))
     }
 
-    pub fn pipeline_step_block(input: Span) -> Res<Span, Block> {
+    pub fn pipeline_step_block(input: Span) -> Res<Span, PayloadBlock> {
         let request = request_payload_filter_block
-            as for<'r> fn(Span<'r>) -> Result<(Span<'r>, Block), nom::Err<ErrorTree<Span<'r>>>>;
+            as for<'r> fn(Span<'r>) -> Result<(Span<'r>, PayloadBlock), nom::Err<ErrorTree<Span<'r>>>>;
         let response = response_payload_filter_block
-            as for<'r> fn(Span<'r>) -> Result<(Span<'r>, Block), nom::Err<ErrorTree<Span<'r>>>>;
+            as for<'r> fn(Span<'r>) -> Result<(Span<'r>, PayloadBlock), nom::Err<ErrorTree<Span<'r>>>>;
         let upload = upload_payload_block
-            as for<'r> fn(Span<'r>) -> Result<(Span<'r>, Block), nom::Err<ErrorTree<Span<'r>>>>;
+            as for<'r> fn(Span<'r>) -> Result<(Span<'r>, PayloadBlock), nom::Err<ErrorTree<Span<'r>>>>;
         context(
             "pipeline-step-block",
             select_block(vec![
@@ -2170,7 +2170,7 @@ pub mod selector {
         )(input)
     }
 
-    pub fn consume_pipeline_block(input: Span) -> Res<Span, Block> {
+    pub fn consume_pipeline_block(input: Span) -> Res<Span, PayloadBlock> {
         all_consuming(pipeline_step_block)(input)
     }
 

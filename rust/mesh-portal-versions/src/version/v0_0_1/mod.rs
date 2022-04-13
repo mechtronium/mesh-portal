@@ -32,6 +32,7 @@ pub type Span<'a> = LocatedSpan<&'a str, SpanExtra>;
 pub type SpanExtra = Rc<String>;
 
 pub fn span(s: &str) -> Span {
+
     Span::new_extra(s, Rc::new(s.to_string()))
 }
 pub type Timestamp = String;
