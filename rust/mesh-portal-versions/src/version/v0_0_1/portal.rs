@@ -38,7 +38,7 @@ pub mod portal {
         use crate::version::v0_0_1::artifact::ArtifactRequest;
         use crate::version::v0_0_1::frame::frame::{CloseReason, PrimitiveFrame};
         use crate::version::v0_0_1::id::id::{GenericKind, GenericKindBase, Point};
-        use crate::version::v0_0_1::messaging::messaging::{Request, Response};
+        use crate::version::v0_0_1::messaging::messaging::{Request, Response, Session};
         use crate::version::v0_0_1::particle::particle::StatusUpdate;
         use crate::version::v0_0_1::payload::payload::Payload;
         use crate::version::v0_0_1::portal::portal;
@@ -46,13 +46,12 @@ pub mod portal {
         use crate::version::v0_0_1::selector::selector::TksPattern;
         use crate::version::v0_0_1::util::unique_id;
         use serde::{Deserialize, Serialize};
-        use crate::version::v0_0_1::log::{Log, PointlessLog, TimestampedLog};
-        use crate::version::v0_0_1::log::audit::AuditLog;
+        use crate::version::v0_0_1::log::{AuditLog, Log, LogSpan, PointlessLog };
 
         #[derive(Debug, Clone, Serialize, Deserialize, strum_macros::Display)]
         pub enum Frame {
             Log(Log),
-            TimestampedLog(TimestampedLog<String>),
+            LogSpan(LogSpan),
             Audit(AuditLog),
             PointlessLog(PointlessLog),
             AssignRequest(Exchanger<AssignRequest>),
@@ -67,7 +66,7 @@ pub mod portal {
             pub fn from(&self) -> Option<Point> {
                 match self {
                     Frame::Log(log) => Option::Some(log.point.clone()),
-                    Frame::TimestampedLog(log) => Option::Some(log.point.clone())
+                    Frame::LogSpan(span) => Option::Some(span.point.clone()),
                     Frame::Audit(log) => Option::Some(log.point.clone()),
                     Frame::PointlessLog(_) => Option::None,
                     Frame::Request(request) => Option::Some(request.from.clone()),
@@ -82,6 +81,7 @@ pub mod portal {
                 }
             }
         }
+
 
         #[derive(
             Debug, Clone, Serialize, Deserialize, strum_macros::Display, strum_macros::EnumString,
@@ -117,16 +117,17 @@ pub mod portal {
         use crate::version::v0_0_1::config::config::{Assign, Config, ConfigBody};
         use crate::version::v0_0_1::frame::frame::{CloseReason, PrimitiveFrame};
         use crate::version::v0_0_1::id::id::{GenericKind, GenericKindBase, Point};
-        use crate::version::v0_0_1::messaging::messaging::{Request, Response};
+        use crate::version::v0_0_1::messaging::messaging::{Request, Response, Session};
         use crate::version::v0_0_1::payload::payload::Payload;
         use crate::version::v0_0_1::portal::portal::Exchanger;
         use serde::{Deserialize, Serialize};
+        use crate::version::v0_0_1::log::LogSpan;
 
         #[derive(Debug, Clone, Serialize, Deserialize, strum_macros::Display)]
         pub enum Frame {
             Init,
             Assign(Exchanger<Assign>),
-            Request(Request),
+            Request(RequestFrame),
             Response(Response),
             Artifact(Exchanger<ArtifactResponse>),
             Close(CloseReason),
@@ -136,7 +137,7 @@ pub mod portal {
             pub fn to(&self) -> Option<Point> {
                 match self {
                     Frame::Assign(assign) => Option::Some(assign.stub.point.clone()),
-                    Frame::Request(request) => Option::Some(request.to.clone()),
+                    Frame::Request(request) => Option::Some(request.request.to.clone()),
                     Frame::Response(response) => Option::Some(response.to.clone()),
                     Frame::Artifact(artifact) => Option::Some(artifact.to.clone()),
                     Frame::Close(_) => Option::None,
@@ -162,6 +163,14 @@ pub mod portal {
                 Ok(bincode::deserialize(value.data.as_slice())?)
             }
         }
+
+        #[derive(Debug,Clone,Serialize,Deserialize)]
+        pub struct RequestFrame {
+            pub request: Request,
+            pub session: Option<Session>,
+            pub log_span: LogSpan
+        }
+
     }
 
     pub mod initin {

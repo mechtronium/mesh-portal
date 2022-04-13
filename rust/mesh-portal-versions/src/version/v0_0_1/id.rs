@@ -493,6 +493,24 @@ pub mod id {
     pub type Point = PointDef<RouteSeg, PointSeg>;
     pub type PointSubst = PointDef<Subst<RouteSeg>, PointSegPairSubst>;
 
+
+    impl TryFrom<String> for Point {
+        type Error = MsgErr;
+
+        fn try_from(value: String) -> Result<Self, Self::Error> {
+            consume_point(value.as_str())
+        }
+    }
+
+    impl TryFrom<&str> for Point {
+        type Error = MsgErr;
+
+        fn try_from(value: &str) -> Result<Self, Self::Error> {
+            consume_point(value)
+        }
+    }
+
+
     #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
     pub struct PointDef<Route, Seg> {
         pub route: Route,

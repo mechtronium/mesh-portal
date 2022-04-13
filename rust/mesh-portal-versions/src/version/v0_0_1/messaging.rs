@@ -10,7 +10,7 @@ pub mod messaging {
     use crate::version::v0_0_1::entity::entity::request::RequestCore;
     use crate::version::v0_0_1::entity::entity::response::ResponseCore;
     use crate::version::v0_0_1::id::id::Point;
-    use crate::version::v0_0_1::log::PointLogger;
+    use crate::version::v0_0_1::log::{Logger, PointLogger};
     use crate::version::v0_0_1::payload::payload::{Errors, MsgCall, Payload, Primitive};
     use crate::version::v0_0_1::security::{
         Access, AccessGrant, EnumeratedAccess, EnumeratedPrivileges, Permissions, Privilege,
@@ -22,7 +22,8 @@ pub mod messaging {
     /// RequestCtx wraps a request and provides extra context and functionality to the request handler
     pub struct RequestCtx {
         pub request: Request,
-        pub logger: PointLogger
+        pub session: Option<Session>,
+        pub logger: Logger
     }
 
     impl Deref for RequestCtx {
@@ -33,11 +34,24 @@ pub mod messaging {
         }
     }
 
+    impl RequestCtx {
+        pub fn span( &self ) -> RequestCtx {
+           RequestCtx {
+               request: self.request.clone(),
+               session: self.session.clone(),
+               logger:self.logger.span()
+           }
+        }
+    }
+
+    pub struct ResponseCtx {
+
+    }
+
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct Request {
         pub id: String,
         pub agent: Agent,
-        pub session: Option<Session>,
         pub scope: Scope,
         pub handling: Handling,
         pub from: Point,
@@ -97,7 +111,6 @@ pub mod messaging {
             Self {
                 id: unique_id(),
                 agent: Agent::Anonymous,
-                session: Option::None,
                 scope: Scope::Full,
                 handling: Default::default(),
                 from,
@@ -286,7 +299,6 @@ pub mod messaging {
                 from: self.from.ok_or("RequestBuilder: 'from' must be set")?,
                 core: self.core.ok_or("RequestBuilder: 'core' must be set")?,
                 agent: self.agent,
-                session: self.session,
                 scope: self.scope,
                 handling: self.handling,
             })
@@ -340,7 +352,6 @@ pub mod messaging {
             self,
             from: Point,
             agent: Agent,
-            session: Option<Session>,
             scope: Scope,
         ) -> Result<Request, MsgErr> {
             self.validate()?;
@@ -354,7 +365,6 @@ pub mod messaging {
                 to: self.to.expect("expected to point"),
                 core,
                 agent,
-                session,
                 handling: Default::default(),
                 scope,
             };

@@ -34,9 +34,11 @@ pub type SpanExtra = Rc<String>;
 pub fn span(s: &str) -> Span {
     Span::new_extra(s, Rc::new(s.to_string()))
 }
+pub type Timestamp = String;
 
 extern "C" {
     pub fn mesh_portal_unique_id() -> String;
+    pub fn mesh_portal_timestamp() -> Timestamp;
 }
 
 pub mod artifact {
@@ -174,7 +176,7 @@ pub mod util {
     use serde::{Deserialize, Serialize};
 
     use crate::error::MsgErr;
-    use crate::version::v0_0_1::mesh_portal_unique_id;
+    use crate::version::v0_0_1::{mesh_portal_timestamp, mesh_portal_unique_id, Timestamp};
     use crate::version::v0_0_1::payload::payload::HttpMethod;
 
     #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
@@ -337,8 +339,11 @@ pub mod util {
      */
 
     pub fn unique_id() -> String {
-        //        Uuid::new_v4().to_string()
         unsafe { mesh_portal_unique_id() }
+    }
+
+    pub fn timestamp() -> Timestamp {
+        unsafe { mesh_portal_timestamp() }
     }
 }
 
