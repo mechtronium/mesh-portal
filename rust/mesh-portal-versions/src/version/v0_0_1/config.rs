@@ -88,11 +88,12 @@ pub mod config {
         use crate::version::v0_0_1::payload::payload::Call;
         use crate::version::v0_0_1::payload::payload::{Payload, PayloadPattern};
         use crate::version::v0_0_1::selector::selector::{
-            PayloadBlock, EntityPattern, HttpPattern, MsgPattern, RcPattern,
+            EntityPattern, HttpPattern, MsgPattern, RcPattern,
         };
         use crate::version::v0_0_1::util::{ValueMatcher, ValuePattern};
         use serde::{Deserialize, Serialize};
         use std::convert::TryInto;
+        use crate::version::v0_0_1::selector::PayloadBlock;
 
         pub struct ProtoBind {
             pub sections: Vec<PipelinesSubScope>,
@@ -327,10 +328,10 @@ pub mod config {
                 PipelineStop, ProtoBind, Selector, StepKind,
             };
             use crate::version::v0_0_1::entity::entity::EntityType;
-            use crate::version::v0_0_1::parse::{capture_point, Res};
+            use crate::version::v0_0_1::parse::{call, capture_point, entity_pattern, http_pattern, http_pattern_scoped, msg_pattern_scoped, pipeline_step_block, rc_pattern_scoped, Res};
             use crate::version::v0_0_1::selector::selector::{
-                call, entity_pattern, EntityPattern, http_pattern, http_pattern_scoped,
-                HttpPattern, msg_pattern_scoped, MsgPattern, pipeline_step_block, rc_pattern_scoped,
+                EntityPattern,
+                HttpPattern, MsgPattern,
                 RcPattern,
             };
             use crate::version::v0_0_1::{span, Span};

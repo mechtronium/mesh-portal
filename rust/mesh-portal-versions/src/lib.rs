@@ -1,3 +1,4 @@
+#![allow(warnings)]
 #![feature(unboxed_closures)]
 #[no_std]
 

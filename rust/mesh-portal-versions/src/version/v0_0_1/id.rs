@@ -19,7 +19,7 @@ pub mod id {
         BruteResolver, camel_case, consume_point, consume_point_subst, NoResolver,
         point_route_segment, point_segment, point_subst, Res, Resolver, Subst, ToResolved,
     };
-    use crate::version::v0_0_1::selector::selector::parse::{
+    use crate::version::v0_0_1::parse::parse::{
         generic_kind_base, kind, point_and_kind, specific,
     };
     use crate::version::v0_0_1::selector::selector::{Pattern, PointSelector, SpecificSelector, VersionReq};

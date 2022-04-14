@@ -555,16 +555,16 @@ pub mod test {
     use crate::version::v0_0_1::entity::entity::request::{Action, RequestCore};
     use crate::version::v0_0_1::id::id::{Point, PointSeg, PointSubst, RouteSeg};
     use crate::version::v0_0_1::parse::error::{find, result};
-    use crate::version::v0_0_1::parse::{access_grant, access_grant_kind, base_point_segment, camel_case, capture_point, child_perms, consume_point, consume_point_subst, create, file_point_capture_segment, MapResolver, particle_perms, permissions, permissions_mask, point, point_route_segment, point_subst, point_template, publish, rec_skewer, Res, skewer_chars, ToResolved, var, var_subst, version_point_segment};
+    use crate::version::v0_0_1::parse::{access_grant, access_grant_kind, base_point_segment, camel_case, capture_point, child_perms, consume_point, consume_point_subst, create, file_point_capture_segment, http_method, http_method_pattern, http_pattern, http_pattern_scoped, MapResolver, particle_perms, permissions, permissions_mask, point, point_route_segment, point_subst, point_template, publish, rec_skewer, Res, skewer_chars, ToResolved, upload_step, var, var_subst, version_point_segment};
     use crate::version::v0_0_1::payload::payload::{HttpMethod, Payload};
     use crate::version::v0_0_1::security::{
         ChildPerms, ParticlePerms, Permissions, PermissionsMask, PermissionsMaskKind,
     };
-    use crate::version::v0_0_1::selector::selector::parse::point_selector;
-    use crate::version::v0_0_1::selector::selector::parse::version;
+    use crate::version::v0_0_1::parse::parse::point_selector;
+    use crate::version::v0_0_1::parse::parse::version;
     use crate::version::v0_0_1::selector::selector::{
-        http_method, http_method_pattern, http_pattern, http_pattern_scoped, PointKindHierarchy,
-        PointSelector, upload_step,
+        PointKindHierarchy,
+        PointSelector,
     };
     use crate::version::v0_0_1::util::ValueMatcher;
     use crate::version::v0_0_1::{span, Span};

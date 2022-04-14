@@ -47,7 +47,7 @@ pub mod path {
 }
 
 pub mod selector {
-    use mesh_portal_versions::version::v0_0_1 as current;
+    use mesh_portal_versions::version::{v0_0_1 as current, v0_0_1};
     use mesh_portal_versions::version::v0_0_1::selector;
 
     pub type TksPattern = selector::selector::KindSelector;
@@ -65,10 +65,10 @@ pub mod selector {
     pub type RcPattern = selector::selector::RcPattern;
     pub type MsgPattern = selector::selector::MsgPattern;
     pub type HttpPattern = selector::selector::HttpPattern;
-    pub type Block = selector::selector::PayloadBlock;
-    pub type UploadBlock = selector::selector::UploadBlock;
-    pub type CreateBlock = selector::selector::CreateBlock;
-    pub type PatternBlock = selector::selector::PatternBlock;
+    pub type Block = v0_0_1::selector::PayloadBlock;
+    pub type UploadBlock = v0_0_1::selector::UploadBlock;
+    pub type CreateBlock = v0_0_1::selector::CreateBlock;
+    pub type PatternBlock = v0_0_1::selector::PatternBlock;
     pub type MapEntryPattern= selector::selector::MapEntryPattern;
     pub type Hop = selector::selector::SelectorHop;
     pub type Pattern<P> = selector::selector::Pattern<P>;
