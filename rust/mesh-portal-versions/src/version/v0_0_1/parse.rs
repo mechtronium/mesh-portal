@@ -7,10 +7,7 @@ use std::str::FromStr;
 use nom::branch::alt;
 use nom::bytes::complete::tag;
 use nom::bytes::complete::{is_a, is_not};
-use nom::character::complete::{
-    alpha0, alpha1, alphanumeric0, alphanumeric1, anychar, char, digit0, digit1, multispace0,
-    multispace1, one_of, space0, space1,
-};
+use nom::character::complete::{alpha0, alpha1, alphanumeric0, alphanumeric1, anychar, char, digit0, digit1, multispace0, multispace1, one_of, satisfy, space0, space1};
 use nom::combinator::{
     all_consuming, cut, eof, fail, not, opt, peek, recognize, success, value, verify,
 };
@@ -2241,15 +2238,23 @@ pub fn root_scope(input: Span) -> Res<Span, RootScope<Span>> {
     })
 }
 
+pub fn sub_scopes(input: Span) -> Res<Span, Vec<SubScope<Span>>> {
+    context(
+        "sub-scopes",
+          many0(delimited(multispace0,sub_scope,multispace0))
+    )(input)
+}
+
+
 pub fn sub_scope_selector(input: Span) -> Res<Span, ScopeSelector<Span>> {
     context(
         "sub-scope-selector",
-        cut(preceded(
-            multispace0,
-            pair(scope_selector_name, alt((scope_filters,sub_scope_selector_kazing))),
+          pair(
+          peek(alt( (recognize(satisfy( |c| !c.is_whitespace() )),recognize(not(eof))))),
+        cut( pair(scope_selector_name, alt((scope_filters,sub_scope_selector_kazing))),
         )),
     )(input)
-    .map(|(next, (name, filters))| (next, ScopeSelector { name, filters }))
+    .map(|(next, (_, (name,filters)))| (next, ScopeSelector { name, filters }))
 }
 
 // this is a hack so I could get a matching return for the Alt
@@ -2596,7 +2601,7 @@ pub mod error {
                 "scope-selector-version-closing-tag" =>{ builder.with_message("expecting a closing parenthesis for the root version declaration (no spaces allowed) -> i.e. Bind(version=1.0.0)->").with_label(Label::new(loc.location_offset()..loc.location_offset()).with_message("missing closing parenthesis"))}
                 "scope-selector-version-missing-kazing"=> { builder.with_message("The version declaration needs a little style.  Try adding a '->' to it.  Make sure there are no spaces between the parenthesis and the -> i.e. Bind(version=1.0.0)->").with_label(Label::new(loc.location_offset()..loc.location_offset()).with_message("missing stylish arrow"))}
                 "scope-selector-version" => { builder.with_message("Root config selector requires a version declaration with NO SPACES between the name and the version filter example: Bind(version=1.0.0)->").with_label(Label::new(loc.location_offset()..loc.location_offset()).with_message("bad version declaration"))}
-                "scope-selector-name" => { builder.with_message("Expecting an alphanumeric scope selector name. example: Pipes").with_label(Label::new(loc.location_offset()..loc.location_offset()).with_message("expecting root scope selector"))}
+                "scope-selector-name" => { builder.with_message("Expecting an alphanumeric scope selector name. example: Pipes").with_label(Label::new(loc.location_offset()..loc.location_offset()).with_message("expecting scope selector"))}
                 "root-scope-selector-name" => { builder.with_message("Expecting an alphanumeric root scope selector name and version. example: Bind(version=1.0.0)->").with_label(Label::new(loc.location_offset()..loc.location_offset()).with_message("expecting scope selector"))}
                 "consume" => { builder.with_message("Expected to be able to consume the entire String")}
                 "point:space_segment:dot_dupes" => { builder.with_message("Space Segment cannot have consecutive dots i.e. '..'").with_label(Label::new(loc.location_offset()..loc.location_offset()).with_message("Consecutive dots not allowed"))}
@@ -4052,7 +4057,7 @@ pub mod test {
     use crate::version::v0_0_1::parse::error::result;
     use crate::version::v0_0_1::parse::model::BlockKind;
     use crate::version::v0_0_1::parse::parse::version;
-    use crate::version::v0_0_1::parse::{args, block, expected_block_terminator_or_non_terminator, parse_include_blocks, rec_version, root_scope, root_scope_selector, rough_block, scope_filter, scope_filters, skewer_case};
+    use crate::version::v0_0_1::parse::{args, block, expected_block_terminator_or_non_terminator, parse_include_blocks, rec_version, root_scope, root_scope_selector, rough_block, scope_filter, scope_filters, skewer_case, sub_scope, sub_scopes};
     use crate::version::v0_0_1::span;
     use nom::bytes::complete::tag;
     use nom::combinator::{all_consuming, recognize};
@@ -4230,4 +4235,63 @@ Hello my friend
 
         Ok(())
     }
+
+
+    #[test]
+    pub fn test_sub_scope() -> Result<(), MsgErr> {
+        result(sub_scope(span("Pipes->{}")))?;
+        result(sub_scope(span("Pipes ->{}")))?;
+        result(sub_scope(span("Pipes -> {}")))?;
+        result(sub_scope(span("Pipes(auth)-> {}")))?;
+
+        let sub_scope = result(sub_scope(span(r#"Pipes(auth)-> {
+
+        ... all kinds of data...
+
+        }"#)))?;
+
+println!("SUB SCOPE: {}",sub_scope.block.content.to_string());
+
+        Ok(())
+    }
+
+    #[test]
+    pub fn test_root_and_subscope_phases() -> Result<(), MsgErr> {
+
+        let config = r#"
+Bind(version=1.2.3)-> {
+   Pipe -> {
+   }
+
+   Pipe(auth)-> {
+   }
+}
+
+        "#;
+
+        let root = result(root_scope(span(config)))?;
+
+        println!("parsed root");
+
+println!("parsing : {}", root.block.content.clone().to_string() );
+        pass(result(sub_scopes(root.block.content.clone())));
+       let sub_scopes = result(sub_scopes(root.block.content.clone()))?;
+
+        println!("subscopes found: {}", sub_scopes.len());
+        assert_eq!(sub_scopes.len(),2);
+
+
+        Ok(())
+    }
+
+    fn pass<R>( result: Result<R,MsgErr>) {
+        match result {
+            Ok(_) => {}
+            Err(err) => {
+                err.print();
+                assert!(false);
+            }
+        }
+    }
+
 }
