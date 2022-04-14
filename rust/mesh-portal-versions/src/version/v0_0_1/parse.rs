@@ -1,13 +1,18 @@
+
 use core::fmt;
 use std::collections::HashMap;
 use std::fmt::Formatter;
-use std::ops::{Deref, RangeFrom};
+use std::ops::{Deref, Range, RangeFrom, RangeTo};
+use std::rc::Rc;
 use std::str::FromStr;
 
 use nom::branch::alt;
-use nom::bytes::complete::tag;
 use nom::bytes::complete::{is_a, is_not};
-use nom::character::complete::{alpha0, alpha1, alphanumeric0, alphanumeric1, anychar, char, digit0, digit1, multispace0, multispace1, one_of, satisfy, space0, space1};
+use nom::bytes::complete::{tag, take_till, take_until, take_until1, take_while};
+use nom::character::complete::{
+    alpha0, alpha1, alphanumeric0, alphanumeric1, anychar, char, digit0, digit1, line_ending,
+    multispace0, multispace1, newline, one_of, satisfy, space0, space1,
+};
 use nom::combinator::{
     all_consuming, cut, eof, fail, not, opt, peek, recognize, success, value, verify,
 };
@@ -49,7 +54,7 @@ use crate::version::v0_0_1::parse::parse::{
 };
 use crate::version::v0_0_1::payload::payload::{
     Call, CallKind, CallWithConfig, HttpCall, HttpMethod, HttpMethodType, ListPattern, MapPattern,
-    MsgCall, Payload, PayloadFormat, PayloadPattern, PayloadType, PayloadTypePattern, Range,
+    MsgCall, Payload, PayloadFormat, PayloadPattern, PayloadType, PayloadTypePattern, NumRange,
 };
 use crate::version::v0_0_1::security::{
     AccessGrant, AccessGrantKindDef, AccessGrantKindSubst, AccessGrantSubst, ChildPerms,
@@ -67,6 +72,7 @@ use nom_locate::LocatedSpan;
 use nom_supreme::error::ErrorTree;
 use regex::internal::Input;
 use serde::{Deserialize, Serialize};
+use crate::version::v0_0_1::config::config::bind::BindConfig;
 
 /*
 pub struct Parser {}
@@ -829,8 +835,6 @@ where
 pub fn rec_skewer(input: Span) -> Res<Span, Span> {
     recognize(tuple((lowercase1, opt(skewer))))(input)
 }
-
-
 
 pub fn rec_skewer_capture(input: Span) -> Res<Span, Span> {
     recognize(tuple((lowercase1, opt(skewer_chars_plus_capture))))(input)
@@ -2241,27 +2245,35 @@ pub fn root_scope(input: Span) -> Res<Span, RootScope<Span>> {
 pub fn sub_scopes(input: Span) -> Res<Span, Vec<SubScope<Span>>> {
     context(
         "sub-scopes",
-          many0(delimited(multispace0,sub_scope,multispace0))
+        many0(delimited(multispace0, sub_scope, multispace0)),
     )(input)
 }
-
 
 pub fn sub_scope_selector(input: Span) -> Res<Span, ScopeSelector<Span>> {
     context(
         "sub-scope-selector",
-          pair(
-          peek(alt( (recognize(satisfy( |c| !c.is_whitespace() )),recognize(not(eof))))),
-        cut( pair(scope_selector_name, alt((scope_filters,sub_scope_selector_kazing))),
-        )),
+        pair(
+            peek(alt((
+                recognize(satisfy(|c| !c.is_whitespace())),
+                recognize(not(eof)),
+            ))),
+            cut(pair(
+                scope_selector_name,
+                alt((scope_filters, sub_scope_selector_kazing)),
+            )),
+        ),
     )(input)
-    .map(|(next, (_, (name,filters)))| (next, ScopeSelector { name, filters }))
+    .map(|(next, (_, (name, filters)))| (next, ScopeSelector { name, filters }))
 }
 
 // this is a hack so I could get a matching return for the Alt
-fn sub_scope_selector_kazing(input: Span) -> Res<Span,Vec<ScopeFilter<Span>>> {
-    context("sub-scope-selector-kazing",pair(multispace0,tag("->")))(input).map ( |(next,_)|{
-        (next,vec![])
-    })
+fn sub_scope_selector_kazing(input: Span) -> Res<Span, Vec<ScopeFilter<Span>>> {
+    println!("sub_scope_selector_kazing");
+    context(
+        "sub-scope-selector-kazing",
+        cut(pair(multispace0, tag("->"))),
+    )(input)
+    .map(|(next, _)| (next, vec![]))
 }
 
 pub fn parse_include_blocks<I, O2, E, F>(
@@ -2291,25 +2303,21 @@ where
     move |input: I| {
         recognize(many0(alt((
             recognize(any_rough_block),
-            recognize(    verify(anychar, move |c| {
-                    *c != kind.close_as_char()
-            })),
+            recognize(verify(anychar, move |c| *c != kind.close_as_char())),
         ))))(input)
     }
 }
 
 pub fn scope_filters(input: Span) -> Res<Span, Vec<ScopeFilter<Span>>> {
-    pair(
-        opt(pair(scope_filter, many0(preceded(tag("-"), scope_filter)))),
-        context("sub-scope-selector-kazing",tag("->")),
-    )(input)
-    .map(|(next, (opt, _))| {
+    tuple((
+        scope_filter,
+        many0(preceded(tag("-"), scope_filter)),
+        context("sub-scope-selector-kazing", cut(tag("->"))),
+    ))(input)
+    .map(|(next, (first, mut many_filters, _))| {
         let mut filters = vec![];
-        if opt.is_some() {
-            let (first, mut many_filters) = opt.unwrap();
-            filters.push(first);
-            filters.append(&mut many_filters);
-        }
+        filters.push(first);
+        filters.append(&mut many_filters);
         (next, filters)
     })
 }
@@ -2317,10 +2325,16 @@ pub fn scope_filters(input: Span) -> Res<Span, Vec<ScopeFilter<Span>>> {
 pub fn scope_filter(input: Span) -> Res<Span, ScopeFilter<Span>> {
     delimited(
         tag("("),
-        context("scope-filter",cut(tuple((
-            context("filter-name", cut(scope_name)),
-            opt(context("filter-arguments",preceded(multispace1,parse_include_blocks(BlockKind::Parens, args)))),
-        )))),
+        context(
+            "scope-filter",
+            cut(tuple((
+                context("filter-name", cut(scope_name)),
+                opt(context(
+                    "filter-arguments",
+                    preceded(multispace1, parse_include_blocks(BlockKind::Parens, args)),
+                )),
+            ))),
+        ),
         tag(")"),
     )(input)
     .map(|(next, (name, args))| {
@@ -2329,8 +2343,8 @@ pub fn scope_filter(input: Span) -> Res<Span, ScopeFilter<Span>> {
     })
 }
 
-pub fn scope_name(input: Span) -> Res<Span,Span> {
-    recognize(pair(skewer_case, peek(alt((eof,multispace1,tag(")"))))))(input)
+pub fn scope_name(input: Span) -> Res<Span, Span> {
+    recognize(pair(skewer_case, peek(alt((eof, multispace1, tag(")"))))))(input)
 }
 
 pub fn root_scope_selector(input: Span) -> Res<Span, RootScopeSelector> {
@@ -3551,21 +3565,21 @@ pub fn labeled_primitive_def(input: Span) -> Res<Span, LabeledPrimitiveTypeDef> 
     )
 }
 
-pub fn digit_range(input: Span) -> Res<Span, Range> {
+pub fn digit_range(input: Span) -> Res<Span, NumRange> {
     tuple((digit1, tag("-"), digit1))(input).map(|(next, (min, _, max))| {
         let min: usize = usize::from_str(min.to_string().as_str()).expect("usize");
         let max: usize = usize::from_str(max.to_string().as_str()).expect("usize");
-        let range = Range::MinMax { min, max };
+        let range = NumRange::MinMax { min, max };
 
         (next, range)
     })
 }
 
-pub fn exact_range(input: Span) -> Res<Span, Range> {
+pub fn exact_range(input: Span) -> Res<Span, NumRange> {
     digit1(input).map(|(next, exact)| {
         (
             next,
-            Range::Exact(
+            NumRange::Exact(
                 usize::from_str(exact.to_string().as_str())
                     .expect("expect to be able to change digit string into usize"),
             ),
@@ -3573,7 +3587,7 @@ pub fn exact_range(input: Span) -> Res<Span, Range> {
     })
 }
 
-pub fn range(input: Span) -> Res<Span, Range> {
+pub fn range(input: Span) -> Res<Span, NumRange> {
     delimited(
         multispace0,
         opt(alt((digit_range, exact_range))),
@@ -3582,7 +3596,7 @@ pub fn range(input: Span) -> Res<Span, Range> {
     .map(|(next, range)| {
         let range = match range {
             Some(range) => range,
-            None => Range::Any,
+            None => NumRange::Any,
         };
         (next, range)
     })
@@ -4051,17 +4065,168 @@ pub fn consume_pipeline_block(input: Span) -> Res<Span, PayloadBlock> {
     all_consuming(pipeline_step_block)(input)
 }
 
+/*
+pub fn remove_comments_from_span( span: Span )-> Res<Span,Span> {
+    let (next,no_comments) = remove_comments(span.clone())?;
+    let new = LocatedSpan::new_extra(no_comments.as_str(), span.extra.clone() );
+    Ok((next,new))
+}
+ */
+
+pub fn strip_comments<I>(input: I) -> Res<I, String>
+    where
+        I: InputTakeAtPosition + nom::InputLength+Clone+ToString,
+        <I as InputTakeAtPosition>::Item: AsChar,
+
+{
+   many0(alt((no_comment,comment))) (input).map( |(next,texts)| {
+
+       let mut rtn = String::new();
+       for t in texts {
+           match t{
+               TextType::NoComment(span) => {
+                   rtn.push_str(span.to_string().as_str());
+               }
+               TextType::Comment(span) => {
+                   for i in 0..span.input_len() {
+                       // replace with whitespace
+                       rtn.push_str(" ");
+                   }
+               }
+           }
+       }
+
+       // create with the new string, but use old string as reference
+       //let span = LocatedSpan::new_extra(rtn.as_str(), input.extra.clone() );
+       (next,rtn)
+   })
+}
+
+
+
+
+pub fn no_comment<T>(i: T) -> Res<T, TextType<T>>
+    where
+        T: InputTakeAtPosition + nom::InputLength,
+        <T as InputTakeAtPosition>::Item: AsChar,
+{
+    i.split_at_position1_complete(
+        |item| {
+            let char_item = item.as_char();
+            char_item == '#'
+        },
+        ErrorKind::AlphaNumeric,
+    ).map( |(next,comment)| {
+        (next,TextType::NoComment(comment))
+    } )
+}
+
+pub fn comment<T>(i: T) -> Res<T, TextType<T>>
+    where
+        T: InputTakeAtPosition + nom::InputLength,
+        <T as InputTakeAtPosition>::Item: AsChar,
+{
+    i.split_at_position1_complete(
+        |item| {
+            let char_item = item.as_char();
+            char_item == '\n'
+        },
+        ErrorKind::AlphaNumeric,
+    ).map( |(next,comment)| {
+        (next,TextType::Comment(comment))
+    } )
+}
+
+
+pub fn bind_config(input: &str) -> Result<BindConfig,MsgErr> {
+    let (next, stripped) = strip_comments(input)?;
+    let new = LocatedSpan::new_extra(stripped.as_str(), Rc::new(input.to_string()) );
+    let root_scope = result(delimited(multispace0,root_scope,multispace0)(new))?;
+    result(sub_scopes(root_scope.block.content.clone()))?;
+
+    let config = BindConfig::default();
+    Ok(config)
+}
+
+pub enum TextType<I> {
+    Comment(I),
+    NoComment(I),
+}
+
+impl <I:ToString> ToString for TextType<I> {
+    fn to_string(&self) -> String {
+        match self {
+            TextType::Comment(i) => i.to_string(),
+            TextType::NoComment(i) => i.to_string()
+        }
+    }
+}
+
+
 #[cfg(test)]
 pub mod test {
     use crate::error::MsgErr;
     use crate::version::v0_0_1::parse::error::result;
     use crate::version::v0_0_1::parse::model::BlockKind;
     use crate::version::v0_0_1::parse::parse::version;
-    use crate::version::v0_0_1::parse::{args, block, expected_block_terminator_or_non_terminator, parse_include_blocks, rec_version, root_scope, root_scope_selector, rough_block, scope_filter, scope_filters, skewer_case, sub_scope, sub_scopes};
+    use crate::version::v0_0_1::parse::{args, block, comment, expected_block_terminator_or_non_terminator, no_comment, parse_include_blocks, rec_version, strip_comments, root_scope, root_scope_selector, rough_block, scope_filter, scope_filters, skewer_case, sub_scope, sub_scopes, bind_config};
     use crate::version::v0_0_1::span;
     use nom::bytes::complete::tag;
     use nom::combinator::{all_consuming, recognize};
     use std::rc::Rc;
+    use nom_locate::LocatedSpan;
+    use nom_supreme::error::ErrorTree;
+    use crate::version::v0_0_1::config::config::bind::parse::bind;
+
+    #[test]
+    pub fn test_remove_comments() -> Result<(), MsgErr> {
+        let bind_str = r#"
+# this is a test of comments
+Bind(version=1.0.3)->
+{
+  # let's see if it works a couple of spaces in.
+  Pipes(auth)-> {  # and if it works on teh same line as something we wan to keep
+
+  }
+
+  # looky!  I deliberatly put an error here (space between the filter and the kazing -> )
+  # My hope is that we will get a an appropriate error message WITH COMMENTS INTACT
+  Pipes(noauth) -> # look!  I made a boo boo
+  {
+     # nothign to see here
+  }
+}
+
+#also test comment on eof:#"#;
+let sample2 = r#"
+
+
+        Bind(version=1.0.3)->
+        {
+
+            Pipes(auth)-> {
+
+        }
+
+
+
+            Pipes(noauth) ->
+            {
+
+            }
+        }
+
+
+
+"#;
+
+
+
+
+        bind_config(bind_str).err().unwrap().print();
+
+        Ok(())
+    }
 
     #[test]
     pub fn test_version() -> Result<(), MsgErr> {
@@ -4227,37 +4392,46 @@ Hello my friend
         result(scope_filter(span("(auth +hello)")))?;
         result(scope_filters(span("(auth +hello)->")))?;
         result(scope_filters(span("(auth +hello)-(filter2)->")))?;
-        result(scope_filters(span("(3auth +hello)-(filter2)->"))).err().unwrap().print();
-        result(scope_filters(span("(a?th +hello)-(filter2)->"))).err().unwrap().print();
-        result(scope_filters(span("(auth +hello)-(filter2) {}"))).err().unwrap().print();
+        result(scope_filters(span("(3auth +hello)-(filter2)->")))
+            .err()
+            .unwrap()
+            .print();
+        result(scope_filters(span("(a?th +hello)-(filter2)->")))
+            .err()
+            .unwrap()
+            .print();
+        result(scope_filters(span("(auth +hello)-(filter2) {}")))
+            .err()
+            .unwrap()
+            .print();
 
         assert!(skewer_case(span("3x")).is_err());
 
         Ok(())
     }
 
-
     #[test]
     pub fn test_sub_scope() -> Result<(), MsgErr> {
-        result(sub_scope(span("Pipes->{}")))?;
-        result(sub_scope(span("Pipes ->{}")))?;
-        result(sub_scope(span("Pipes -> {}")))?;
-        result(sub_scope(span("Pipes(auth)-> {}")))?;
+        pass(result(sub_scope(span("Pipes->{}"))))?;
+        pass(result(sub_scope(span("Pipes ->{}"))))?;
+        pass(result(sub_scope(span("Pipes -> {}"))))?;
+        pass(result(sub_scope(span("Pipes(auth)-> {}"))))?;
 
-        let sub_scope = result(sub_scope(span(r#"Pipes(auth)-> {
+        let sub_scope = result(sub_scope(span(
+            r#"Pipes(auth)-> {
 
         ... all kinds of data...
 
-        }"#)))?;
+        }"#,
+        )))?;
 
-println!("SUB SCOPE: {}",sub_scope.block.content.to_string());
+        println!("SUB SCOPE: {}", sub_scope.block.content.to_string());
 
         Ok(())
     }
 
     #[test]
     pub fn test_root_and_subscope_phases() -> Result<(), MsgErr> {
-
         let config = r#"
 Bind(version=1.2.3)-> {
    Pipe -> {
@@ -4273,25 +4447,23 @@ Bind(version=1.2.3)-> {
 
         println!("parsed root");
 
-println!("parsing : {}", root.block.content.clone().to_string() );
+        println!("parsing : {}", root.block.content.clone().to_string());
         pass(result(sub_scopes(root.block.content.clone())));
-       let sub_scopes = result(sub_scopes(root.block.content.clone()))?;
+        let sub_scopes = result(sub_scopes(root.block.content.clone()))?;
 
         println!("subscopes found: {}", sub_scopes.len());
-        assert_eq!(sub_scopes.len(),2);
-
+        assert_eq!(sub_scopes.len(), 2);
 
         Ok(())
     }
 
-    fn pass<R>( result: Result<R,MsgErr>) {
+    fn pass<R>(result: Result<R, MsgErr>) -> Result<(), MsgErr> {
         match result {
-            Ok(_) => {}
+            Ok(_) => Ok(()),
             Err(err) => {
                 err.print();
-                assert!(false);
+                Err(err)
             }
         }
     }
-
 }

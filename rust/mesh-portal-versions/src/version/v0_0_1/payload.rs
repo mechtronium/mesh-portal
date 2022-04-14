@@ -390,7 +390,7 @@ pub mod payload {
     #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
     pub struct ListPattern {
         pub primitive: PayloadType,
-        pub range: Range,
+        pub range: NumRange,
     }
 
     impl ListPattern {
@@ -415,7 +415,7 @@ pub mod payload {
     }
 
     #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
-    pub enum Range {
+    pub enum NumRange {
         MinMax { min: usize, max: usize },
         Exact(usize),
         Any,

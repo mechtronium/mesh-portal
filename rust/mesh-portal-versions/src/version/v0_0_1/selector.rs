@@ -26,7 +26,7 @@ pub mod selector {
     use crate::version::v0_0_1::payload::payload::{
         Call, CallKind, CallWithConfig, HttpCall, HttpMethod, HttpMethodType, ListPattern,
         MapPattern, MsgCall, Payload, PayloadFormat, PayloadPattern, PayloadType,
-        PayloadTypePattern, Primitive, PrimitiveType, Range,
+        PayloadTypePattern, Primitive, PrimitiveType, NumRange,
     };
     use crate::version::v0_0_1::parse::parse::{pattern, point_selector, value_pattern};
     use crate::version::v0_0_1::selector::selector::specific::{
