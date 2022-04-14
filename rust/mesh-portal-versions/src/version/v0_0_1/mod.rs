@@ -29,11 +29,11 @@ use crate::version::v0_0_1::bin::Bin;
 
 pub type State = HashMap<String, Bin>;
 pub type Span<'a> = LocatedSpan<&'a str, SpanExtra>;
-pub type SpanExtra = Rc<String>;
+pub type SpanExtra = Arc<String>;
 
 pub fn span(s: &str) -> Span {
 
-    Span::new_extra(s, Rc::new(s.to_string()))
+    Span::new_extra(s, Arc::new(s.to_string()))
 }
 pub type Timestamp = String;
 
@@ -554,7 +554,7 @@ pub mod test {
     use crate::version::v0_0_1::config::config::bind::{PipelinesSubScope, ProtoBind};
     use crate::version::v0_0_1::entity::entity::request::{Action, RequestCore};
     use crate::version::v0_0_1::id::id::{Point, PointSeg, PointSubst, RouteSeg};
-    use crate::version::v0_0_1::parse::error::{find, result};
+    use crate::version::v0_0_1::parse::error::{find_parse_err, result};
     use crate::version::v0_0_1::parse::{access_grant, access_grant_kind, base_point_segment, camel_case, capture_point, child_perms, consume_point, consume_point_subst, create, file_point_capture_segment, http_method, http_method_pattern, http_pattern, http_pattern_scoped, MapResolver, particle_perms, permissions, permissions_mask, point, point_route_segment, point_subst, point_template, publish, rec_skewer, Res, skewer_chars, ToResolved, upload_step, var, var_subst, version_point_segment};
     use crate::version::v0_0_1::payload::payload::{HttpMethod, Payload};
     use crate::version::v0_0_1::security::{

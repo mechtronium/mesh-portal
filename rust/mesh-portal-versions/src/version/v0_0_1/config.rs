@@ -51,17 +51,17 @@ pub mod config {
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct Assign {
-        pub config: Config<ResourceConfigBody>,
+        pub config: PointConfig<ResourceConfigBody>,
         pub stub: particle::Stub,
     }
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
-    pub struct Config<Body> {
+    pub struct PointConfig<Body> {
         pub point: Point,
         pub body: Body,
     }
 
-    impl<Body> Deref for Config<Body> {
+    impl<Body> Deref for PointConfig<Body> {
         type Target = Body;
 
         fn deref(&self) -> &Self::Target {
@@ -70,7 +70,7 @@ pub mod config {
     }
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
-    pub enum ConfigBody {
+    pub enum Config {
         Bind(BindConfig),
     }
 

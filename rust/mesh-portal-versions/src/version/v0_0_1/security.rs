@@ -254,7 +254,7 @@ impl FromStr for PermissionsMask {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let s = span(s);
-        result(all_consuming(permissions_mask)(s))
+        Ok(result(all_consuming(permissions_mask)(s))?)
     }
 }
 
@@ -410,7 +410,7 @@ impl FromStr for ParticlePerms {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let s = span(s);
-        result(all_consuming(particle_perms)(s))
+        Ok(result(all_consuming(particle_perms)(s))?)
     }
 }
 

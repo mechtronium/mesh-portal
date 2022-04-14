@@ -1,10 +1,11 @@
-
 use core::fmt;
 use std::collections::HashMap;
 use std::fmt::Formatter;
 use std::ops::{Deref, Range, RangeFrom, RangeTo};
 use std::rc::Rc;
 use std::str::FromStr;
+use std::sync::Arc;
+use ariadne::{Label, Report, ReportKind};
 
 use nom::branch::alt;
 use nom::bytes::complete::{is_a, is_not};
@@ -25,11 +26,13 @@ use nom::{
 };
 use nom_supreme::parse_from_str;
 
-use crate::error::MsgErr;
+use crate::error::{MsgErr, ParseErrs};
 use crate::version::v0_0_1::command::command::common::{PropertyMod, SetProperties, StateSrc};
 use crate::version::v0_0_1::config::config::bind::parse::{
     pipeline_step, select_block, SelectBlock,
 };
+use crate::version::v0_0_1::config::config::bind::{BindConfig };
+use crate::version::v0_0_1::config::config::{Config, PointConfig};
 use crate::version::v0_0_1::entity::entity::request::create::{
     Create, CreateOp, KindTemplate, PointSegFactory, PointTemplate, PointTemplateSeg, Require,
     Strategy, Template,
@@ -45,16 +48,14 @@ use crate::version::v0_0_1::id::id::{
     PointSegPairSubst, PointSegSubst, PointSubst, RouteSeg, Version,
 };
 use crate::version::v0_0_1::parse::error::{first_context, result};
-use crate::version::v0_0_1::parse::model::{
-    Block, BlockKind, RootScope, RootScopeSelector, Scope, ScopeFilter, ScopeSelector, SubScope,
-};
+use crate::version::v0_0_1::parse::model::{BindBlock, BindScope, Block, BlockKind, ParsedBlock, ParsedRootScope, ParsedScope, RootScopeSelector, Scope, ScopeFilter, ScopeSelector, TextType};
 use crate::version::v0_0_1::parse::parse::{
     delim_kind, generic_kind_base, pattern, point_selector, specific_selector, value_pattern,
     version,
 };
 use crate::version::v0_0_1::payload::payload::{
     Call, CallKind, CallWithConfig, HttpCall, HttpMethod, HttpMethodType, ListPattern, MapPattern,
-    MsgCall, Payload, PayloadFormat, PayloadPattern, PayloadType, PayloadTypePattern, NumRange,
+    MsgCall, NumRange, Payload, PayloadFormat, PayloadPattern, PayloadType, PayloadTypePattern,
 };
 use crate::version::v0_0_1::security::{
     AccessGrant, AccessGrantKindDef, AccessGrantKindSubst, AccessGrantSubst, ChildPerms,
@@ -72,7 +73,7 @@ use nom_locate::LocatedSpan;
 use nom_supreme::error::ErrorTree;
 use regex::internal::Input;
 use serde::{Deserialize, Serialize};
-use crate::version::v0_0_1::config::config::bind::BindConfig;
+use crate::version::v0_0_1::config::config::bind::Pipeline;
 
 /*
 pub struct Parser {}
@@ -2087,7 +2088,7 @@ pub fn grant<I>(input: I) -> Res<I,AccessGrant> where I:Clone+InputIter+InputLen
 
 /// rough block simply makes sure that the opening and closing symbols match
 /// it accounts for multiple embedded blocks of the same kind but NOT of differing kinds
-pub fn rough_block<'a, I, E>(kind: BlockKind) -> impl FnMut(I) -> IResult<I, Block<I>, E>
+pub fn rough_block<'a, I, E>(kind: BlockKind) -> impl FnMut(I) -> IResult<I, ParsedBlock<I>, E>
 where
     I: ToString
         + InputLength
@@ -2118,12 +2119,12 @@ where
                 context(kind.close_context(), cut(tag(kind.close()))),
             ),
         )(input)?;
-        let block = Block { kind, content };
+        let block = Block::parse(kind, content);
         Ok((next, block))
     }
 }
 
-pub fn block(kind: BlockKind) -> impl FnMut(Span) -> Res<Span, Block<Span>> {
+pub fn block(kind: BlockKind) -> impl FnMut(Span) -> Res<Span, Block<Span, ()>> {
     move |input: Span| {
         let (next, content) = context(
             kind.context(),
@@ -2145,7 +2146,7 @@ pub fn block(kind: BlockKind) -> impl FnMut(Span) -> Res<Span, Block<Span>> {
                 context(kind.close_context(), cut(tag(kind.close()))),
             ),
         )(input)?;
-        let block = Block { kind, content };
+        let block = Block::parse(kind, content);
         Ok((next, block))
     }
 }
@@ -2159,7 +2160,7 @@ fn block_open(input: Span) -> Res<Span, BlockKind> {
     ))(input)
 }
 
-fn any_rough_block<'a, I, E>(input: I) -> IResult<I, Block<I>, E>
+fn any_rough_block<'a, I, E>(input: I) -> IResult<I, ParsedBlock<I>, E>
 where
     I: ToString
         + InputLength
@@ -2183,7 +2184,7 @@ where
     ))(input)
 }
 
-fn any_block(input: Span) -> Res<Span, Block<Span>> {
+fn any_block(input: Span) -> Res<Span, ParsedBlock<Span>> {
     alt((
         block(BlockKind::Curly),
         block(BlockKind::Angle),
@@ -2212,7 +2213,7 @@ where
     }
 }
 
-pub fn sub_scope(input: Span) -> Res<Span, SubScope<Span>> {
+pub fn sub_scope(input: Span) -> Res<Span, ParsedScope<Span>> {
     context(
         "scope",
         tuple((
@@ -2227,7 +2228,7 @@ pub fn sub_scope(input: Span) -> Res<Span, SubScope<Span>> {
     })
 }
 
-pub fn root_scope(input: Span) -> Res<Span, RootScope<Span>> {
+pub fn root_scope(input: Span) -> Res<Span, ParsedRootScope<Span>> {
     context(
         "root-scope",
         tuple((
@@ -2237,12 +2238,12 @@ pub fn root_scope(input: Span) -> Res<Span, RootScope<Span>> {
         )),
     )(input)
     .map(|(next, (selector, _, block))| {
-        let scope = RootScope { selector, block };
+        let scope = ParsedRootScope { selector, block };
         (next, scope)
     })
 }
 
-pub fn sub_scopes(input: Span) -> Res<Span, Vec<SubScope<Span>>> {
+pub fn sub_scopes(input: Span) -> Res<Span, Vec<ParsedScope<Span>>> {
     context(
         "sub-scopes",
         many0(delimited(multispace0, sub_scope, multispace0)),
@@ -2403,37 +2404,95 @@ pub fn root_scope_selector_name(input: Span) -> Res<Span, String> {
     .map(|(next, (_, name))| (next, name.to_string()))
 }
 
+pub fn parse_root_scope(span: Span) -> Result<ParsedRootScope<Span>, MsgErr> {
+    let (_, root_scope) = all_consuming(delimited(multispace0, root_scope, multispace0))(span)?;
+    Ok(root_scope)
+}
+
 pub mod model {
+    use crate::version::v0_0_1::config::config::bind::Pipeline;
     use crate::version::v0_0_1::id::id::Version;
     use crate::version::v0_0_1::Span;
+    use std::collections::HashMap;
 
-    pub struct RootScopeSelector {
+    pub type Schemas = HashMap<RootScopeSelector, Schema>;
+
+    pub struct Schema {
+        pub kind: String,
         pub version: Version,
-        pub name: String,
+        pub scopes: Vec<ScopeSchema>,
     }
 
+    pub struct ScopeSchema {
+        pub scopes: Vec<ScopeSchema>,
+    }
+
+    #[derive(Clone,Eq, PartialEq, Hash)]
+    pub struct RootScopeSelector {
+        pub name: String,
+        pub version: Version,
+    }
+    impl RootScopeSelector {
+        pub fn new<N: ToString>(name: N, version: &Version) -> Self {
+            RootScopeSelector {
+                name: name.to_string(),
+                version: version.clone(),
+            }
+        }
+    }
+
+    #[derive(Clone)]
     pub struct ScopeSelector<I> {
         pub name: String,
         pub filters: Vec<ScopeFilter<I>>,
     }
 
+    #[derive(Clone)]
     pub struct ScopeFilter<I> {
         pub name: I,
         pub args: Option<I>,
     }
 
-    pub type RootScope<I> = Scope<RootScopeSelector, Block<I>>;
-    pub type SubScope<I> = Scope<ScopeSelector<I>, Block<I>>;
+    pub type ParsedBlock<I> = Block<I, ()>;
+    pub type ParsedRootScope<I> = Scope<RootScopeSelector, Block<I, ()>>;
+    pub type ParsedScope<I> = Scope<ScopeSelector<I>, Block<I, ()>>;
 
-    pub struct Scope<S, B> {
+    pub type BindScope<'a> = Scope<ScopeSelector<Span<'a>>, BindBlock>;
+
+    pub enum BindBlock {
+        Pipeline(Pipeline),
+    }
+
+
+    pub struct Scope<S, B> where S:Clone{
         pub selector: S,
         pub block: B,
     }
 
+    impl <S,FromBlock> Scope<S,FromBlock> where S:Clone{
+        pub fn upgrade<ToBlock>( self, block: ToBlock ) -> Scope<S,ToBlock> {
+            Scope {
+                selector: self.selector,
+                block
+            }
+        }
+    }
+
     #[derive(Clone)]
-    pub struct Block<I> {
+    pub struct Block<I, D> {
         pub kind: BlockKind,
         pub content: I,
+        pub data: D,
+    }
+
+    impl<I> Block<I,()> {
+        pub fn parse(kind: BlockKind, content: I) -> Block<I,()>{
+            Block {
+                kind,
+                content,
+                data: (),
+            }
+        }
     }
 
     #[derive(Copy, Clone, strum_macros::Display, strum_macros::EnumString)]
@@ -2557,10 +2616,24 @@ pub mod model {
             }
         }
     }
+
+    pub enum TextType<I> {
+        Comment(I),
+        NoComment(I),
+    }
+
+    impl<I: ToString> ToString for TextType<I> {
+        fn to_string(&self) -> String {
+            match self {
+                TextType::Comment(i) => i.to_string(),
+                TextType::NoComment(i) => i.to_string(),
+            }
+        }
+    }
 }
 
 pub mod error {
-    use crate::error::MsgErr;
+    use crate::error::{MsgErr, ParseErrs};
     use crate::version::v0_0_1::parse::model::BlockKind;
     use crate::version::v0_0_1::Span;
     use ariadne::Report;
@@ -2571,7 +2644,7 @@ pub mod error {
     pub fn result<R>(result: Result<(Span, R), Err<ErrorTree<Span>>>) -> Result<R, MsgErr> {
         match result {
             Ok((_, e)) => Ok(e),
-            Err(err) => Err(find(&err)),
+            Err(err) => Err(find_parse_err(&err)),
         }
     }
 
@@ -2590,9 +2663,7 @@ pub mod error {
 
      */
 
-    fn report(context: &str, loc: Span) -> MsgErr {
-        let source = Source::from(loc.extra.to_string().as_str());
-
+    fn report(context: &str, loc: Span) -> MsgErr{
         let mut builder = Report::build(ReportKind::Error, (), 23);
 
         match BlockKind::error_message(&loc, context) {
@@ -2600,10 +2671,7 @@ pub mod error {
                 let builder = builder.with_message(message).with_label(
                     Label::new(loc.location_offset()..loc.location_offset()).with_message(message),
                 );
-                return MsgErr::Report {
-                    report: builder.finish(),
-                    source: loc.extra.to_string(),
-                };
+                return ParseErrs::new(builder.finish(), loc.extra).into();
             }
             Err(_) => {}
         }
@@ -2615,7 +2683,7 @@ pub mod error {
                 "scope-selector-version-closing-tag" =>{ builder.with_message("expecting a closing parenthesis for the root version declaration (no spaces allowed) -> i.e. Bind(version=1.0.0)->").with_label(Label::new(loc.location_offset()..loc.location_offset()).with_message("missing closing parenthesis"))}
                 "scope-selector-version-missing-kazing"=> { builder.with_message("The version declaration needs a little style.  Try adding a '->' to it.  Make sure there are no spaces between the parenthesis and the -> i.e. Bind(version=1.0.0)->").with_label(Label::new(loc.location_offset()..loc.location_offset()).with_message("missing stylish arrow"))}
                 "scope-selector-version" => { builder.with_message("Root config selector requires a version declaration with NO SPACES between the name and the version filter example: Bind(version=1.0.0)->").with_label(Label::new(loc.location_offset()..loc.location_offset()).with_message("bad version declaration"))}
-                "scope-selector-name" => { builder.with_message("Expecting an alphanumeric scope selector name. example: Pipes").with_label(Label::new(loc.location_offset()..loc.location_offset()).with_message("expecting scope selector"))}
+                "scope-selector-name" => { builder.with_message("Expecting an alphanumeric scope selector name. example: Pipeline").with_label(Label::new(loc.location_offset()..loc.location_offset()).with_message("expecting scope selector"))}
                 "root-scope-selector-name" => { builder.with_message("Expecting an alphanumeric root scope selector name and version. example: Bind(version=1.0.0)->").with_label(Label::new(loc.location_offset()..loc.location_offset()).with_message("expecting scope selector"))}
                 "consume" => { builder.with_message("Expected to be able to consume the entire String")}
                 "point:space_segment:dot_dupes" => { builder.with_message("Space Segment cannot have consecutive dots i.e. '..'").with_label(Label::new(loc.location_offset()..loc.location_offset()).with_message("Consecutive dots not allowed"))}
@@ -2632,7 +2700,7 @@ pub mod error {
                 "point:version_segment" => {builder.with_message("A Version Segment allows all legal SemVer characters").with_label(Label::new(loc.location_offset()..loc.location_offset()).with_message("Illegal Character"))}
                 "filter-name" => {builder.with_message("Filter name must be skewer case with leading character").with_label(Label::new(loc.location_offset()..loc.location_offset()).with_message("Invalid filter name"))}
 
-                "sub-scope-selector-kazing" => {builder.with_message("Selector needs some style with the '->' operator either right after the Selector i.e.: 'Pipes ->' or as part of the filter declaration i.e. 'Pipes(auth)->'").with_label(Label::new(loc.location_offset()..loc.location_offset()).with_message("Missing or Invalid Kazing Operator( -> )"))}
+                "sub-scope-selector-kazing" => {builder.with_message("Selector needs some style with the '->' operator either right after the Selector i.e.: 'Pipeline ->' or as part of the filter declaration i.e. 'Pipeline(auth)->'").with_label(Label::new(loc.location_offset()..loc.location_offset()).with_message("Missing or Invalid Kazing Operator( -> )"))}
             "variable" => {
                     builder.with_message("variable name must be alphanumeric lowercase, dashes and dots.  Variables are preceded by the '$' operator and must be sorounded by parenthesis $(env.valid-variable-name)")
                 },
@@ -2676,13 +2744,10 @@ pub mod error {
             };
 
         //            let source = String::from_utf8(loc.get_line_beginning().to_vec() ).unwrap_or("could not parse utf8 of original source".to_string() );
-        MsgErr::Report {
-            report: builder.finish(),
-            source: loc.extra.to_string(),
-        }
+        ParseErrs::new(builder.finish(), loc.extra).into()
     }
 
-    pub fn find(err: &Err<ErrorTree<Span>>) -> MsgErr {
+    pub fn find_parse_err(err: &Err<ErrorTree<Span>>) -> MsgErr {
         match err {
             Err::Incomplete(_) => "internal parser error: Incomplete".into(),
             Err::Error(err) => find_tree(err),
@@ -2695,7 +2760,7 @@ pub mod error {
         Message(String),
     }
 
-    pub fn find_tree(err: &ErrorTree<Span>) -> MsgErr {
+    pub fn find_tree(err: &ErrorTree<Span>) -> MsgErr{
         match err {
             ErrorTree::Stack { base, contexts } => {
                 let (span, context) = contexts.first().unwrap();
@@ -4074,41 +4139,36 @@ pub fn remove_comments_from_span( span: Span )-> Res<Span,Span> {
  */
 
 pub fn strip_comments<I>(input: I) -> Res<I, String>
-    where
-        I: InputTakeAtPosition + nom::InputLength+Clone+ToString,
-        <I as InputTakeAtPosition>::Item: AsChar,
-
+where
+    I: InputTakeAtPosition + nom::InputLength + Clone + ToString,
+    <I as InputTakeAtPosition>::Item: AsChar,
 {
-   many0(alt((no_comment,comment))) (input).map( |(next,texts)| {
+    many0(alt((no_comment, comment)))(input).map(|(next, texts)| {
+        let mut rtn = String::new();
+        for t in texts {
+            match t {
+                TextType::NoComment(span) => {
+                    rtn.push_str(span.to_string().as_str());
+                }
+                TextType::Comment(span) => {
+                    for i in 0..span.input_len() {
+                        // replace with whitespace
+                        rtn.push_str(" ");
+                    }
+                }
+            }
+        }
 
-       let mut rtn = String::new();
-       for t in texts {
-           match t{
-               TextType::NoComment(span) => {
-                   rtn.push_str(span.to_string().as_str());
-               }
-               TextType::Comment(span) => {
-                   for i in 0..span.input_len() {
-                       // replace with whitespace
-                       rtn.push_str(" ");
-                   }
-               }
-           }
-       }
-
-       // create with the new string, but use old string as reference
-       //let span = LocatedSpan::new_extra(rtn.as_str(), input.extra.clone() );
-       (next,rtn)
-   })
+        // create with the new string, but use old string as reference
+        //let span = LocatedSpan::new_extra(rtn.as_str(), input.extra.clone() );
+        (next, rtn)
+    })
 }
 
-
-
-
 pub fn no_comment<T>(i: T) -> Res<T, TextType<T>>
-    where
-        T: InputTakeAtPosition + nom::InputLength,
-        <T as InputTakeAtPosition>::Item: AsChar,
+where
+    T: InputTakeAtPosition + nom::InputLength,
+    <T as InputTakeAtPosition>::Item: AsChar,
 {
     i.split_at_position1_complete(
         |item| {
@@ -4116,15 +4176,14 @@ pub fn no_comment<T>(i: T) -> Res<T, TextType<T>>
             char_item == '#'
         },
         ErrorKind::AlphaNumeric,
-    ).map( |(next,comment)| {
-        (next,TextType::NoComment(comment))
-    } )
+    )
+    .map(|(next, comment)| (next, TextType::NoComment(comment)))
 }
 
 pub fn comment<T>(i: T) -> Res<T, TextType<T>>
-    where
-        T: InputTakeAtPosition + nom::InputLength,
-        <T as InputTakeAtPosition>::Item: AsChar,
+where
+    T: InputTakeAtPosition + nom::InputLength,
+    <T as InputTakeAtPosition>::Item: AsChar,
 {
     i.split_at_position1_complete(
         |item| {
@@ -4132,98 +4191,120 @@ pub fn comment<T>(i: T) -> Res<T, TextType<T>>
             char_item == '\n'
         },
         ErrorKind::AlphaNumeric,
-    ).map( |(next,comment)| {
-        (next,TextType::Comment(comment))
-    } )
+    )
+    .map(|(next, comment)| (next, TextType::Comment(comment)))
 }
 
+pub fn config(src: &str) -> Result<Config, MsgErr> {
+    let (next, stripped) = strip_comments(src)?;
+    let span = LocatedSpan::new_extra(stripped.as_str(), Arc::new(src.to_string()));
+    let root_scope = parse_root_scope(span.clone())?;
 
-pub fn bind_config(input: &str) -> Result<BindConfig,MsgErr> {
-    let (next, stripped) = strip_comments(input)?;
-    let new = LocatedSpan::new_extra(stripped.as_str(), Rc::new(input.to_string()) );
-    let root_scope = result(delimited(multispace0,root_scope,multispace0)(new))?;
-    result(sub_scopes(root_scope.block.content.clone()))?;
+    if root_scope.selector == RootScopeSelector::new("Bind", &Version::from_str("1.0.0")?) {
+        let bind = bind_config(root_scope.block.content.clone())?;
+        return Ok(Config::Bind(bind));
+    } else {
+        let message = format!(
+            "cannot match a parser for configuration '{}' version '{}'",
+            root_scope.selector.name,
+            root_scope.selector.version.to_string()
+        );
+        let loc = root_scope.block.content.clone();
+        let mut builder = Report::build(ReportKind::Error, (), 0);
+        let report = builder.with_message(message).with_label(Label::new(loc.location_offset()..loc.location_offset()).with_message("Unrecognized Config Kind")).finish();
+        Err(ParseErrs::new( report, root_scope.block.content.extra.clone() ).into())
+
+    }
+}
+
+fn bind_config(input: Span) -> Result<BindConfig, MsgErr> {
+    let parsed_scopes= result(sub_scopes(input ))?;
+    let mut scopes = vec![];
+    let mut errors = vec![];
+
+    for parsed_scope in parsed_scopes {
+        match parse_bind_scope(parsed_scope) {
+            Ok(scope) => {
+                scopes.push(scope);
+            }
+            Err(err) => errors.push(err),
+        }
+    }
+
+    if !errors.is_empty() {
+        let errors = ParseErrs::fold(errors);
+        return Err(errors.into())
+    }
+
+
 
     let config = BindConfig::default();
     Ok(config)
 }
 
-pub enum TextType<I> {
-    Comment(I),
-    NoComment(I),
-}
-
-impl <I:ToString> ToString for TextType<I> {
-    fn to_string(&self) -> String {
-        match self {
-            TextType::Comment(i) => i.to_string(),
-            TextType::NoComment(i) => i.to_string()
+fn parse_bind_scope(scope: ParsedScope<Span>) -> Result<BindScope, ParseErrs> {
+    match scope.selector.name.as_str() {
+        "Pipeline" => parse_bind_pipelines_scope(scope),
+        what => {
+            let mut builder = Report::build(ReportKind::Error, (), 0);
+            let loc = scope.block.content.clone();
+            let report = builder.with_message(format!("Unrecognized BindConfig selector: '{}'",scope.selector.name)).with_label(Label::new(loc.location_offset()..loc.location_offset()).with_message("Unrecognized Selector")).finish();
+            Err(ParseErrs::new( report, scope.block.content.extra.clone() ))
         }
     }
 }
 
 
+fn parse_bind_pipelines_scope(scope: ParsedScope<Span>) -> Result<BindScope, ParseErrs> {
+    Ok(scope.upgrade(BindBlock::Pipeline(Pipeline::new()) ))
+}
+
 #[cfg(test)]
 pub mod test {
-    use crate::error::MsgErr;
+    use crate::error::{MsgErr, ParseErrs};
+    use crate::version::v0_0_1::config::config::bind::parse::bind;
     use crate::version::v0_0_1::parse::error::result;
     use crate::version::v0_0_1::parse::model::BlockKind;
     use crate::version::v0_0_1::parse::parse::version;
-    use crate::version::v0_0_1::parse::{args, block, comment, expected_block_terminator_or_non_terminator, no_comment, parse_include_blocks, rec_version, strip_comments, root_scope, root_scope_selector, rough_block, scope_filter, scope_filters, skewer_case, sub_scope, sub_scopes, bind_config};
+    use crate::version::v0_0_1::parse::{
+        args, bind_config, block, comment, config, expected_block_terminator_or_non_terminator,
+        no_comment, parse_include_blocks, rec_version, root_scope, root_scope_selector,
+        rough_block, scope_filter, scope_filters, skewer_case, strip_comments, sub_scope,
+        sub_scopes,
+    };
     use crate::version::v0_0_1::span;
     use nom::bytes::complete::tag;
     use nom::combinator::{all_consuming, recognize};
-    use std::rc::Rc;
     use nom_locate::LocatedSpan;
     use nom_supreme::error::ErrorTree;
-    use crate::version::v0_0_1::config::config::bind::parse::bind;
+    use std::rc::Rc;
+    use crate::version::v0_0_1::config::config::Config;
 
     #[test]
     pub fn test_remove_comments() -> Result<(), MsgErr> {
         let bind_str = r#"
 # this is a test of comments
-Bind(version=1.0.3)->
+Bind(version=1.0.0)->
 {
   # let's see if it works a couple of spaces in.
-  Pipes(auth)-> {  # and if it works on teh same line as something we wan to keep
+  Pipeline(auth)-> {  # and if it works on teh same line as something we wan to keep
 
   }
 
   # looky!  I deliberatly put an error here (space between the filter and the kazing -> )
   # My hope is that we will get a an appropriate error message WITH COMMENTS INTACT
-  Pipes(noauth) -> # look!  I made a boo boo
+  Pipeline(noauth) -> # look!  I made a boo boo
   {
      # nothign to see here
   }
-}
+}"#;
 
-#also test comment on eof:#"#;
-let sample2 = r#"
-
-
-        Bind(version=1.0.3)->
-        {
-
-            Pipes(auth)-> {
-
-        }
-
-
-
-            Pipes(noauth) ->
-            {
-
+        match config(bind_str) {
+            Ok(_) => {}
+            Err(err) => {
+                err.print();
             }
         }
-
-
-
-"#;
-
-
-
-
-        bind_config(bind_str).err().unwrap().print();
 
         Ok(())
     }
@@ -4251,7 +4332,7 @@ let sample2 = r#"
 Hello my friend
 
 
-        }"#,
+        }"#
         )))
         .err()
         .unwrap()

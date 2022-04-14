@@ -11,7 +11,10 @@ use nom_locate::LocatedSpan;
 use nom_supreme::error::{ErrorTree, StackContext};
 use semver::{ReqParseError, SemVerError};
 use std::num::ParseIntError;
+use std::rc::Rc;
+use std::sync::Arc;
 use ariadne::{Label, Report, ReportKind, Source};
+use crate::version::v0_0_1::parse::error::find_parse_err;
 use crate::version::v0_0_1::Span;
 
 pub enum MsgErr {
@@ -19,10 +22,7 @@ pub enum MsgErr {
         status: u16,
         message: String,
     },
-    Report{
-        report: Report,
-        source: String
-    }
+    ParseErrs(ParseErrs)
 }
 
 impl Debug for MsgErr {
@@ -31,7 +31,7 @@ impl Debug for MsgErr {
             MsgErr::Status { status, message } => {
                 f.write_str(format!("{}: {}",status,message).as_str() )
             }
-            MsgErr::Report { .. } => {
+            MsgErr::ParseErrs(_) => {
                 f.write_str("Error Report..." )
             }
         }
@@ -60,8 +60,8 @@ impl MsgErr {
             MsgErr::Status { .. } => {
                 println!("{}", self.to_string());
             }
-            MsgErr::Report { report, source } => {
-                report.print(Source::from(source)).unwrap_or_default()
+            MsgErr::ParseErrs(err) => {
+                err.print()
             }
         }
     }
@@ -103,7 +103,7 @@ impl StatusErr for MsgErr {
             MsgErr::Status { status,message } => {
                 status.clone()
             }
-            MsgErr::Report { .. } => {
+            MsgErr::ParseErrs(_) => {
                 500u16
             }
         }
@@ -114,7 +114,7 @@ impl StatusErr for MsgErr {
             MsgErr::Status { status,message } => {
                 message.clone()
             }
-            MsgErr::Report { .. } => {
+            MsgErr::ParseErrs(_) => {
                 "Error report".to_string()
             }
         }
@@ -132,7 +132,7 @@ impl Display for MsgErr {
             MsgErr::Status { status, message } => {
                 f.write_str(format!("{}: {}",status,message).as_str() )
             }
-            MsgErr::Report { .. } => {
+            MsgErr::ParseErrs(_) => {
                 f.write_str("Error Report..." )
             }
         }
@@ -347,3 +347,61 @@ impl Into<String> for MsgErr {
     }
 }
 
+
+
+
+
+impl From<ParseErrs> for MsgErr {
+    fn from(errs: ParseErrs) -> Self {
+        MsgErr::ParseErrs(errs)
+    }
+}
+
+
+
+pub struct ParseErrs {
+    pub report: Vec<Report>,
+    pub source: Option<Arc<String>>
+}
+
+impl ParseErrs {
+
+    pub fn new( report: Report, source: Arc<String>) -> Self {
+        Self {
+            report: vec![report],
+            source: Some(source)
+        }
+    }
+    pub fn print(&self) {
+        if let Some(source) = self.source.as_ref() {
+            for report in &self.report
+            {
+                report.print(Source::from(source.as_str())).unwrap_or_default()
+            }
+        }
+    }
+
+    pub fn fold( errs: Vec<ParseErrs> ) -> ParseErrs {
+        let source = if let Some(first) = errs.first() {
+            if let Some(source) = first.source.as_ref().cloned() {
+                Some(source)
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
+        let mut rtn = ParseErrs{
+            report: vec![],
+            source
+        };
+
+        for err in errs {
+            for report in err.report {
+                rtn.report.push(report)
+            }
+        }
+        rtn
+    }
+}
