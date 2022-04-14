@@ -830,8 +830,10 @@ where
 }
 
 pub fn rec_skewer(input: Span) -> Res<Span, Span> {
-    recognize(tuple((lowercase1, opt(skewer_chars))))(input)
+    recognize(tuple((lowercase1, opt(skewer))))(input)
 }
+
+
 
 pub fn rec_skewer_capture(input: Span) -> Res<Span, Span> {
     recognize(tuple((lowercase1, opt(skewer_chars_plus_capture))))(input)
@@ -1033,7 +1035,7 @@ pub fn camel_case(input: Span) -> Res<Span, Span> {
 }
 
 pub fn skewer_case(input: Span) -> Res<Span, Span> {
-    recognize(tuple((lowercase1, skewer)))(input)
+    rec_skewer(input)
     //recognize(alpha1)(input)
 }
 
@@ -2244,10 +2246,17 @@ pub fn sub_scope_selector(input: Span) -> Res<Span, ScopeSelector<Span>> {
         "sub-scope-selector",
         cut(preceded(
             multispace0,
-            pair(scope_selector_name, scope_filters),
+            pair(scope_selector_name, alt((scope_filters,sub_scope_selector_kazing))),
         )),
     )(input)
     .map(|(next, (name, filters))| (next, ScopeSelector { name, filters }))
+}
+
+// this is a hack so I could get a matching return for the Alt
+fn sub_scope_selector_kazing(input: Span) -> Res<Span,Vec<ScopeFilter<Span>>> {
+    context("sub-scope-selector-kazing",pair(multispace0,tag("->")))(input).map ( |(next,_)|{
+        (next,vec![])
+    })
 }
 
 pub fn parse_include_blocks<I, O2, E, F>(
@@ -2287,7 +2296,7 @@ where
 pub fn scope_filters(input: Span) -> Res<Span, Vec<ScopeFilter<Span>>> {
     pair(
         opt(pair(scope_filter, many0(preceded(tag("-"), scope_filter)))),
-        tag("->"),
+        context("sub-scope-selector-kazing",tag("->")),
     )(input)
     .map(|(next, (opt, _))| {
         let mut filters = vec![];
@@ -2303,17 +2312,20 @@ pub fn scope_filters(input: Span) -> Res<Span, Vec<ScopeFilter<Span>>> {
 pub fn scope_filter(input: Span) -> Res<Span, ScopeFilter<Span>> {
     delimited(
         tag("("),
-        tuple((
-            skewer,
-            multispace0,
-            opt(parse_include_blocks(BlockKind::Parens, args)),
-        )),
+        context("scope-filter",cut(tuple((
+            context("filter-name", cut(scope_name)),
+            opt(context("filter-arguments",preceded(multispace1,parse_include_blocks(BlockKind::Parens, args)))),
+        )))),
         tag(")"),
     )(input)
-    .map(|(next, (name, _, args))| {
+    .map(|(next, (name, args))| {
         let filter = ScopeFilter { name, args };
         (next, filter)
     })
+}
+
+pub fn scope_name(input: Span) -> Res<Span,Span> {
+    recognize(pair(skewer_case, peek(alt((eof,multispace1,tag(")"))))))(input)
 }
 
 pub fn root_scope_selector(input: Span) -> Res<Span, RootScopeSelector> {
@@ -2599,7 +2611,10 @@ pub mod error {
                 "point:file_segment" => {builder.with_message("A Point File Segment follows legal filesystem characters").with_label(Label::new(loc.location_offset()..loc.location_offset()).with_message("Illegal Character"))}
                 "point:file_or_directory"=> {builder.with_message("A Point File Segment (Files & Directories) follows legal filesystem characters").with_label(Label::new(loc.location_offset()..loc.location_offset()).with_message("Illegal Character"))}
                 "point:version_segment" => {builder.with_message("A Version Segment allows all legal SemVer characters").with_label(Label::new(loc.location_offset()..loc.location_offset()).with_message("Illegal Character"))}
-                "variable" => {
+                "filter-name" => {builder.with_message("Filter name must be skewer case with leading character").with_label(Label::new(loc.location_offset()..loc.location_offset()).with_message("Invalid filter name"))}
+
+                "sub-scope-selector-kazing" => {builder.with_message("Selector needs some style with the '->' operator either right after the Selector i.e.: 'Pipes ->' or as part of the filter declaration i.e. 'Pipes(auth)->'").with_label(Label::new(loc.location_offset()..loc.location_offset()).with_message("Missing or Invalid Kazing Operator( -> )"))}
+            "variable" => {
                     builder.with_message("variable name must be alphanumeric lowercase, dashes and dots.  Variables are preceded by the '$' operator and must be sorounded by parenthesis $(env.valid-variable-name)")
                 },
                 "child_perms" => {
@@ -2635,6 +2650,7 @@ pub mod error {
                 "access_grant_kind" => {
                     builder.with_message("expecting access grant kind ['super','perm','priv']")
                 },
+
                 what => {
                     builder.with_message(format!("internal parser error: cannot determine an error message for parse context: {}",what))
                 }
@@ -4036,10 +4052,7 @@ pub mod test {
     use crate::version::v0_0_1::parse::error::result;
     use crate::version::v0_0_1::parse::model::BlockKind;
     use crate::version::v0_0_1::parse::parse::version;
-    use crate::version::v0_0_1::parse::{
-        args, block, expected_block_terminator_or_non_terminator, parse_include_blocks,
-        rec_version, root_scope, root_scope_selector, rough_block, scope_filter,
-    };
+    use crate::version::v0_0_1::parse::{args, block, expected_block_terminator_or_non_terminator, parse_include_blocks, rec_version, root_scope, root_scope_selector, rough_block, scope_filter, scope_filters, skewer_case};
     use crate::version::v0_0_1::span;
     use nom::bytes::complete::tag;
     use nom::combinator::{all_consuming, recognize};
@@ -4203,30 +4216,17 @@ Hello my friend
 
     #[test]
     pub fn test_scope_filter() -> Result<(), MsgErr> {
-        //result(scope_filter(span("(auth)")))?;
-        //result(scope_filter(span("(auth )")))?;
-        //        result(recognize(parse_include_blocks(BlockKind::Parens,args))(span("txtttt)i "))).err().unwrap().print();
-        let r = result(recognize(parse_include_blocks(BlockKind::Parens, args))(
-            span("txtttt)i"),
-        ))?;
-        println!("result: {}", r.to_string());
-        let r = result(recognize(parse_include_blocks(BlockKind::Parens, args))(
-            span("abc 123"),
-        ))?;
-        println!("result: {}", r.to_string());
-        let r = result(recognize(parse_include_blocks(BlockKind::Parens, args))(
-            span("abc[] 123"),
-        ))?;
-        println!("result: {}", r.to_string());
-        let r = result(recognize(parse_include_blocks(BlockKind::Parens, args))(
-            span("abc() 123"),
-        ))?;
-        println!("result: {}", r.to_string());
-        let r = result(recognize(parse_include_blocks(BlockKind::Parens, args))(
-            span("abc) 123"),
-        ))?;
+        result(scope_filter(span("(auth)")))?;
+        result(scope_filter(span("(auth )")))?;
+        result(scope_filter(span("(auth hello)")))?;
+        result(scope_filter(span("(auth +hello)")))?;
+        result(scope_filters(span("(auth +hello)->")))?;
+        result(scope_filters(span("(auth +hello)-(filter2)->")))?;
+        result(scope_filters(span("(3auth +hello)-(filter2)->"))).err().unwrap().print();
+        result(scope_filters(span("(a?th +hello)-(filter2)->"))).err().unwrap().print();
+        result(scope_filters(span("(auth +hello)-(filter2) {}"))).err().unwrap().print();
 
-        println!("result: {}", r.to_string());
+        assert!(skewer_case(span("3x")).is_err());
 
         Ok(())
     }
