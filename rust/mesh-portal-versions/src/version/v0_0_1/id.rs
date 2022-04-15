@@ -23,7 +23,7 @@ pub mod id {
         generic_kind_base, kind, point_and_kind, specific,
     };
     use crate::version::v0_0_1::selector::selector::{Pattern, PointSelector, SpecificSelector, VersionReq};
-    use crate::version::v0_0_1::{span, Span};
+    use crate::version::v0_0_1::{create_span, Span};
 
     pub type GenericKindBase = String;
 
@@ -49,7 +49,7 @@ pub mod id {
         type Err = MsgErr;
 
         fn from_str(s: &str) -> Result<Self, Self::Err> {
-            let point_and_kind = match all_consuming(point_and_kind)(span(s)) {
+            let point_and_kind = match all_consuming(point_and_kind)(create_span(s)) {
                 Ok((_, point_and_kind)) => point_and_kind,
                 Err(err) => {
                     return Err("could not parse PointKind".into());
@@ -215,7 +215,7 @@ pub mod id {
         type Err = MsgErr;
 
         fn from_str(s: &str) -> Result<Self, Self::Err> {
-            let s = span(s);
+            let s = create_span(s);
             Ok(all_consuming(point_route_segment)(s)?.1)
         }
     }
@@ -389,7 +389,7 @@ pub mod id {
         type Err = MsgErr;
 
         fn from_str(s: &str) -> Result<Self, Self::Err> {
-            let s = span(s);
+            let s = create_span(s);
             Ok(all_consuming(point_segment)(s)?.1)
         }
     }
@@ -953,7 +953,7 @@ pub mod id {
         type Err = MsgErr;
 
         fn from_str(s: &str) -> Result<Self, Self::Err> {
-            let (_, kind) = all_consuming(kind)(span(s))?;
+            let (_, kind) = all_consuming(kind)(create_span(s))?;
 
             Ok(kind)
         }

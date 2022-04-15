@@ -356,7 +356,19 @@ impl From<ParseErrs> for MsgErr {
         MsgErr::ParseErrs(errs)
     }
 }
-
+impl From<nom::Err<ErrorTree<LocatedSpan<&str, Arc<std::string::String>>>>> for ParseErrs {
+    fn from(err: Err<ErrorTree<LocatedSpan<&str, Arc<String>>>>) -> Self {
+        match find_parse_err(&err) {
+            MsgErr::Status { .. } => {
+                ParseErrs {
+                   report: vec![],
+                   source: None
+                }
+            }
+            MsgErr::ParseErrs(parse_errs) => parse_errs
+        }
+    }
+}
 
 
 pub struct ParseErrs {

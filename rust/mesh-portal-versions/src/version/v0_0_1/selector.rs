@@ -14,15 +14,11 @@ pub mod selector {
 
     use crate::error::MsgErr;
 
-    use crate::version::v0_0_1::config::config::bind::parse::{many_until0, select_block, SelectBlock};
     use crate::version::v0_0_1::entity::entity::request::{Action, Rc, RcCommandType, RequestCore};
     use crate::version::v0_0_1::id::id::{
         GenericKind, GenericKindBase, Point, PointSeg, RouteSeg, Specific, Tks, Version,
     };
-    use crate::version::v0_0_1::parse::{
-        camel_case, camel_case_to_string_matcher, capture_path, capture_point, consume_hierarchy,
-        file_chars, path, path_regex, point, point_subst, Res,
-    };
+    use crate::version::v0_0_1::parse::{camel_case, camel_case_to_string_matcher, CapSubst, capture_path, capture_point, consume_hierarchy, file_chars, path, path_regex, point, point_subst, Res, Subst};
     use crate::version::v0_0_1::payload::payload::{
         Call, CallKind, CallWithConfig, HttpCall, HttpMethod, HttpMethodType, ListPattern,
         MapPattern, MsgCall, Payload, PayloadFormat, PayloadPattern, PayloadType,
@@ -33,7 +29,7 @@ pub mod selector {
         ProductSelector, VariantSelector, VendorSelector,
     };
     use crate::version::v0_0_1::util::{MethodPattern, StringMatcher, ValueMatcher, ValuePattern};
-    use crate::version::v0_0_1::{parse, span, Span};
+    use crate::version::v0_0_1::{parse, create_span, Span};
     use crate::{Deserialize, Serialize};
     use nom::branch::alt;
     use nom::bytes::complete::tag;
@@ -111,7 +107,7 @@ pub mod selector {
         type Err = MsgErr;
 
         fn from_str(s: &str) -> Result<Self, Self::Err> {
-            let (_, rtn) = all_consuming(point_selector)(span(s))?;
+            let (_, rtn) = all_consuming(point_selector)(create_span(s))?;
             Ok(rtn)
         }
     }
@@ -546,17 +542,35 @@ pub mod selector {
         Image,
     }
 
-    pub enum EntityPattern {
-        Rc(RcPattern),
-        Msg(MsgPattern),
-        Http(HttpPattern),
+    #[derive(Debug, Clone, strum_macros::Display, strum_macros::EnumString, Eq, PartialEq)]
+    pub enum PipelineKind {
+        Rc,
+        Msg,
+        Http
     }
 
-    impl ValueMatcher<RequestCore> for EntityPattern {
+
+    pub struct ParsedPipelineSelector {
+        pub kind: CapSubst<ValuePattern<PipelineKind>>,
+        pub action: CapSubst<ValuePattern<String>>,
+        pub path: CapSubst<String>
+    }
+
+    pub struct ParsedPipelineBlock {
+
+    }
+
+    pub enum PipelineSelector {
+        Rc(RcPipelineSelector),
+        Msg(MsgPipelineSelector),
+        Http(HttpPipelineSelector),
+    }
+
+    impl ValueMatcher<RequestCore> for PipelineSelector {
         fn is_match(&self, core: &RequestCore) -> Result<(), MsgErr> {
             match &core.action {
                 Action::Rc(found) => {
-                    if let EntityPattern::Rc(pattern) = self {
+                    if let PipelineSelector::Rc(pattern) = self {
                         pattern.is_match(core)
                     } else {
                         Err(format!(
@@ -568,7 +582,7 @@ pub mod selector {
                     }
                 }
                 Action::Msg(found) => {
-                    if let EntityPattern::Msg(pattern) = self {
+                    if let PipelineSelector::Msg(pattern) = self {
                         pattern.is_match(core)
                     } else {
                         Err(format!(
@@ -580,7 +594,7 @@ pub mod selector {
                     }
                 }
                 Action::Http(found) => {
-                    if let EntityPattern::Http(pattern) = self {
+                    if let PipelineSelector::Http(pattern) = self {
                         pattern.is_match(core)
                     } else {
                         Err(format!(
@@ -595,22 +609,22 @@ pub mod selector {
         }
     }
 
-    impl ToString for EntityPattern {
+    impl ToString for PipelineSelector {
         fn to_string(&self) -> String {
             match self {
-                EntityPattern::Rc(rc) => rc.to_string(),
-                EntityPattern::Msg(msg) => msg.to_string(),
-                EntityPattern::Http(http) => http.to_string(),
+                PipelineSelector::Rc(rc) => rc.to_string(),
+                PipelineSelector::Msg(msg) => msg.to_string(),
+                PipelineSelector::Http(http) => http.to_string(),
             }
         }
     }
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
-    pub struct RcPattern {
+    pub struct RcPipelineSelector {
         pub command: Pattern<RcCommandType>,
     }
 
-    impl ValueMatcher<RequestCore> for RcPattern {
+    impl ValueMatcher<RequestCore> for RcPipelineSelector {
         fn is_match(&self, core: &RequestCore) -> Result<(), MsgErr> {
             if let Action::Rc(rc) = &core.action {
                 if self.command.matches(&rc.get_type()) {
@@ -624,25 +638,27 @@ pub mod selector {
         }
     }
 
-    impl ToString for RcPattern {
+    impl ToString for RcPipelineSelector {
         fn to_string(&self) -> String {
             format!("Rc<{}>", self.command.to_string())
         }
     }
 
+
+
     #[derive(Debug, Clone, Serialize, Deserialize)]
-    pub struct MsgPattern {
+    pub struct MsgPipelineSelector {
         pub action: ValuePattern<StringMatcher>,
         pub path_regex: String,
     }
 
-    impl ToString for MsgPattern {
+    impl ToString for MsgPipelineSelector {
         fn to_string(&self) -> String {
             format!("Msg<{}>{}", self.action.to_string(), self.path_regex)
         }
     }
 
-    impl ValueMatcher<RequestCore> for MsgPattern {
+    impl ValueMatcher<RequestCore> for MsgPipelineSelector {
         fn is_match(&self, core: &RequestCore) -> Result<(), MsgErr> {
             if let Action::Msg(action) = &core.action {
                 self.action.is_match(action)?;
@@ -663,18 +679,18 @@ pub mod selector {
     }
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
-    pub struct HttpPattern {
+    pub struct HttpPipelineSelector {
         pub method: MethodPattern,
         pub path_regex: String,
     }
 
-    impl ToString for HttpPattern {
+    impl ToString for HttpPipelineSelector {
         fn to_string(&self) -> String {
             format!("Http<{}>{}", self.method.to_string(), self.path_regex)
         }
     }
 
-    impl ValueMatcher<RequestCore> for HttpPattern {
+    impl ValueMatcher<RequestCore> for HttpPipelineSelector {
         fn is_match(&self, found: &RequestCore) -> Result<(), MsgErr> {
             if let Action::Http(method) = &found.action {
                 self.method.is_match(&method)?;
@@ -1137,7 +1153,7 @@ pub mod selector {
         type Err = MsgErr;
 
         fn from_str(s: &str) -> Result<Self, Self::Err> {
-            Ok(consume_hierarchy(span(s))?)
+            Ok(consume_hierarchy(create_span(s))?)
         }
     }
 }

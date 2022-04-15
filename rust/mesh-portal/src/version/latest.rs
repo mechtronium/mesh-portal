@@ -61,10 +61,10 @@ pub mod selector {
     pub type LabeledPrimitiveTypeDef = selector::selector::LabeledPrimitiveTypeDef;
     pub type PrimitiveTypeDef = selector::selector::PayloadTypeDef;
     pub type Format = selector::selector::Format;
-    pub type EntityPattern = selector::selector::EntityPattern;
-    pub type RcPattern = selector::selector::RcPattern;
-    pub type MsgPattern = selector::selector::MsgPattern;
-    pub type HttpPattern = selector::selector::HttpPattern;
+    pub type EntityPattern = selector::selector::PipelineSelector;
+    pub type RcPattern = selector::selector::RcPipelineSelector;
+    pub type MsgPattern = selector::selector::MsgPipelineSelector;
+    pub type HttpPattern = selector::selector::HttpPipelineSelector;
     pub type Block = v0_0_1::selector::PayloadBlock;
     pub type UploadBlock = v0_0_1::selector::UploadBlock;
     pub type CreateBlock = v0_0_1::selector::CreateBlock;
@@ -207,7 +207,7 @@ pub mod config {
     pub type Assign = config::config::Assign;
     pub type Config<BODY> = config::config::PointConfig<BODY>;
     pub type ConfigBody = config::config::Config;
-    pub type ResourceConfigBody = config::config::ResourceConfigBody;
+    pub type ResourceConfigBody = config::config::ParticleConfigBody;
 
 
     pub mod bind {

@@ -6,7 +6,7 @@ use crate::version::v0_0_1::parse::{
     MapResolver, particle_perms, permissions_mask, privilege, Resolver, Subst, ToResolved,
 };
 use crate::version::v0_0_1::selector::selector::PointSelector;
-use crate::version::v0_0_1::{span, Span};
+use crate::version::v0_0_1::{create_span, Span};
 use nom::combinator::all_consuming;
 use nom_supreme::parser_ext::MapRes;
 use serde::{Deserialize, Serialize};
@@ -185,7 +185,7 @@ impl FromStr for Privilege {
     type Err = MsgErr;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let span = span(s);
+        let span = create_span(s);
         Ok(result(all_consuming(privilege)(span))?)
     }
 }
@@ -253,7 +253,7 @@ impl FromStr for PermissionsMask {
     type Err = MsgErr;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let s = span(s);
+        let s = create_span(s);
         Ok(result(all_consuming(permissions_mask)(s))?)
     }
 }
@@ -409,7 +409,7 @@ impl FromStr for ParticlePerms {
     type Err = MsgErr;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let s = span(s);
+        let s = create_span(s);
         Ok(result(all_consuming(particle_perms)(s))?)
     }
 }
