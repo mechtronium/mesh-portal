@@ -2471,6 +2471,7 @@ pub fn parsed_parent_scope(parent: ParsedScope<Span>) -> Result<ParsedParentScop
             block: vec![child]
         })
     } else {
+println!("parsing content: {}", parent.block.content.to_string() );
         let (_,scopes) = many0( delimited(multispace0, parsed_scope,multispace0 ) )( parent.block.content )?;
 
         Ok(ParsedParentScope {
@@ -2999,6 +3000,7 @@ pub mod model {
         Pipelines,
     }
 
+    #[derive(Clone)]
     pub struct Scope<S, B, P>
     where
         S: Clone,
@@ -4954,9 +4956,9 @@ pub mod test {
     use crate::error::{MsgErr, ParseErrs};
     use crate::version::v0_0_1::config::config::Config;
     use crate::version::v0_0_1::parse::error::result;
-    use crate::version::v0_0_1::parse::model::{BlockKind, NestedBlockKind, TerminatedBlockKind};
+    use crate::version::v0_0_1::parse::model::{BlockKind, NestedBlockKind, ParsedScope, TerminatedBlockKind};
     use crate::version::v0_0_1::parse::parse::version;
-    use crate::version::v0_0_1::parse::{args, bind_config, comment, config, expected_block_terminator_or_non_terminator, nested_block, nested_block_content, next_selector, no_comment, parse_include_blocks, parse_inner_block, parsed_nested_block, parsed_scope, parsed_scopes, rec_version, root_scope, root_scope_selector, scope_filter, scope_filters, skewer_case, strip_comments, wrapper};
+    use crate::version::v0_0_1::parse::{args, bind_config, comment, config, expected_block_terminator_or_non_terminator, nested_block, nested_block_content, next_selector, no_comment, parse_include_blocks, parse_inner_block, parsed_nested_block, parsed_parent_scope, parsed_scope, parsed_scopes, rec_version, root_scope, root_scope_selector, scope_filter, scope_filters, skewer_case, strip_comments, wrapper};
     use crate::version::v0_0_1::{create_span, Span};
     use nom::bytes::complete::tag;
     use nom::character::complete::alpha1;
@@ -5363,6 +5365,36 @@ Hello my friend
         assert_eq!(pipes.pipeline_step.unwrap().to_string().as_str(),"->" );
 
 
+            let pipes = log(result(parsed_scope(create_span(
+                "Pipeline<Http<Get>>(path /users/$(user=.*)) -[Text ]-> {}",
+            ))))?;
+            assert_eq!(
+                pipes.selector.selector.name.to_string().as_str(),
+                "Pipeline"
+            );
+            assert_eq!(
+                Some(pipes.selector.selector.children.as_ref().unwrap().to_string().as_str()),
+                Some("<Http<Get>>")
+            );
+            assert_eq!(pipes.block.kind, BlockKind::Nested(NestedBlockKind::Curly));
+            assert_eq!(pipes.selector.filters.len(), 1);
+            assert_eq!(pipes.pipeline_step.as_ref().unwrap().to_string().as_str(),"-[Text ]->" );
+
+            fn follow( parent: ParsedScope<Span>, mut indent: String) -> Result<(),MsgErr>{
+                let parent = parsed_parent_scope(parent)?;
+                println!("{}scope: {}", indent,parent.selector.selector.name );
+                println!("{}has_children: {}",indent, parent.selector.selector.has_children() );
+                if let Some(children) = parent.selector.selector.children.clone() {
+                    println!("{}childx: {}",indent, children.to_string() );
+                }
+                indent.push_str("\t");
+                for child in parent.block {
+                    follow(child.clone(),indent.clone())?;
+                }
+                Ok(())
+            }
+
+            follow(pipes, "".to_string())?;
 
         /* let scope = result(parsed_scope(create_span(
             "Pipeline<Http<Get>>(path /users/$(user=.*)) -> {}",
