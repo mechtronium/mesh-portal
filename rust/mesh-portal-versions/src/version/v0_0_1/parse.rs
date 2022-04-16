@@ -18,7 +18,7 @@ use nom::combinator::{
     all_consuming, cut, eof, fail, not, opt, peek, recognize, success, value, verify,
 };
 use nom::error::{context, ContextError, Error, ErrorKind, ParseError, VerboseError};
-use nom::multi::{many0, separated_list0, separated_list1};
+use nom::multi::{many0, many1, separated_list0, separated_list1};
 use nom::sequence::{delimited, pair, preceded, terminated, tuple};
 use nom::{
     AsChar, Compare, CompareResult, FindToken, IResult, InputIter, InputLength, InputTake,
@@ -50,12 +50,7 @@ use crate::version::v0_0_1::id::id::{
     PointSegPairSubst, PointSegSubst, PointSubst, RouteSeg, Version,
 };
 use crate::version::v0_0_1::parse::error::{first_context, result};
-use crate::version::v0_0_1::parse::model::{
-    BindBlock, BindScope, Block, BlockKind, ElemSpan, NestedBlockKind, ParsedBlock,
-    ParsedRootScope, ParsedScope, ParsedScopeSelector, ParsedScopeSelectorAndFilters,
-    RootScopeSelector, Scope, ScopeFilter, ScopeSelector, TerminatedBlockKind,
-    TextType,
-};
+use crate::version::v0_0_1::parse::model::{BindBlock, BindScope, Block, BlockKind, ElemSpan, ParsedParentScope, NestedBlockKind, ParsedBlock, ParsedRootScope, ParsedScope, ParsedScopeSelector, ParsedScopeSelectorAndFilters, RootScopeSelector, Scope, ScopeFilter, ScopeSelector, TerminatedBlockKind, TextType};
 use crate::version::v0_0_1::parse::parse::{
     delim_kind, generic_kind_base, pattern, point_selector, specific_selector, value_pattern,
     version,
@@ -1784,9 +1779,7 @@ where
     O: Clone,
 {
     move |input: I| {
-        println!("{} input: {}", tag, input.to_string());
         let (next, i) = f.parse(input)?;
-        println!("\t{} next: {}", tag, next.to_string());
         Ok((next, i))
     }
 }
@@ -2187,12 +2180,12 @@ pub fn none<I, O, E>(input: I) -> IResult<I, Option<O>, E> {
 
 pub fn nospace<I, E>(input: I) -> IResult<I, I, E>
 where
-    I: InputLength + InputTake+Clone,
+    I: InputLength + InputTake + Clone,
 {
     Ok((input.clone(), input.take(0)))
 }
 
-pub fn some<'a, I, O, E, F>(f: F) -> impl FnMut(I) -> IResult<I, Option<O>, E>
+pub fn some<'a, I, O, E, F>(mut f: F) -> impl FnMut(I) -> IResult<I, Option<O>, E>
 where
     I: ToString
         + InputLength
@@ -2207,7 +2200,7 @@ where
     I: nom::Slice<std::ops::RangeFrom<usize>>,
     <I as InputIter>::Item: AsChar,
     E: nom::error::ContextError<I> + nom::error::ParseError<I>,
-    F: nom::Parser<I, O, E>+Clone
+    F: nom::Parser<I, O, E> + Clone
 {
     move |input: I| {
         f.clone()
@@ -2238,20 +2231,14 @@ where
         for kind in &kinds {
             let result = parsed_block(kind.clone())(input.clone());
             match &result {
-                Ok((next, block)) => {
-                    return result
-                },
+                Ok((next, block)) => return result,
                 Err(err) => {
                     match err {
-                        nom::Err::Incomplete(Needed) => {
-                            return result
-                        },
+                        nom::Err::Incomplete(Needed) => return result,
                         nom::Err::Error(e) => {
                             // let's hope for another match...
                         }
-                        nom::Err::Failure(e) => {
-                            return result
-                        },
+                        nom::Err::Failure(e) => return result,
                     }
                 }
             }
@@ -2280,13 +2267,18 @@ where
     <I as InputIter>::Item: AsChar,
     E: nom::error::ContextError<I> + nom::error::ParseError<I>,
 {
-    move |input:I| {
-        match kind {
-            BlockKind::Nested(kind) => parsed_nested_block(kind).parse(input),
-            BlockKind::Terminated(kind) => parsed_terminated_block(kind).parse(input),
-            BlockKind::Delimited(kind) => {
-                unimplemented!()
-            }
+    move |input: I| match kind {
+        BlockKind::Nested(kind) => parsed_nested_block(kind).parse(input),
+        BlockKind::Terminated(kind) => parsed_terminated_block(kind).parse(input),
+        BlockKind::Delimited(kind) => {
+            unimplemented!()
+        }
+        BlockKind::Partial => {
+            eprintln!("parser should not be seeking partial block kinds...");
+            Err(nom::Err::Failure(E::from_error_kind(
+                input,
+                ErrorKind::IsNot,
+            )))
         }
     }
 }
@@ -2294,35 +2286,35 @@ where
 pub fn parsed_terminated_block<'a, I, E>(
     kind: TerminatedBlockKind,
 ) -> impl FnMut(I) -> IResult<I, ParsedBlock<I>, E>
-    where
-        I: ToString
+where
+    I: ToString
         + InputLength
         + InputTake
         + Compare<&'static str>
         + InputIter
         + Clone
         + InputTakeAtPosition,
-        <I as InputTakeAtPosition>::Item: AsChar,
-        I: ToString,
-        I: Offset + nom::Slice<std::ops::RangeTo<usize>>,
-        I: nom::Slice<std::ops::RangeFrom<usize>>,
-        <I as InputIter>::Item: AsChar,
-        E: nom::error::ContextError<I> + nom::error::ParseError<I>,
+    <I as InputTakeAtPosition>::Item: AsChar,
+    I: ToString,
+    I: Offset + nom::Slice<std::ops::RangeTo<usize>>,
+    I: nom::Slice<std::ops::RangeFrom<usize>>,
+    <I as InputIter>::Item: AsChar,
+    E: nom::error::ContextError<I> + nom::error::ParseError<I>,
 {
-    move |input:I| {
+    move |input: I| {
         terminated(
             recognize(many0(satisfy(|c| c != kind.as_char()))),
             tag(kind.tag()),
         )(input)
-            .map(|(next, content)| {
-                let block = ParsedBlock {
-                    kind: BlockKind::Terminated(kind),
-                    content,
-                    data: (),
-                };
+        .map(|(next, content)| {
+            let block = ParsedBlock {
+                kind: BlockKind::Terminated(kind),
+                content,
+                data: (),
+            };
 
-                (next, block)
-            })
+            (next, block)
+        })
     }
 }
 
@@ -2369,7 +2361,16 @@ where
     }
 }
 
-pub fn block(kind: NestedBlockKind) -> impl FnMut(Span) -> Res<Span, Block<Span, ()>> {
+pub fn nested_block_content(kind: NestedBlockKind) -> impl FnMut(Span) -> Res<Span, Span> {
+    move |input: Span| {
+        nested_block(kind)(input).map(|(next, block)| {
+            println!("CONTENT: {}", block.content.to_string());
+            (next, block.content)
+        })
+    }
+}
+
+pub fn nested_block(kind: NestedBlockKind) -> impl FnMut(Span) -> Res<Span, Block<Span, ()>> {
     move |input: Span| {
         let (next, content) = context(
             kind.context(),
@@ -2431,10 +2432,10 @@ where
 
 fn any_block(input: Span) -> Res<Span, ParsedBlock<Span>> {
     alt((
-        block(NestedBlockKind::Curly),
-        block(NestedBlockKind::Angle),
-        block(NestedBlockKind::Parens),
-        block(NestedBlockKind::Square),
+        nested_block(NestedBlockKind::Curly),
+        nested_block(NestedBlockKind::Angle),
+        nested_block(NestedBlockKind::Parens),
+        nested_block(NestedBlockKind::Square),
     ))(input)
 }
 
@@ -2458,22 +2459,37 @@ where
     }
 }
 
+pub fn parsed_parent_scope(parent: ParsedScope<Span>) -> Result<ParsedParentScope<Span>,MsgErr> {
+    if parent.selector.selector.children.is_some() {
+        let (_,child_selector) = all_consuming(parsed_scope_selector)(parent.selector.selector.children.as_ref().expect("child names...").clone())?;
+
+        let child = ParsedScope::new(ParsedScopeSelectorAndFilters::new( child_selector, parent.selector.filters ),parent.block );
+
+        Ok(ParsedParentScope {
+            selector: ParsedScopeSelectorAndFilters::new( parent.selector.selector, vec![] ),
+            pipeline_step: None,
+            block: vec![child]
+        })
+    } else {
+        let (_,scopes) = many0( delimited(multispace0, parsed_scope,multispace0 ) )( parent.block.content )?;
+
+        Ok(ParsedParentScope {
+            selector: parent.selector,
+            pipeline_step: parent.pipeline_step,
+            block: scopes
+        })
+    }
+}
+
 pub fn parsed_scope(input: Span) -> Res<Span, ParsedScope<Span>> {
     context(
         "scope",
         pair(
-            parsed_scope_selector,
-            alt((
-                tuple((
-                    none,
-                    nospace,
-                    pair(none, parsed_sub_scope_selectors_and_filters_block),
-                )),
-                tuple((
-                    opt(scope_filters),
-                    multispace0,
-                    parsed_scope_pipeline_and_block,
-                )),
+            parsed_scope_selector_and_filters,
+            tuple((
+                opt(scope_filters),
+                multispace0,
+                parsed_scope_pipeline_and_block,
             )),
         ),
     )(input)
@@ -2482,7 +2498,6 @@ pub fn parsed_scope(input: Span) -> Res<Span, ParsedScope<Span>> {
             None => vec![],
             Some(filters) => filters,
         };
-        let selector = ParsedScopeSelectorAndFilters::new(selector, filters);
         let scope = ParsedScope {
             selector,
             pipeline_step,
@@ -2497,7 +2512,10 @@ pub fn parsed_scope_pipeline_and_block(
 ) -> Res<Span, (Option<Span>, ParsedBlock<Span>)> {
     alt((
         tuple((
-            peek(recognize(pair(rough_pipeline_step,context("scope:expect-space-after-pipeline-step",cut(multispace1))))),
+            peek(recognize(pair(
+                rough_pipeline_step,
+                context("scope:expect-space-after-pipeline-step", cut(multispace1)),
+            ))),
             opt(rough_pipeline_step),
             recognize(one_of(" \n\t\r")),
             parsed_block_alt(vec![
@@ -2506,29 +2524,39 @@ pub fn parsed_scope_pipeline_and_block(
             ]),
         )),
         tuple((
-            peek(recognize(opt(pair(rough_pipeline_step,context("scope:expect-space-after-pipeline-step",cut(multispace1)))))),
+            peek(recognize(opt(pair(
+                rough_pipeline_step,
+                context("scope:expect-space-after-pipeline-step", cut(multispace1)),
+            )))),
             opt(rough_pipeline_step),
             multispace0,
             parsed_nested_block(NestedBlockKind::Curly),
         )),
     ))(input)
-    .map(|(next, (_,pipeline_step, _, block))| {
-
-        (next, (pipeline_step, block))
-    })
-
+    .map(|(next, (_, pipeline_step, _, block))| (next, (pipeline_step, block)))
 }
 
-pub fn parsed_sub_scope_selectors_and_filters_block(input: Span) -> Res<Span, ParsedBlock<Span>> {
+pub fn parsed_sub_scope_selectors_and_filters_and_block(
+    input: Span,
+) -> Res<Span, ParsedBlock<Span>> {
     recognize(pair(
-        delimited(tag("<"), parsed_scope_selector, tag(">")),
-        opt(scope_filters),
+        nested_block_content(NestedBlockKind::Angle),
+        tuple((
+            opt(scope_filters),
+            multispace0,
+            opt(rough_pipeline_step),
+            multispace0,
+            parsed_block_alt(vec![
+                BlockKind::Nested(NestedBlockKind::Curly),
+                BlockKind::Terminated(TerminatedBlockKind::Semicolon),
+            ]),
+        )),
     ))(input)
     .map(|(next, content)| {
         (
             next,
             ParsedBlock {
-                kind: BlockKind::Terminated(TerminatedBlockKind::Semicolon),
+                kind: BlockKind::Partial,
                 content,
                 data: (),
             },
@@ -2563,7 +2591,34 @@ pub fn sub_scope_selector(input: Span) -> Res<Span, ScopeSelector<Span>> {
     alt((sub_scope_selector_expanded, sub_scope_selector_collapsed))
 }
 
+
+
+
+pub fn parsed_scope_selector_no_filters(
+    input: Span,
+) -> Res<Span, ParsedScopeSelectorAndFilters<Span>> {
+    context("parsed-scope-selector-no-filters", parsed_scope_selector)(input)
+        .map(|(next, selector)| (next, ParsedScopeSelectorAndFilters::new(selector, vec![])))
+}
+
  */
+
+pub fn next_selector( input: Span ) -> Res<Span,(Span,Option<Span>)> {
+
+
+    match wrapper(input.clone(), pair(peek(tag("<")),tuple((tag("<"),pair(context("scope-selector",cut(alphanumeric1)), opt(recognize(nested_block(NestedBlockKind::Angle)))),tag(">"))))).map(|(next,(_,(_,(name,children),_)))|{
+        (next,(name,children))
+    }) {
+        Ok((next,(name,children))) => {
+
+            return Ok((next,(name,children)))
+        },
+        Err(_) => {
+        }
+    }
+    pair(context("scope-selector",cut(alphanumeric1)), opt(recognize(nested_block(NestedBlockKind::Angle))))(input)
+
+}
 
 pub fn parsed_scope_selector_and_filters(
     input: Span,
@@ -2581,25 +2636,63 @@ pub fn parsed_scope_selector_and_filters(
     })
 }
 
-pub fn parsed_scope_selector_no_filters(
-    input: Span,
-) -> Res<Span, ParsedScopeSelectorAndFilters<Span>> {
-    context("parsed-scope-selector-no-filters", parsed_scope_selector)(input)
-        .map(|(next, selector)| (next, ParsedScopeSelectorAndFilters::new(selector, vec![])))
-}
-
 pub fn parsed_scope_selector(input: Span) -> Res<Span, ParsedScopeSelector<Span>> {
     context(
         "parsed-scope-selector",
-        pair(
-            peek(alt((
-                recognize(satisfy(|c| !c.is_whitespace())),
-                recognize(not(eof)),
-            ))),
-            cut(scope_selector_name),
-        ),
+            next_selector,
     )(input)
-    .map(|(next, (_, name))| (next, ParsedScopeSelector::new(name)))
+    .map(|(next, (name, children))| (next, ParsedScopeSelector::new(name, children)))
+}
+
+pub fn wrapper<I, O, F>(input: I, mut f: F) -> Res<I, O>
+where
+    F: FnMut(I) -> Res<I, O>,
+{
+    f.parse(input)
+}
+
+pub fn parse_inner_block<I, E, F>(
+    kind: NestedBlockKind,
+    mut f: &F,
+) -> impl FnMut(I) -> IResult<I, I, E> + '_
+where
+    I: Clone,
+    &'static str: FindToken<<I as InputTakeAtPosition>::Item>,
+
+    I: ToString
+        + InputLength
+        + InputTake
+        + Compare<&'static str>
+        + InputIter
+        + Clone
+        + InputTakeAtPosition,
+    <I as InputTakeAtPosition>::Item: AsChar,
+    I: ToString,
+    I: Offset + nom::Slice<std::ops::RangeTo<usize>>,
+    I: nom::Slice<std::ops::RangeFrom<usize>>,
+    <I as InputIter>::Item: AsChar,
+    E: nom::error::ContextError<I> + nom::error::ParseError<I>,
+    F: Fn(char) -> bool,
+    F: Clone,
+{
+    move |input: I| {
+        let (next, rtn) = alt((
+            delimited(
+                tag(kind.open()),
+                recognize(many1(alt((
+                    recognize(any_rough_block),
+                    recognize(verify(anychar, move |c| {
+                        f(*c) && *c != kind.close_as_char()
+                    })),
+                )))),
+                tag(kind.close()),
+            ),
+            recognize(many1(verify(anychar, move |c| {
+                f(*c) && *c != kind.close_as_char()
+            }))),
+        ))(input)?;
+        Ok((next, rtn))
+    }
 }
 
 pub fn parse_include_blocks<I, O2, E, F>(
@@ -2729,7 +2822,13 @@ pub fn scope_selector_name(input: Span) -> Res<Span, Span> {
             alphanumeric1,
             context(
                 "scope-selector-name:expect-termination",
-                cut(peek(alt((multispace1, tag("{"), tag("("), tag("<"))))),
+                cut(peek(alt((
+                    multispace1,
+                    tag("{"),
+                    tag("("),
+                    tag("<"),
+                    tag(">"),
+                )))),
             ),
         ),
     )(input)
@@ -2761,11 +2860,18 @@ pub mod model {
     #[derive(Clone)]
     pub struct ParsedScopeSelector<I> {
         pub name: I,
+        pub children: Option<I>,
     }
 
     impl<I> ParsedScopeSelector<I> {
-        pub fn new(name: I) -> Self {
-            Self { name }
+        pub fn new(name: I, children: Option<I>) -> Self {
+            Self { name, children }
+        }
+    }
+
+    impl<I> ParsedScopeSelector<I> {
+        pub fn has_children(&self) -> bool {
+            self.children.is_some()
         }
     }
 
@@ -2885,13 +2991,13 @@ pub mod model {
     pub type ParsedRootScope<I> =
         Scope<RootScopeSelector<I, ElemSpan<I, Version>>, Block<I, ()>, I>;
     pub type ParsedScope<I> = Scope<ParsedScopeSelectorAndFilters<I>, Block<I, ()>, I>;
+    pub type ParsedParentScope<I> = Scope<ParsedScopeSelectorAndFilters<I>, Vec<ParsedScope<I>>, I>;
     pub type BindScope<I> = Scope<ScopeSelector<I>, ElemSpan<I, BindBlock>, I>;
 
     #[derive(Clone)]
     pub enum BindBlock {
         Pipelines,
     }
-
 
     pub struct Scope<S, B, P>
     where
@@ -2923,8 +3029,6 @@ pub mod model {
         }
     }
 
-
-
     impl<S, FromBlock, P> Scope<S, FromBlock, P>
     where
         S: Clone,
@@ -2955,14 +3059,15 @@ pub mod model {
         }
     }
 
-    #[derive(Debug,Copy, Clone, strum_macros::Display,Eq,PartialEq)]
+    #[derive(Debug, Copy, Clone, strum_macros::Display, Eq, PartialEq)]
     pub enum BlockKind {
         Nested(NestedBlockKind),
         Terminated(TerminatedBlockKind),
         Delimited(DelimitedBlockKind),
+        Partial,
     }
 
-    #[derive(Debug,Copy, Clone, strum_macros::Display,Eq,PartialEq)]
+    #[derive(Debug, Copy, Clone, strum_macros::Display, Eq, PartialEq)]
     pub enum TerminatedBlockKind {
         Semicolon,
     }
@@ -2981,13 +3086,17 @@ pub mod model {
         }
     }
 
-    #[derive(Debug,Copy, Clone, strum_macros::Display, strum_macros::EnumString,Eq,PartialEq)]
+    #[derive(
+        Debug, Copy, Clone, strum_macros::Display, strum_macros::EnumString, Eq, PartialEq,
+    )]
     pub enum DelimitedBlockKind {
         SingleQuotes,
         DoubleQuotes,
     }
 
-    #[derive(Debug,Copy, Clone, strum_macros::Display, strum_macros::EnumString,Eq,PartialEq)]
+    #[derive(
+        Debug, Copy, Clone, strum_macros::Display, strum_macros::EnumString, Eq, PartialEq,
+    )]
     pub enum NestedBlockKind {
         Curly,
         Parens,
@@ -4844,13 +4953,16 @@ fn parse_bind_pipelines_scope<'a>(input: Span) -> Result<ElemSpan<Span, BindBloc
 pub mod test {
     use crate::error::{MsgErr, ParseErrs};
     use crate::version::v0_0_1::config::config::Config;
-    use crate::version::v0_0_1::create_span;
     use crate::version::v0_0_1::parse::error::result;
     use crate::version::v0_0_1::parse::model::{BlockKind, NestedBlockKind, TerminatedBlockKind};
     use crate::version::v0_0_1::parse::parse::version;
-    use crate::version::v0_0_1::parse::{args, bind_config, block, comment, config, expected_block_terminator_or_non_terminator, no_comment, parse_include_blocks, parsed_nested_block, parsed_scope, parsed_scope_selector_and_filters, parsed_scopes, rec_version, root_scope, root_scope_selector, scope_filter, scope_filters, skewer_case, strip_comments};
+    use crate::version::v0_0_1::parse::{args, bind_config, comment, config, expected_block_terminator_or_non_terminator, nested_block, nested_block_content, next_selector, no_comment, parse_include_blocks, parse_inner_block, parsed_nested_block, parsed_scope, parsed_scopes, rec_version, root_scope, root_scope_selector, scope_filter, scope_filters, skewer_case, strip_comments, wrapper};
+    use crate::version::v0_0_1::{create_span, Span};
     use nom::bytes::complete::tag;
+    use nom::character::complete::alpha1;
+    use nom::character::is_alphanumeric;
     use nom::combinator::{all_consuming, recognize};
+    use nom::IResult;
     use nom_locate::LocatedSpan;
     use nom_supreme::error::ErrorTree;
     use std::rc::Rc;
@@ -4989,9 +5101,9 @@ Hello my friend
 
     #[test]
     pub fn test_block() -> Result<(), MsgErr> {
-        all_consuming(block(NestedBlockKind::Curly))(create_span("{  }"))?;
-        all_consuming(block(NestedBlockKind::Curly))(create_span("{ {} }"))?;
-        all_consuming(block(NestedBlockKind::Curly))(create_span("{ [] }"))?;
+        all_consuming(nested_block(NestedBlockKind::Curly))(create_span("{  }"))?;
+        all_consuming(nested_block(NestedBlockKind::Curly))(create_span("{ {} }"))?;
+        all_consuming(nested_block(NestedBlockKind::Curly))(create_span("{ [] }"))?;
         assert!(
             expected_block_terminator_or_non_terminator(NestedBlockKind::Curly)(create_span("}"))
                 .is_ok()
@@ -5004,8 +5116,8 @@ Hello my friend
             expected_block_terminator_or_non_terminator(NestedBlockKind::Square)(create_span("x"))
                 .is_ok()
         );
-        assert!(block(NestedBlockKind::Curly)(create_span("{ ] }")).is_err());
-        result(block(NestedBlockKind::Curly)(create_span(
+        assert!(nested_block(NestedBlockKind::Curly)(create_span("{ ] }")).is_err());
+        result(nested_block(NestedBlockKind::Curly)(create_span(
             r#"{
 
 
@@ -5134,21 +5246,23 @@ Hello my friend
 
         Ok(())
     }
-
     #[test]
+    pub fn test_next_selector()  {
+        assert_eq!("Http",next_selector(create_span("Http")).unwrap().1.0.to_string().as_str());
+        assert_eq!("Http",next_selector(create_span("<Http>")).unwrap().1.0.to_string().as_str());
+        assert_eq!("Http",next_selector(create_span("Http<Msg>")).unwrap().1.0.to_string().as_str());
+        assert_eq!("Http",next_selector(create_span("<Http<Msg>>")).unwrap().1.0.to_string().as_str());
+    }
+
+
+        #[test]
     pub fn test_parsed_scope() -> Result<(), MsgErr> {
 
-        let pipes = log(result(parsed_scope(create_span(
-            "Pipes -> {}",
-        ))))?;
+        let pipes = log(result(parsed_scope(create_span("Pipes -> {}")))).unwrap();
 
-        log(result(parsed_scope(create_span(
-            "Pipes ->{}",
-        ))));
+        log(result(parsed_scope(create_span("Pipes ->{}"))));
 
-        let pipes = log(result(parsed_scope(create_span(
-            "Pipes {}",
-        ))))?;
+        let pipes = log(result(parsed_scope(create_span("Pipes {}"))))?;
 
         assert_eq!(pipes.selector.selector.name.to_string().as_str(), "Pipes");
         assert_eq!(pipes.block.kind, BlockKind::Nested(NestedBlockKind::Curly));
@@ -5156,9 +5270,7 @@ Hello my friend
         assert_eq!(pipes.selector.filters.len(), 0);
         assert_eq!(pipes.pipeline_step, None);
 
-        let pipes = log(result(parsed_scope(create_span(
-            "Pipes {}",
-        ))))?;
+        let pipes = log(result(parsed_scope(create_span("Pipes {}"))))?;
 
         assert_eq!(pipes.selector.selector.name.to_string().as_str(), "Pipes");
         assert_eq!(pipes.block.kind, BlockKind::Nested(NestedBlockKind::Curly));
@@ -5166,32 +5278,31 @@ Hello my friend
         assert_eq!(pipes.selector.filters.len(), 0);
         assert_eq!(pipes.pipeline_step, None);
 
-        let pipes = log(result(parsed_scope(create_span(
-            "Pipes -> 12345;",
-        ))))?;
+        let pipes = log(result(parsed_scope(create_span("Pipes -> 12345;"))))?;
 
         assert_eq!(pipes.selector.selector.name.to_string().as_str(), "Pipes");
         assert_eq!(pipes.block.content.to_string().as_str(), "12345");
-        assert_eq!(pipes.block.kind, BlockKind::Terminated(TerminatedBlockKind::Semicolon));
+        assert_eq!(
+            pipes.block.kind,
+            BlockKind::Terminated(TerminatedBlockKind::Semicolon)
+        );
         assert_eq!(pipes.selector.filters.len(), 0);
         assert_eq!(pipes.pipeline_step.unwrap().to_string().as_str(), "->");
-
         let pipes = log(result(parsed_scope(create_span(
-            r#"
-            #This time adding a space before the 12345... there should be one space in the content, not two
-            Pipes ->  12345;"#,
+            //This time adding a space before the 12345... there should be one space in the content, not two
+            r#"Pipes ->  12345;"#,
         ))))?;
 
         assert_eq!(pipes.selector.selector.name.to_string().as_str(), "Pipes");
         assert_eq!(pipes.block.content.to_string().as_str(), " 12345");
-        assert_eq!(pipes.block.kind, BlockKind::Terminated(TerminatedBlockKind::Semicolon));
+        assert_eq!(
+            pipes.block.kind,
+            BlockKind::Terminated(TerminatedBlockKind::Semicolon)
+        );
         assert_eq!(pipes.selector.filters.len(), 0);
         assert_eq!(pipes.pipeline_step.unwrap().to_string().as_str(), "->");
 
-
-        let pipes = log(result(parsed_scope(create_span(
-            "Pipes(auth) {}",
-        ))))?;
+        let pipes = log(result(parsed_scope(create_span("Pipes(auth) {}"))))?;
 
         assert_eq!(pipes.selector.selector.name.to_string().as_str(), "Pipes");
         assert_eq!(pipes.block.content.len(), 0);
@@ -5199,24 +5310,65 @@ Hello my friend
         assert_eq!(pipes.selector.filters.len(), 1);
         assert_eq!(pipes.pipeline_step, None);
 
+        let pipes = log(result(parsed_scope(create_span("Pipeline<Msg>  {}"))))?;
 
-        let pipes = log(result(parsed_scope(create_span(
-            "Pipeline<Msg> {}",
-        ))))?;
+        assert_eq!(
+            pipes.selector.selector.name.to_string().as_str(),
+            "Pipeline"
+        );
+        assert_eq!(
+            Some(pipes.selector.selector.children.as_ref().unwrap().to_string().as_str()),
+            Some("<Msg>")
+        );
 
-        assert_eq!(pipes.selector.selector.name.to_string().as_str(), "Pipeline");
-        assert_eq!(pipes.block.content.to_string().as_str(), "Msg> {}");
-        assert_eq!(pipes.block.kind, BlockKind::Terminated(TerminatedBlockKind::Semicolon));
+        assert_eq!(pipes.block.content.to_string().as_str(), "");
+        assert_eq!(pipes.block.kind, BlockKind::Nested(NestedBlockKind::Curly));
         assert_eq!(pipes.selector.filters.len(), 0);
         assert_eq!(pipes.pipeline_step, None);
 
-
-        log(result(parsed_scope(create_span(
-            "Pipeline<Http<Get>>(path /users/$(user=.*)) -> {}",
+        let pipes = log(result(parsed_scope(create_span(
+            "Pipeline<Http>(noauth) -> {zoink!{}}",
         ))))?;
-        let scope = result(parsed_scope(create_span(
+        assert_eq!(
+            pipes.selector.selector.name.to_string().as_str(),
+            "Pipeline"
+        );
+        assert_eq!(
+            Some(pipes.selector.selector.children.as_ref().unwrap().to_string().as_str()),
+            Some("<Http>")
+        );
+        assert_eq!(
+            pipes.block.content.to_string().as_str(),
+            "zoink!{}"
+        );
+        assert_eq!(pipes.block.kind, BlockKind::Nested(NestedBlockKind::Curly));
+        assert_eq!(pipes.selector.filters.len(), 1);
+//        assert_eq!(Some(pipes.pipeline_step.unwrap().to_string().as_str()),Some("->") );
+
+        let msg = "Hello my future friend";
+        let parseme = format!("<Http<Get>> -> {};",msg);
+        let pipes = log(result(parsed_scope(create_span(
+            parseme.as_str()
+        ))))?;
+        assert_eq!(
+            pipes.selector.selector.name.to_string().as_str(),
+            "Http"
+        );
+        assert_eq!(
+            pipes.block.content.to_string().as_str(),
+            msg
+        );
+        assert_eq!(pipes.block.kind, BlockKind::Terminated(TerminatedBlockKind::Semicolon));
+        assert_eq!(pipes.selector.filters.len(), 0);
+        assert_eq!(pipes.pipeline_step.unwrap().to_string().as_str(),"->" );
+
+
+
+        /* let scope = result(parsed_scope(create_span(
             "Pipeline<Http<Get>>(path /users/$(user=.*)) -> {}",
         )))?;
+
+        */
 
         Ok(())
     }
@@ -5236,13 +5388,10 @@ Bind(version=1.2.3)-> {
 
         let root = result(root_scope(create_span(config)))?;
 
-        println!("parsed root");
 
-        println!("parsing : {}", root.block.content.clone().to_string());
         log(result(parsed_scopes(root.block.content.clone())));
         let sub_scopes = result(parsed_scopes(root.block.content.clone()))?;
 
-        println!("subscopes found: {}", sub_scopes.len());
         assert_eq!(sub_scopes.len(), 2);
 
         Ok(())
