@@ -21,15 +21,18 @@ use nom::error::{context, ContextError, Error, ErrorKind, ParseError, VerboseErr
 use nom::multi::{many0, separated_list0, separated_list1};
 use nom::sequence::{delimited, pair, preceded, terminated, tuple};
 use nom::{
-    AsChar, Compare, CompareResult, FindToken, InputIter, InputLength, InputTake, InputTakeAtPosition,
-    IResult, Offset, Parser, Slice, UnspecializedInput,
+    AsChar, Compare, CompareResult, FindToken, IResult, InputIter, InputLength, InputTake,
+    InputTakeAtPosition, Offset, Parser, Slice, UnspecializedInput,
 };
 use nom_supreme::parse_from_str;
 
 use crate::error::{MsgErr, ParseErrs};
 use crate::version::v0_0_1::command::command::common::{PropertyMod, SetProperties, StateSrc};
-use crate::version::v0_0_1::config::config::bind::{BindConfig, ConfigScope, PipelineSegment, PipelinesSubScope, PipelineStep, PipelineStop, Selector, StepKind};
 use crate::version::v0_0_1::config::config::bind::Pipeline;
+use crate::version::v0_0_1::config::config::bind::{
+    BindConfig, ConfigScope, PipelineSegment, PipelineStep, PipelineStop, PipelinesSubScope,
+    Selector, StepKind,
+};
 use crate::version::v0_0_1::config::config::{bind, Config, PointConfig};
 use crate::version::v0_0_1::entity::entity::request::create::{
     Create, CreateOp, KindTemplate, PointSegFactory, PointTemplate, PointTemplateSeg, Require,
@@ -41,14 +44,17 @@ use crate::version::v0_0_1::entity::entity::request::select::{
 };
 use crate::version::v0_0_1::entity::entity::request::set::Set;
 use crate::version::v0_0_1::entity::entity::request::RcCommandType;
+use crate::version::v0_0_1::entity::entity::EntityType;
 use crate::version::v0_0_1::id::id::{
     CaptureAddress, Point, PointSeg, PointSegDelim, PointSegKind, PointSegPairDef,
     PointSegPairSubst, PointSegSubst, PointSubst, RouteSeg, Version,
 };
 use crate::version::v0_0_1::parse::error::{first_context, result};
 use crate::version::v0_0_1::parse::model::{
-    BindBlock, BindScope, Block, BlockKind, ElemSpan, ParsedBlock, ParsedRootScope, ParsedScope,
-    RootScopeSelector, Scope, ScopeFilter, ScopeSelector, TextType,
+    BindBlock, BindScope, Block, BlockKind, ElemSpan, NestedBlockKind, ParsedBlock,
+    ParsedRootScope, ParsedScope, ParsedScopeSelector, ParsedScopeSelectorAndFilters,
+    RootScopeSelector, Scope, ScopeFilter, ScopeSelector, TerminatedBlockKind,
+    TextType,
 };
 use crate::version::v0_0_1::parse::parse::{
     delim_kind, generic_kind_base, pattern, point_selector, specific_selector, value_pattern,
@@ -63,18 +69,19 @@ use crate::version::v0_0_1::security::{
     ParticlePerms, Permissions, PermissionsMask, PermissionsMaskKind, Privilege,
 };
 use crate::version::v0_0_1::selector::selector::{
-    PipelineSelector, HttpPipelineSelector, LabeledPrimitiveTypeDef, MapEntryPattern, MsgPipelineSelector,
-    PayloadTypeDef, PointKindHierarchy, PointKindSeg, PointSelector, RcPipelineSelector,
+    HttpPipelineSelector, LabeledPrimitiveTypeDef, MapEntryPattern, MsgPipelineSelector,
+    PayloadTypeDef, PipelineSelector, PointKindHierarchy, PointKindSeg, PointSelector,
+    RcPipelineSelector,
 };
-use crate::version::v0_0_1::selector::{PatternBlock, PayloadBlock, selector, UploadBlock};
+use crate::version::v0_0_1::selector::{selector, PatternBlock, PayloadBlock, UploadBlock};
 use crate::version::v0_0_1::util::{MethodPattern, StringMatcher, ValuePattern};
 use crate::version::v0_0_1::{create_span, Span};
 use nom::bytes::complete::take;
+use nom::character::is_space;
 use nom_locate::LocatedSpan;
 use nom_supreme::error::ErrorTree;
 use regex::internal::Input;
 use serde::{Deserialize, Serialize};
-use crate::version::v0_0_1::entity::entity::EntityType;
 
 /*
 pub struct Parser {}
@@ -1597,16 +1604,16 @@ where
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum CapSubst<Resolved>
-    where
-        Resolved: Clone,
+where
+    Resolved: Clone,
 {
     Symbol(Symbol),
     Resolved(Resolved),
 }
 
 impl<Resolved> CapSubst<Resolved>
-    where
-        Resolved: Clone,
+where
+    Resolved: Clone,
 {
     pub fn resolved(&self) -> Result<Resolved, ()> {
         match self {
@@ -1811,18 +1818,18 @@ where
 pub fn cap_subst<I: Clone, O, E: ParseError<I>, F>(
     mut f: F,
 ) -> impl FnMut(I) -> IResult<I, CapSubst<O>, E>
-    where
-        I: ToString
+where
+    I: ToString
         + InputLength
         + InputTake
         + Compare<&'static str>
         + InputIter
         + Clone
         + InputTakeAtPosition,
-        <I as InputTakeAtPosition>::Item: AsChar,
-        F: nom::Parser<I, O, E>,
-        E: nom::error::ContextError<I>,
-        O: Clone + FromStr<Err = MsgErr>,
+    <I as InputTakeAtPosition>::Item: AsChar,
+    F: nom::Parser<I, O, E>,
+    E: nom::error::ContextError<I>,
+    O: Clone + FromStr<Err = MsgErr>,
 {
     move |input: I| match var(input.clone()) {
         Ok((next, v)) => Ok((next, CapSubst::Symbol(v))),
@@ -2047,7 +2054,10 @@ where
 {
     move |input: Span| {
         let (next, element) = f.parse(input.clone())?;
-        Ok((next.clone(), ElemSpan::new(element, input.slice(0..(input.len()-next.len())))))
+        Ok((
+            next.clone(),
+            ElemSpan::new(element, input.slice(0..(input.len() - next.len()))),
+        ))
     }
 }
 
@@ -2171,9 +2181,156 @@ pub fn grant<I>(input: I) -> Res<I,AccessGrant> where I:Clone+InputIter+InputLen
 
  */
 
+pub fn none<I, O, E>(input: I) -> IResult<I, Option<O>, E> {
+    Ok((input, None))
+}
+
+pub fn nospace<I, E>(input: I) -> IResult<I, I, E>
+where
+    I: InputLength + InputTake+Clone,
+{
+    Ok((input.clone(), input.take(0)))
+}
+
+pub fn some<'a, I, O, E, F>(f: F) -> impl FnMut(I) -> IResult<I, Option<O>, E>
+where
+    I: ToString
+        + InputLength
+        + InputTake
+        + Compare<&'static str>
+        + InputIter
+        + Clone
+        + InputTakeAtPosition,
+    <I as InputTakeAtPosition>::Item: AsChar,
+    I: ToString,
+    I: Offset + nom::Slice<std::ops::RangeTo<usize>>,
+    I: nom::Slice<std::ops::RangeFrom<usize>>,
+    <I as InputIter>::Item: AsChar,
+    E: nom::error::ContextError<I> + nom::error::ParseError<I>,
+    F: nom::Parser<I, O, E>+Clone
+{
+    move |input: I| {
+        f.clone()
+            .parse(input)
+            .map(|(next, output)| (next, Some(output)))
+    }
+}
+
+pub fn parsed_block_alt<'a, I, E>(
+    kinds: Vec<BlockKind>,
+) -> impl FnMut(I) -> IResult<I, ParsedBlock<I>, E>
+where
+    I: ToString
+        + InputLength
+        + InputTake
+        + Compare<&'static str>
+        + InputIter
+        + Clone
+        + InputTakeAtPosition,
+    <I as InputTakeAtPosition>::Item: AsChar,
+    I: ToString,
+    I: Offset + nom::Slice<std::ops::RangeTo<usize>>,
+    I: nom::Slice<std::ops::RangeFrom<usize>>,
+    <I as InputIter>::Item: AsChar,
+    E: nom::error::ContextError<I> + nom::error::ParseError<I>,
+{
+    move |input: I| {
+        for kind in &kinds {
+            let result = parsed_block(kind.clone())(input.clone());
+            match &result {
+                Ok((next, block)) => {
+                    return result
+                },
+                Err(err) => {
+                    match err {
+                        nom::Err::Incomplete(Needed) => {
+                            return result
+                        },
+                        nom::Err::Error(e) => {
+                            // let's hope for another match...
+                        }
+                        nom::Err::Failure(e) => {
+                            return result
+                        },
+                    }
+                }
+            }
+        }
+
+        Err(nom::Err::Failure(E::from_error_kind(
+            input.clone(),
+            ErrorKind::Alt,
+        )))
+    }
+}
+
+pub fn parsed_block<'a, I, E>(kind: BlockKind) -> impl FnMut(I) -> IResult<I, ParsedBlock<I>, E>
+where
+    I: ToString
+        + InputLength
+        + InputTake
+        + Compare<&'static str>
+        + InputIter
+        + Clone
+        + InputTakeAtPosition,
+    <I as InputTakeAtPosition>::Item: AsChar,
+    I: ToString,
+    I: Offset + nom::Slice<std::ops::RangeTo<usize>>,
+    I: nom::Slice<std::ops::RangeFrom<usize>>,
+    <I as InputIter>::Item: AsChar,
+    E: nom::error::ContextError<I> + nom::error::ParseError<I>,
+{
+    move |input:I| {
+        match kind {
+            BlockKind::Nested(kind) => parsed_nested_block(kind).parse(input),
+            BlockKind::Terminated(kind) => parsed_terminated_block(kind).parse(input),
+            BlockKind::Delimited(kind) => {
+                unimplemented!()
+            }
+        }
+    }
+}
+
+pub fn parsed_terminated_block<'a, I, E>(
+    kind: TerminatedBlockKind,
+) -> impl FnMut(I) -> IResult<I, ParsedBlock<I>, E>
+    where
+        I: ToString
+        + InputLength
+        + InputTake
+        + Compare<&'static str>
+        + InputIter
+        + Clone
+        + InputTakeAtPosition,
+        <I as InputTakeAtPosition>::Item: AsChar,
+        I: ToString,
+        I: Offset + nom::Slice<std::ops::RangeTo<usize>>,
+        I: nom::Slice<std::ops::RangeFrom<usize>>,
+        <I as InputIter>::Item: AsChar,
+        E: nom::error::ContextError<I> + nom::error::ParseError<I>,
+{
+    move |input:I| {
+        terminated(
+            recognize(many0(satisfy(|c| c != kind.as_char()))),
+            tag(kind.tag()),
+        )(input)
+            .map(|(next, content)| {
+                let block = ParsedBlock {
+                    kind: BlockKind::Terminated(kind),
+                    content,
+                    data: (),
+                };
+
+                (next, block)
+            })
+    }
+}
+
 /// rough block simply makes sure that the opening and closing symbols match
 /// it accounts for multiple embedded blocks of the same kind but NOT of differing kinds
-pub fn rough_block<'a, I, E>(kind: BlockKind) -> impl FnMut(I) -> IResult<I, ParsedBlock<I>, E>
+pub fn parsed_nested_block<'a, I, E>(
+    kind: NestedBlockKind,
+) -> impl FnMut(I) -> IResult<I, ParsedBlock<I>, E>
 where
     I: ToString
         + InputLength
@@ -2197,19 +2354,22 @@ where
                 recognize(many0(tuple((
                     not(peek(tag(kind.close()))),
                     alt((
-                        recognize(pair(peek(tag(kind.open())), rough_block(kind.clone()))),
+                        recognize(pair(
+                            peek(tag(kind.open())),
+                            parsed_nested_block(kind.clone()),
+                        )),
                         recognize(anychar),
                     )),
                 )))),
                 context(kind.close_context(), cut(tag(kind.close()))),
             ),
         )(input)?;
-        let block = Block::parse(kind, content);
+        let block = Block::parse(BlockKind::Nested(kind), content);
         Ok((next, block))
     }
 }
 
-pub fn block(kind: BlockKind) -> impl FnMut(Span) -> Res<Span, Block<Span, ()>> {
+pub fn block(kind: NestedBlockKind) -> impl FnMut(Span) -> Res<Span, Block<Span, ()>> {
     move |input: Span| {
         let (next, content) = context(
             kind.context(),
@@ -2231,17 +2391,17 @@ pub fn block(kind: BlockKind) -> impl FnMut(Span) -> Res<Span, Block<Span, ()>> 
                 context(kind.close_context(), cut(tag(kind.close()))),
             ),
         )(input)?;
-        let block = Block::parse(kind, content);
+        let block = Block::parse(BlockKind::Nested(kind), content);
         Ok((next, block))
     }
 }
 
-fn block_open(input: Span) -> Res<Span, BlockKind> {
+fn block_open(input: Span) -> Res<Span, NestedBlockKind> {
     alt((
-        value(BlockKind::Curly, tag(BlockKind::Curly.open())),
-        value(BlockKind::Angle, tag(BlockKind::Angle.open())),
-        value(BlockKind::Parens, tag(BlockKind::Parens.open())),
-        value(BlockKind::Square, tag(BlockKind::Square.open())),
+        value(NestedBlockKind::Curly, tag(NestedBlockKind::Curly.open())),
+        value(NestedBlockKind::Angle, tag(NestedBlockKind::Angle.open())),
+        value(NestedBlockKind::Parens, tag(NestedBlockKind::Parens.open())),
+        value(NestedBlockKind::Square, tag(NestedBlockKind::Square.open())),
     ))(input)
 }
 
@@ -2262,24 +2422,24 @@ where
     E: nom::error::ContextError<I> + nom::error::ParseError<I>,
 {
     alt((
-        rough_block(BlockKind::Curly),
-        rough_block(BlockKind::Angle),
-        rough_block(BlockKind::Parens),
-        rough_block(BlockKind::Square),
+        parsed_nested_block(NestedBlockKind::Curly),
+        parsed_nested_block(NestedBlockKind::Angle),
+        parsed_nested_block(NestedBlockKind::Parens),
+        parsed_nested_block(NestedBlockKind::Square),
     ))(input)
 }
 
 fn any_block(input: Span) -> Res<Span, ParsedBlock<Span>> {
     alt((
-        block(BlockKind::Curly),
-        block(BlockKind::Angle),
-        block(BlockKind::Parens),
-        block(BlockKind::Square),
+        block(NestedBlockKind::Curly),
+        block(NestedBlockKind::Angle),
+        block(NestedBlockKind::Parens),
+        block(NestedBlockKind::Square),
     ))(input)
 }
 
 pub fn expected_block_terminator_or_non_terminator<I>(
-    expect: BlockKind,
+    expect: NestedBlockKind,
 ) -> impl FnMut(I) -> Res<I, ()>
 where
     I: InputIter + InputLength + Slice<RangeFrom<usize>>,
@@ -2288,7 +2448,7 @@ where
 {
     move |input: I| -> Res<I, ()> {
         verify(anychar, move |c| {
-            if BlockKind::is_block_terminator(*c) {
+            if NestedBlockKind::is_block_terminator(*c) {
                 *c == expect.close_as_char()
             } else {
                 true
@@ -2298,18 +2458,81 @@ where
     }
 }
 
-pub fn sub_scope(input: Span) -> Res<Span, ParsedScope<Span>> {
+pub fn parsed_scope(input: Span) -> Res<Span, ParsedScope<Span>> {
     context(
         "scope",
-        tuple((
-            sub_scope_selector,
-            multispace0,
-            rough_block(BlockKind::Curly),
-        )),
+        pair(
+            parsed_scope_selector,
+            alt((
+                tuple((
+                    none,
+                    nospace,
+                    pair(none, parsed_sub_scope_selectors_and_filters_block),
+                )),
+                tuple((
+                    opt(scope_filters),
+                    multispace0,
+                    parsed_scope_pipeline_and_block,
+                )),
+            )),
+        ),
     )(input)
-    .map(|(next, (selector, _, block))| {
-        let scope = Scope { selector, block };
+    .map(|(next, (selector, (filters, _, (pipeline_step, block))))| {
+        let filters = match filters {
+            None => vec![],
+            Some(filters) => filters,
+        };
+        let selector = ParsedScopeSelectorAndFilters::new(selector, filters);
+        let scope = ParsedScope {
+            selector,
+            pipeline_step,
+            block,
+        };
         (next, scope)
+    })
+}
+
+pub fn parsed_scope_pipeline_and_block(
+    input: Span,
+) -> Res<Span, (Option<Span>, ParsedBlock<Span>)> {
+    alt((
+        tuple((
+            peek(recognize(pair(rough_pipeline_step,context("scope:expect-space-after-pipeline-step",cut(multispace1))))),
+            opt(rough_pipeline_step),
+            recognize(one_of(" \n\t\r")),
+            parsed_block_alt(vec![
+                BlockKind::Nested(NestedBlockKind::Curly),
+                BlockKind::Terminated(TerminatedBlockKind::Semicolon),
+            ]),
+        )),
+        tuple((
+            peek(recognize(opt(pair(rough_pipeline_step,context("scope:expect-space-after-pipeline-step",cut(multispace1)))))),
+            opt(rough_pipeline_step),
+            multispace0,
+            parsed_nested_block(NestedBlockKind::Curly),
+        )),
+    ))(input)
+    .map(|(next, (_,pipeline_step, _, block))| {
+
+        (next, (pipeline_step, block))
+    })
+
+}
+
+pub fn parsed_sub_scope_selectors_and_filters_block(input: Span) -> Res<Span, ParsedBlock<Span>> {
+    recognize(pair(
+        delimited(tag("<"), parsed_scope_selector, tag(">")),
+        opt(scope_filters),
+    ))(input)
+    .map(|(next, content)| {
+        (
+            next,
+            ParsedBlock {
+                kind: BlockKind::Terminated(TerminatedBlockKind::Semicolon),
+                content,
+                data: (),
+            },
+        )
     })
 }
 
@@ -2319,51 +2542,68 @@ pub fn root_scope(input: Span) -> Res<Span, ParsedRootScope<Span>> {
         tuple((
             root_scope_selector,
             multispace0,
-            rough_block(BlockKind::Curly),
+            parsed_nested_block(NestedBlockKind::Curly),
         )),
     )(input)
     .map(|(next, (selector, _, block))| {
-        let scope = ParsedRootScope { selector, block };
+        let scope = ParsedRootScope::new(selector, block);
         (next, scope)
     })
 }
 
-pub fn sub_scopes(input: Span) -> Res<Span, Vec<ParsedScope<Span>>> {
+pub fn parsed_scopes(input: Span) -> Res<Span, Vec<ParsedScope<Span>>> {
     context(
-        "sub-scopes",
-        many0(delimited(multispace0, sub_scope, multispace0)),
+        "parsed-scopes",
+        many0(delimited(multispace0, parsed_scope, multispace0)),
     )(input)
 }
 
+/*
 pub fn sub_scope_selector(input: Span) -> Res<Span, ScopeSelector<Span>> {
+    alt((sub_scope_selector_expanded, sub_scope_selector_collapsed))
+}
+
+ */
+
+pub fn parsed_scope_selector_and_filters(
+    input: Span,
+) -> Res<Span, ParsedScopeSelectorAndFilters<Span>> {
     context(
-        "sub-scope-selector",
+        "parsed-scope-selector-and-filter",
+        pair(parsed_scope_selector, opt(scope_filters)),
+    )(input)
+    .map(|(next, (selector, filters))| {
+        let filters = match filters {
+            None => vec![],
+            Some(filters) => filters,
+        };
+        (next, ParsedScopeSelectorAndFilters::new(selector, filters))
+    })
+}
+
+pub fn parsed_scope_selector_no_filters(
+    input: Span,
+) -> Res<Span, ParsedScopeSelectorAndFilters<Span>> {
+    context("parsed-scope-selector-no-filters", parsed_scope_selector)(input)
+        .map(|(next, selector)| (next, ParsedScopeSelectorAndFilters::new(selector, vec![])))
+}
+
+pub fn parsed_scope_selector(input: Span) -> Res<Span, ParsedScopeSelector<Span>> {
+    context(
+        "parsed-scope-selector",
         pair(
             peek(alt((
                 recognize(satisfy(|c| !c.is_whitespace())),
                 recognize(not(eof)),
             ))),
-            cut(pair(
-                scope_selector_name,
-                alt((scope_filters, sub_scope_selector_kazing)),
-            )),
+            cut(scope_selector_name),
         ),
     )(input)
-    .map(|(next, (_, (name, filters)))| (next, ScopeSelector { name, filters }))
-}
-
-// this is a hack so I could get a matching return for the Alt
-fn sub_scope_selector_kazing(input: Span) -> Res<Span, Vec<ScopeFilter<Span>>> {
-    println!("sub_scope_selector_kazing");
-    context(
-        "sub-scope-selector-kazing",
-        cut(pair(multispace0, tag("->"))),
-    )(input)
-    .map(|(next, _)| (next, vec![]))
+    .map(|(next, (_, name))| (next, ParsedScopeSelector::new(name)))
 }
 
 pub fn parse_include_blocks<I, O2, E, F>(
-    kind: BlockKind,
+    kind: NestedBlockKind,
     mut f: F,
 ) -> impl FnMut(I) -> IResult<I, I, E>
 where
@@ -2395,17 +2635,14 @@ where
 }
 
 pub fn scope_filters<'a>(input: Span) -> Res<Span, Vec<ScopeFilter<Span>>> {
-    tuple((
-        scope_filter,
-        many0(preceded(tag("-"), scope_filter)),
-        context("sub-scope-selector-kazing", cut(tag("->"))),
-    ))(input)
-    .map(|(next, (first, mut many_filters, _))| {
-        let mut filters = vec![];
-        filters.push(first);
-        filters.append(&mut many_filters);
-        (next, filters)
-    })
+    tuple((scope_filter, many0(preceded(tag("-"), scope_filter))))(input).map(
+        |(next, (first, mut many_filters))| {
+            let mut filters = vec![];
+            filters.push(first);
+            filters.append(&mut many_filters);
+            (next, filters)
+        },
+    )
 }
 
 pub fn scope_filter(input: Span) -> Res<Span, ScopeFilter<Span>> {
@@ -2417,7 +2654,10 @@ pub fn scope_filter(input: Span) -> Res<Span, ScopeFilter<Span>> {
                 context("filter-name", cut(scope_name)),
                 opt(context(
                     "filter-arguments",
-                    preceded(multispace1, parse_include_blocks(BlockKind::Parens, args)),
+                    preceded(
+                        multispace1,
+                        parse_include_blocks(NestedBlockKind::Parens, args),
+                    ),
                 )),
             ))),
         ),
@@ -2479,8 +2719,21 @@ pub fn mytag<O>( tag: &str ) -> impl Fn(Span) -> Res<Span,O>
  */
 
 pub fn scope_selector_name(input: Span) -> Res<Span, Span> {
-    context("scope-selector-name", pair((peek(alpha1)), alphanumeric1))(input)
-        .map(|(next, (_, name))| (next, name))
+    context(
+        "scope-selector-name",
+        delimited(
+            (context(
+                "scope-selector-name:expect-alphanumeric-leading",
+                cut(peek(alpha1)),
+            )),
+            alphanumeric1,
+            context(
+                "scope-selector-name:expect-termination",
+                cut(peek(alt((multispace1, tag("{"), tag("("), tag("<"))))),
+            ),
+        ),
+    )(input)
+    .map(|(next, name)| (next, name))
 }
 
 pub fn root_scope_selector_name(input: Span) -> Res<Span, Span> {
@@ -2505,6 +2758,29 @@ pub mod model {
     use std::ops::{Deref, DerefMut};
     use std::str::FromStr;
 
+    #[derive(Clone)]
+    pub struct ParsedScopeSelector<I> {
+        pub name: I,
+    }
+
+    impl<I> ParsedScopeSelector<I> {
+        pub fn new(name: I) -> Self {
+            Self { name }
+        }
+    }
+
+    #[derive(Clone)]
+    pub struct ParsedScopeSelectorAndFilters<I> {
+        pub selector: ParsedScopeSelector<I>,
+        pub filters: Vec<ScopeFilter<I>>,
+    }
+
+    impl<I> ParsedScopeSelectorAndFilters<I> {
+        pub fn new(selector: ParsedScopeSelector<I>, filters: Vec<ScopeFilter<I>>) -> Self {
+            Self { selector, filters }
+        }
+    }
+
     pub enum ParsePhase {
         Root,
         SubScopes,
@@ -2513,17 +2789,17 @@ pub mod model {
     #[derive(Clone)]
     pub struct ElemSpan<I, E>
     where
-        E: Clone, I: ToString
+        E: Clone,
+        I: ToString,
     {
         pub span: I,
         pub element: E,
     }
 
-
-
     impl<I, E> ElemSpan<I, E>
     where
-        E: Clone, I: ToString
+        E: Clone,
+        I: ToString,
     {
         pub fn new(element: E, span: I) -> ElemSpan<I, E> {
             Self { span, element }
@@ -2531,18 +2807,19 @@ pub mod model {
     }
 
     impl<I, E> ElemSpan<I, E>
-        where
-            E: Clone+ToString, I: ToString
+    where
+        E: Clone + ToString,
+        I: ToString,
     {
-        pub fn len(&self) -> usize{
+        pub fn len(&self) -> usize {
             self.element.to_string().len()
         }
     }
 
-
     impl<I, E> ToString for ElemSpan<I, E>
-        where
-            E: Clone+ToString, I: ToString
+    where
+        E: Clone + ToString,
+        I: ToString,
     {
         fn to_string(&self) -> String {
             self.element.to_string()
@@ -2551,7 +2828,8 @@ pub mod model {
 
     impl<I, E> Deref for ElemSpan<I, E>
     where
-        E: Clone, I: ToString
+        E: Clone,
+        I: ToString,
     {
         type Target = E;
 
@@ -2562,7 +2840,8 @@ pub mod model {
 
     impl<I, E> DerefMut for ElemSpan<I, E>
     where
-        E: Clone, I: ToString
+        E: Clone,
+        I: ToString,
     {
         fn deref_mut(&mut self) -> &mut Self::Target {
             &mut self.element
@@ -2604,31 +2883,57 @@ pub mod model {
 
     pub type ParsedBlock<I> = Block<I, ()>;
     pub type ParsedRootScope<I> =
-        Scope<RootScopeSelector<I, ElemSpan<I, Version>>, Block<I, ()>>;
-    pub type ParsedScope<I> = Scope<ScopeSelector<I>, Block<I, ()>>;
-    pub type BindScope<I> = Scope<ScopeSelector<I>, ElemSpan<I, BindBlock>>;
+        Scope<RootScopeSelector<I, ElemSpan<I, Version>>, Block<I, ()>, I>;
+    pub type ParsedScope<I> = Scope<ParsedScopeSelectorAndFilters<I>, Block<I, ()>, I>;
+    pub type BindScope<I> = Scope<ScopeSelector<I>, ElemSpan<I, BindBlock>, I>;
 
     #[derive(Clone)]
     pub enum BindBlock {
         Pipelines,
     }
 
-    pub struct Scope<S, B>
+
+    pub struct Scope<S, B, P>
     where
         S: Clone,
     {
         pub selector: S,
+        pub pipeline_step: Option<P>,
         pub block: B,
     }
 
-    impl<S, FromBlock> Scope<S, FromBlock>
+    impl<S, B, P> Scope<S, B, P>
     where
         S: Clone,
     {
-        pub fn upgrade<ToBlock>(self, block: ToBlock) -> Scope<S, ToBlock> {
+        pub fn new(selector: S, block: B) -> Self {
+            Self {
+                selector,
+                block,
+                pipeline_step: None,
+            }
+        }
+
+        pub fn new_with_pipeline_step(selector: S, block: B, pipeline_step: Option<P>) -> Self {
+            Self {
+                selector,
+                block,
+                pipeline_step,
+            }
+        }
+    }
+
+
+
+    impl<S, FromBlock, P> Scope<S, FromBlock, P>
+    where
+        S: Clone,
+    {
+        pub fn upgrade<ToBlock>(self, block: ToBlock) -> Scope<S, ToBlock, P> {
             Scope {
                 selector: self.selector,
                 block,
+                pipeline_step: self.pipeline_step,
             }
         }
     }
@@ -2650,15 +2955,47 @@ pub mod model {
         }
     }
 
-    #[derive(Copy, Clone, strum_macros::Display, strum_macros::EnumString)]
+    #[derive(Debug,Copy, Clone, strum_macros::Display,Eq,PartialEq)]
     pub enum BlockKind {
+        Nested(NestedBlockKind),
+        Terminated(TerminatedBlockKind),
+        Delimited(DelimitedBlockKind),
+    }
+
+    #[derive(Debug,Copy, Clone, strum_macros::Display,Eq,PartialEq)]
+    pub enum TerminatedBlockKind {
+        Semicolon,
+    }
+
+    impl TerminatedBlockKind {
+        pub fn tag(&self) -> &'static str {
+            match self {
+                TerminatedBlockKind::Semicolon => ";",
+            }
+        }
+
+        pub fn as_char(&self) -> char {
+            match self {
+                TerminatedBlockKind::Semicolon => ';',
+            }
+        }
+    }
+
+    #[derive(Debug,Copy, Clone, strum_macros::Display, strum_macros::EnumString,Eq,PartialEq)]
+    pub enum DelimitedBlockKind {
+        SingleQuotes,
+        DoubleQuotes,
+    }
+
+    #[derive(Debug,Copy, Clone, strum_macros::Display, strum_macros::EnumString,Eq,PartialEq)]
+    pub enum NestedBlockKind {
         Curly,
         Parens,
         Square,
         Angle,
     }
 
-    impl BlockKind {
+    impl NestedBlockKind {
         pub fn is_block_terminator(c: char) -> bool {
             match c {
                 '}' => true,
@@ -2701,73 +3038,73 @@ pub mod model {
 
         pub fn context(&self) -> &'static str {
             match self {
-                BlockKind::Curly => "block:{}",
-                BlockKind::Parens => "block:()",
-                BlockKind::Square => "block:[]",
-                BlockKind::Angle => "block:<>",
+                NestedBlockKind::Curly => "block:{}",
+                NestedBlockKind::Parens => "block:()",
+                NestedBlockKind::Square => "block:[]",
+                NestedBlockKind::Angle => "block:<>",
             }
         }
 
         pub fn open_context(&self) -> &'static str {
             match self {
-                BlockKind::Curly => "block:open:{",
-                BlockKind::Parens => "block:open:(",
-                BlockKind::Square => "block:open:[",
-                BlockKind::Angle => "block:open:<",
+                NestedBlockKind::Curly => "block:open:{",
+                NestedBlockKind::Parens => "block:open:(",
+                NestedBlockKind::Square => "block:open:[",
+                NestedBlockKind::Angle => "block:open:<",
             }
         }
 
         pub fn close_context(&self) -> &'static str {
             match self {
-                BlockKind::Curly => "block:close:}",
-                BlockKind::Parens => "block:close:)",
-                BlockKind::Square => "block:close:]",
-                BlockKind::Angle => "block:close:>",
+                NestedBlockKind::Curly => "block:close:}",
+                NestedBlockKind::Parens => "block:close:)",
+                NestedBlockKind::Square => "block:close:]",
+                NestedBlockKind::Angle => "block:close:>",
             }
         }
 
         pub fn unpaired_closing_scope(&self) -> &'static str {
             match self {
-                BlockKind::Curly => "block:close-before-open:}",
-                BlockKind::Parens => "block:close-before-open:)",
-                BlockKind::Square => "block:close-before-open:]",
-                BlockKind::Angle => "block:close-before-open:>",
+                NestedBlockKind::Curly => "block:close-before-open:}",
+                NestedBlockKind::Parens => "block:close-before-open:)",
+                NestedBlockKind::Square => "block:close-before-open:]",
+                NestedBlockKind::Angle => "block:close-before-open:>",
             }
         }
 
         pub fn open(&self) -> &'static str {
             match self {
-                BlockKind::Curly => "{",
-                BlockKind::Parens => "(",
-                BlockKind::Square => "[",
-                BlockKind::Angle => "<",
+                NestedBlockKind::Curly => "{",
+                NestedBlockKind::Parens => "(",
+                NestedBlockKind::Square => "[",
+                NestedBlockKind::Angle => "<",
             }
         }
 
         pub fn close(&self) -> &'static str {
             match self {
-                BlockKind::Curly => "}",
-                BlockKind::Parens => ")",
-                BlockKind::Square => "]",
-                BlockKind::Angle => ">",
+                NestedBlockKind::Curly => "}",
+                NestedBlockKind::Parens => ")",
+                NestedBlockKind::Square => "]",
+                NestedBlockKind::Angle => ">",
             }
         }
 
         pub fn open_as_char(&self) -> char {
             match self {
-                BlockKind::Curly => '{',
-                BlockKind::Parens => '(',
-                BlockKind::Square => '[',
-                BlockKind::Angle => '<',
+                NestedBlockKind::Curly => '{',
+                NestedBlockKind::Parens => '(',
+                NestedBlockKind::Square => '[',
+                NestedBlockKind::Angle => '<',
             }
         }
 
         pub fn close_as_char(&self) -> char {
             match self {
-                BlockKind::Curly => '}',
-                BlockKind::Parens => ')',
-                BlockKind::Square => ']',
-                BlockKind::Angle => '>',
+                NestedBlockKind::Curly => '}',
+                NestedBlockKind::Parens => ')',
+                NestedBlockKind::Square => ']',
+                NestedBlockKind::Angle => '>',
             }
         }
     }
@@ -2789,7 +3126,7 @@ pub mod model {
 
 pub mod error {
     use crate::error::{MsgErr, ParseErrs};
-    use crate::version::v0_0_1::parse::model::BlockKind;
+    use crate::version::v0_0_1::parse::model::NestedBlockKind;
     use crate::version::v0_0_1::Span;
     use ariadne::Report;
     use ariadne::{Label, ReportKind, Source};
@@ -2821,7 +3158,7 @@ pub mod error {
     fn report(context: &str, loc: Span) -> MsgErr {
         let mut builder = Report::build(ReportKind::Error, (), 23);
 
-        match BlockKind::error_message(&loc, context) {
+        match NestedBlockKind::error_message(&loc, context) {
             Ok(message) => {
                 let builder = builder.with_message(message).with_label(
                     Label::new(loc.location_offset()..loc.location_offset()).with_message(message),
@@ -2835,6 +3172,9 @@ pub mod error {
                 "point" => {
                     builder.with_message("Invalid Point").with_label(Label::new(loc.location_offset()..loc.location_offset()).with_message("Invalid Point"))
                 },
+             "scope:expect-space-after-pipeline-step" =>{ builder.with_message("expecting a space after selection pipeline step (->)").with_label(Label::new(loc.location_offset()..loc.location_offset()).with_message("Expecting Space"))},
+            "scope-selector-name:expect-alphanumeric-leading" => { builder.with_message("expecting a valid scope selector name starting with an alphabetic character").with_label(Label::new(loc.location_offset()..loc.location_offset()).with_message("Expecting Alpha Char"))},
+            "scope-selector-name:expect-termination" => { builder.with_message("expecting scope selector to be followed by a space, a filter declaration: '(filter)->' or a sub scope selector: '<SubScope> or subscope terminator '>' '").with_label(Label::new(loc.location_offset()..loc.location_offset()).with_message("Bad Scope Selector Termination"))},
                 "scope-selector-version-closing-tag" =>{ builder.with_message("expecting a closing parenthesis for the root version declaration (no spaces allowed) -> i.e. Bind(version=1.0.0)->").with_label(Label::new(loc.location_offset()..loc.location_offset()).with_message("missing closing parenthesis"))}
                 "scope-selector-version-missing-kazing"=> { builder.with_message("The version declaration needs a little style.  Try adding a '->' to it.  Make sure there are no spaces between the parenthesis and the -> i.e. Bind(version=1.0.0)->").with_label(Label::new(loc.location_offset()..loc.location_offset()).with_message("missing stylish arrow"))}
                 "scope-selector-version" => { builder.with_message("Root config selector requires a version declaration with NO SPACES between the name and the version filter example: Bind(version=1.0.0)->").with_label(Label::new(loc.location_offset()..loc.location_offset()).with_message("bad version declaration"))}
@@ -2855,7 +3195,7 @@ pub mod error {
                 "point:version_segment" => {builder.with_message("A Version Segment allows all legal SemVer characters").with_label(Label::new(loc.location_offset()..loc.location_offset()).with_message("Illegal Character"))}
                 "filter-name" => {builder.with_message("Filter name must be skewer case with leading character").with_label(Label::new(loc.location_offset()..loc.location_offset()).with_message("Invalid filter name"))}
 
-                "sub-scope-selector-kazing" => {builder.with_message("Selector needs some style with the '->' operator either right after the Selector i.e.: 'Pipeline ->' or as part of the filter declaration i.e. 'Pipeline(auth)->'").with_label(Label::new(loc.location_offset()..loc.location_offset()).with_message("Missing or Invalid Kazing Operator( -> )"))}
+                "parsed-scope-selector-kazing" => {builder.with_message("Selector needs some style with the '->' operator either right after the Selector i.e.: 'Pipeline ->' or as part of the filter declaration i.e. 'Pipeline(auth)->'").with_label(Label::new(loc.location_offset()..loc.location_offset()).with_message("Missing or Invalid Kazing Operator( -> )"))}
             "variable" => {
                     builder.with_message("variable name must be alphanumeric lowercase, dashes and dots.  Variables are preceded by the '$' operator and must be sorounded by parenthesis $(env.valid-variable-name)")
                 },
@@ -2974,13 +3314,13 @@ pub mod parse {
     };
     use crate::version::v0_0_1::parse::{
         camel_case, diagnose, domain_chars, file_chars, point, point_segment_chars, point_subst,
-        rec_version, Res, skewer_chars, version_chars, version_point_segment, version_req_chars,
+        rec_version, skewer_chars, version_chars, version_point_segment, version_req_chars, Res,
     };
     use crate::version::v0_0_1::selector::selector::specific::{
         ProductSelector, VariantSelector, VendorSelector,
     };
     use crate::version::v0_0_1::selector::selector::{
-        ExactPointSeg, GenericKindiBaseSelector, GenericKindSelector, Hop, Pattern,
+        ExactPointSeg, GenericKindSelector, GenericKindiBaseSelector, Hop, Pattern,
         PointSegSelector, PointSelector, SpecificSelector, TksPattern, VersionReq,
     };
     use crate::version::v0_0_1::util::ValuePattern;
@@ -4285,6 +4625,16 @@ pub fn pipeline_step_block(input: Span) -> Res<Span, PayloadBlock> {
      */
 }
 
+pub fn rough_pipeline_step(input: Span) -> Res<Span, Span> {
+    recognize(tuple((
+        many0(preceded(
+            alt((tag("-"), tag("="), tag("+"))),
+            any_rough_block,
+        )),
+        alt((tag("->"), tag("=>"))),
+    )))(input)
+}
+
 pub fn consume_pipeline_block(input: Span) -> Res<Span, PayloadBlock> {
     all_consuming(pipeline_step_block)(input)
 }
@@ -4360,9 +4710,8 @@ pub fn config(src: &str) -> Result<Config, MsgErr> {
     let parsed_root_scope = parse_root_scope(span.clone())?;
     let root_scope_selector = parsed_root_scope.selector.clone().to_concrete()?;
 
-
     if root_scope_selector.name.as_str() == "Bind" {
-        if root_scope_selector.version == Version::from_str("1.0.0" )?  {
+        if root_scope_selector.version == Version::from_str("1.0.0")? {
             let bind = bind_config(parsed_root_scope.block.content.clone())?;
             return Ok(Config::Bind(bind));
         } else {
@@ -4374,8 +4723,12 @@ pub fn config(src: &str) -> Result<Config, MsgErr> {
             let report = builder
                 .with_message(message)
                 .with_label(
-                    Label::new(parsed_root_scope.selector.version.span.location_offset()..parsed_root_scope.selector.version.span.location_offset()+parsed_root_scope.selector.version.span.len())
-                        .with_message("Unsupported Bind Config Version"),
+                    Label::new(
+                        parsed_root_scope.selector.version.span.location_offset()
+                            ..parsed_root_scope.selector.version.span.location_offset()
+                                + parsed_root_scope.selector.version.span.len(),
+                    )
+                    .with_message("Unsupported Bind Config Version"),
                 )
                 .finish();
             Err(ParseErrs::new(report, parsed_root_scope.block.content.extra.clone()).into())
@@ -4389,8 +4742,12 @@ pub fn config(src: &str) -> Result<Config, MsgErr> {
         let report = builder
             .with_message(message)
             .with_label(
-                Label::new(parsed_root_scope.selector.name.location_offset()..parsed_root_scope.selector.name.location_offset()+parsed_root_scope.selector.name.len())
-                    .with_message("Unrecognized Config Kind"),
+                Label::new(
+                    parsed_root_scope.selector.name.location_offset()
+                        ..parsed_root_scope.selector.name.location_offset()
+                            + parsed_root_scope.selector.name.len(),
+                )
+                .with_message("Unrecognized Config Kind"),
             )
             .finish();
         Err(ParseErrs::new(report, parsed_root_scope.block.content.extra.clone()).into())
@@ -4398,7 +4755,7 @@ pub fn config(src: &str) -> Result<Config, MsgErr> {
 }
 
 fn bind_config(input: Span) -> Result<BindConfig, MsgErr> {
-    let parsed_scopes = result(sub_scopes(input))?;
+    let parsed_scopes = result(parsed_scopes(input))?;
     let mut scopes = vec![];
     let mut errors = vec![];
 
@@ -4421,58 +4778,66 @@ fn bind_config(input: Span) -> Result<BindConfig, MsgErr> {
 }
 
 fn parse_bind_scope(scope: ParsedScope<Span>) -> Result<BindScope<Span>, ParseErrs> {
-    let selector_name = scope.selector.name.to_string();
-    let input = scope.block.content.clone();
-    match selector_name.as_str() {
-        "Pipeline" => Ok(scope.upgrade(parse_bind_pipelines_scope(input)?)),
-        what => {
-            let mut builder = Report::build(ReportKind::Error, (), 0);
-            let report = builder
-                .with_message(format!(
-                    "Unrecognized BindConfig selector: '{}'",
-                    scope.selector.name
-                ))
-                .with_label(
-                    Label::new(scope.selector.name.location_offset()..scope.selector.name.location_offset()+scope.selector.name.len())
-                        .with_message("Unrecognized Selector"),
-                )
-                .finish();
-            Err(ParseErrs::new(report, scope.block.content.extra.clone()))
-        }
-    }
-}
+    unimplemented!()
 
-fn parse_bind_pipelines_scope<'a>(input: Span) -> Result<ElemSpan<Span,BindBlock>, ParseErrs> {
-   let (next,sub_scopes) = sub_scopes( input.clone() )?;
-   let mut errs = vec![];
-   for sub_scope in sub_scopes {
-       match sub_scope.selector.name.to_string().as_str() {
-           "Msg" => {},
-           "Http" => {},
-           "Rc" => {}
+    /*
+       let selector_name = scope.selector.name.to_string();
+       let input = scope.block.content.clone();
+       match selector_name.as_str() {
+           "Pipeline" => Ok(scope.upgrade(parse_bind_pipelines_scope(input)?)),
            what => {
                let mut builder = Report::build(ReportKind::Error, (), 0);
                let report = builder
                    .with_message(format!(
-                       "Unrecognized Pipeline scope: '{}'",
-                       what
+                       "Unrecognized BindConfig selector: '{}'",
+                       scope.selector.name
                    ))
                    .with_label(
-                       Label::new(input.location_offset()..input.location_offset())
-                           .with_message("Unrecognized Selector"),
+                       Label::new(
+                           scope.selector.name.location_offset()
+                               ..scope.selector.name.location_offset() + scope.selector.name.len(),
+                       )
+                       .with_message("Unrecognized Selector"),
                    )
                    .finish();
-               errs.push(ParseErrs::new( report, input.extra.clone() ));
+               Err(ParseErrs::new(report, scope.block.content.extra.clone()))
            }
        }
-   }
+
+    */
+}
+
+fn parse_bind_pipelines_scope<'a>(input: Span) -> Result<ElemSpan<Span, BindBlock>, ParseErrs> {
+    unimplemented!()
+    /*
+    let (next, parsed_scopes) = parsed_scopes(input.clone())?;
+    let mut errs = vec![];
+    for parsed_scope in parsed_scopes {
+        match parsed_scope.selector.name.to_string().as_str() {
+            "Msg" => {}
+            "Http" => {}
+            "Rc" => {}
+            what => {
+                let mut builder = Report::build(ReportKind::Error, (), 0);
+                let report = builder
+                    .with_message(format!("Unrecognized Pipeline scope: '{}'", what))
+                    .with_label(
+                        Label::new(input.location_offset()..input.location_offset())
+                            .with_message("Unrecognized Selector"),
+                    )
+                    .finish();
+                errs.push(ParseErrs::new(report, input.extra.clone()));
+            }
+        }
+    }
 
     if !errs.is_empty() {
         Err(ParseErrs::fold(errs))
     } else {
-        Ok( ElemSpan::new(BindBlock::Pipelines,input.clone()) )
+        Ok(ElemSpan::new(BindBlock::Pipelines, input.clone()))
     }
 
+     */
 }
 
 #[cfg(test)]
@@ -4481,14 +4846,9 @@ pub mod test {
     use crate::version::v0_0_1::config::config::Config;
     use crate::version::v0_0_1::create_span;
     use crate::version::v0_0_1::parse::error::result;
-    use crate::version::v0_0_1::parse::model::BlockKind;
+    use crate::version::v0_0_1::parse::model::{BlockKind, NestedBlockKind, TerminatedBlockKind};
     use crate::version::v0_0_1::parse::parse::version;
-    use crate::version::v0_0_1::parse::{
-        args, bind_config, block, comment, config, expected_block_terminator_or_non_terminator,
-        no_comment, parse_include_blocks, rec_version, root_scope, root_scope_selector,
-        rough_block, scope_filter, scope_filters, skewer_case, strip_comments, sub_scope,
-        sub_scopes,
-    };
+    use crate::version::v0_0_1::parse::{args, bind_config, block, comment, config, expected_block_terminator_or_non_terminator, no_comment, parse_include_blocks, parsed_nested_block, parsed_scope, parsed_scope_selector_and_filters, parsed_scopes, rec_version, root_scope, root_scope_selector, scope_filter, scope_filters, skewer_case, strip_comments};
     use nom::bytes::complete::tag;
     use nom::combinator::{all_consuming, recognize};
     use nom_locate::LocatedSpan;
@@ -4503,13 +4863,13 @@ Unknown(version=1.0.0)-> # test unknown config kind
     Pipelines {
     }
 }"#;
-        let unsupported_bind_version= r#"
+        let unsupported_bind_version = r#"
 Bind(version=100.0.0)-> # test unsupported version
 {
     Pipelines {
     }
 }"#;
-        let multiple_unknown_sub_selectors= r#"
+        let multiple_unknown_sub_selectors = r#"
 Bind(version=1.0.0)->
 {
     Whatever -> { # Someone doesn't care what sub selectors he creates
@@ -4536,10 +4896,10 @@ Bind(version=1.0.0)->
 
 
 }"#;
-        pass(config(unknown_config_kind));
-        pass(config(unsupported_bind_version ));
-        pass(config(multiple_unknown_sub_selectors ));
-        pass(config(now_we_got_rows_to_parse));
+        log(config(unknown_config_kind));
+        log(config(unsupported_bind_version));
+        log(config(multiple_unknown_sub_selectors));
+        log(config(now_we_got_rows_to_parse));
 
         Ok(())
     }
@@ -4583,24 +4943,24 @@ Bind(version=1.0.0)->
     }
     #[test]
     pub fn test_rough_block() -> Result<(), MsgErr> {
-        result(all_consuming(rough_block(BlockKind::Curly))(create_span(
-            "{  }",
-        )))?;
-        result(all_consuming(rough_block(BlockKind::Curly))(create_span(
-            "{ {} }",
-        )))?;
+        result(all_consuming(parsed_nested_block(NestedBlockKind::Curly))(
+            create_span("{  }"),
+        ))?;
+        result(all_consuming(parsed_nested_block(NestedBlockKind::Curly))(
+            create_span("{ {} }"),
+        ))?;
         assert!(
-            result(all_consuming(rough_block(BlockKind::Curly))(create_span(
-                "{ } }"
-            )))
+            result(all_consuming(parsed_nested_block(NestedBlockKind::Curly))(
+                create_span("{ } }")
+            ))
             .is_err()
         );
         // this is allowed by rough_block
-        result(all_consuming(rough_block(BlockKind::Curly))(create_span(
-            "{ ] }",
-        )))?;
+        result(all_consuming(parsed_nested_block(NestedBlockKind::Curly))(
+            create_span("{ ] }"),
+        ))?;
 
-        result(rough_block(BlockKind::Curly)(create_span(
+        result(parsed_nested_block(NestedBlockKind::Curly)(create_span(
             r#"x blah
 
 
@@ -4613,7 +4973,7 @@ Hello my friend
         .unwrap()
         .print();
 
-        result(rough_block(BlockKind::Curly)(create_span(
+        result(parsed_nested_block(NestedBlockKind::Curly)(create_span(
             r#"{
 
 Hello my friend
@@ -4629,22 +4989,23 @@ Hello my friend
 
     #[test]
     pub fn test_block() -> Result<(), MsgErr> {
-        all_consuming(block(BlockKind::Curly))(create_span("{  }"))?;
-        all_consuming(block(BlockKind::Curly))(create_span("{ {} }"))?;
-        all_consuming(block(BlockKind::Curly))(create_span("{ [] }"))?;
+        all_consuming(block(NestedBlockKind::Curly))(create_span("{  }"))?;
+        all_consuming(block(NestedBlockKind::Curly))(create_span("{ {} }"))?;
+        all_consuming(block(NestedBlockKind::Curly))(create_span("{ [] }"))?;
         assert!(
-            expected_block_terminator_or_non_terminator(BlockKind::Curly)(create_span("}")).is_ok()
+            expected_block_terminator_or_non_terminator(NestedBlockKind::Curly)(create_span("}"))
+                .is_ok()
         );
         assert!(
-            expected_block_terminator_or_non_terminator(BlockKind::Curly)(create_span("]"))
+            expected_block_terminator_or_non_terminator(NestedBlockKind::Curly)(create_span("]"))
                 .is_err()
         );
         assert!(
-            expected_block_terminator_or_non_terminator(BlockKind::Square)(create_span("x"))
+            expected_block_terminator_or_non_terminator(NestedBlockKind::Square)(create_span("x"))
                 .is_ok()
         );
-        assert!(block(BlockKind::Curly)(create_span("{ ] }")).is_err());
-        result(block(BlockKind::Curly)(create_span(
+        assert!(block(NestedBlockKind::Curly)(create_span("{ ] }")).is_err());
+        result(block(NestedBlockKind::Curly)(create_span(
             r#"{
 
 
@@ -4775,21 +5136,87 @@ Hello my friend
     }
 
     #[test]
-    pub fn test_sub_scope() -> Result<(), MsgErr> {
-        pass(result(sub_scope(create_span("Pipes->{}"))))?;
-        pass(result(sub_scope(create_span("Pipes ->{}"))))?;
-        pass(result(sub_scope(create_span("Pipes -> {}"))))?;
-        pass(result(sub_scope(create_span("Pipes(auth)-> {}"))))?;
+    pub fn test_parsed_scope() -> Result<(), MsgErr> {
 
-        let sub_scope = result(sub_scope(create_span(
-            r#"Pipes(auth)-> {
+        let pipes = log(result(parsed_scope(create_span(
+            "Pipes -> {}",
+        ))))?;
 
-        ... all kinds of data...
+        log(result(parsed_scope(create_span(
+            "Pipes ->{}",
+        ))));
 
-        }"#,
+        let pipes = log(result(parsed_scope(create_span(
+            "Pipes {}",
+        ))))?;
+
+        assert_eq!(pipes.selector.selector.name.to_string().as_str(), "Pipes");
+        assert_eq!(pipes.block.kind, BlockKind::Nested(NestedBlockKind::Curly));
+        assert_eq!(pipes.block.content.len(), 0);
+        assert_eq!(pipes.selector.filters.len(), 0);
+        assert_eq!(pipes.pipeline_step, None);
+
+        let pipes = log(result(parsed_scope(create_span(
+            "Pipes {}",
+        ))))?;
+
+        assert_eq!(pipes.selector.selector.name.to_string().as_str(), "Pipes");
+        assert_eq!(pipes.block.kind, BlockKind::Nested(NestedBlockKind::Curly));
+        assert_eq!(pipes.block.content.len(), 0);
+        assert_eq!(pipes.selector.filters.len(), 0);
+        assert_eq!(pipes.pipeline_step, None);
+
+        let pipes = log(result(parsed_scope(create_span(
+            "Pipes -> 12345;",
+        ))))?;
+
+        assert_eq!(pipes.selector.selector.name.to_string().as_str(), "Pipes");
+        assert_eq!(pipes.block.content.to_string().as_str(), "12345");
+        assert_eq!(pipes.block.kind, BlockKind::Terminated(TerminatedBlockKind::Semicolon));
+        assert_eq!(pipes.selector.filters.len(), 0);
+        assert_eq!(pipes.pipeline_step.unwrap().to_string().as_str(), "->");
+
+        let pipes = log(result(parsed_scope(create_span(
+            r#"
+            #This time adding a space before the 12345... there should be one space in the content, not two
+            Pipes ->  12345;"#,
+        ))))?;
+
+        assert_eq!(pipes.selector.selector.name.to_string().as_str(), "Pipes");
+        assert_eq!(pipes.block.content.to_string().as_str(), " 12345");
+        assert_eq!(pipes.block.kind, BlockKind::Terminated(TerminatedBlockKind::Semicolon));
+        assert_eq!(pipes.selector.filters.len(), 0);
+        assert_eq!(pipes.pipeline_step.unwrap().to_string().as_str(), "->");
+
+
+        let pipes = log(result(parsed_scope(create_span(
+            "Pipes(auth) {}",
+        ))))?;
+
+        assert_eq!(pipes.selector.selector.name.to_string().as_str(), "Pipes");
+        assert_eq!(pipes.block.content.len(), 0);
+        assert_eq!(pipes.block.kind, BlockKind::Nested(NestedBlockKind::Curly));
+        assert_eq!(pipes.selector.filters.len(), 1);
+        assert_eq!(pipes.pipeline_step, None);
+
+
+        let pipes = log(result(parsed_scope(create_span(
+            "Pipeline<Msg> {}",
+        ))))?;
+
+        assert_eq!(pipes.selector.selector.name.to_string().as_str(), "Pipeline");
+        assert_eq!(pipes.block.content.to_string().as_str(), "Msg> {}");
+        assert_eq!(pipes.block.kind, BlockKind::Terminated(TerminatedBlockKind::Semicolon));
+        assert_eq!(pipes.selector.filters.len(), 0);
+        assert_eq!(pipes.pipeline_step, None);
+
+
+        log(result(parsed_scope(create_span(
+            "Pipeline<Http<Get>>(path /users/$(user=.*)) -> {}",
+        ))))?;
+        let scope = result(parsed_scope(create_span(
+            "Pipeline<Http<Get>>(path /users/$(user=.*)) -> {}",
         )))?;
-
-        println!("SUB SCOPE: {}", sub_scope.block.content.to_string());
 
         Ok(())
     }
@@ -4812,8 +5239,8 @@ Bind(version=1.2.3)-> {
         println!("parsed root");
 
         println!("parsing : {}", root.block.content.clone().to_string());
-        pass(result(sub_scopes(root.block.content.clone())));
-        let sub_scopes = result(sub_scopes(root.block.content.clone()))?;
+        log(result(parsed_scopes(root.block.content.clone())));
+        let sub_scopes = result(parsed_scopes(root.block.content.clone()))?;
 
         println!("subscopes found: {}", sub_scopes.len());
         assert_eq!(sub_scopes.len(), 2);
@@ -4821,9 +5248,9 @@ Bind(version=1.2.3)-> {
         Ok(())
     }
 
-    fn pass<R>(result: Result<R, MsgErr>) -> Result<(), MsgErr> {
+    fn log<R>(result: Result<R, MsgErr>) -> Result<R, MsgErr> {
         match result {
-            Ok(_) => Ok(()),
+            Ok(r) => Ok(r),
             Err(err) => {
                 err.print();
                 Err(err)
@@ -4832,32 +5259,30 @@ Bind(version=1.2.3)-> {
     }
 }
 
-
-
 pub fn pipeline_step(input: Span) -> Res<Span, PipelineStep> {
-/*    context(
-        "Step",
-        tuple((
-            bind::parse::select0(
-                pipeline_step_block,
-                alt((
-                    context("selector", tag("->")),
-                    context("selector", tag("=>")),
-                )),
-            ),
-            context("!pipeline-step:exit", alt((tag("->"), tag("=>"), fail))),
-        )),
-    )(input)
-    .map(|(next, (blocks, kind))| {
-        let kind = match kind.to_string().as_str() {
-            "->" => StepKind::Request,
-            "=>" => StepKind::Response,
-            _ => panic!("nom parse rules should have selected -> or =>"),
-        };
-        (next, PipelineStep { kind, blocks })
-    })
+    /*    context(
+           "Step",
+           tuple((
+               bind::parse::select0(
+                   pipeline_step_block,
+                   alt((
+                       context("selector", tag("->")),
+                       context("selector", tag("=>")),
+                   )),
+               ),
+               context("!pipeline-step:exit", alt((tag("->"), tag("=>"), fail))),
+           )),
+       )(input)
+       .map(|(next, (blocks, kind))| {
+           let kind = match kind.to_string().as_str() {
+               "->" => StepKind::Request,
+               "=>" => StepKind::Response,
+               _ => panic!("nom parse rules should have selected -> or =>"),
+           };
+           (next, PipelineStep { kind, blocks })
+       })
 
- */
+    */
     unimplemented!()
 }
 
@@ -4919,13 +5344,13 @@ pub fn pipeline_segment(input: Span) -> Res<Span, PipelineSegment> {
 
 pub fn pipeline(input: Span) -> Res<Span, Pipeline> {
     unimplemented!()
-/*    context(
-        "Pipeline",
-        bind::parse::many_until0(pipeline_segment, tuple((multispace0, tag(";")))),
-    )(input)
-    .map(|(next, segments)| (next, Pipeline { segments }))
+    /*    context(
+           "Pipeline",
+           bind::parse::many_until0(pipeline_segment, tuple((multispace0, tag(";")))),
+       )(input)
+       .map(|(next, segments)| (next, Pipeline { segments }))
 
- */
+    */
 }
 
 pub fn consume_pipeline(input: Span) -> Res<Span, Pipeline> {
@@ -4937,27 +5362,23 @@ pub fn entity_selectors(input: Span) -> Res<Span, Vec<Selector<PipelineSelector>
 }
 
 pub fn entity_selector(input: Span) -> Res<Span, Selector<PipelineSelector>> {
-    tuple((entity_pattern, multispace0, pipeline, tag(";")))(input).map(
-        |(next, (pattern, _, pipeline, _))| (next, Selector::new(pattern, pipeline)),
-    )
+    tuple((entity_pattern, multispace0, pipeline, tag(";")))(input)
+        .map(|(next, (pattern, _, pipeline, _))| (next, Selector::new(pattern, pipeline)))
 }
 
 pub fn msg_selector(input: Span) -> Res<Span, Selector<MsgPipelineSelector>> {
-    tuple((msg_pattern_scoped, multispace0, pipeline, tag(";")))(input).map(
-        |(next, (pattern, _, pipeline, _))| (next, Selector::new(pattern, pipeline)),
-    )
+    tuple((msg_pattern_scoped, multispace0, pipeline, tag(";")))(input)
+        .map(|(next, (pattern, _, pipeline, _))| (next, Selector::new(pattern, pipeline)))
 }
 
 pub fn http_pipeline(input: Span) -> Res<Span, Selector<HttpPipelineSelector>> {
-    tuple((http_pattern_scoped, multispace0, pipeline, tag(";")))(input).map(
-        |(next, (pattern, _, pipeline, _))| (next, Selector::new(pattern, pipeline)),
-    )
+    tuple((http_pattern_scoped, multispace0, pipeline, tag(";")))(input)
+        .map(|(next, (pattern, _, pipeline, _))| (next, Selector::new(pattern, pipeline)))
 }
 
 pub fn rc_selector(input: Span) -> Res<Span, Selector<RcPipelineSelector>> {
-    tuple((rc_pattern_scoped, multispace0, pipeline, tag(";")))(input).map(
-        |(next, (pattern, _, pipeline, _))| (next, Selector::new(pattern, pipeline)),
-    )
+    tuple((rc_pattern_scoped, multispace0, pipeline, tag(";")))(input)
+        .map(|(next, (pattern, _, pipeline, _))| (next, Selector::new(pattern, pipeline)))
 }
 
 pub fn consume_selector(input: Span) -> Res<Span, Selector<PipelineSelector>> {
