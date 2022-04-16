@@ -50,7 +50,12 @@ use crate::version::v0_0_1::id::id::{
     PointSegPairSubst, PointSegSubst, PointSubst, RouteSeg, Version,
 };
 use crate::version::v0_0_1::parse::error::{first_context, result};
-use crate::version::v0_0_1::parse::model::{BindBlock, BindScope, Block, BlockKind, ElemSpan, ParsedParentScope, NestedBlockKind, ParsedBlock, ParsedRootScope, ParsedScope, ParsedScopeSelector, ParsedScopeSelectorAndFilters, RootScopeSelector, Scope, ScopeFilter, ScopeSelector, TerminatedBlockKind, TextType};
+use crate::version::v0_0_1::parse::model::{
+    BindBlock, BindScope, Block, BlockKind, ElemSpan, NestedBlockKind, ParsedBlock,
+    ParsedParentScope, ParsedRootScope, ParsedScope, ParsedScopeFilter, ParsedScopeFilters,
+    ParsedScopeSelector, ParsedScopeSelectorAndFilters, RootScopeSelector, Scope, ScopeSelector,
+    TerminatedBlockKind, TextType,
+};
 use crate::version::v0_0_1::parse::parse::{
     delim_kind, generic_kind_base, pattern, point_selector, specific_selector, value_pattern,
     version,
@@ -938,6 +943,46 @@ where
             !(char_item == '-')
                 && !(char_item == '.')
                 && !((char_item.is_alpha() && char_item.is_lowercase()) || char_item.is_dec_digit())
+        },
+        ErrorKind::AlphaNumeric,
+    )
+}
+
+pub fn rough_filepath_chars_plus_capture(i: Span) -> Res<Span, Span> {
+    context(
+        "capture-path",
+        recognize(pair(
+            tag("/"),
+            cut(many1(alt((
+                recognize(filepath_chars),
+                recognize(rough_cap_subst)),
+            ))),
+        )),
+    )(i)
+}
+
+pub fn rough_cap_subst(input: Span ) -> Res<Span,Span> {
+    delimited( tag("$("),
+               recognize(pair(alpha1, many0(alt((alpha1,digit1,recognize(any_block),recognize(regex)) )))),
+
+
+               tag(")"))(input)
+}
+
+pub fn regex<T>(i: T) -> Res<T, T>
+    where
+        T: InputTakeAtPosition + nom::InputLength,
+        <T as InputTakeAtPosition>::Item: AsChar,
+{
+    i.split_at_position1_complete(
+        |item| {
+            let char_item = item.as_char();
+            !(char_item == '-')
+                && !(char_item == '.')
+                && !(char_item == '/')
+                && !(char_item == ':')
+                && !(char_item == '_')
+                && !(char_item.is_alpha() || char_item.is_dec_digit())
         },
         ErrorKind::AlphaNumeric,
     )
@@ -2200,7 +2245,7 @@ where
     I: nom::Slice<std::ops::RangeFrom<usize>>,
     <I as InputIter>::Item: AsChar,
     E: nom::error::ContextError<I> + nom::error::ParseError<I>,
-    F: nom::Parser<I, O, E> + Clone
+    F: nom::Parser<I, O, E> + Clone,
 {
     move |input: I| {
         f.clone()
@@ -2459,25 +2504,37 @@ where
     }
 }
 
-pub fn parsed_parent_scope(parent: ParsedScope<Span>) -> Result<ParsedParentScope<Span>,MsgErr> {
+pub fn parsed_parent_scope(parent: ParsedScope<Span>) -> Result<ParsedParentScope<Span>, MsgErr> {
     if parent.selector.selector.children.is_some() {
-        let (_,child_selector) = all_consuming(parsed_scope_selector)(parent.selector.selector.children.as_ref().expect("child names...").clone())?;
+        let (_, child_selector) = all_consuming(parsed_scope_selector)(
+            parent
+                .selector
+                .selector
+                .children
+                .as_ref()
+                .expect("child names...")
+                .clone(),
+        )?;
 
-        let child = ParsedScope::new(ParsedScopeSelectorAndFilters::new( child_selector, parent.selector.filters ),parent.block );
+        let child = ParsedScope::new(
+            ParsedScopeSelectorAndFilters::new(child_selector, parent.selector.filters),
+            parent.block,
+        );
 
         Ok(ParsedParentScope {
-            selector: ParsedScopeSelectorAndFilters::new( parent.selector.selector, vec![] ),
+            selector: ParsedScopeSelectorAndFilters::new(parent.selector.selector, ParsedScopeFilters::empty()),
             pipeline_step: None,
-            block: vec![child]
+            block: vec![child],
         })
     } else {
-println!("parsing content: {}", parent.block.content.to_string() );
-        let (_,scopes) = many0( delimited(multispace0, parsed_scope,multispace0 ) )( parent.block.content )?;
+        println!("parsing content: '{}'", parent.block.content.to_string());
+        let (_,scopes) = parsed_scopes(parent.block.content)?;
+println!( "... scopes.len(): {}", scopes.len() );
 
         Ok(ParsedParentScope {
             selector: parent.selector,
             pipeline_step: parent.pipeline_step,
-            block: scopes
+            block: scopes,
         })
     }
 }
@@ -2485,20 +2542,14 @@ println!("parsing content: {}", parent.block.content.to_string() );
 pub fn parsed_scope(input: Span) -> Res<Span, ParsedScope<Span>> {
     context(
         "scope",
-        pair(
+        tuple((
+            peek(alt((alpha1,tag("<")))),
             parsed_scope_selector_and_filters,
-            tuple((
-                opt(scope_filters),
-                multispace0,
-                parsed_scope_pipeline_and_block,
-            )),
+            multispace1,
+            parsed_scope_pipeline_step_and_block),
         ),
     )(input)
-    .map(|(next, (selector, (filters, _, (pipeline_step, block))))| {
-        let filters = match filters {
-            None => vec![],
-            Some(filters) => filters,
-        };
+    .map(|(next, (_,selector, _,(pipeline_step, block)))| {
         let scope = ParsedScope {
             selector,
             pipeline_step,
@@ -2508,7 +2559,7 @@ pub fn parsed_scope(input: Span) -> Res<Span, ParsedScope<Span>> {
     })
 }
 
-pub fn parsed_scope_pipeline_and_block(
+pub fn parsed_scope_pipeline_step_and_block(
     input: Span,
 ) -> Res<Span, (Option<Span>, ParsedBlock<Span>)> {
     alt((
@@ -2581,9 +2632,17 @@ pub fn root_scope(input: Span) -> Res<Span, ParsedRootScope<Span>> {
 }
 
 pub fn parsed_scopes(input: Span) -> Res<Span, Vec<ParsedScope<Span>>> {
+    if input.len() == 0 {
+        return Ok((input.clone(),vec![]));
+    }
+
+    if wrapper(input.clone(),all_consuming(multispace1)).is_ok() {
+        return Ok((input.clone(),vec![]));
+    }
+
     context(
         "parsed-scopes",
-        many0(delimited(multispace0, parsed_scope, multispace0)),
+        many0( delimited(multispace0,parsed_scope,multispace0) )
     )(input)
 }
 
@@ -2604,21 +2663,30 @@ pub fn parsed_scope_selector_no_filters(
 
  */
 
-pub fn next_selector( input: Span ) -> Res<Span,(Span,Option<Span>)> {
-
-
-    match wrapper(input.clone(), pair(peek(tag("<")),tuple((tag("<"),pair(context("scope-selector",cut(alphanumeric1)), opt(recognize(nested_block(NestedBlockKind::Angle)))),tag(">"))))).map(|(next,(_,(_,(name,children),_)))|{
-        (next,(name,children))
-    }) {
-        Ok((next,(name,children))) => {
-
-            return Ok((next,(name,children)))
-        },
-        Err(_) => {
-        }
+pub fn next_selector(input: Span) -> Res<Span, (Span, Option<Span>)> {
+    match wrapper(
+        input.clone(),
+        pair(
+            peek(tag("<")),
+            tuple((
+                tag("<"),
+                pair(
+                    context("scope-selector", cut(alphanumeric1)),
+                    opt(recognize(nested_block(NestedBlockKind::Angle))),
+                ),
+                tag(">"),
+            )),
+        ),
+    )
+    .map(|(next, (_, (_, (name, children), _)))| (next, (name, children)))
+    {
+        Ok((next, (name, children))) => return Ok((next, (name, children))),
+        Err(_) => {}
     }
-    pair(context("scope-selector",cut(alphanumeric1)), opt(recognize(nested_block(NestedBlockKind::Angle))))(input)
-
+    pair(
+        context("scope-selector", cut(alphanumeric1)),
+        opt(recognize(nested_block(NestedBlockKind::Angle))),
+    )(input)
 }
 
 pub fn parsed_scope_selector_and_filters(
@@ -2626,23 +2694,16 @@ pub fn parsed_scope_selector_and_filters(
 ) -> Res<Span, ParsedScopeSelectorAndFilters<Span>> {
     context(
         "parsed-scope-selector-and-filter",
-        pair(parsed_scope_selector, opt(scope_filters)),
+        pair(parsed_scope_selector, scope_filters),
     )(input)
     .map(|(next, (selector, filters))| {
-        let filters = match filters {
-            None => vec![],
-            Some(filters) => filters,
-        };
         (next, ParsedScopeSelectorAndFilters::new(selector, filters))
     })
 }
 
 pub fn parsed_scope_selector(input: Span) -> Res<Span, ParsedScopeSelector<Span>> {
-    context(
-        "parsed-scope-selector",
-            next_selector,
-    )(input)
-    .map(|(next, (name, children))| (next, ParsedScopeSelector::new(name, children)))
+    context("parsed-scope-selector", next_selector)(input)
+        .map(|(next, (name, children))| (next, ParsedScopeSelector::new(name, children)))
 }
 
 pub fn wrapper<I, O, F>(input: I, mut f: F) -> Res<I, O>
@@ -2728,18 +2789,27 @@ where
     }
 }
 
-pub fn scope_filters<'a>(input: Span) -> Res<Span, Vec<ScopeFilter<Span>>> {
-    tuple((scope_filter, many0(preceded(tag("-"), scope_filter))))(input).map(
-        |(next, (first, mut many_filters))| {
-            let mut filters = vec![];
-            filters.push(first);
-            filters.append(&mut many_filters);
-            (next, filters)
-        },
-    )
+pub fn scope_filters<'a>(input: Span) -> Res<Span, ParsedScopeFilters<Span>> {
+    tuple((
+        opt(rough_filepath_chars_plus_capture),
+        pair(opt(scope_filter),
+        many0(preceded(tag("-"), scope_filter))),
+    ))(input)
+    .map(|(next, (path, (first, mut many_filters)))| {
+        let mut filters = vec![];
+        match first {
+            None => {}
+            Some(first) => {
+                filters.push(first);
+            }
+        }
+        filters.append(&mut many_filters);
+        let filters = ParsedScopeFilters { path, filters };
+        (next, filters)
+    })
 }
 
-pub fn scope_filter(input: Span) -> Res<Span, ScopeFilter<Span>> {
+pub fn scope_filter(input: Span) -> Res<Span, ParsedScopeFilter<Span>> {
     delimited(
         tag("("),
         context(
@@ -2758,7 +2828,7 @@ pub fn scope_filter(input: Span) -> Res<Span, ScopeFilter<Span>> {
         tag(")"),
     )(input)
     .map(|(next, (name, args))| {
-        let filter = ScopeFilter { name, args };
+        let filter = ParsedScopeFilter { name, args };
         (next, filter)
     })
 }
@@ -2879,11 +2949,11 @@ pub mod model {
     #[derive(Clone)]
     pub struct ParsedScopeSelectorAndFilters<I> {
         pub selector: ParsedScopeSelector<I>,
-        pub filters: Vec<ScopeFilter<I>>,
+        pub filters: ParsedScopeFilters<I>,
     }
 
     impl<I> ParsedScopeSelectorAndFilters<I> {
-        pub fn new(selector: ParsedScopeSelector<I>, filters: Vec<ScopeFilter<I>>) -> Self {
+        pub fn new(selector: ParsedScopeSelector<I>, filters: ParsedScopeFilters<I>) -> Self {
             Self { selector, filters }
         }
     }
@@ -2979,11 +3049,34 @@ pub mod model {
     #[derive(Clone)]
     pub struct ScopeSelector<I> {
         pub name: I,
-        pub filters: Vec<ScopeFilter<I>>,
+        pub filters: Vec<ParsedScopeFilters<I>>,
     }
 
     #[derive(Clone)]
-    pub struct ScopeFilter<I> {
+    pub struct ParsedScopeFilters<I> {
+        pub path: Option<I>,
+        pub filters: Vec<ParsedScopeFilter<I>>,
+    }
+
+    impl<I> ParsedScopeFilters<I> {
+        pub fn is_empty(&self) -> bool {
+            self.path.is_none() && self.filters.is_empty()
+        }
+
+        pub fn len(&self) -> usize {
+            self.filters.len()
+        }
+
+        pub fn empty() -> Self {
+            Self {
+                path: None,
+                filters: vec![]
+            }
+        }
+    }
+
+    #[derive(Clone)]
+    pub struct ParsedScopeFilter<I> {
         pub name: I,
         pub args: Option<I>,
     }
@@ -3266,7 +3359,7 @@ pub mod error {
 
      */
 
-    fn report(context: &str, loc: Span) -> MsgErr {
+    fn create_err_report(context: &str, loc: Span) -> MsgErr {
         let mut builder = Report::build(ReportKind::Error, (), 23);
 
         match NestedBlockKind::error_message(&loc, context) {
@@ -3280,6 +3373,10 @@ pub mod error {
         }
 
         let builder = match context {
+            "capture-path" => {
+                builder.with_message("Invalid capture path. Legal characters are filesystem characters plus captures $(var=.*) i.e. /users/$(user=.*)").with_label(Label::new(loc.location_offset()..loc.location_offset()).with_message("Illegal capture path"))
+
+            }
                 "point" => {
                     builder.with_message("Invalid Point").with_label(Label::new(loc.location_offset()..loc.location_offset()).with_message("Invalid Point"))
                 },
@@ -3372,12 +3469,12 @@ pub mod error {
                 let (span, context) = contexts.first().unwrap();
                 match context {
                         StackContext::Context(context) => {
-                            report(*context, span.clone())
+                            create_err_report(*context, span.clone())
                         }
                         _ => "internal parser error: could not find a parse context in order to generate a useful error message".into()
                     }
             }
-            ErrorTree::Base { location, kind } => report("eof", location.clone()),
+            ErrorTree::Base { location, kind } => create_err_report("eof", location.clone()),
             ErrorTree::Alt(alts) => {
                 for alt in alts {
                     return find_tree(alt);
@@ -4785,6 +4882,17 @@ where
     })
 }
 
+/*
+pub fn strip(input: Span) -> Result<Span, MsgErr>
+{
+    let (_, stripped) = strip_comments(input.clone())?;
+    let span = LocatedSpan::new_extra(stripped.as_str().clone(), Arc::new(input.to_string()));
+    Ok(span)
+}
+
+ */
+
+
 pub fn no_comment<T>(i: T) -> Res<T, TextType<T>>
 where
     T: InputTakeAtPosition + nom::InputLength,
@@ -4956,18 +5064,23 @@ pub mod test {
     use crate::error::{MsgErr, ParseErrs};
     use crate::version::v0_0_1::config::config::Config;
     use crate::version::v0_0_1::parse::error::result;
-    use crate::version::v0_0_1::parse::model::{BlockKind, NestedBlockKind, ParsedScope, TerminatedBlockKind};
+    use crate::version::v0_0_1::parse::model::{
+        BlockKind, NestedBlockKind, ParsedScope, TerminatedBlockKind,
+    };
     use crate::version::v0_0_1::parse::parse::version;
-    use crate::version::v0_0_1::parse::{args, bind_config, comment, config, expected_block_terminator_or_non_terminator, nested_block, nested_block_content, next_selector, no_comment, parse_include_blocks, parse_inner_block, parsed_nested_block, parsed_parent_scope, parsed_scope, parsed_scopes, rec_version, root_scope, root_scope_selector, scope_filter, scope_filters, skewer_case, strip_comments, wrapper};
+    use crate::version::v0_0_1::parse::{args, bind_config, comment, config, expected_block_terminator_or_non_terminator, nested_block, nested_block_content, next_selector, no_comment, parse_include_blocks, parse_inner_block, parsed_nested_block, parsed_parent_scope, parsed_scope, parsed_scope_pipeline_step_and_block, parsed_scope_selector, parsed_scope_selector_and_filters, parsed_scopes, rec_version, root_scope, root_scope_selector, rough_filepath_chars_plus_capture, scope_filter, scope_filters, skewer_case,  strip_comments, wrapper};
     use crate::version::v0_0_1::{create_span, Span};
     use nom::bytes::complete::tag;
-    use nom::character::complete::alpha1;
+    use nom::character::complete::{alpha1, multispace0};
     use nom::character::is_alphanumeric;
-    use nom::combinator::{all_consuming, recognize};
+    use nom::combinator::{all_consuming, opt, recognize};
     use nom::IResult;
     use nom_locate::LocatedSpan;
     use nom_supreme::error::ErrorTree;
     use std::rc::Rc;
+    use std::sync::Arc;
+    use nom::multi::many0;
+    use nom::sequence::delimited;
 
     #[test]
     pub fn test_rough_bind_config() -> Result<(), MsgErr> {
@@ -5249,27 +5362,65 @@ Hello my friend
         Ok(())
     }
     #[test]
-    pub fn test_next_selector()  {
-        assert_eq!("Http",next_selector(create_span("Http")).unwrap().1.0.to_string().as_str());
-        assert_eq!("Http",next_selector(create_span("<Http>")).unwrap().1.0.to_string().as_str());
-        assert_eq!("Http",next_selector(create_span("Http<Msg>")).unwrap().1.0.to_string().as_str());
-        assert_eq!("Http",next_selector(create_span("<Http<Msg>>")).unwrap().1.0.to_string().as_str());
+    pub fn test_next_selector() {
+        assert_eq!(
+            "Http",
+            next_selector(create_span("Http"))
+                .unwrap()
+                .1
+                 .0
+                .to_string()
+                .as_str()
+        );
+        assert_eq!(
+            "Http",
+            next_selector(create_span("<Http>"))
+                .unwrap()
+                .1
+                 .0
+                .to_string()
+                .as_str()
+        );
+        assert_eq!(
+            "Http",
+            next_selector(create_span("Http<Msg>"))
+                .unwrap()
+                .1
+                 .0
+                .to_string()
+                .as_str()
+        );
+        assert_eq!(
+            "Http",
+            next_selector(create_span("<Http<Msg>>"))
+                .unwrap()
+                .1
+                 .0
+                .to_string()
+                .as_str()
+        );
+    }
+    #[test]
+    pub fn test_parsed_scope2() -> Result<(), MsgErr> {
+        let scope = log(result(parsed_scopes(create_span("  Get -> {}\n\nPut -> {}   "))))?;
+        log(result(many0(delimited(multispace0, parsed_scope, multispace0))(create_span(""))))?;
+        log(result(rough_filepath_chars_plus_capture(create_span("/root/$(subst)"))))?;
+        log(result(rough_filepath_chars_plus_capture(create_span("/users/$(user=.*)"))))?;
+
+        Ok(())
     }
 
-
-        #[test]
+    #[test]
     pub fn test_parsed_scope() -> Result<(), MsgErr> {
-
         let pipes = log(result(parsed_scope(create_span("Pipes -> {}")))).unwrap();
 
-        log(result(parsed_scope(create_span("Pipes ->{}"))));
 
         let pipes = log(result(parsed_scope(create_span("Pipes {}"))))?;
 
         assert_eq!(pipes.selector.selector.name.to_string().as_str(), "Pipes");
         assert_eq!(pipes.block.kind, BlockKind::Nested(NestedBlockKind::Curly));
         assert_eq!(pipes.block.content.len(), 0);
-        assert_eq!(pipes.selector.filters.len(), 0);
+        assert!(pipes.selector.filters.is_empty());
         assert_eq!(pipes.pipeline_step, None);
 
         let pipes = log(result(parsed_scope(create_span("Pipes {}"))))?;
@@ -5281,7 +5432,7 @@ Hello my friend
         assert_eq!(pipes.pipeline_step, None);
 
         let pipes = log(result(parsed_scope(create_span("Pipes -> 12345;"))))?;
-
+println!("12345");
         assert_eq!(pipes.selector.selector.name.to_string().as_str(), "Pipes");
         assert_eq!(pipes.block.content.to_string().as_str(), "12345");
         assert_eq!(
@@ -5304,7 +5455,9 @@ Hello my friend
         assert_eq!(pipes.selector.filters.len(), 0);
         assert_eq!(pipes.pipeline_step.unwrap().to_string().as_str(), "->");
 
+println!("before auth");
         let pipes = log(result(parsed_scope(create_span("Pipes(auth) {}"))))?;
+println!("after auth");
 
         assert_eq!(pipes.selector.selector.name.to_string().as_str(), "Pipes");
         assert_eq!(pipes.block.content.len(), 0);
@@ -5319,7 +5472,16 @@ Hello my friend
             "Pipeline"
         );
         assert_eq!(
-            Some(pipes.selector.selector.children.as_ref().unwrap().to_string().as_str()),
+            Some(
+                pipes
+                    .selector
+                    .selector
+                    .children
+                    .as_ref()
+                    .unwrap()
+                    .to_string()
+                    .as_str()
+            ),
             Some("<Msg>")
         );
 
@@ -5331,70 +5493,188 @@ Hello my friend
         let pipes = log(result(parsed_scope(create_span(
             "Pipeline<Http>(noauth) -> {zoink!{}}",
         ))))?;
+println!("zoink!");
         assert_eq!(
             pipes.selector.selector.name.to_string().as_str(),
             "Pipeline"
         );
         assert_eq!(
-            Some(pipes.selector.selector.children.as_ref().unwrap().to_string().as_str()),
+            Some(
+                pipes
+                    .selector
+                    .selector
+                    .children
+                    .as_ref()
+                    .unwrap()
+                    .to_string()
+                    .as_str()
+            ),
             Some("<Http>")
         );
+        assert_eq!(pipes.block.content.to_string().as_str(), "zoink!{}");
+        assert_eq!(pipes.block.kind, BlockKind::Nested(NestedBlockKind::Curly));
+        assert_eq!(pipes.selector.filters.len(), 1);
+        //        assert_eq!(Some(pipes.pipeline_step.unwrap().to_string().as_str()),Some("->") );
+println!("zoink! tested...");
+
+        let msg = "Hello my future friend";
+        let parseme = format!("<Http<Get>> -> {};", msg);
+        let pipes = log(result(parsed_scope(create_span(parseme.as_str()))))?;
+
+println!("this?...");
+        assert_eq!(pipes.selector.selector.name.to_string().as_str(), "Http");
+        assert_eq!(pipes.block.content.to_string().as_str(), msg);
         assert_eq!(
-            pipes.block.content.to_string().as_str(),
-            "zoink!{}"
+            pipes.block.kind,
+            BlockKind::Terminated(TerminatedBlockKind::Semicolon)
+        );
+        assert_eq!(pipes.selector.filters.len(), 0);
+        assert_eq!(pipes.pipeline_step.unwrap().to_string().as_str(), "->");
+
+println!("before old final...");
+        let pipes = log(result(parsed_scope(create_span(
+            "Pipeline<Http<Get>>/users/ -[Text ]-> {}",
+        ))))?;
+println!("after old final...");
+        assert_eq!(
+            pipes.selector.selector.name.to_string().as_str(),
+            "Pipeline"
+        );
+        assert_eq!(
+            Some(
+                pipes
+                    .selector
+                    .selector
+                    .children
+                    .as_ref()
+                    .unwrap()
+                    .to_string()
+                    .as_str()
+            ),
+            Some("<Http<Get>>")
+        );
+        assert_eq!(pipes.block.kind, BlockKind::Nested(NestedBlockKind::Curly));
+        assert_eq!(pipes.selector.filters.len(), 0);
+        assert_eq!(
+            pipes.pipeline_step.as_ref().unwrap().to_string().as_str(),
+            "-[Text ]->"
+        );
+
+        println!("FINAL final...");
+        let pipes = log(result(parsed_scope(create_span(
+            "Pipeline<Http<Get>>/users/(auth) -[Text ]-> {}",
+        ))))?;
+        println!("after FINAL final...");
+        assert_eq!(
+            pipes.selector.selector.name.to_string().as_str(),
+            "Pipeline"
+        );
+        assert_eq!(
+            Some(
+                pipes
+                    .selector
+                    .selector
+                    .children
+                    .as_ref()
+                    .unwrap()
+                    .to_string()
+                    .as_str()
+            ),
+            Some("<Http<Get>>")
         );
         assert_eq!(pipes.block.kind, BlockKind::Nested(NestedBlockKind::Curly));
         assert_eq!(pipes.selector.filters.len(), 1);
-//        assert_eq!(Some(pipes.pipeline_step.unwrap().to_string().as_str()),Some("->") );
+        assert_eq!(
+            pipes.pipeline_step.as_ref().unwrap().to_string().as_str(),
+            "-[Text ]->"
+        );
 
-        let msg = "Hello my future friend";
-        let parseme = format!("<Http<Get>> -> {};",msg);
+        println!("FINAL final 2...");
         let pipes = log(result(parsed_scope(create_span(
-            parseme.as_str()
+            "Pipeline<Http<Get>>/users/(auth)-(blah xyz) -[Text ]-> {}",
         ))))?;
+        println!("after FINAL final 2...");
         assert_eq!(
             pipes.selector.selector.name.to_string().as_str(),
-            "Http"
+            "Pipeline"
         );
         assert_eq!(
-            pipes.block.content.to_string().as_str(),
-            msg
+            Some(
+                pipes
+                    .selector
+                    .selector
+                    .children
+                    .as_ref()
+                    .unwrap()
+                    .to_string()
+                    .as_str()
+            ),
+            Some("<Http<Get>>")
         );
-        assert_eq!(pipes.block.kind, BlockKind::Terminated(TerminatedBlockKind::Semicolon));
-        assert_eq!(pipes.selector.filters.len(), 0);
-        assert_eq!(pipes.pipeline_step.unwrap().to_string().as_str(),"->" );
+        assert_eq!(pipes.block.kind, BlockKind::Nested(NestedBlockKind::Curly));
+        assert_eq!(pipes.selector.filters.len(), 2);
+        assert_eq!(
+            pipes.pipeline_step.as_ref().unwrap().to_string().as_str(),
+            "-[Text ]->"
+        );
 
+        println!("FINAL final 3...");
+        let (next, stripped) = strip_comments(r#"Pipeline<Http>/users/$(auth)(blah xyz) -[Text]-> {
 
-            let pipes = log(result(parsed_scope(create_span(
-                "Pipeline<Http<Get>>(path /users/$(user=.*)) -[Text ]-> {}",
-            ))))?;
-            assert_eq!(
-                pipes.selector.selector.name.to_string().as_str(),
-                "Pipeline"
+            Get -> {}
+            <Put>(superuser) -> localhost:app => &;
+            Post/users/scott -> localhost:app^Msg<SuperScott> => &;
+
+        }"#)?;
+        let span = LocatedSpan::new_extra(stripped.as_str(), Arc::new(stripped.to_string()));
+        let pipes = log(result(parsed_scope(span)))?;
+
+        println!("after FINAL final 3...");
+        /*
+        assert_eq!(
+            pipes.selector.selector.name.to_string().as_str(),
+            "Pipeline"
+        );
+        assert_eq!(
+            Some(
+                pipes
+                    .selector
+                    .selector
+                    .children
+                    .as_ref()
+                    .unwrap()
+                    .to_string()
+                    .as_str()
+            ),
+            Some("<Http>")
+        );
+        assert_eq!(pipes.block.kind, BlockKind::Nested(NestedBlockKind::Curly));
+        assert_eq!(pipes.selector.filters.len(), 1);
+        assert_eq!(
+            pipes.pipeline_step.as_ref().unwrap().to_string().as_str(),
+            "-[Text]->"
+        );
+         */
+
+        fn follow(parent: ParsedScope<Span>, mut indent: String) -> Result<(), MsgErr> {
+            let parent = parsed_parent_scope(parent)?;
+            println!("{}scope: {}", indent, parent.selector.selector.name);
+            println!(
+                "{}has_children: {}",
+                indent,
+                parent.selector.selector.has_children()
             );
-            assert_eq!(
-                Some(pipes.selector.selector.children.as_ref().unwrap().to_string().as_str()),
-                Some("<Http<Get>>")
-            );
-            assert_eq!(pipes.block.kind, BlockKind::Nested(NestedBlockKind::Curly));
-            assert_eq!(pipes.selector.filters.len(), 1);
-            assert_eq!(pipes.pipeline_step.as_ref().unwrap().to_string().as_str(),"-[Text ]->" );
-
-            fn follow( parent: ParsedScope<Span>, mut indent: String) -> Result<(),MsgErr>{
-                let parent = parsed_parent_scope(parent)?;
-                println!("{}scope: {}", indent,parent.selector.selector.name );
-                println!("{}has_children: {}",indent, parent.selector.selector.has_children() );
-                if let Some(children) = parent.selector.selector.children.clone() {
-                    println!("{}childx: {}",indent, children.to_string() );
-                }
-                indent.push_str("\t");
-                for child in parent.block {
-                    follow(child.clone(),indent.clone())?;
-                }
-                Ok(())
+            if let Some(children) = parent.selector.selector.children.clone() {
+                println!("{}childx: {}", indent, children.to_string());
             }
+            indent.push_str("\t");
+            for child in parent.block {
+                follow(child.clone(), indent.clone())?;
+            }
+            Ok(())
+        }
 
-            follow(pipes, "".to_string())?;
+        log(follow(pipes, "".to_string()))?;
 
         /* let scope = result(parsed_scope(create_span(
             "Pipeline<Http<Get>>(path /users/$(user=.*)) -> {}",
@@ -5403,6 +5683,20 @@ Hello my friend
         */
 
         Ok(())
+    }
+
+    pub fn test_nesting_bind() {
+        let pipes = log(result(parsed_scope(create_span(
+            r#"
+
+
+            Pipeline<Http>/auth/.*(auth) -> {
+
+                   <Get>/auth/more ->
+
+            }"#,
+        ))))
+        .unwrap();
     }
 
     #[test]
@@ -5419,7 +5713,6 @@ Bind(version=1.2.3)-> {
         "#;
 
         let root = result(root_scope(create_span(config)))?;
-
 
         log(result(parsed_scopes(root.block.content.clone())));
         let sub_scopes = result(parsed_scopes(root.block.content.clone()))?;
