@@ -235,7 +235,7 @@ pub mod entity {
     use mesh_portal_versions::version::v0_0_1 as current;
     use mesh_portal_versions::version::v0_0_1::entity;
 
-    pub type EntityType = entity::entity::EntityType;
+    pub type EntityType = entity::entity::EntityKind;
 
     pub mod request {
         use mesh_portal_versions::version::v0_0_1 as current;

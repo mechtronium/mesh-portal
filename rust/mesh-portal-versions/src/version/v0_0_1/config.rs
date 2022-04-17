@@ -83,7 +83,7 @@ pub mod config {
     pub mod bind {
         use crate::error::MsgErr;
         use crate::version::v0_0_1::entity::entity::request::{Rc, RequestCore};
-        use crate::version::v0_0_1::entity::entity::EntityType;
+        use crate::version::v0_0_1::entity::entity::EntityKind;
         use crate::version::v0_0_1::id::id::CaptureAddress;
         use crate::version::v0_0_1::payload::payload::Call;
         use crate::version::v0_0_1::payload::payload::{Payload, PayloadPattern};
@@ -145,17 +145,17 @@ pub mod config {
 
         #[derive(Debug, Clone, Serialize, Deserialize)]
         pub struct BindConfig {
-            pub msg: ConfigScope<EntityType, Selector<MsgPipelineSelector>>,
-            pub http: ConfigScope<EntityType, Selector<HttpPipelineSelector>>,
-            pub rc: ConfigScope<EntityType, Selector<RcPipelineSelector>>,
+            pub msg: ConfigScope<EntityKind, Selector<MsgPipelineSelector>>,
+            pub http: ConfigScope<EntityKind, Selector<HttpPipelineSelector>>,
+            pub rc: ConfigScope<EntityKind, Selector<RcPipelineSelector>>,
         }
 
         impl Default for BindConfig {
             fn default() -> Self {
                 Self {
-                    msg: ConfigScope::new(EntityType::Msg, vec![]),
-                    http: ConfigScope::new(EntityType::Http, vec![]),
-                    rc: ConfigScope::new(EntityType::Rc, vec![]),
+                    msg: ConfigScope::new(EntityKind::Msg, vec![]),
+                    http: ConfigScope::new(EntityKind::Http, vec![]),
+                    rc: ConfigScope::new(EntityKind::Rc, vec![]),
                 }
             }
         }
@@ -309,9 +309,9 @@ pub mod config {
         }
 
         pub enum PipelinesSubScope {
-            Msg(ConfigScope<EntityType, Selector<MsgPipelineSelector>>),
-            Http(ConfigScope<EntityType, Selector<HttpPipelineSelector>>),
-            Rc(ConfigScope<EntityType, Selector<RcPipelineSelector>>),
+            Msg(ConfigScope<EntityKind, Selector<MsgPipelineSelector>>),
+            Http(ConfigScope<EntityKind, Selector<HttpPipelineSelector>>),
+            Rc(ConfigScope<EntityKind, Selector<RcPipelineSelector>>),
         }
 
         pub enum ScopeType {

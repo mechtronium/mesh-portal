@@ -2,8 +2,8 @@ pub mod entity {
 
     use serde::{Deserialize, Serialize};
 
-    #[derive(Debug, Clone, Serialize, Deserialize)]
-    pub enum EntityType {
+    #[derive(Debug, Clone, Serialize, Deserialize,strum_macros::Display,strum_macros::EnumString)]
+    pub enum EntityKind {
         Rc,
         Msg,
         Http,

@@ -25,6 +25,23 @@ pub enum MsgErr {
     ParseErrs(ParseErrs)
 }
 
+impl Into<ParseErrs> for MsgErr {
+    fn into(self) -> ParseErrs {
+        match self {
+            MsgErr::Status { status, message } => {
+                let mut builder = Report::build(ReportKind::Error, (), 0);
+                let report = builder.with_message(message).finish();
+                let errs = ParseErrs {
+                    report: vec![report],
+                    source: None
+                };
+                errs
+            }
+            MsgErr::ParseErrs(errs) => errs
+        }
+    }
+}
+
 impl Debug for MsgErr {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -393,7 +410,10 @@ impl ParseErrs {
         }
     }
 
-    pub fn fold( errs: Vec<ParseErrs> ) -> ParseErrs {
+    pub fn fold<E:Into<ParseErrs>>( errs: Vec<E> ) -> ParseErrs {
+
+        let errs : Vec<ParseErrs> = errs.into_iter().map( |e| e.into() ).collect();
+
         let source = if let Some(first) = errs.first() {
             if let Some(source) = first.source.as_ref().cloned() {
                 Some(source)
