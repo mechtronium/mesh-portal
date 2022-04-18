@@ -93,6 +93,7 @@ pub mod config {
         use crate::version::v0_0_1::util::{ValueMatcher, ValuePattern};
         use serde::{Deserialize, Serialize};
         use std::convert::TryInto;
+        use crate::version::v0_0_1::parse::model::PipelineSegment;
         use crate::version::v0_0_1::selector::PayloadBlock;
 
         pub struct ProtoBind {
@@ -197,7 +198,7 @@ pub mod config {
             }
         }
 
-        #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
+        #[derive(Debug, Clone, Serialize, Deserialize )]
         pub struct Pipeline {
             pub segments: Vec<PipelineSegment>,
         }
@@ -296,11 +297,6 @@ pub mod config {
             Call,
         }
 
-        #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
-        pub struct PipelineSegment {
-            pub step: PipelineStep,
-            pub stop: PipelineStop,
-        }
 
         #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
         pub enum StepKind {

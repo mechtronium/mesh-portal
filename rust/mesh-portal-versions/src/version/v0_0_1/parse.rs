@@ -30,7 +30,7 @@ use crate::error::{MsgErr, ParseErrs};
 use crate::version::v0_0_1::command::command::common::{PropertyMod, SetProperties, StateSrc};
 use crate::version::v0_0_1::config::config::bind::Pipeline;
 use crate::version::v0_0_1::config::config::bind::{
-    BindConfig, ConfigScope, PipelineSegment, PipelineStep, PipelineStop, PipelinesSubScope,
+    BindConfig, ConfigScope, PipelineStep, PipelineStop, PipelinesSubScope,
     Selector, StepKind,
 };
 use crate::version::v0_0_1::config::config::{bind, Config, PointConfig};
@@ -50,7 +50,7 @@ use crate::version::v0_0_1::id::id::{
     PointSegPairSubst, PointSegSubst, PointSubst, RouteSeg, Version,
 };
 use crate::version::v0_0_1::parse::error::{first_context, result};
-use crate::version::v0_0_1::parse::model::{BindScopeKind, Block, BlockKind, LexBlock, LexParentScope, LexRootScope, LexScope, ScopeFilter, ScopeFilters, ScopeSelectorAndFilters, NestedBlockKind, RootScopeSelector, Scope, ScopeSelector, Spanned, TerminatedBlockKind, TextType, PipelineScope, BindElement, LexScopeSelector};
+use crate::version::v0_0_1::parse::model::{BindScopeKind, Block, BlockKind, LexBlock, LexParentScope, LexRootScope, LexScope, ScopeFilterDef, ScopeFiltersDef, ScopeSelectorAndFiltersDef, NestedBlockKind, RootScopeSelector, Scope, ScopeSelectorDef, Spanned, TerminatedBlockKind, TextType, PipelineScopeDef, BindElement, LexScopeSelector, LexPipelineSegment, LexPipeline, LexPipelineScope, PipelineSegment, PipelineScope, ScopeSelectorAndFilters, LexScopeSelectorAndFilters};
 use crate::version::v0_0_1::parse::parse::{
     delim_kind, generic_kind_base, pattern, point_selector, specific_selector, value_pattern,
     version,
@@ -2550,14 +2550,14 @@ pub fn lex_child_scopes<'a>(parent: LexScope<Span<'a>>) -> Result<LexParentScope
         )?;
 
         let child = LexScope::new(
-            ScopeSelectorAndFilters::new(child_selector.into(), parent.selector.filters),
+            ScopeSelectorAndFiltersDef::new(child_selector.into(), parent.selector.filters),
             parent.block,
         );
 
         Ok(LexParentScope {
-            selector: ScopeSelectorAndFilters::new(
-                parent.selector.selector.into(),
-                ScopeFilters::empty(),
+            selector: LexScopeSelectorAndFilters::new(
+                parent.selector.selector.clone(),
+                ScopeFiltersDef::empty(),
             ),
             pipeline_step: None,
             block: vec![child],
@@ -2721,12 +2721,12 @@ pub fn next_selector(input: Span) -> Res<Span, (Span, Option<Span>)> {
     )(input)
 }
 
-pub fn lex_scope_selector_and_filters(input: Span) -> Res<Span, ScopeSelectorAndFilters<LexScopeSelector<Span>,Span>> {
+pub fn lex_scope_selector_and_filters(input: Span) -> Res<Span, ScopeSelectorAndFiltersDef<LexScopeSelector<Span>,Span>> {
     context(
         "parsed-scope-selector-and-filter",
         pair(lex_scope_selector, scope_filters),
     )(input)
-    .map(|(next, (selector, filters))| (next, ScopeSelectorAndFilters::new(selector, filters)))
+    .map(|(next, (selector, filters))| (next, ScopeSelectorAndFiltersDef::new(selector, filters)))
 }
 
 pub fn lex_scope_selector(input: Span) -> Res<Span, LexScopeSelector<Span>> {
@@ -2817,7 +2817,7 @@ where
     }
 }
 
-pub fn scope_filters<'a>(input: Span) -> Res<Span, ScopeFilters<Span>> {
+pub fn scope_filters<'a>(input: Span) -> Res<Span, ScopeFiltersDef<Span>> {
     tuple((
         opt(rough_filepath_chars_plus_capture),
         pair(opt(scope_filter), many0(preceded(tag("-"), scope_filter))),
@@ -2831,12 +2831,12 @@ pub fn scope_filters<'a>(input: Span) -> Res<Span, ScopeFilters<Span>> {
             }
         }
         filters.append(&mut many_filters);
-        let filters = ScopeFilters { path, filters };
+        let filters = ScopeFiltersDef { path, filters };
         (next, filters)
     })
 }
 
-pub fn scope_filter(input: Span) -> Res<Span, ScopeFilter<Span>> {
+pub fn scope_filter(input: Span) -> Res<Span, ScopeFilterDef<Span>> {
     delimited(
         tag("("),
         context(
@@ -2855,7 +2855,7 @@ pub fn scope_filter(input: Span) -> Res<Span, ScopeFilter<Span>> {
         tag(")"),
     )(input)
     .map(|(next, (name, args))| {
-        let filter = ScopeFilter { name, args };
+        let filter = ScopeFilterDef { name, args };
         (next, filter)
     })
 }
@@ -2947,35 +2947,34 @@ pub fn parse_root_scope(span: Span) -> Result<LexRootScope<Span>, MsgErr> {
 }
 
 pub mod model {
-    use crate::error::MsgErr;
-    use crate::version::v0_0_1::config::config::bind::Pipeline;
+    use crate::error::{MsgErr, ParseErrs};
+    use crate::version::v0_0_1::config::config::bind::{Pipeline, PipelineStep, PipelineStop};
     use crate::version::v0_0_1::id::id::Version;
     use crate::version::v0_0_1::Span;
     use std::collections::HashMap;
     use std::ops::{Deref, DerefMut};
     use std::str::FromStr;
+    use crate::version::v0_0_1::parse::error::result;
+    use crate::version::v0_0_1::parse::{pipeline_step, pipeline_stop};
+    use serde::{Serialize,Deserialize};
 
 
     #[derive(Clone)]
-    pub struct ScopeSelectorAndFilters<S,I> {
+    pub struct ScopeSelectorAndFiltersDef<S,I> {
         pub selector: S,
-        pub filters: ScopeFilters<I>,
+        pub filters: ScopeFiltersDef<I>,
     }
 
-    impl<S,I> ScopeSelectorAndFilters<S,I> {
-        pub fn new(selector: S, filters: ScopeFilters<I>) -> Self {
+
+    impl<S,I> ScopeSelectorAndFiltersDef<S,I> {
+        pub fn new(selector: S, filters: ScopeFiltersDef<I>) -> Self {
             Self { selector, filters }
         }
     }
 
-    impl <I> Into<ScopeSelectorAndFilters<ScopeSelector<I>,I>> for ScopeSelectorAndFilters<LexScopeSelector<I>,I> {
-        fn into(self) -> ScopeSelectorAndFilters<ScopeSelector<I>, I> {
-            ScopeSelectorAndFilters {
-                selector: self.selector.into(),
-                filters: self.filters
-            }
-        }
-    }
+
+
+
 
     pub enum ParsePhase {
         Root,
@@ -3066,13 +3065,13 @@ pub mod model {
     }
 
     #[derive(Clone)]
-    pub struct ScopeSelector<I> {
+    pub struct ScopeSelectorDef<I> {
         pub name: I,
-        pub filters: Vec<ScopeFilters<I>>,
+        pub filters: ScopeFiltersDef<I>,
     }
 
-    impl <I> ScopeSelector<I> {
-        pub fn new( name: I, filters: Vec<ScopeFilters<I>>) -> Self {
+    impl <I> ScopeSelectorDef<I> {
+        pub fn new(name: I, filters: ScopeFiltersDef<I>) -> Self {
             Self {
                 name,
                 filters
@@ -3084,15 +3083,15 @@ pub mod model {
     #[derive(Clone)]
     pub struct LexScopeSelector<I> {
         pub name: I,
-        pub filters: Vec<ScopeFilters<I>>,
+        pub filters: ScopeFiltersDef<I>,
         pub children: Option<I>
     }
 
-    impl <I> LexScopeSelector<I> {
+    impl <I:ToString> LexScopeSelector<I> {
         pub fn new( name: I, children: Option<I>) -> Self {
             Self {
                 name,
-                filters: vec![],
+                filters: ScopeFiltersDef::empty(),
                 children
             }
         }
@@ -3104,23 +3103,36 @@ pub mod model {
         }
     }
 
-    impl <I> Into<ScopeSelector<I>> for LexScopeSelector<I> {
-        fn into(self) -> ScopeSelector<I> {
+    impl <I:ToString> ScopeSelectorDef<I>  {
+        fn to_scope_selector(self) -> ScopeSelector {
+
             ScopeSelector {
-                name: self.name,
-                filters: self.filters
+                name: self.name.to_string(),
+                filters: self.filters.to_scope_filters()
             }
         }
     }
 
 
     #[derive(Clone)]
-    pub struct ScopeFilters<I> {
+    pub struct ScopeFiltersDef<I> {
         pub path: Option<I>,
-        pub filters: Vec<ScopeFilter<I>>,
+        pub filters: Vec<ScopeFilterDef<I>>,
     }
 
-    impl<I> ScopeFilters<I> {
+
+    impl<I:ToString> ScopeFiltersDef<I> {
+
+        pub fn to_scope_filters(self) -> ScopeFilters{
+            ScopeFilters {
+                path: match self.path{
+                    None => None,
+                    Some(path) => Some(path.to_string())
+                },
+                filters: self.filters.into_iter().map( |f|f.to_scope_filter()).collect()
+            }
+        }
+
         pub fn is_empty(&self) -> bool {
             self.path.is_none() && self.filters.is_empty()
         }
@@ -3138,25 +3150,159 @@ pub mod model {
     }
 
     #[derive(Clone)]
-    pub struct ScopeFilter<I> {
+    pub struct ScopeFilterDef<I> {
         pub name: I,
         pub args: Option<I>,
     }
 
-    pub type LexBlock<I> = Block<I, ()>;
-    pub type LexRootScope<I> = Scope<RootScopeSelector<I, Spanned<I, Version>>, Block<I, ()>, I>;
-    pub type LexScope<I> = Scope<ScopeSelectorAndFilters<LexScopeSelector<I>,I>, Block<I, ()>, I>;
-    pub type LexParentScope<'a> =
-        Scope<ScopeSelectorAndFilters<ScopeSelector<Span<'a>>,Span<'a>>, Vec<LexScope<Span<'a>>>, Span<'a>>;
-
-
-    pub enum BindElement<I> {
-        Pipelines(Vec<PipelineScope<I>>)
+    impl <I:ToString> ScopeFilterDef<I> {
+        pub fn to_scope_filter(self) -> ScopeFilter {
+            ScopeFilter {
+                name: self.name.to_string(),
+                args: match self.args {
+                    None => None,
+                    Some(args) => Some(args.to_string())
+                },
+            }
+        }
     }
 
-    pub struct PipelineScope<I> {
-       pub selector: ScopeSelectorAndFilters<ScopeSelector<I>,I>,
-       pub pipeline: Pipeline
+    pub type ScopeFilter = ScopeFilterDef<String>;
+    pub type ScopeFilters = ScopeFiltersDef<String>;
+    pub type LexBlock<I> = Block<I, ()>;
+    pub type LexRootScope<I> = Scope<RootScopeSelector<I, Spanned<I, Version>>, Block<I, ()>, I>;
+    pub type LexScope<I> = Scope<ScopeSelectorAndFiltersDef<LexScopeSelector<I>,I>, Block<I, ()>, I>;
+    pub type LexParentScope<'a> =
+        Scope<LexScopeSelectorAndFilters<Span<'a>>, Vec<LexScope<Span<'a>>>, Span<'a>>;
+    pub type LexPipelineSegment<I> = PipelineSegmentDef<I,Option<I>>;
+    pub type LexPipeline<I> = PipelineDef<LexPipelineSegment<I>>;
+    pub type LexPipelineScope<I> = PipelineScopeDef<I,LexPipeline<I>>;
+    pub type PipelineSegment = PipelineSegmentDef<PipelineStep,PipelineStop>;
+    pub type PipelineScope = PipelineScopeDef<String,Pipeline>;
+    pub type ScopeSelector = ScopeSelectorDef<String>;
+    pub type ScopeSelectorAndFilters = ScopeSelectorAndFiltersDef<ScopeSelector,String>;
+    pub type LexScopeSelectorAndFilters<I> = ScopeSelectorAndFiltersDef<LexScopeSelector<I>,I>;
+//    pub type Pipeline = Vec<PipelineSegment>;
+
+
+
+    impl <I:ToString> LexScopeSelectorAndFilters<I> {
+        pub fn to_scope_selector(self) -> ScopeSelectorAndFilters {
+            ScopeSelectorAndFilters {
+                selector: self.selector.to_scope_selector(),
+                filters: self.filters.to_scope_filters()
+            }
+        }
+    }
+
+
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub struct PipelineSegmentDef<Step,Stop> {
+        pub step: Step,
+        pub stop: Stop
+    }
+
+    #[derive(Clone)]
+    pub struct PipelineDef<S> {
+        pub segments: Vec<S>
+    }
+
+    impl <S> Deref for PipelineDef<S> {
+        type Target = Vec<S>;
+
+        fn deref(&self) -> &Self::Target {
+            &self.segments
+        }
+    }
+
+    impl <S> DerefMut for PipelineDef<S> {
+        fn deref_mut(&mut self) -> &mut Self::Target {
+            &mut self.segments
+        }
+    }
+
+
+    impl <'a> LexPipeline<Span<'a>> {
+       pub fn to_pipeline(self) -> Result<Pipeline,MsgErr> {
+           let mut pipeline = Pipeline::new();
+           let mut errs = vec![];
+           for segment in self.segments {
+               match segment.to_pipeline_segment()
+               {
+                   Ok(segment) => {
+                       pipeline.segments.push(segment);
+                   }
+                   Err(err) => {
+                       errs.push(err);
+                   }
+               }
+           }
+
+           if errs.is_empty() {
+               Ok(pipeline)
+           } else {
+               Err(ParseErrs::fold(errs).into())
+           }
+       }
+    }
+
+    impl <'a> LexPipelineSegment<Span<'a>> {
+        pub fn to_pipeline_segment(self) -> Result<PipelineSegment,MsgErr> {
+            let mut errs = vec![];
+
+            let step = match result(pipeline_step(self.step.clone())) {
+                Ok(step) => Some(step),
+                Err(err) => {
+                    errs.push(err);
+                    None
+                }
+            };
+
+            let stop = match &self.stop {
+                Some(stop) => {
+                    match result(pipeline_stop(stop.clone())) {
+                        Ok(stop) => Some(stop),
+                        Err(err) => {
+                            errs.push(err);
+                            None
+                        }
+                    }
+                }
+                None => {
+                    errs.push(ParseErrs::new("expecting Pipeline Stop to follow Pipeline Step", "Needs a following Pipeline Stop", self.step.clone()));
+                    None
+                }
+            };
+
+            if step.is_some() && stop.is_some() && errs.is_empty() {
+                let step = step.expect("step");
+                let stop = stop.expect("step");
+                Ok(PipelineSegment {
+                    step,
+                    stop
+                })
+            } else {
+                Err(ParseErrs::fold(errs).into())
+            }
+        }
+    }
+
+    pub enum BindElement {
+        Pipelines(Vec<PipelineScope>)
+    }
+
+    pub struct PipelineScopeDef<I,P> {
+       pub selector: ScopeSelectorAndFiltersDef<ScopeSelectorDef<I>,I>,
+       pub pipeline: P
+    }
+
+    impl <I:ToString> LexScopeSelector<I>  {
+        pub fn to_scope_selector(self) -> ScopeSelector {
+            ScopeSelector{
+                name: self.name.to_string(),
+                filters: self.filters.to_scope_filters()
+            }
+        }
     }
 
     #[derive(Clone)]
@@ -3200,6 +3346,8 @@ pub mod model {
             }
         }
     }
+
+
 
     impl<S, FromBlock, P> Scope<S, FromBlock, P>
     where
@@ -3444,7 +3592,7 @@ pub mod error {
                 let builder = builder.with_message(message).with_label(
                     Label::new(loc.location_offset()..loc.location_offset()).with_message(message),
                 );
-                return ParseErrs::new(builder.finish(), loc.extra).into();
+                return ParseErrs::from_report(builder.finish(), loc.extra).into();
             }
             Err(_) => {}
         }
@@ -3524,7 +3672,7 @@ pub mod error {
             };
 
         //            let source = String::from_utf8(loc.get_line_beginning().to_vec() ).unwrap_or("could not parse utf8 of original source".to_string() );
-        ParseErrs::new(builder.finish(), loc.extra).into()
+        ParseErrs::from_report(builder.finish(), loc.extra).into()
     }
 
     pub fn find_parse_err(err: &Err<ErrorTree<Span>>) -> MsgErr {
@@ -4890,6 +5038,8 @@ pub fn response_payload_filter_block(input: Span) -> Res<Span, PayloadBlock> {
 }
 
 pub fn pipeline_step_block(input: Span) -> Res<Span, PayloadBlock> {
+    unimplemented!();
+    /*
     let request = request_payload_filter_block
         as for<'r> fn(Span<'r>) -> Result<(Span<'r>, PayloadBlock), nom::Err<ErrorTree<Span<'r>>>>;
     let response = response_payload_filter_block
@@ -4904,6 +5054,8 @@ pub fn pipeline_step_block(input: Span) -> Res<Span, PayloadBlock> {
             SelectBlock(tag("^["), upload),
         ]),
     )(input)
+
+     */
 
 }
 
@@ -5026,7 +5178,7 @@ println!("root selector is: {}", root_scope_selector.name);
                     .with_message("Unsupported Bind Config Version"),
                 )
                 .finish();
-            Err(ParseErrs::new(report, lex_root_scope.block.content.extra.clone()).into())
+            Err(ParseErrs::from_report(report, lex_root_scope.block.content.extra.clone()).into())
         }
     } else {
         let message = format!(
@@ -5045,7 +5197,7 @@ println!("root selector is: {}", root_scope_selector.name);
                 .with_message("Unrecognized Config Kind"),
             )
             .finish();
-        Err(ParseErrs::new(report, lex_root_scope.block.content.extra.clone()).into())
+        Err(ParseErrs::from_report(report, lex_root_scope.block.content.extra.clone()).into())
     }
 }
 
@@ -5072,7 +5224,7 @@ fn bind_config(input: Span) -> Result<BindConfig, MsgErr> {
     Ok(config)
 }
 
-fn sematic_bind_scope(scope: LexScope<Span>) -> Result<BindElement<Span>, MsgErr> {
+fn sematic_bind_scope(scope: LexScope<Span>) -> Result<BindElement, MsgErr> {
     let selector_name = scope.selector.selector.name.to_string();
     match selector_name.as_str() {
         "Pipelines" => {
@@ -5084,15 +5236,17 @@ fn sematic_bind_scope(scope: LexScope<Span>) -> Result<BindElement<Span>, MsgErr
                 let message_kind_name = message_scope.selector.selector.name.to_string();
                 match EntityKind::from_str(message_kind_name.as_str()) {
                     Ok(msg_kind) => {
-                        fn action_scope<'a,A: FromStr+ToString>(msg_kind: &EntityKind, action_scope:LexScope<Span<'a>>) -> Result<PipelineScope<Span<'a>>,MsgErr> {
+                        fn action_scope<'a,A: FromStr+ToString>(msg_kind: &EntityKind, action_scope:LexScope<Span<'a>>) -> Result<PipelineScope,MsgErr> {
                             let action_selector_name = action_scope.selector.selector.name.to_string();
                             match A::from_str(action_selector_name.as_str()) {
                                 Ok(action) => {
-                                    let pipeline = result(pipeline(action_scope.block.content))?;
-                                    let pipeline_scope = PipelineScope {
-                                        selector: action_scope.selector.into(),
+                                    let pipeline = result(lex_pipeline(action_scope.block.content))?;
+                                    let pipeline = pipeline.to_pipeline()?;
+                                    let pipeline_scope = PipelineScope{
+                                        selector: action_scope.selector.to_scope_selector(),
                                         pipeline
                                     };
+
                                     Ok(pipeline_scope)
                                 }
                                 Err(_) => {
@@ -5112,7 +5266,7 @@ fn sematic_bind_scope(scope: LexScope<Span>) -> Result<BindElement<Span>, MsgErr
                                                 .with_message("Unrecognized Action Kind Selector"),
                                         )
                                         .finish();
-                                    Err(ParseErrs::new(report, action_scope.block.content.extra.clone()).into())
+                                    Err(ParseErrs::from_report(report, action_scope.block.content.extra.clone()).into())
                                 }
                             }
                         }
@@ -5144,7 +5298,7 @@ fn sematic_bind_scope(scope: LexScope<Span>) -> Result<BindElement<Span>, MsgErr
                                 .with_message("Unrecognized Message Kind Selector"),
                             )
                             .finish();
-                        errs.push(ParseErrs::new(report, scope.block.content.extra.clone()).into());
+                        errs.push(ParseErrs::from_report(report, scope.block.content.extra.clone()).into());
                     }
                 }
             }
@@ -5170,7 +5324,7 @@ fn sematic_bind_scope(scope: LexScope<Span>) -> Result<BindElement<Span>, MsgErr
                     .with_message("Unrecognized Selector"),
                 )
                 .finish();
-            Err(ParseErrs::new(report, scope.block.content.extra.clone()).into())
+            Err(ParseErrs::from_report(report, scope.block.content.extra.clone()).into())
         }
     }
 }
@@ -5206,6 +5360,38 @@ fn parse_bind_pipelines_scope<'a>(input: Span) -> Result<Spanned<Span, BindScope
     }
 
      */
+}
+
+pub fn nospace0( input: Span ) -> Res<Span,Span> {
+    recognize(many0(satisfy(  |c| !c.is_whitespace())))(input)
+}
+
+pub fn nospace1( input: Span ) -> Res<Span,Span> {
+    recognize(pair(satisfy(  |c| !c.is_whitespace()),many0(satisfy(  |c| !c.is_whitespace())) ))(input)
+}
+
+pub fn no_space_with_blocks( input: Span ) -> Res<Span,Span> {
+  recognize(many1( alt((recognize(any_block),nospace1))))(input)
+}
+pub fn lex_pipeline( input: Span ) ->  Res<Span,LexPipeline<Span>> {
+   many1(lex_pipeline_segment)(input).map( |(next,segments)| {
+       let pipeline = LexPipeline {
+           segments
+       };
+       (next,pipeline)
+   })
+}
+
+pub fn lex_pipeline_segment( input: Span ) ->  Res<Span,LexPipelineSegment<Span>> {
+    tuple((multispace0,no_space_with_blocks,multispace1,opt(no_space_with_blocks)))(input).map( |(next,(_,step,_,stop))| {
+
+        let segment = LexPipelineSegment {
+            step,
+            stop
+        };
+
+        (next,segment)
+    })
 }
 
 #[cfg(test)]
@@ -5901,7 +6087,8 @@ Bind(version=1.2.3)-> {
 }
 
 pub fn pipeline_step(input: Span) -> Res<Span, PipelineStep> {
-        context(
+    unimplemented!()
+       /* context(
            "Step",
            tuple((
 
@@ -5914,14 +6101,16 @@ pub fn pipeline_step(input: Span) -> Res<Span, PipelineStep> {
            )),
        )(input)
        .map(|(next, (blocks, kind))| {
-           let kind = match kind.to_string().as_str() {
-               "->" => StepKind::Request,
-               "=>" => StepKind::Response,
-               _ => panic!("nom parse rules should have selected -> or =>"),
-           };
-           (next, PipelineStep { kind, blocks })
-       })
+            let kind = match kind.to_string().as_str() {
+                "->" => StepKind::Request,
+                "=>" => StepKind::Response,
+                _ => panic!("nom parse rules should have selected -> or =>"),
+            };
+            (next, PipelineStep { kind, blocks })
+        })
 
+
+        */
 }
 
 pub fn core_pipeline_stop(input: Span) -> Res<Span, PipelineStop> {

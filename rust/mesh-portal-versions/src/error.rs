@@ -395,12 +395,24 @@ pub struct ParseErrs {
 
 impl ParseErrs {
 
-    pub fn new( report: Report, source: Arc<String>) -> Self {
+    pub fn from_report(report: Report, source: Arc<String>) -> Self {
         Self {
             report: vec![report],
             source: Some(source)
         }
     }
+
+    pub fn new<'a>(message: &str, label: &str, span: Span<'a>) -> MsgErr{
+
+        let mut builder = Report::build(ReportKind::Error, (), 23);
+        let report = builder.with_message(message).with_label(
+            Label::new(span.location_offset()..(span.location_offset()+span.len())).with_message(label),
+        ).finish();
+        return ParseErrs::from_report(report, span.extra).into();
+    }
+
+
+
     pub fn print(&self) {
         if let Some(source) = self.source.as_ref() {
             for report in &self.report
