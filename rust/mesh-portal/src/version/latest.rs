@@ -225,7 +225,7 @@ pub mod config {
         pub type Whitelist = config::config::bind::Whitelist;
         pub type CallPattern = config::config::bind::CallPattern;
         pub type PipelineSegment = config::config::bind::PipelineSegment;
-        pub type StepKind = config::config::bind::StepKind;
+        pub type StepKind = config::config::bind::MessageKind;
         pub type PipelineSubScope = config::config::bind::PipelinesSubScope;
         pub type ScopeType = config::config::bind::ScopeType;
     }

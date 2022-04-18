@@ -1160,10 +1160,8 @@ pub mod selector {
 
 #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
 pub enum PayloadBlock {
-    Upload(UploadBlock),
     RequestPattern(PatternBlock),
     ResponsePattern(PatternBlock),
-    CreatePayload(Payload),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]

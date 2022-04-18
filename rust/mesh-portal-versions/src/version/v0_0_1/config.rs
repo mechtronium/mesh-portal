@@ -84,7 +84,7 @@ pub mod config {
         use crate::error::MsgErr;
         use crate::version::v0_0_1::entity::entity::request::{Rc, RequestCore};
         use crate::version::v0_0_1::entity::entity::EntityKind;
-        use crate::version::v0_0_1::id::id::CaptureAddress;
+        use crate::version::v0_0_1::id::id::{CaptureAddress, PointSubst};
         use crate::version::v0_0_1::payload::payload::Call;
         use crate::version::v0_0_1::payload::payload::{Payload, PayloadPattern};
         use crate::version::v0_0_1::selector::selector::{
@@ -219,14 +219,16 @@ pub mod config {
 
         #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
         pub struct PipelineStep {
-            pub kind: StepKind,
+            pub entry: MessageKind,
+            pub exit: MessageKind,
             pub blocks: Vec<PayloadBlock>,
         }
 
         impl PipelineStep {
-            pub fn new(kind: StepKind) -> Self {
+            pub fn new(entry: MessageKind, exit: MessageKind) -> Self {
                 Self {
-                    kind,
+                    entry,
+                    exit,
                     blocks: vec![],
                 }
             }
@@ -242,12 +244,12 @@ pub mod config {
 
         pub type PatternBlock = ValuePattern<PayloadPattern>;
 
-        #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
+        #[derive(Debug, Clone, Serialize, Deserialize )]
         pub enum PipelineStop {
             Internal,
             Call(Call),
             Respond,
-            CaptureAddress(CaptureAddress),
+            PointSubst(PointSubst),
         }
 
         #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -299,7 +301,7 @@ pub mod config {
 
 
         #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
-        pub enum StepKind {
+        pub enum MessageKind {
             Request,
             Response,
         }

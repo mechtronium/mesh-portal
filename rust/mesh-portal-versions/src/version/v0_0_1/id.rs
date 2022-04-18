@@ -335,7 +335,7 @@ pub mod id {
         }
     }
 
-    #[derive(Debug, Clone)]
+    #[derive(Debug, Clone,Serialize,Deserialize)]
     pub enum PointSegDelim {
         Empty,
         Mesh,
@@ -355,6 +355,7 @@ pub mod id {
     pub type PointSegPair = PointSegPairDef<PointSeg>;
     pub type PointSegPairSubst = PointSegPairDef<Subst<PointSeg>>;
 
+    #[derive(Debug,Clone,Serialize,Deserialize)]
     pub struct PointSegPairDef<Seg> {
         pub delim: PointSegDelim,
         pub seg: Seg,
