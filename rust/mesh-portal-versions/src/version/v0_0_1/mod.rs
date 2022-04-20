@@ -225,7 +225,21 @@ pub mod util {
         Pattern(T),
     }
 
+    impl<T> ValuePattern<T> where T: ToString {
+        pub fn stringify(self) -> ValuePattern<String> {
+            match self {
+                ValuePattern::Any => ValuePattern::Any,
+                ValuePattern::None => ValuePattern::None,
+                ValuePattern::Pattern(t) => {
+                    ValuePattern::Pattern(t.to_string())
+                }
+            }
+        }
+
+    }
+
     impl<T> ValuePattern<T> {
+
         pub fn is_match<X>(&self, x: &X) -> Result<(), MsgErr>
         where
             T: ValueMatcher<X>,
