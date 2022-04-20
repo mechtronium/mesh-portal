@@ -8,7 +8,7 @@ use std::str::FromStr;
 use std::sync::Arc;
 
 use nom::branch::alt;
-use nom::bytes::complete::{is_a, is_not};
+use nom::bytes::complete::{escaped, is_a, is_not};
 use nom::bytes::complete::{tag, take_till, take_until, take_until1, take_while};
 use nom::character::complete::{
     alpha0, alpha1, alphanumeric0, alphanumeric1, anychar, char, digit0, digit1, line_ending,
@@ -49,13 +49,7 @@ use crate::version::v0_0_1::id::id::{
     PointSegPairSubst, PointSegSubst, PointSubst, RouteSeg, Version,
 };
 use crate::version::v0_0_1::parse::error::{first_context, result};
-use crate::version::v0_0_1::parse::model::{
-    BindElement, BindScopeKind, Block, BlockKind, LexBlock, LexParentScope, LexPipeline,
-    LexPipelineScope, LexPipelineSegment, LexRootScope, LexScope, LexScopeSelector,
-    LexScopeSelectorAndFilters, NestedBlockKind, PipelineScope, PipelineScopeDef, PipelineSegment,
-    RootScopeSelector, Scope, ScopeFilterDef, ScopeFiltersDef, ScopeSelectorAndFilters,
-    ScopeSelectorAndFiltersDef, ScopeSelectorDef, Spanned, TerminatedBlockKind, TextType,
-};
+use crate::version::v0_0_1::parse::model::{ActionScope, BindScope, BindScopeKind, Block, BlockKind, DelimitedBlockKind, LexBlock, LexParentScope, LexPipeline, LexPipelineScope, LexPipelineSegment, LexRootScope, LexScope, LexScopeSelector, LexScopeSelectorAndFilters, NestedBlockKind, PipelineScope, PipelineScopeDef, PipelineSegment, RootScopeSelector, Scope, ScopeFilterDef, ScopeFiltersDef, ScopeSelectorAndFilters, ScopeSelectorAndFiltersDef, ScopeSelectorDef, Spanned, TerminatedBlockKind, TextType};
 use crate::version::v0_0_1::parse::parse::{
     delim_kind, generic_kind_base, pattern, point_selector, specific_selector, value_pattern,
     version,
@@ -80,6 +74,7 @@ use nom::bytes::complete::take;
 use nom::character::is_space;
 use nom_locate::LocatedSpan;
 use nom_supreme::error::ErrorTree;
+use nom_supreme::final_parser::ExtractContext;
 use regex::internal::Input;
 use serde::{Deserialize, Serialize};
 
@@ -2275,7 +2270,7 @@ where
     I: ToString,
     I: Offset + nom::Slice<std::ops::RangeTo<usize>>,
     I: nom::Slice<std::ops::RangeFrom<usize>>,
-    <I as InputIter>::Item: AsChar,
+    <I as InputIter>::Item: AsChar + Copy,
     E: nom::error::ContextError<I> + nom::error::ParseError<I>,
 {
     move |input: I| {
@@ -2315,15 +2310,13 @@ where
     I: ToString,
     I: Offset + nom::Slice<std::ops::RangeTo<usize>>,
     I: nom::Slice<std::ops::RangeFrom<usize>>,
-    <I as InputIter>::Item: AsChar,
+    <I as InputIter>::Item: AsChar + Copy,
     E: nom::error::ContextError<I> + nom::error::ParseError<I>,
 {
     move |input: I| match kind {
         BlockKind::Nested(kind) => lex_nested_block(kind).parse(input),
         BlockKind::Terminated(kind) => lex_terminated_block(kind).parse(input),
-        BlockKind::Delimited(kind) => {
-            unimplemented!()
-        }
+        BlockKind::Delimited(kind) => lex_delimited_block(kind).parse(input),
         BlockKind::Partial => {
             eprintln!("parser should not be seeking partial block kinds...");
             Err(nom::Err::Failure(E::from_error_kind(
@@ -2386,7 +2379,7 @@ where
     I: ToString,
     I: Offset + nom::Slice<std::ops::RangeTo<usize>>,
     I: nom::Slice<std::ops::RangeFrom<usize>>,
-    <I as InputIter>::Item: AsChar,
+    <I as InputIter>::Item: AsChar + Copy,
     E: nom::error::ContextError<I> + nom::error::ParseError<I>,
 {
     move |input: I| {
@@ -2394,13 +2387,10 @@ where
             kind.context(),
             delimited(
                 context(kind.open_context(), tag(kind.open())),
-                recognize(many0(tuple((
+                recognize(many0(alt((recognize(lex_nested_block(kind.clone())),recognize(tuple((
                     not(peek(tag(kind.close()))),
-                    alt((
-                        recognize(pair(peek(tag(kind.open())), lex_nested_block(kind.clone()))),
-                        recognize(anychar),
-                    )),
-                )))),
+                    alt((recognize(pair(tag("\\"), anychar)), recognize(anychar))),
+                ))))))),
                 context(kind.close_context(), cut(tag(kind.close()))),
             ),
         )(input)?;
@@ -2412,7 +2402,6 @@ where
 pub fn nested_block_content(kind: NestedBlockKind) -> impl FnMut(Span) -> Res<Span, Span> {
     move |input: Span| {
         nested_block(kind)(input).map(|(next, block)| {
-            println!("CONTENT: {}", block.content.to_string());
             (next, block.content)
         })
     }
@@ -2445,16 +2434,9 @@ pub fn nested_block(kind: NestedBlockKind) -> impl FnMut(Span) -> Res<Span, Bloc
     }
 }
 
-fn block_open(input: Span) -> Res<Span, NestedBlockKind> {
-    alt((
-        value(NestedBlockKind::Curly, tag(NestedBlockKind::Curly.open())),
-        value(NestedBlockKind::Angle, tag(NestedBlockKind::Angle.open())),
-        value(NestedBlockKind::Parens, tag(NestedBlockKind::Parens.open())),
-        value(NestedBlockKind::Square, tag(NestedBlockKind::Square.open())),
-    ))(input)
-}
-
-fn any_rough_block<'a, I, E>(input: I) -> IResult<I, LexBlock<I>, E>
+pub fn lex_delimited_block<'a, I, E>(
+    kind: DelimitedBlockKind,
+) -> impl FnMut(I) -> IResult<I, LexBlock<I>, E>
 where
     I: ToString
         + InputLength
@@ -2467,7 +2449,49 @@ where
     I: ToString,
     I: Offset + nom::Slice<std::ops::RangeTo<usize>>,
     I: nom::Slice<std::ops::RangeFrom<usize>>,
-    <I as InputIter>::Item: AsChar,
+    <I as InputIter>::Item: AsChar + Copy,
+    E: nom::error::ContextError<I> + nom::error::ParseError<I>,
+{
+    move |input: I| {
+        let (next, content) = context(
+            kind.context(),
+            delimited(
+                context(kind.context(), tag(kind.delim())),
+                recognize(many0(tuple((
+                    not(peek(tag(kind.delim()))),
+                    alt((recognize(pair(tag("\\"), anychar)), recognize(anychar))),
+                )))),
+                context(kind.missing_close_context(), cut(tag(kind.delim()))),
+            ),
+        )(input)?;
+        let block = Block::parse(BlockKind::Delimited(kind), content);
+        Ok((next, block))
+    }
+}
+
+fn block_open(input: Span) -> Res<Span, NestedBlockKind> {
+    alt((
+        value(NestedBlockKind::Curly, tag(NestedBlockKind::Curly.open())),
+        value(NestedBlockKind::Angle, tag(NestedBlockKind::Angle.open())),
+        value(NestedBlockKind::Parens, tag(NestedBlockKind::Parens.open())),
+        value(NestedBlockKind::Square, tag(NestedBlockKind::Square.open())),
+    ))(input)
+}
+
+fn any_lex_block<'a, I, E>(input: I) -> IResult<I, LexBlock<I>, E>
+where
+    I: ToString
+        + InputLength
+        + InputTake
+        + Compare<&'static str>
+        + InputIter
+        + Clone
+        + InputTakeAtPosition,
+    <I as InputTakeAtPosition>::Item: AsChar,
+    I: ToString,
+    I: Offset + nom::Slice<std::ops::RangeTo<usize>>,
+    I: nom::Slice<std::ops::RangeFrom<usize>>,
+    <I as InputIter>::Item: AsChar + Copy,
     E: nom::error::ContextError<I> + nom::error::ParseError<I>,
 {
     alt((
@@ -2475,6 +2499,8 @@ where
         lex_nested_block(NestedBlockKind::Angle),
         lex_nested_block(NestedBlockKind::Parens),
         lex_nested_block(NestedBlockKind::Square),
+        lex_delimited_block(DelimitedBlockKind::DoubleQuotes),
+        lex_delimited_block(DelimitedBlockKind::SingleQuotes),
     ))(input)
 }
 
@@ -2484,6 +2510,8 @@ fn any_block(input: Span) -> Res<Span, LexBlock<Span>> {
         nested_block(NestedBlockKind::Angle),
         nested_block(NestedBlockKind::Parens),
         nested_block(NestedBlockKind::Square),
+        lex_delimited_block(DelimitedBlockKind::DoubleQuotes),
+        lex_delimited_block(DelimitedBlockKind::SingleQuotes),
     ))(input)
 }
 
@@ -2568,9 +2596,7 @@ pub fn lex_child_scopes<'a>(parent: LexScope<Span<'a>>) -> Result<LexParentScope
             block: vec![child],
         })
     } else {
-        println!("parsing content: '{}'", parent.block.content.to_string());
         let scopes = lex_scopes(parent.block.content)?;
-        println!("... scopes.len(): {}", scopes.len());
 
         Ok(LexParentScope {
             selector: parent.selector.into(),
@@ -2600,26 +2626,42 @@ pub fn lex_scope(input: Span) -> Res<Span, LexScope<Span>> {
     })
 }
 
-
-pub fn lex_scoped_block_kind(input: Span) -> Res<Span,  BlockKind> {
-    alt( (value(BlockKind::Nested(NestedBlockKind::Curly),recognize(pair(rough_pipeline_step,lex_block(BlockKind::Nested(NestedBlockKind::Curly))))),
-            value(BlockKind::Terminated(TerminatedBlockKind::Semicolon),recognize(pair(rough_pipeline_step,lex_block(BlockKind::Terminated(TerminatedBlockKind::Semicolon)))))
+pub fn lex_scoped_block_kind(input: Span) -> Res<Span, BlockKind> {
+    alt((
+        value(
+            BlockKind::Nested(NestedBlockKind::Curly),
+            recognize(tuple((
+                multispace0,
+                rough_pipeline_step,
+                multispace0,
+                lex_block(BlockKind::Nested(NestedBlockKind::Curly)),
+            ))),
+        ),
+        value(
+            BlockKind::Terminated(TerminatedBlockKind::Semicolon),
+            recognize(pair(
+                rough_pipeline_step,
+                lex_block(BlockKind::Terminated(TerminatedBlockKind::Semicolon)),
+            )),
+        ),
     ))(input)
 }
 
 pub fn lex_scope_pipeline_step_and_block(input: Span) -> Res<Span, (Option<Span>, LexBlock<Span>)> {
-    let (_,block_kind) = peek(lex_scoped_block_kind)(input.clone())?;
+    let (_, block_kind) = peek(lex_scoped_block_kind)(input.clone())?;
     match block_kind {
-        BlockKind::Nested(_) => {
-            pair( rough_pipeline_step, lex_block(BlockKind::Nested(NestedBlockKind::Curly)))(input).map( |(next,(step, block))| {(next,(Some(step),block))} )
-        }
+        BlockKind::Nested(_) => tuple((
+            rough_pipeline_step,
+            multispace1,
+            lex_block(BlockKind::Nested(NestedBlockKind::Curly))),
+        )(input)
+        .map(|(next, (step, _, block))| (next, (Some(step), block))),
         BlockKind::Terminated(_) => {
-            lex_block(BlockKind::Terminated(TerminatedBlockKind::Semicolon))(input).map( |(next,block)| {(next,(None,block))} )
+            lex_block(BlockKind::Terminated(TerminatedBlockKind::Semicolon))(input)
+                .map(|(next, block)| (next, (None, block)))
         }
-        _ => unimplemented!()
+        _ => unimplemented!(),
     }
-
-
 }
 
 pub fn lex_sub_scope_selectors_and_filters_and_block(input: Span) -> Res<Span, LexBlock<Span>> {
@@ -2654,16 +2696,18 @@ pub fn root_scope(input: Span) -> Res<Span, LexRootScope<Span>> {
         tuple((
             root_scope_selector,
             multispace0,
-            lex_nested_block(NestedBlockKind::Curly),
+            context("root-scope:block", cut(peek(tag("{")))),
+            context("root-scope:block",cut(lex_nested_block(NestedBlockKind::Curly))),
         )),
     )(input)
-    .map(|(next, (selector, _, block))| {
+    .map(|(next, (selector, _, _, block))| {
         let scope = LexRootScope::new(selector, block);
         (next, scope)
     })
 }
 
 pub fn lex_scopes(input: Span) -> Result<Vec<LexScope<Span>>, MsgErr> {
+
     if input.len() == 0 {
         return Ok(vec![]);
     }
@@ -2674,8 +2718,11 @@ pub fn lex_scopes(input: Span) -> Result<Vec<LexScope<Span>>, MsgErr> {
 
     result(context(
         "parsed-scopes",
-        many0(delimited(multispace0, lex_scope, multispace0)),
-    )(input))
+        all_consuming(many0(delimited(multispace0, context("scope",pair(peek(not(alt((tag("}"),eof)))),cut(lex_scope))), multispace0))),
+    )(input).map( |(next,scopes)| {
+        let scopes: Vec<LexScope<Span>> = scopes.into_iter().map(|scope|scope.1).collect();
+        (next,scopes)
+    } ))
 }
 
 /*
@@ -2758,11 +2805,11 @@ where
         + InputIter
         + Clone
         + InputTakeAtPosition,
-    <I as InputTakeAtPosition>::Item: AsChar,
+    <I as InputTakeAtPosition>::Item: AsChar + Copy,
     I: ToString,
     I: Offset + nom::Slice<std::ops::RangeTo<usize>>,
     I: nom::Slice<std::ops::RangeFrom<usize>>,
-    <I as InputIter>::Item: AsChar,
+    <I as InputIter>::Item: AsChar + Copy,
     E: nom::error::ContextError<I> + nom::error::ParseError<I>,
     F: Fn(char) -> bool,
     F: Clone,
@@ -2772,7 +2819,7 @@ where
             delimited(
                 tag(kind.open()),
                 recognize(many1(alt((
-                    recognize(any_rough_block),
+                    recognize(any_lex_block),
                     recognize(verify(anychar, move |c| {
                         f(*c) && *c != kind.close_as_char()
                     })),
@@ -2810,10 +2857,11 @@ where
     E: nom::error::ContextError<I> + nom::error::ParseError<I>,
     F: FnMut(I) -> IResult<I, O2, E>,
     F: Clone,
+    <I as InputIter>::Item: std::marker::Copy,
 {
     move |input: I| {
         recognize(many0(alt((
-            recognize(any_rough_block),
+            recognize(any_lex_block),
             recognize(verify(anychar, move |c| *c != kind.close_as_char())),
         ))))(input)
     }
@@ -2873,7 +2921,7 @@ pub fn root_scope_selector<'a>(
         "root-scope-selector",
         cut(preceded(
             multispace0,
-            pair(root_scope_selector_name, scope_version),
+            pair(context("root-scope-selector:name",cut(root_scope_selector_name)), context("root-scope-selector:version",cut(scope_version))),
         )),
     )(input)
     .map(|(next, (name, version))| (next, RootScopeSelector { version, name }))
@@ -2886,10 +2934,9 @@ pub fn scope_version(input: Span) -> Res<Span, Spanned<Span, Version>> {
             tag("(version="),
             span(version),
             context("scope-selector-version-closing-tag", tag(")")),
-            context("scope-selector-version-missing-kazing", tag("->")),
         )),
     )(input)
-    .map(|((next, (_, version, _, _)))| (next, version))
+    .map(|((next, (_, version, _ )))| (next, version))
 }
 
 /*
@@ -2943,8 +2990,8 @@ pub fn root_scope_selector_name(input: Span) -> Res<Span, Span> {
     .map(|(next, (_, name))| (next, name))
 }
 
-pub fn parse_root_scope(span: Span) -> Result<LexRootScope<Span>, MsgErr> {
-    let (_, root_scope) = all_consuming(delimited(multispace0, root_scope, multispace0))(span)?;
+pub fn lex_root_scope(span: Span) -> Result<LexRootScope<Span>, MsgErr> {
+    let root_scope = result(delimited(multispace0, root_scope, multispace0)(span))?;
     Ok(root_scope)
 }
 
@@ -2953,14 +3000,14 @@ pub mod model {
     use crate::version::v0_0_1::config::config::bind::{Pipeline, PipelineStep, PipelineStop};
     use crate::version::v0_0_1::id::id::Version;
     use crate::version::v0_0_1::parse::error::result;
-    use crate::version::v0_0_1::parse::{pipeline_step, pipeline_stop};
+    use crate::version::v0_0_1::parse::{lex_child_scopes, pipeline, pipeline_step, pipeline_stop, Res};
     use crate::version::v0_0_1::Span;
     use serde::{Deserialize, Serialize};
     use std::collections::HashMap;
     use std::ops::{Deref, DerefMut};
     use std::str::FromStr;
 
-    #[derive(Clone)]
+    #[derive(Debug,Clone,Serialize,Deserialize)]
     pub struct ScopeSelectorAndFiltersDef<S, I> {
         pub selector: S,
         pub filters: ScopeFiltersDef<I>,
@@ -3060,7 +3107,7 @@ pub mod model {
         }
     }
 
-    #[derive(Clone)]
+    #[derive(Debug,Clone,Serialize,Deserialize)]
     pub struct ScopeSelectorDef<I> {
         pub name: I,
         pub filters: ScopeFiltersDef<I>,
@@ -3104,7 +3151,7 @@ pub mod model {
         }
     }
 
-    #[derive(Clone)]
+    #[derive(Debug,Clone,Serialize,Deserialize)]
     pub struct ScopeFiltersDef<I> {
         pub path: Option<I>,
         pub filters: Vec<ScopeFilterDef<I>>,
@@ -3141,7 +3188,7 @@ pub mod model {
         }
     }
 
-    #[derive(Clone)]
+    #[derive(Debug,Clone,Serialize,Deserialize)]
     pub struct ScopeFilterDef<I> {
         pub name: I,
         pub args: Option<I>,
@@ -3171,11 +3218,58 @@ pub mod model {
     pub type LexPipeline<I> = PipelineDef<LexPipelineSegment<I>>;
     pub type LexPipelineScope<I> = PipelineScopeDef<I, LexPipeline<I>>;
     pub type PipelineSegment = PipelineSegmentDef<PipelineStep, PipelineStop>;
-    pub type PipelineScope = PipelineScopeDef<String, Pipeline>;
+    pub type PipelineScope = PipelineScopeDef<String, Vec<MessageScope>>;
+    pub type MessageScope = PipelineScopeDef<String, Vec<ActionScope>>;
+    pub type ActionScope = PipelineScopeDef<String, Pipeline>;
     pub type ScopeSelector = ScopeSelectorDef<String>;
     pub type ScopeSelectorAndFilters = ScopeSelectorAndFiltersDef<ScopeSelector, String>;
     pub type LexScopeSelectorAndFilters<I> = ScopeSelectorAndFiltersDef<LexScopeSelector<I>, I>;
     //    pub type Pipeline = Vec<PipelineSegment>;
+
+
+    impl <'a> TryFrom<LexParentScope<'a>> for PipelineScope {
+        type Error = MsgErr;
+
+        fn try_from(scope: LexParentScope) -> Result<Self, Self::Error> {
+            let mut errs = vec![];
+            let mut message_scopes = vec![];
+            for message_scope in scope.block {
+                match lex_child_scopes(message_scope) {
+                    Ok(message_scope) => {
+                        let mut block = vec![];
+                        for action_scope in message_scope.block {
+                            match result(pipeline(action_scope.block.content)) {
+                                Ok(pipeline) => {
+                                    block.push(ActionScope {
+                                        selector: action_scope.selector.to_scope_selector(),
+                                        block: pipeline
+                                    })
+                                }
+                                Err(err) => {
+                                    errs.push(err);
+                                }
+                            }
+                        }
+                        message_scopes.push(MessageScope {
+                            selector: message_scope.selector.to_scope_selector(),
+                            block
+                        })
+                    }
+                    Err(err) => {
+                        errs.push(err);
+                    }
+                }
+            }
+            if errs.is_empty() {
+                Ok(PipelineScope{
+                    selector: scope.selector.to_scope_selector(),
+                    block: message_scopes
+                })
+            } else {
+                Err(ParseErrs::fold(errs).into())
+            }
+        }
+    }
 
     impl<I: ToString> LexScopeSelectorAndFilters<I> {
         pub fn to_scope_selector(self) -> ScopeSelectorAndFilters {
@@ -3274,13 +3368,15 @@ pub mod model {
         }
     }
 
-    pub enum BindElement {
-        Pipelines(Vec<PipelineScope>),
+    #[derive(Debug,Clone,Serialize,Deserialize)]
+    pub enum BindScope {
+        PipelineScope(PipelineScope),
     }
 
+    #[derive(Debug,Clone,Serialize,Deserialize)]
     pub struct PipelineScopeDef<I, P> {
         pub selector: ScopeSelectorAndFiltersDef<ScopeSelectorDef<I>, I>,
-        pub pipeline: P,
+        pub block: P,
     }
 
     impl<I: ToString> LexScopeSelector<I> {
@@ -3397,6 +3493,36 @@ pub mod model {
     pub enum DelimitedBlockKind {
         SingleQuotes,
         DoubleQuotes,
+    }
+
+    impl DelimitedBlockKind {
+        pub fn delim(&self) -> &'static str {
+            match self {
+                DelimitedBlockKind::SingleQuotes => "'",
+                DelimitedBlockKind::DoubleQuotes => "\"",
+            }
+        }
+
+        pub fn escaped(&self) -> &'static str {
+            match self {
+                DelimitedBlockKind::SingleQuotes => "\'",
+                DelimitedBlockKind::DoubleQuotes => "\"",
+            }
+        }
+
+        pub fn context(&self) -> &'static str {
+            match self {
+                DelimitedBlockKind::SingleQuotes => "single:quotes:block",
+                DelimitedBlockKind::DoubleQuotes => "double:quotes:block",
+            }
+        }
+
+        pub fn missing_close_context(&self) -> &'static str {
+            match self {
+                DelimitedBlockKind::SingleQuotes => "single:quotes:block:missing-close",
+                DelimitedBlockKind::DoubleQuotes => "double:quotes:block:missing-close",
+            }
+        }
     }
 
     #[derive(
@@ -3590,6 +3716,11 @@ pub mod error {
                 "point" => {
                     builder.with_message("Invalid Point").with_label(Label::new(loc.location_offset()..loc.location_offset()).with_message("Invalid Point"))
                 },
+
+            "parsed-scopes" => { builder.with_message("expecting a properly formed scope").with_label(Label::new(loc.location_offset()..loc.location_offset()).with_message("not a scope"))},
+            "scope" => { builder.with_message("expecting a properly formed scope").with_label(Label::new(loc.location_offset()..loc.location_offset()).with_message("not a scope"))},
+            "root-scope:block" => { builder.with_message("expecting root scope block {}").with_label(Label::new(loc.location_offset()..loc.location_offset()).with_message("Expecting Scope Block"))},
+            "pipeline:stop:expecting" =>{ builder.with_message("expecting a pipeline stop: point, call, or return ('&')").with_label(Label::new(loc.location_offset()..loc.location_offset()).with_message("Expecting Pipeline Stop"))},
             "pipeline:step" =>{ builder.with_message("expecting a pipeline step ('->', '=>', '-[ Bin ]->', etc...)").with_label(Label::new(loc.location_offset()..loc.location_offset()).with_message("Expecting Pipeline Step"))},
             "pipeline:step:entry" =>{ builder.with_message("expecting a pipeline step entry ('-' or '=') to form a pipeline step i.e. '->' or '=>'").with_label(Label::new(loc.location_offset()..loc.location_offset()).with_message("Expecting Pipeline Entry"))},
             "pipeline:step:exit" =>{ builder.with_message("expecting a pipeline step exit i.e. '->' or '=>'").with_label(Label::new(loc.location_offset()..loc.location_offset()).with_message("Expecting Pipeline Exit"))},
@@ -4977,16 +5108,15 @@ pub fn upload_step(input: Span) -> Res<Span, UploadBlock> {
 }
 
 pub fn request_payload_filter_block(input: Span) -> Res<Span, PayloadBlock> {
-            tuple((
-                multispace0,
-                alt((
-                    payload_filter_block_any,
-                    payload_filter_block_def,
-                    payload_filter_block_empty,
-                )),
-                multispace0,
-            )
-    )(input)
+    tuple((
+        multispace0,
+        alt((
+            payload_filter_block_any,
+            payload_filter_block_def,
+            payload_filter_block_empty,
+        )),
+        multispace0,
+    ))(input)
     .map(|(next, (_, block, _))| (next, PayloadBlock::RequestPattern(block)))
 }
 
@@ -5012,10 +5142,7 @@ pub fn response_payload_filter_block(input: Span) -> Res<Span, PayloadBlock> {
 
 pub fn rough_pipeline_step(input: Span) -> Res<Span, Span> {
     recognize(tuple((
-        many0(preceded(
-            alt((tag("-"), tag("="), tag("+"))),
-            any_rough_block,
-        )),
+        many0(preceded(alt((tag("-"), tag("="), tag("+"))), any_lex_block)),
         alt((tag("->"), tag("=>"))),
     )))(input)
 }
@@ -5100,14 +5227,10 @@ where
 }
 
 pub fn config(src: &str) -> Result<Config, MsgErr> {
-    println!("Hi!");
     let (next, stripped) = strip_comments(src)?;
     let span = LocatedSpan::new_extra(stripped.as_str(), Arc::new(src.to_string()));
-    println!("stripped...{}", span.to_string());
-    let lex_root_scope = parse_root_scope(span.clone())?;
-    println!("lex_root_scope...");
+    let lex_root_scope = lex_root_scope(span.clone())?;
     let root_scope_selector = lex_root_scope.selector.clone().to_concrete()?;
-    println!("root selector is: {}", root_scope_selector.name);
     if root_scope_selector.name.as_str() == "Bind" {
         if root_scope_selector.version == Version::from_str("1.0.0")? {
             let bind = bind_config(lex_root_scope.block.content.clone())?;
@@ -5171,114 +5294,17 @@ fn bind_config(input: Span) -> Result<BindConfig, MsgErr> {
         return Err(errors.into());
     }
 
-    let config = BindConfig::default();
+    let mut config = BindConfig::new(scopes);
     Ok(config)
 }
 
-fn sematic_bind_scope(scope: LexScope<Span>) -> Result<BindElement, MsgErr> {
+fn sematic_bind_scope(scope: LexScope<Span>) -> Result<BindScope, MsgErr> {
     let selector_name = scope.selector.selector.name.to_string();
     match selector_name.as_str() {
-        "Pipelines" => {
-            let mut errs = vec![];
-            let mut pipelines = vec![];
-            let pipelines_scope_hierarchy = lex_child_scopes(scope.clone())?;
-            for message_scope in pipelines_scope_hierarchy.block {
-                let message_scope = lex_child_scopes(message_scope)?;
-                let message_kind_name = message_scope.selector.selector.name.to_string();
-                match EntityKind::from_str(message_kind_name.as_str()) {
-                    Ok(msg_kind) => {
-                        fn action_scope<'a, A: FromStr + ToString>(
-                            msg_kind: &EntityKind,
-                            action_scope: LexScope<Span<'a>>,
-                        ) -> Result<PipelineScope, MsgErr> {
-                            let action_selector_name =
-                                action_scope.selector.selector.name.to_string();
-                            match A::from_str(action_selector_name.as_str()) {
-                                Ok(action) => {
-                                    let pipeline =
-                                        result(lex_pipeline(action_scope.block.content))?;
-                                    let pipeline = pipeline.to_pipeline()?;
-                                    let pipeline_scope = PipelineScope {
-                                        selector: action_scope.selector.to_scope_selector(),
-                                        pipeline,
-                                    };
-
-                                    Ok(pipeline_scope)
-                                }
-                                Err(_) => {
-                                    let mut builder = Report::build(ReportKind::Error, (), 0);
-                                    let report = builder
-                                        .with_message(format!(
-                                            "Unrecognized Action selector '{}' for '{}'",
-                                            action_selector_name,
-                                            msg_kind.to_string()
-                                        ))
-                                        .with_label(
-                                            Label::new(
-                                                action_scope
-                                                    .selector
-                                                    .selector
-                                                    .name
-                                                    .location_offset()
-                                                    ..action_scope
-                                                        .selector
-                                                        .selector
-                                                        .name
-                                                        .location_offset()
-                                                        + action_scope.selector.selector.name.len(),
-                                            )
-                                            .with_message("Unrecognized Action Kind Selector"),
-                                        )
-                                        .finish();
-                                    Err(ParseErrs::from_report(
-                                        report,
-                                        action_scope.block.content.extra.clone(),
-                                    )
-                                    .into())
-                                }
-                            }
-                        }
-                        for scope in message_scope.block {
-                            match action_scope::<RcCommandType>(&msg_kind, scope) {
-                                Ok(pipeline) => {
-                                    pipelines.push(pipeline);
-                                }
-                                Err(err) => {
-                                    errs.push(err);
-                                }
-                            }
-                        }
-                    }
-
-                    Err(err) => {
-                        let mut builder = Report::build(ReportKind::Error, (), 0);
-                        let report = builder
-                            .with_message(format!(
-                                "Unrecognized Message Kind selector: '{}'",
-                                message_kind_name
-                            ))
-                            .with_label(
-                                Label::new(
-                                    message_scope.selector.selector.name.location_offset()
-                                        ..message_scope.selector.selector.name.location_offset()
-                                            + message_scope.selector.selector.name.len(),
-                                )
-                                .with_message("Unrecognized Message Kind Selector"),
-                            )
-                            .finish();
-                        errs.push(
-                            ParseErrs::from_report(report, scope.block.content.extra.clone())
-                                .into(),
-                        );
-                    }
-                }
-            }
-
-            if errs.is_empty() {
-                Ok(BindElement::Pipelines(pipelines))
-            } else {
-                Err(ParseErrs::fold(errs).into())
-            }
+        "Pipeline" => {
+            let scope = lex_child_scopes(scope)?;
+            let scope = PipelineScope::try_from(scope)?;
+            Ok(BindScope::PipelineScope(scope))
         }
         what => {
             let mut builder = Report::build(ReportKind::Error, (), 0);
@@ -5375,16 +5401,15 @@ pub mod test {
     use crate::error::{MsgErr, ParseErrs};
     use crate::version::v0_0_1::config::config::Config;
     use crate::version::v0_0_1::parse::error::result;
-    use crate::version::v0_0_1::parse::model::{
-        BlockKind, LexScope, NestedBlockKind, TerminatedBlockKind,
-    };
+    use crate::version::v0_0_1::parse::model::{BlockKind, DelimitedBlockKind, LexScope, NestedBlockKind, TerminatedBlockKind};
     use crate::version::v0_0_1::parse::parse::version;
-    use crate::version::v0_0_1::parse::{args, bind_config, comment, config, expected_block_terminator_or_non_terminator, lex_child_scopes, lex_nested_block, lex_scope, lex_scope_pipeline_step_and_block, lex_scope_selector, lex_scope_selector_and_filters, lex_scopes, mesh_eos, nested_block, nested_block_content, next_selector, no_comment, parse_include_blocks, parse_inner_block, pipeline_step, pipeline_stop, point, point_subst, rec_version, root_scope, root_scope_selector, rough_filepath_chars_plus_capture, scope_filter, scope_filters, skewer_case, space_chars, space_no_dupe_dots, space_point_segment, strip_comments, wrapper};
+    use crate::version::v0_0_1::parse::{args, bind_config, comment, config, expected_block_terminator_or_non_terminator, lex_block, lex_child_scopes, lex_nested_block, lex_scope, lex_scope_pipeline_step_and_block, lex_scope_selector, lex_scope_selector_and_filters, lex_scopes, mesh_eos, nested_block, nested_block_content, next_selector, no_comment, parse_include_blocks, parse_inner_block, pipeline, pipeline_segment, pipeline_step, pipeline_stop, point, point_subst, rec_version, root_scope, root_scope_selector, rough_filepath_chars_plus_capture, scope_filter, scope_filters, skewer_case, space_chars, space_no_dupe_dots, space_point_segment, strip_comments, wrapper};
     use crate::version::v0_0_1::{create_span, Span};
-    use nom::bytes::complete::tag;
-    use nom::character::complete::{alpha1, multispace0};
+    use nom::bytes::complete::{escaped, tag};
+    use nom::character::complete::{alpha1, anychar, multispace0};
     use nom::character::is_alphanumeric;
     use nom::combinator::{all_consuming, opt, peek, recognize};
+    use nom::error::context;
     use nom::multi::many0;
     use nom::sequence::{delimited, pair, tuple};
     use nom::IResult;
@@ -5392,55 +5417,113 @@ pub mod test {
     use nom_supreme::error::ErrorTree;
     use std::rc::Rc;
     use std::sync::Arc;
-    use nom::error::context;
+
+    #[test]
+    pub fn test_lex_block() -> Result<(), MsgErr> {
+        let esc = result(escaped(anychar, '\\', anychar)(create_span("\\}")))?;
+        //println!("esc: {}", esc);
+        log(result(all_consuming(lex_block(BlockKind::Nested(
+            NestedBlockKind::Curly,
+        )))(create_span("{}"))))?;
+        log(result(all_consuming(lex_block(BlockKind::Nested(
+            NestedBlockKind::Curly,
+        )))(create_span("{x}"))))?;
+        log(result(all_consuming(lex_block(BlockKind::Nested(
+            NestedBlockKind::Curly,
+        )))(create_span("{\\}}"))))?;
+        log(result(all_consuming(lex_block(BlockKind::Delimited(
+            DelimitedBlockKind::SingleQuotes,
+        )))(create_span("'hello'"))))?;
+        log(result(all_consuming(lex_block(BlockKind::Delimited(
+            DelimitedBlockKind::SingleQuotes,
+        )))(create_span("'ain\\'t it cool?'"))))?;
+
+        //assert!(log(result(all_consuming(lex_block( BlockKind::Nested(NestedBlockKind::Curly)))(create_span("{ }}")))).is_err());
+        Ok(())
+    }
 
     #[test]
     pub fn test_bind_config() -> Result<(), MsgErr> {
-        let bind_config_str = r#"Bind(version=1.0.0)-> {
-           Pipelines<Rc> -> {
-             Create -> localhost:app => &;
+        let bind_config_str = r#"Bind(version=1.0.0)  { Pipeline<Rc> -> { <Create> -> localhost:app => &; } }
+        "#;
+
+        if let Config::Bind(bind)= log(config(bind_config_str))? {
+            assert_eq!(bind.pipelines().len(),1);
+            let mut pipelines = bind.pipelines();
+            let pipeline_scope = pipelines.pop().unwrap();
+            assert_eq!(pipeline_scope.selector.selector.name.as_str(), "Pipeline");
+            let message_scope = pipeline_scope.block.first().unwrap();
+            assert_eq!(message_scope.selector.selector.name.as_str(), "Rc");
+            let action_scope = message_scope.block.first().unwrap();
+            assert_eq!(action_scope.selector.selector.name.as_str(), "Create");
+
+
+        } else {
+            assert!(false);
+        }
+        let bind_config_str = r#"Bind(version=1.0.0)  {
+           Pipeline<Rc<Create>> -> localhost:app => &;
+        }"#;
+
+        if let Config::Bind(bind)= log(config(bind_config_str))? {
+            assert_eq!(bind.pipelines().len(),1);
+            let mut pipelines = bind.pipelines();
+            let pipeline_scope = pipelines.pop().unwrap();
+            assert_eq!(pipeline_scope.selector.selector.name.as_str(), "Pipeline");
+            let message_scope = pipeline_scope.block.first().unwrap();
+            assert_eq!(message_scope.selector.selector.name.as_str(), "Rc");
+            let action_scope = message_scope.block.first().unwrap();
+            assert_eq!(action_scope.selector.selector.name.as_str(), "Create");
+
+
+        } else {
+            assert!(false);
+        }
+        let bind_config_str = r#"  Bind(version=1.0.0) {
+           Pipeline<Rc> -> {
+             Create ; Bok;
                }
         }
 
         "#;
-        log(config(bind_config_str))?;
+        assert!(log(config(bind_config_str)).is_err());
+     //   assert!(log(config(bind_config_str)).is_err());
+        Ok(())
+    }
 
-
-        let bind_config_str = r#"Bind(version=1.0.0)-> {
-           Pipelines<Rc> -> {
-             Create ; localhost:app => ;
-               }
-        }
-
-        "#;
-        log(config(bind_config_str));
-       // assert!(log(config(bind_config_str)).is_err());
+    #[test]
+    pub fn test_pipeline_segment() -> Result<(), MsgErr> {
+        log(result(pipeline_segment(create_span("-> localhost"))))?;
+        assert!(log(result(pipeline_segment(create_span("->")))).is_err());
+        assert!(log(result(pipeline_segment(create_span("localhost")))).is_err());
         Ok(())
     }
 
     #[test]
     pub fn test_pipeline_stop() -> Result<(), MsgErr> {
-
-               log(result(space_chars(create_span("localhost"))))?;
+        log(result(space_chars(create_span("localhost"))))?;
         log(result(space_no_dupe_dots(create_span("localhost"))))?;
 
         log(result(mesh_eos(create_span(""))))?;
         log(result(mesh_eos(create_span(":"))))?;
 
-        log(result(
-            recognize(tuple((
-                context("point:space_segment_leading", peek(alpha1)),
-                space_no_dupe_dots,
-                space_chars,
-            )),
-        )(create_span("localhost"))))?;
-       log(result(space_point_segment(create_span("localhost.com"))))?;
+        log(result(recognize(tuple((
+            context("point:space_segment_leading", peek(alpha1)),
+            space_no_dupe_dots,
+            space_chars,
+        )))(create_span("localhost"))))?;
+        log(result(space_point_segment(create_span("localhost.com"))))?;
 
         log(result(point_subst(create_span("mechtron.io:app:hello"))))?;
         log(result(pipeline_stop(create_span("localhost:app:hello"))))?;
         Ok(())
     }
 
+    #[test]
+    pub fn test_pipeline() -> Result<(), MsgErr> {
+        log(result(pipeline(create_span("-> localhost => &"))))?;
+        Ok(())
+    }
 
     #[test]
     pub fn test_pipeline_step() -> Result<(), MsgErr> {
@@ -5454,7 +5537,6 @@ pub mod test {
         assert!(log(result(pipeline_step(create_span("[ Bin ]=>")))).is_err());
         Ok(())
     }
-
 
     #[test]
     pub fn test_rough_bind_config() -> Result<(), MsgErr> {
@@ -5590,9 +5672,13 @@ Hello my friend
 
     #[test]
     pub fn test_block() -> Result<(), MsgErr> {
+        log(result(lex_nested_block(NestedBlockKind::Curly)(create_span("{ <Get> -> localhost; }    "))))?;
+        if true {
+            return Ok(());
+        }
         all_consuming(nested_block(NestedBlockKind::Curly))(create_span("{  }"))?;
         all_consuming(nested_block(NestedBlockKind::Curly))(create_span("{ {} }"))?;
-        all_consuming(nested_block(NestedBlockKind::Curly))(create_span("{ [] }"))?;
+        log(result(nested_block(NestedBlockKind::Curly)(create_span("{ [] }"))))?;
         assert!(
             expected_block_terminator_or_non_terminator(NestedBlockKind::Curly)(create_span("}"))
                 .is_ok()
@@ -6111,10 +6197,6 @@ pub fn pipeline_step(input: Span) -> Res<Span, PipelineStep> {
     context(
         "pipeline:step",
         tuple((
-            peek(cut(alt((
-                tag("-"),
-                tag("="),
-            )))),
             alt((
                 value(MessageKind::Request, tag("-")),
                 value(MessageKind::Response, tag("=")),
@@ -6136,7 +6218,7 @@ pub fn pipeline_step(input: Span) -> Res<Span, PipelineStep> {
             context("pipeline:step:exit", cut(tag(">"))),
         )),
     )(input)
-    .map(|(next, (_, entry, block_and_exit, _))| {
+    .map(|(next, ( entry, block_and_exit, _))| {
         let mut blocks = vec![];
         let exit = match block_and_exit {
             None => entry.clone(),
@@ -6185,13 +6267,20 @@ pub fn point_pipeline_stop(input: Span) -> Res<Span, PipelineStop> {
 pub fn pipeline_stop(input: Span) -> Res<Span, PipelineStop> {
     context(
         "Stop",
-        alt((
-            core_pipeline_stop,
-            return_pipeline_stop,
-            call_pipeline_stop,
-            point_pipeline_stop,
-        )),
+        pair(
+            context(
+                "pipeline:stop:expecting",
+                cut(peek(alt((alpha1, tag("&"))))),
+            ),
+            alt((
+                core_pipeline_stop,
+                return_pipeline_stop,
+                call_pipeline_stop,
+                point_pipeline_stop,
+            )),
+        ),
     )(input)
+    .map(|(next, (_, pipeline_stop))| (next, pipeline_stop))
 }
 
 pub fn consume_pipeline_step(input: Span) -> Res<Span, PipelineStep> {
@@ -6215,7 +6304,7 @@ pub fn pipeline_segment(input: Span) -> Res<Span, PipelineSegment> {
 
 pub fn pipeline(input: Span) -> Res<Span, Pipeline> {
     context(
-        "Pipeline",
+        "pipeline",
         many0(delimited(multispace0, pipeline_segment, multispace0)),
     )(input)
     .map(|(next, segments)| (next, Pipeline { segments }))

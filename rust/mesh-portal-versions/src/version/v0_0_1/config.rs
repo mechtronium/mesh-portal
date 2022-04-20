@@ -93,73 +93,38 @@ pub mod config {
         use crate::version::v0_0_1::util::{ValueMatcher, ValuePattern};
         use serde::{Deserialize, Serialize};
         use std::convert::TryInto;
-        use crate::version::v0_0_1::parse::model::PipelineSegment;
+        use crate::version::v0_0_1::parse::model::{BindScope, PipelineScope, PipelineSegment};
         use crate::version::v0_0_1::selector::PayloadBlock;
 
-        pub struct ProtoBind {
-            pub sections: Vec<PipelinesSubScope>,
-        }
-
-        impl TryInto<BindConfig> for ProtoBind {
-            type Error = MsgErr;
-
-            fn try_into(self) -> Result<BindConfig, Self::Error> {
-                let mut opt_msg = Option::None;
-                let mut opt_http = Option::None;
-                let mut opt_rc = Option::None;
-
-                for section in self.sections {
-                    match section {
-                        PipelinesSubScope::Msg(msg) => {
-                            if opt_msg.is_some() {
-                                return Err("multiple Msg sections not allowed.".into());
-                            }
-                            opt_msg = Some(msg);
-                        }
-                        PipelinesSubScope::Http(http) => {
-                            if opt_http.is_some() {
-                                return Err("multiple Http sections not allowed.".into());
-                            }
-                            opt_http = Some(http);
-                        }
-                        PipelinesSubScope::Rc(rc) => {
-                            if opt_rc.is_some() {
-                                return Err("multiple Rc sections not allowed.".into());
-                            }
-                            opt_rc = Some(rc);
-                        }
-                    }
-                }
-                let mut bind: BindConfig = Default::default();
-                if let Option::Some(msg) = opt_msg {
-                    bind.msg = msg;
-                }
-                if let Option::Some(http) = opt_http {
-                    bind.http = http;
-                }
-                if let Option::Some(rc) = opt_rc {
-                    bind.rc = rc;
-                }
-                Ok(bind)
-            }
-        }
-
-        #[derive(Debug, Clone, Serialize, Deserialize)]
+        #[derive(Debug,Clone, Serialize, Deserialize)]
         pub struct BindConfig {
-            pub msg: ConfigScope<EntityKind, Selector<MsgPipelineSelector>>,
+            pub scopes: Vec<BindScope>
+            /*pub msg: ConfigScope<EntityKind, Selector<MsgPipelineSelector>>,
             pub http: ConfigScope<EntityKind, Selector<HttpPipelineSelector>>,
             pub rc: ConfigScope<EntityKind, Selector<RcPipelineSelector>>,
+
+             */
         }
 
-        impl Default for BindConfig {
-            fn default() -> Self {
+        impl BindConfig {
+            pub fn new(scopes: Vec<BindScope>) -> Self {
                 Self {
-                    msg: ConfigScope::new(EntityKind::Msg, vec![]),
-                    http: ConfigScope::new(EntityKind::Http, vec![]),
-                    rc: ConfigScope::new(EntityKind::Rc, vec![]),
+                    scopes
                 }
             }
+
+            pub fn pipelines(&self) -> Vec<&PipelineScope> {
+                let mut scopes = vec![];
+                for scope in &self.scopes {
+                    if let BindScope::PipelineScope(pipeline_scope) = &scope {
+                       scopes.push(pipeline_scope);
+                    }
+                }
+                scopes
+            }
+
         }
+
 
         #[derive(Debug, Clone, Serialize, Deserialize)]
         pub struct ConfigScope<T, E> {
