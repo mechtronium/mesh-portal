@@ -83,6 +83,7 @@ use nom_locate::LocatedSpan;
 use nom_supreme::error::ErrorTree;
 use nom_supreme::final_parser::ExtractContext;
 use regex::internal::Input;
+use regex::Regex;
 use serde::{Deserialize, Serialize};
 
 /*
@@ -950,17 +951,21 @@ where
     )
 }
 
-pub fn rough_filepath_chars_plus_capture(i: Span) -> Res<Span, Span> {
-    context(
-        "capture-path",
-        recognize(pair(
-            tag("/"),
-            cut(many1(alt((
-                recognize(filepath_chars),
-                recognize(rough_cap_subst),
-            )))),
-        )),
-    )(i)
+pub fn path_regex2(input: Span) -> Res<Span, Span> {
+    let (next, regex_span) = context("regex", recognize(pair(tag("/"), nospace0)))(input.clone())?;
+
+    let regex_string= regex_span.to_string();
+println!("regex is: '{}'",regex_string);
+    match Regex::new( regex_string.as_str() ) {
+        Ok(regex) => {
+            Ok((next,regex_span))
+        }
+        Err(err) => {
+            println!("regex error {}", err.to_string());
+            return Err(nom::Err::Error(ErrorTree::from_error_kind(input, ErrorKind::Tag)))
+        }
+    }
+
 }
 
 pub fn rough_cap_subst(input: Span) -> Res<Span, Span> {
@@ -2233,12 +2238,6 @@ pub fn none<I, O, E>(input: I) -> IResult<I, Option<O>, E> {
     Ok((input, None))
 }
 
-pub fn nospace<I, E>(input: I) -> IResult<I, I, E>
-where
-    I: InputLength + InputTake + Clone,
-{
-    Ok((input.clone(), input.take(0)))
-}
 
 pub fn some<'a, I, O, E, F>(mut f: F) -> impl FnMut(I) -> IResult<I, Option<O>, E>
 where
@@ -2890,10 +2889,10 @@ where
 
 pub fn scope_filters<'a>(input: Span) -> Res<Span, ScopeFiltersDef<Span>> {
     tuple((
-        opt(rough_filepath_chars_plus_capture),
         pair(opt(scope_filter), many0(preceded(tag("-"), scope_filter))),
+        opt(recognize(pair(peek(tag("/")),context("regex",cut(path_regex2))))),
     ))(input)
-    .map(|(next, (path, (first, mut many_filters)))| {
+    .map(|(next, ((first, mut many_filters),path))| {
         let mut filters = vec![];
         match first {
             None => {}
@@ -3034,10 +3033,14 @@ pub mod model {
     use nom::bytes::complete::tag;
     use nom::character::complete::multispace0;
     use nom::combinator::{not, recognize};
-    use serde::{Deserialize, Serialize};
+    use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
     use std::collections::HashMap;
+    use std::fmt::{Formatter, Write};
     use std::ops::{Deref, DerefMut};
     use std::str::FromStr;
+    use bincode::Options;
+    use regex::Regex;
+    use serde::de::Visitor;
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct ScopeSelectorAndFiltersDef<S, I> {
@@ -3194,7 +3197,7 @@ pub mod model {
             ScopeFilters {
                 path: match self.path {
                     None => None,
-                    Some(path) => Some(path.to_string()),
+                    Some(path) => Some(path.to_string())
                 },
                 filters: self
                     .filters
@@ -3238,6 +3241,7 @@ pub mod model {
         }
     }
 
+    pub type RegexStr = String;
     pub type ScopeFilter = ScopeFilterDef<String>;
     pub type ScopeFilters = ScopeFiltersDef<String>;
     pub type LexBlock<I> = Block<I, ()>;
@@ -3738,6 +3742,8 @@ pub mod error {
     use ariadne::{Label, ReportKind, Source};
     use nom::{Err, Slice};
     use nom_supreme::error::{BaseErrorKind, ErrorTree, StackContext};
+    use regex::{Error, Regex};
+    use crate::version::v0_0_1::parse::nospace1;
 
     pub fn result<R>(result: Result<(Span, R), Err<ErrorTree<Span>>>) -> Result<R, MsgErr> {
         match result {
@@ -3783,6 +3789,34 @@ pub mod error {
                     builder.with_message("Invalid Point").with_label(Label::new(loc.location_offset()..loc.location_offset()).with_message("Invalid Point"))
                 },
 
+            "regex" => {
+                let span = result(nospace1(loc.clone()));
+                match span {
+                    Ok(span) => {
+                        match Regex::new(loc.to_string().as_str()) {
+                            Ok(_) => {
+                                builder.with_message("internal parse error: regex error in this expression")
+                            }
+                            Err(err) => {
+                                match err {
+                                    Error::Syntax(syntax) => {
+                                        builder.with_message(format!("Regex Syntax Error: '{}'",syntax)).with_label(Label::new(span.location_offset()..span.location_offset()+span.len()).with_message("regex syntax error"))
+                                    }
+                                    Error::CompiledTooBig(size) => {
+                                        builder.with_message("Regex compiled too big").with_label(Label::new(span.location_offset()..span.location_offset()+span.len()).with_message("regex compiled too big"))
+                                    }
+                                    Error::__Nonexhaustive => {
+                                        builder.with_message("Regex is nonexhaustive").with_label(Label::new(span.location_offset()..span.location_offset()+span.len()).with_message("non-exhaustive regex"))
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    Err(_) => {
+                        builder.with_message("internal parse error: could not identify regex")
+                    }
+                }
+            },
             "parsed-scopes" => { builder.with_message("expecting a properly formed scope").with_label(Label::new(loc.location_offset()..loc.location_offset()).with_message("not a scope"))},
             "scope" => { builder.with_message("expecting a properly formed scope").with_label(Label::new(loc.location_offset()..loc.location_offset()).with_message("not a scope"))},
             "root-scope:block" => { builder.with_message("expecting root scope block {}").with_label(Label::new(loc.location_offset()..loc.location_offset()).with_message("Expecting Scope Block"))},
@@ -5471,16 +5505,7 @@ pub mod test {
         BlockKind, DelimitedBlockKind, LexScope, NestedBlockKind, TerminatedBlockKind,
     };
     use crate::version::v0_0_1::parse::parse::version;
-    use crate::version::v0_0_1::parse::{
-        args, bind_config, comment, config, expected_block_terminator_or_non_terminator, lex_block,
-        lex_child_scopes, lex_nested_block, lex_scope, lex_scope_pipeline_step_and_block,
-        lex_scope_selector, lex_scope_selector_and_filters, lex_scopes, mesh_eos, nested_block,
-        nested_block_content, next_selector, no_comment, parse_include_blocks, parse_inner_block,
-        pipeline, pipeline_segment, pipeline_step, pipeline_stop, point, point_subst, rec_version,
-        root_scope, root_scope_selector, rough_filepath_chars_plus_capture, scope_filter,
-        scope_filters, skewer_case, space_chars, space_no_dupe_dots, space_point_segment,
-        strip_comments, wrapper,
-    };
+    use crate::version::v0_0_1::parse::{args, bind_config, comment, config, expected_block_terminator_or_non_terminator, lex_block, lex_child_scopes, lex_nested_block, lex_scope, lex_scope_pipeline_step_and_block, lex_scope_selector, lex_scope_selector_and_filters, lex_scopes, mesh_eos, nested_block, nested_block_content, next_selector, no_comment, parse_include_blocks, parse_inner_block, pipeline, pipeline_segment, pipeline_step, pipeline_stop, point, point_subst, rec_version, root_scope, root_scope_selector, path_regex, scope_filter, scope_filters, skewer_case, space_chars, space_no_dupe_dots, space_point_segment, strip_comments, wrapper, path_regex2};
     use crate::version::v0_0_1::{create_span, Span};
     use nom::bytes::complete::{escaped, tag};
     use nom::character::complete::{alpha1, anychar, multispace0};
@@ -5518,7 +5543,11 @@ pub mod test {
         //assert!(log(result(all_consuming(lex_block( BlockKind::Nested(NestedBlockKind::Curly)))(create_span("{ }}")))).is_err());
         Ok(())
     }
-
+    #[test]
+    pub fn test_path_regex2() -> Result<(), MsgErr> {
+        log(result(path_regex2(create_span("/xyz"))))?;
+        Ok(())
+    }
     #[test]
     pub fn test_bind_config() -> Result<(), MsgErr> {
         let bind_config_str = r#"Bind(version=1.0.0)  { Pipeline<Rc> -> { <Create> -> localhost:app => &; } }
@@ -5563,13 +5592,14 @@ pub mod test {
            let bind_config_str = r#"  Bind(version=1.0.0) {
               Pipeline -> {
                  <*> -> {
-                    <Get>/users -> localhost:users => &;
+                    <Get>/users/(?P<user>)/.* -> localhost:users => &;
                  }
               }
            }
 
            "#;
            log(config(bind_config_str))?;
+
 
         let bind_config_str = r#"  Bind(version=1.0.0) {
               Pipeline -> {
@@ -6017,10 +6047,10 @@ Hello my friend
             lex_scope,
             multispace0,
         ))(create_span(""))))?;
-        log(result(rough_filepath_chars_plus_capture(create_span(
+        log(result(path_regex(create_span(
             "/root/$(subst)",
         ))))?;
-        log(result(rough_filepath_chars_plus_capture(create_span(
+        log(result(path_regex(create_span(
             "/users/$(user=.*)",
         ))))?;
 
