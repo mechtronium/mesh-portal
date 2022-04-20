@@ -3252,7 +3252,7 @@ pub mod model {
     pub type PipelineSegment = PipelineSegmentDef<PipelineStep, PipelineStop>;
     pub type PipelineScope = PipelineScopeDef<String, Vec<MessageScope>>;
     pub type MessageScope = ScopeDef<ValuePatternScopeSelectorAndFilters, Vec<ActionScope>>;
-    pub type ActionScope = PipelineScopeDef<String, Pipeline>;
+    pub type ActionScope = ScopeDef<ValuePatternScopeSelectorAndFilters, Pipeline>;
     pub type ScopeSelector = ScopeSelectorDef<String, String>;
     pub type ValuePatternScopeSelector = ScopeSelectorDef<ValuePattern<String>, String>;
     pub type ScopeSelectorAndFilters = ScopeSelectorAndFiltersDef<ScopeSelector, String>;
@@ -3272,15 +3272,23 @@ pub mod model {
                     Ok(message_scope) => {
                         let mut block = vec![];
                         for action_scope in message_scope.block {
-                            match result(pipeline(action_scope.block.content)) {
-                                Ok(pipeline) => block.push(ActionScope {
-                                    selector: action_scope.selector.to_scope_selector(),
-                                    block: pipeline,
-                                }),
+                            match action_scope.selector.to_value_pattern_scope_selector() {
+                                Ok(selector) => {
+                                    match result(pipeline(action_scope.block.content)) {
+                                        Ok(pipeline) => block.push(ActionScope {
+                                            selector,
+                                            block: pipeline,
+                                        }),
+                                        Err(err) => {
+                                            errs.push(err);
+                                        }
+                                    }
+                                }
                                 Err(err) => {
                                     errs.push(err);
                                 }
                             }
+
                         }
                         match message_scope.selector.to_value_pattern_scope_selector() {
                             Ok(selector) => message_scopes.push(MessageScope { selector, block }),
@@ -3318,7 +3326,6 @@ pub mod model {
         pub fn to_value_pattern_scope_selector(
             self,
         ) -> Result<ValuePatternScopeSelectorAndFilters, MsgErr> {
-            println!("To ValuePAtternScopeSelectorAndFilters...");
             Ok(ValuePatternScopeSelectorAndFilters {
                 selector: self.selector.to_value_pattern_scope_selector()?,
                 filters: self.filters.to_scope_filters(),
@@ -3441,10 +3448,6 @@ pub mod model {
 
     impl<'a> LexScopeSelector<Span<'a>> {
         pub fn to_value_pattern_scope_selector(self) -> Result<ValuePatternScopeSelector, MsgErr> {
-            println!(
-                "to_value_pattern_scope_Selector():: '{}' ",
-                self.name.to_string()
-            );
             Ok(ValuePatternScopeSelector {
                 name: result(value_pattern(camel_case)(self.name))?.stringify(),
                 filters: self.filters.to_scope_filters(),
@@ -5520,11 +5523,9 @@ pub mod test {
     pub fn test_bind_config() -> Result<(), MsgErr> {
         let bind_config_str = r#"Bind(version=1.0.0)  { Pipeline<Rc> -> { <Create> -> localhost:app => &; } }
         "#;
-        let bind_config_str =
-            r#"Bind(version=1.0.0)  { Pipeline<*> -> { <Create> -> localhost:app => &; } } "#;
 
         log(config(bind_config_str))?;
-        /*        if let Config::Bind(bind)= log(config(bind_config_str))? {
+                if let Config::Bind(bind)= log(config(bind_config_str))? {
                    assert_eq!(bind.pipelines().len(),1);
                    let mut pipelines = bind.pipelines();
                    let pipeline_scope = pipelines.pop().unwrap();
@@ -5532,16 +5533,14 @@ pub mod test {
                    let message_scope = pipeline_scope.block.first().unwrap();
                    assert_eq!(message_scope.selector.selector.name.to_string().as_str(), "Rc");
                    let action_scope = message_scope.block.first().unwrap();
-                   assert_eq!(action_scope.selector.selector.name.as_str(), "Create");
+                   assert_eq!(action_scope.selector.selector.name.to_string().as_str(), "Create");
 
 
                } else {
                    assert!(false);
                }
 
-        */
 
-        /*
            let bind_config_str = r#"Bind(version=1.0.0)  {
               Pipeline<Rc<Create>> -> localhost:app => &;
            }"#;
@@ -5554,7 +5553,7 @@ pub mod test {
                let message_scope = pipeline_scope.block.first().unwrap();
                assert_eq!(message_scope.selector.selector.name.to_string().as_str(), "Rc");
                let action_scope = message_scope.block.first().unwrap();
-               assert_eq!(action_scope.selector.selector.name.as_str(), "Create");
+               assert_eq!(action_scope.selector.selector.name.to_string().as_str(), "Create");
 
 
            } else {
@@ -5570,9 +5569,29 @@ pub mod test {
            }
 
            "#;
-           assert!(log(config(bind_config_str)).is_err());
+           log(config(bind_config_str))?;
 
+        let bind_config_str = r#"  Bind(version=1.0.0) {
+              Pipeline -> {
+                 <*> -> {
+                    <*>/users -> localhost:users => &;
+                 }
+              }
+           }
 
+           "#;
+        log(config(bind_config_str))?;
+
+        let bind_config_str = r#"  Bind(version=1.0.0) {
+              * -> { // This should fail since Pipeline needs to be defined
+                 <*> -> {
+                    <Get>/users -> localhost:users => &;
+                 }
+              }
+           }
+
+           "#;
+        assert!(log(config(bind_config_str)).is_err());
            let bind_config_str = r#"  Bind(version=1.0.0) {
               Pipeline<Rc> -> {
                 Create ; Bok;
@@ -5583,7 +5602,6 @@ pub mod test {
            assert!(log(config(bind_config_str)).is_err());
         //   assert!(log(config(bind_config_str)).is_err());
 
-            */
         Ok(())
     }
 
