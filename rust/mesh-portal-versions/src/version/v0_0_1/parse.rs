@@ -45,7 +45,7 @@ use crate::version::v0_0_1::entity::entity::request::set::Set;
 use crate::version::v0_0_1::entity::entity::request::RcCommandType;
 use crate::version::v0_0_1::entity::entity::EntityKind;
 use crate::version::v0_0_1::id::id::{
-    CaptureAddress, Point, PointSeg, PointSegDelim, PointSegKind, PointSegPairDef,
+    Point, PointSeg, PointSegDelim, PointSegKind, PointSegPairDef,
     PointSegPairSubst, PointSegSubst, PointSubst, RouteSeg, Version,
 };
 use crate::version::v0_0_1::parse::error::{first_context, result};
@@ -511,7 +511,7 @@ pub fn consume_point_subst(input: &str) -> Result<PointSubst, MsgErr> {
     Ok(point)
 }
 
-pub fn capture_point(input: Span) -> Res<Span, CaptureAddress> {
+/*pub fn capture_point(input: Span) -> Res<Span, CaptureAddress> {
     context(
         "Address",
         tuple((
@@ -552,6 +552,7 @@ pub fn capture_point(input: Span) -> Res<Span, CaptureAddress> {
     )
 }
 
+
 pub fn root_point_capture_segment(input: Span) -> Res<Span, PointSeg> {
     tag("ROOT")(input).map(|(next, space)| (next, PointSeg::Root))
 }
@@ -581,6 +582,7 @@ pub fn file_point_capture_segment(input: Span) -> Res<Span, PointSeg> {
     context("file_point_capture_segment", file_chars_plus_capture)(input)
         .map(|(next, filename)| (next, PointSeg::File(filename.to_string())))
 }
+ */
 
 pub fn space_point_kind_segment(input: Span) -> Res<Span, PointKindSeg> {
     tuple((space_point_segment, delim_kind))(input).map(|(next, (point_segment, kind))| {
@@ -4758,7 +4760,7 @@ pub fn call_kind(input: Span) -> Res<Span, CallKind> {
 }
 
 pub fn call(input: Span) -> Res<Span, Call> {
-    tuple((capture_point, preceded(tag("^"), call_kind)))(input)
+    tuple((point_subst, preceded(tag("^"), call_kind)))(input)
         .map(|(next, (point, kind))| (next, Call { point, kind }))
 }
 
@@ -5592,7 +5594,7 @@ pub mod test {
            let bind_config_str = r#"  Bind(version=1.0.0) {
               Pipeline -> {
                  <*> -> {
-                    <Get>/users/(?P<user>)/.* -> localhost:users => &;
+                    <Get>(auth)/users/(?P<user>)/.* -> localhost:users:$(user) => &;
                  }
               }
            }

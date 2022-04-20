@@ -867,6 +867,8 @@ pub mod id {
         }
     }
 
+
+    /*
     #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
     pub struct CaptureAddress {
         pub route: RouteSeg,
@@ -889,6 +891,7 @@ pub mod id {
             Ok(point)
         }
     }
+
 
     impl ToString for CaptureAddress {
         fn to_string(&self) -> String {
@@ -921,6 +924,8 @@ pub mod id {
             }
         }
     }
+
+     */
 
     #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
     pub struct GenericKind {

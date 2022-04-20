@@ -6,7 +6,7 @@ pub mod payload {
     use crate::error::MsgErr;
     use crate::version::v0_0_1::bin::Bin;
     use crate::version::v0_0_1::entity::entity::request::{Action, Rc, RcCommandType, RequestCore};
-    use crate::version::v0_0_1::id::id::{CaptureAddress, GenericKind, GenericKindBase, Meta, Point};
+    use crate::version::v0_0_1::id::id::{GenericKind, GenericKindBase, Meta, Point, PointSubst};
     use crate::version::v0_0_1::particle::particle::{Particle, Status, Stub};
     use crate::version::v0_0_1::selector::selector::TksPattern;
     use crate::version::v0_0_1::util::{ValueMatcher, ValuePattern};
@@ -421,7 +421,7 @@ pub mod payload {
         Any,
     }
 
-    #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
+    #[derive(Debug, Clone, Serialize, Deserialize )]
     pub enum PayloadTypePattern {
         Empty,
         Primitive(PayloadType),
@@ -495,7 +495,7 @@ pub mod payload {
         }
     }
 
-    #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
+    #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct PayloadPattern {
         pub structure: PayloadTypePattern,
         pub format: Option<PayloadFormat>,
@@ -511,19 +511,19 @@ pub mod payload {
         }
     }
 
-    #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
+    #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct CallWithConfig {
         pub call: Call,
         pub config: Option<Point>,
     }
 
-    #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
+    #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct Call {
-        pub point: CaptureAddress,
+        pub point: PointSubst,
         pub kind: CallKind,
     }
 
-    #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
+    #[derive(Debug, Clone, Serialize, Deserialize )]
     pub enum CallKind {
         Msg(MsgCall),
         Http(HttpCall),
@@ -554,7 +554,7 @@ pub mod payload {
         }
     }
 
-    #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+    #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct MsgCall {
         pub path: String,
         pub action: String,
@@ -774,7 +774,7 @@ pub mod payload {
         }
     }
 
-    #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
+    #[derive(Debug, Clone, Serialize, Deserialize )]
     pub struct MapPattern {
         pub required: HashMap<String, ValuePattern<PayloadPattern>>,
         pub allowed: ValuePattern<PayloadPattern>,

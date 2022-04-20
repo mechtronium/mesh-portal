@@ -18,7 +18,7 @@ pub mod selector {
     use crate::version::v0_0_1::id::id::{
         GenericKind, GenericKindBase, Point, PointSeg, RouteSeg, Specific, Tks, Version,
     };
-    use crate::version::v0_0_1::parse::{camel_case, camel_case_to_string_matcher, CapSubst, capture_path, capture_point, consume_hierarchy, file_chars, path, path_regex, point, point_subst, Res, Subst};
+    use crate::version::v0_0_1::parse::{camel_case, camel_case_to_string_matcher, CapSubst, capture_path,  consume_hierarchy, file_chars, path, path_regex, point, point_subst, Res, Subst};
     use crate::version::v0_0_1::payload::payload::{
         Call, CallKind, CallWithConfig, HttpCall, HttpMethod, HttpMethodType, ListPattern,
         MapPattern, MsgCall, Payload, PayloadFormat, PayloadPattern, PayloadType,
@@ -873,7 +873,7 @@ pub mod selector {
 
      */
 
-    #[derive(Clone, Eq, PartialEq)]
+    #[derive(Clone)]
     pub struct MapEntryPattern {
         pub key: String,
         pub payload: ValuePattern<PayloadPattern>,
@@ -1158,18 +1158,18 @@ pub mod selector {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum PayloadBlock {
     RequestPattern(PatternBlock),
     ResponsePattern(PatternBlock),
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UploadBlock {
     pub name: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CreateBlock {
     pub payload: Payload,
 }

@@ -84,7 +84,7 @@ pub mod config {
         use crate::error::MsgErr;
         use crate::version::v0_0_1::entity::entity::request::{Rc, RequestCore};
         use crate::version::v0_0_1::entity::entity::EntityKind;
-        use crate::version::v0_0_1::id::id::{CaptureAddress, PointSubst};
+        use crate::version::v0_0_1::id::id::{PointSubst};
         use crate::version::v0_0_1::payload::payload::Call;
         use crate::version::v0_0_1::payload::payload::{Payload, PayloadPattern};
         use crate::version::v0_0_1::selector::selector::{
@@ -182,7 +182,7 @@ pub mod config {
             }
         }
 
-        #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
+        #[derive(Debug, Clone, Serialize, Deserialize)]
         pub struct PipelineStep {
             pub entry: MessageKind,
             pub exit: MessageKind,
