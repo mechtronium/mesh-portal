@@ -2,9 +2,7 @@ use crate::error::MsgErr;
 use crate::version::v0_0_1::id::id::Point;
 use crate::version::v0_0_1::messaging::messaging::ScopeGrant;
 use crate::version::v0_0_1::parse::error::result;
-use crate::version::v0_0_1::parse::{
-    MapResolver, particle_perms, permissions_mask, privilege, Resolver, Subst, ToResolved,
-};
+use crate::version::v0_0_1::parse::{MapResolver, particle_perms, permissions_mask, privilege, Resolver, ResolverCtx, ToResolved};
 use crate::version::v0_0_1::selector::selector::PointSelector;
 use crate::version::v0_0_1::{create_span, Span};
 use nom::combinator::all_consuming;
@@ -454,52 +452,10 @@ pub struct AccessGrantDef<Priv, PermMask, PointSelector, Point> {
     pub by_particle: Point,
 }
 
-impl ToResolved<AccessGrant> for AccessGrantSubst {
-    fn to_resolved(self, resolver: &dyn Resolver) -> Result<AccessGrant, MsgErr> {
-        Ok(AccessGrant {
-            kind: self.kind.to_resolved(resolver)?,
-            on_point: self.on_point.to_resolved(resolver)?,
-            to_point: self.to_point.to_resolved(resolver)?,
-            by_particle: self.by_particle.to_resolved(resolver)?,
-        })
-    }
-}
-
-impl AccessGrantSubst {
-    pub fn with_by(self, by_particle: Point) -> Result<AccessGrant, MsgErr> {
-        let map = MapResolver::new();
-        Ok(AccessGrant {
-            kind: self.kind.to_resolved(&map)?,
-            on_point: self.on_point.to_resolved(&map)?,
-            to_point: self.to_point.to_resolved(&map)?,
-            by_particle: by_particle,
-        })
-    }
-}
 
 pub type AccessGrant = AccessGrantDef<Privilege, PermissionsMask, PointSelector, Point>;
 pub type AccessGrantKind = AccessGrantKindDef<Privilege, PermissionsMask>;
-pub type AccessGrantKindSubst = AccessGrantKindDef<Subst<Privilege>, Subst<PermissionsMask>>;
-pub type AccessGrantSubst = AccessGrantDef<
-    Subst<Privilege>,
-    Subst<PermissionsMask>,
-    Subst<PointSelector>,
-    Subst<Point>,
->;
 
-impl ToResolved<AccessGrantKind> for AccessGrantKindSubst {
-    fn to_resolved(self, resolver: &dyn Resolver) -> Result<AccessGrantKind, MsgErr> {
-        match self {
-            AccessGrantKindSubst::Super => Ok(AccessGrantKind::Super),
-            AccessGrantKindSubst::Privilege(privilege) => {
-                Ok(AccessGrantKind::Privilege(privilege.to_resolved(resolver)?))
-            }
-            AccessGrantKindSubst::PermissionsMask(perms) => Ok(
-                AccessGrantKind::PermissionsMask(perms.to_resolved(resolver)?),
-            ),
-        }
-    }
-}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum AccessGrantKindDef<Priv, PermMask> {

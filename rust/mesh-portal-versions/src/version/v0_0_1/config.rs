@@ -84,7 +84,7 @@ pub mod config {
         use crate::error::MsgErr;
         use crate::version::v0_0_1::entity::entity::request::{Rc, RequestCore};
         use crate::version::v0_0_1::entity::entity::EntityKind;
-        use crate::version::v0_0_1::id::id::{PointSubst};
+        use crate::version::v0_0_1::id::id::{Point, };
         use crate::version::v0_0_1::payload::payload::Call;
         use crate::version::v0_0_1::payload::payload::{Payload, PayloadPattern};
         use crate::version::v0_0_1::selector::selector::{
@@ -214,7 +214,7 @@ pub mod config {
             Internal,
             Call(Call),
             Respond,
-            PointSubst(PointSubst),
+            Point(Point),
         }
 
         #[derive(Debug, Clone, Serialize, Deserialize)]

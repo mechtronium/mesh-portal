@@ -23,7 +23,7 @@ pub mod entity {
         use crate::version::v0_0_1::fail::{BadRequest, Fail, NotFound};
         use crate::version::v0_0_1::id::id::{GenericKind, GenericKindBase, Meta, Point};
         use crate::version::v0_0_1::payload::payload::{Errors, HttpMethod, Payload, Primitive};
-        use crate::version::v0_0_1::selector::selector::TksPattern;
+        use crate::version::v0_0_1::selector::selector::KindPattern;
         use crate::version::v0_0_1::util::ValueMatcher;
         use http::status::InvalidStatusCode;
         use http::{HeaderMap, Request, StatusCode, Uri};
@@ -326,8 +326,8 @@ pub mod entity {
                         return Err("cannot create a ResourceKind from a specific pattern when using KindTemplate".into());
                     }
                     Ok(GenericKind {
-                        resource_type: self.resource_type,
-                        kind: self.kind,
+                        kind: self.resource_type,
+                        sub_kind: self.kind,
                         specific: None,
                     })
                 }

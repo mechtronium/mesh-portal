@@ -16,7 +16,7 @@ pub mod particle {
 
     use crate::error::MsgErr;
     use crate::version::v0_0_1::id::id::{GenericKind, GenericKindBase, Point, PointKind};
-    use crate::version::v0_0_1::parse::{point_subst, Res};
+    use crate::version::v0_0_1::parse::{Res};
     use crate::version::v0_0_1::payload::payload::{Payload, PayloadMap};
     use crate::version::v0_0_1::parse::parse_alpha1_str;
     use crate::version::v0_0_1::Span;

@@ -6,9 +6,9 @@ pub mod payload {
     use crate::error::MsgErr;
     use crate::version::v0_0_1::bin::Bin;
     use crate::version::v0_0_1::entity::entity::request::{Action, Rc, RcCommandType, RequestCore};
-    use crate::version::v0_0_1::id::id::{GenericKind, GenericKindBase, Meta, Point, PointSubst};
+    use crate::version::v0_0_1::id::id::{GenericKind, GenericKindBase, Meta, Point, };
     use crate::version::v0_0_1::particle::particle::{Particle, Status, Stub};
-    use crate::version::v0_0_1::selector::selector::TksPattern;
+    use crate::version::v0_0_1::selector::selector::KindPattern;
     use crate::version::v0_0_1::util::{ValueMatcher, ValuePattern};
     use http::{Method, Uri};
     use std::str::FromStr;
@@ -519,7 +519,7 @@ pub mod payload {
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct Call {
-        pub point: PointSubst,
+        pub point: Point,
         pub kind: CallKind,
     }
 

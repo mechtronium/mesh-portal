@@ -43,7 +43,7 @@ pub mod portal {
         use crate::version::v0_0_1::payload::payload::Payload;
         use crate::version::v0_0_1::portal::portal;
         use crate::version::v0_0_1::portal::portal::Exchanger;
-        use crate::version::v0_0_1::selector::selector::TksPattern;
+        use crate::version::v0_0_1::selector::selector::KindPattern;
         use crate::version::v0_0_1::util::unique_id;
         use serde::{Deserialize, Serialize};
         use crate::version::v0_0_1::log::{AuditLog, Log, LogSpan, PointlessLog };

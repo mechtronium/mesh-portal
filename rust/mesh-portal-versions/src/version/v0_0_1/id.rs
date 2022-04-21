@@ -15,10 +15,7 @@ pub mod id {
     use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 
     use crate::error::MsgErr;
-    use crate::version::v0_0_1::parse::{
-        BruteResolver, camel_case, consume_point, consume_point_subst, NoResolver,
-        point_route_segment, point_segment, point_subst, Res, Resolver, Subst, ToResolved,
-    };
+    use crate::version::v0_0_1::parse::{ camel_case, consume_point,  point_route_segment, point_segment, Res, ResolverCtx,  ToResolved};
     use crate::version::v0_0_1::parse::parse::{
         generic_kind_base, kind, point_and_kind, specific,
     };
@@ -298,7 +295,6 @@ pub mod id {
         }
     }
 
-    pub type PointSegSubst = Subst<PointSeg>;
 
     #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
     pub enum PointSeg {
@@ -353,7 +349,6 @@ pub mod id {
     }
 
     pub type PointSegPair = PointSegPairDef<PointSeg>;
-    pub type PointSegPairSubst = PointSegPairDef<Subst<PointSeg>>;
 
     #[derive(Debug,Clone,Serialize,Deserialize)]
     pub struct PointSegPairDef<Seg> {
@@ -367,14 +362,6 @@ pub mod id {
         }
     }
 
-    impl ToResolved<String> for PointSegPairSubst {
-        fn to_resolved(self, resolver: &dyn Resolver) -> Result<String, MsgErr> {
-            match self.seg {
-                Subst::Symbol(symbol) => resolver.string(&symbol),
-                Subst::Resolved(resolved) => Ok(resolved.to_string()),
-            }
-        }
-    }
 
     impl<Seg> ToString for PointSegPairDef<Seg>
     where
@@ -492,7 +479,6 @@ pub mod id {
     }
 
     pub type Point = PointDef<RouteSeg, PointSeg>;
-    pub type PointSubst = PointDef<Subst<RouteSeg>, PointSegPairSubst>;
 
 
     impl TryFrom<String> for Point {
@@ -518,36 +504,6 @@ pub mod id {
         pub segments: Vec<Seg>,
     }
 
-    impl BruteResolver<Point> for PointSubst {}
-
-    impl PointSubst {
-        pub fn check_resolved(&self) -> Result<(), ()> {
-            self.route.check_resolved()?;
-            for segment in &self.segments {
-                segment.seg.check_resolved()?;
-            }
-            Ok(())
-        }
-    }
-
-    impl ToResolved<Point> for PointSubst {
-        fn to_resolved(self, resolver: &dyn Resolver) -> Result<Point, MsgErr> {
-            let mut point = String::new();
-
-            point.push_str(self.route.to_resolved_str(resolver)?.as_str());
-            point.push_str("::");
-
-            for segment in &self.segments {
-                point.push_str(segment.delim.to_string().as_str());
-                point.push_str(segment.seg.clone().to_resolved_str(resolver)?.as_str());
-            }
-            println!("created: {}", point);
-            let point = Point::from_str(point.as_str())?;
-            let point = point.normalize()?;
-            println!("normalized : {}", point.to_string());
-            Ok(point)
-        }
-    }
 
     impl Point {
         pub fn normalize(self) -> Result<Point, MsgErr> {
@@ -802,38 +758,6 @@ pub mod id {
         }
     }
 
-    impl PointSubst {
-        pub fn hide_route(&self) -> bool {
-            match &self.route {
-                Subst::Symbol(_) => false,
-                Subst::Resolved(route) => match route {
-                    RouteSeg::Local => true,
-                    _ => false,
-                },
-            }
-        }
-    }
-
-    impl ToString for PointSubst {
-        fn to_string(&self) -> String {
-            let mut rtn = String::new();
-
-            if !self.hide_route() {
-                let route = self.route.to_string();
-                rtn.push_str(route.as_str());
-                rtn.push_str("::");
-            }
-
-            if self.segments.is_empty() {
-                "ROOT".to_string()
-            } else {
-                for segment in &self.segments {
-                    rtn.push_str(segment.to_string().as_str());
-                }
-                rtn.to_string()
-            }
-        }
-    }
 
     impl Point {
         pub fn parent(&self) -> Option<Point> {
@@ -929,28 +853,28 @@ pub mod id {
 
     #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
     pub struct GenericKind {
-        pub resource_type: GenericKindBase,
-        pub kind: Option<String>,
+        pub kind: GenericKindBase,
+        pub sub_kind: Option<String>,
         pub specific: Option<Specific>,
     }
 
     impl ToString for GenericKind {
         fn to_string(&self) -> String {
-            if self.kind.is_some() && self.specific.is_some() {
+            if self.sub_kind.is_some() && self.specific.is_some() {
                 format!(
                     "{}<{}<{}>>",
-                    self.resource_type.to_string(),
-                    self.kind.as_ref().expect("kind"),
+                    self.kind.to_string(),
+                    self.sub_kind.as_ref().expect("kind"),
                     self.specific.as_ref().expect("specific").to_string()
                 )
-            } else if self.kind.is_some() {
+            } else if self.sub_kind.is_some() {
                 format!(
                     "{}<{}>",
-                    self.resource_type.to_string(),
-                    self.kind.as_ref().expect("kind")
+                    self.kind.to_string(),
+                    self.sub_kind.as_ref().expect("kind")
                 )
             } else {
-                self.resource_type.to_string()
+                self.kind.to_string()
             }
         }
     }
@@ -972,8 +896,8 @@ pub mod id {
             specific: Option<Specific>,
         ) -> Self {
             Self {
-                resource_type,
-                kind,
+                kind: resource_type,
+                sub_kind: kind,
                 specific,
             }
         }
@@ -981,11 +905,11 @@ pub mod id {
 
     impl Tks for GenericKind {
         fn resource_type(&self) -> GenericKindBase {
-            self.resource_type.clone()
+            self.kind.clone()
         }
 
         fn kind_to_string(&self) -> Option<String> {
-            self.kind.clone()
+            self.sub_kind.clone()
         }
 
         fn specific(&self) -> Option<Specific> {
@@ -993,8 +917,8 @@ pub mod id {
         }
 
         fn matches(&self, tks: &dyn Tks) -> bool {
-            self.resource_type == tks.resource_type()
-                && self.kind == tks.kind_to_string()
+            self.kind == tks.resource_type()
+                && self.sub_kind == tks.kind_to_string()
                 && self.specific == tks.specific()
         }
     }
