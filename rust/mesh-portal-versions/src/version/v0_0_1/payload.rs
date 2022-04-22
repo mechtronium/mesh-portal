@@ -6,9 +6,9 @@ pub mod payload {
     use crate::error::MsgErr;
     use crate::version::v0_0_1::bin::Bin;
     use crate::version::v0_0_1::entity::entity::request::{Action, Rc, RcCommandType, RequestCore};
-    use crate::version::v0_0_1::id::id::{GenericKind, GenericKindBase, Meta, Point, };
+    use crate::version::v0_0_1::id::id::{GenericKind, GenericKindBase, Meta, Point, PointCtx};
     use crate::version::v0_0_1::particle::particle::{Particle, Status, Stub};
-    use crate::version::v0_0_1::selector::selector::KindPattern;
+    use crate::version::v0_0_1::selector::selector::{KindPattern, PointSelector};
     use crate::version::v0_0_1::util::{ValueMatcher, ValuePattern};
     use http::{Method, Uri};
     use std::str::FromStr;
@@ -420,16 +420,17 @@ pub mod payload {
         Exact(usize),
         Any,
     }
+    pub type PayloadTypePatternCtx = PayloadTypePatternDef<PointCtx>;
 
     #[derive(Debug, Clone, Serialize, Deserialize )]
-    pub enum PayloadTypePattern {
+    pub enum PayloadTypePatternDef<Pnt> {
         Empty,
         Primitive(PayloadType),
         List(ListPattern),
-        Map(Box<MapPattern>),
+        Map(Box<MapPatternDef<Pnt>>),
     }
 
-    impl PayloadTypePattern {
+    impl <Pnt> PayloadTypePatternDef<Pnt> {
         pub fn is_match(&self, payload: &Payload) -> Result<(), MsgErr> {
             unimplemented!();
             /*
@@ -495,11 +496,14 @@ pub mod payload {
         }
     }
 
+    pub type PayloadPatternCtx = PayloadPatternDef<PointCtx>;
+    pub type PayloadPattern = PayloadPatternDef<Point>;
+
     #[derive(Debug, Clone, Serialize, Deserialize)]
-    pub struct PayloadPattern {
-        pub structure: PayloadTypePattern,
+    pub struct PayloadPatternDef<Pnt> {
+        pub structure: PayloadTypePatternDef<Pnt>,
         pub format: Option<PayloadFormat>,
-        pub validator: Option<CallWithConfig>,
+        pub validator: Option<CallWithConfigDef<Pnt>>,
     }
 
     impl ValueMatcher<Payload> for PayloadPattern {
@@ -512,14 +516,19 @@ pub mod payload {
     }
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
-    pub struct CallWithConfig {
-        pub call: Call,
-        pub config: Option<Point>,
+    pub struct CallWithConfigDef<Pnt> {
+        pub call: CallDef<Pnt>,
+        pub config: Option<Pnt>,
     }
 
+    pub type CallWithConfig = CallWithConfigDef<Point>;
+    pub type CallWithConfigCtx = CallWithConfigDef<PointCtx>;
+    pub type Call = CallDef<Point>;
+    pub type CallCtx = CallDef<PointCtx>;
+
     #[derive(Debug, Clone, Serialize, Deserialize)]
-    pub struct Call {
-        pub point: Point,
+    pub struct CallDef<Pnt> {
+        pub point: Pnt,
         pub kind: CallKind,
     }
 
@@ -774,13 +783,17 @@ pub mod payload {
         }
     }
 
+    pub type MapPattern = MapPatternDef<Point>;
+    pub type MapPatternCtx = MapPatternDef<PointCtx>;
+
+
     #[derive(Debug, Clone, Serialize, Deserialize )]
-    pub struct MapPattern {
-        pub required: HashMap<String, ValuePattern<PayloadPattern>>,
-        pub allowed: ValuePattern<PayloadPattern>,
+    pub struct MapPatternDef<Pnt> {
+        pub required: HashMap<String, ValuePattern<PayloadPatternDef<Pnt>>>,
+        pub allowed: ValuePattern<PayloadPatternDef<Pnt>>,
     }
 
-    impl Default for MapPattern {
+    impl <Pnt> Default for MapPatternDef<Pnt> {
         fn default() -> Self {
             MapPattern {
                 required: Default::default(),
@@ -789,18 +802,18 @@ pub mod payload {
         }
     }
 
-    impl ToString for MapPattern {
+    impl <Pnt> ToString for MapPatternDef<Pnt> {
         fn to_string(&self) -> String {
             "Map?".to_string()
         }
     }
 
-    impl MapPattern {
+    impl <Pnt>MapPatternDef<Pnt> {
         pub fn new(
-            required: HashMap<String, ValuePattern<PayloadPattern>>,
-            allowed: ValuePattern<PayloadPattern>,
+            required: HashMap<String, ValuePattern<PayloadPatternDef<Pnt>>>,
+            allowed: ValuePattern<PayloadPatternDef<Pnt>>,
         ) -> Self {
-            MapPattern { required, allowed }
+            MapPatternDef { required, allowed }
         }
 
         pub fn empty() -> Self {

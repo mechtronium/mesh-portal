@@ -84,8 +84,8 @@ pub mod config {
         use crate::error::MsgErr;
         use crate::version::v0_0_1::entity::entity::request::{Rc, RequestCore};
         use crate::version::v0_0_1::entity::entity::EntityKind;
-        use crate::version::v0_0_1::id::id::{Point, };
-        use crate::version::v0_0_1::payload::payload::Call;
+        use crate::version::v0_0_1::id::id::{Point, PointCtx};
+        use crate::version::v0_0_1::payload::payload::{Call, CallDef};
         use crate::version::v0_0_1::payload::payload::{Payload, PayloadPattern};
         use crate::version::v0_0_1::selector::selector::{
             PipelineSelector, HttpPipelineSelector, MsgPipelineSelector, RcPipelineSelector,
@@ -93,8 +93,8 @@ pub mod config {
         use crate::version::v0_0_1::util::{ValueMatcher, ValuePattern};
         use serde::{Deserialize, Serialize};
         use std::convert::TryInto;
-        use crate::version::v0_0_1::parse::model::{BindScope, PipelineScope, PipelineSegment};
-        use crate::version::v0_0_1::selector::PayloadBlock;
+        use crate::version::v0_0_1::parse::model::{BindScope, RequestScope, PipelineSegment, PipelineSegmentDef};
+        use crate::version::v0_0_1::selector::{PayloadBlock, PayloadBlockDef};
 
         #[derive(Debug,Clone, Serialize, Deserialize)]
         pub struct BindConfig {
@@ -113,11 +113,11 @@ pub mod config {
                 }
             }
 
-            pub fn pipelines(&self) -> Vec<&PipelineScope> {
+            pub fn request_scopes(&self) -> Vec<&RequestScope> {
                 let mut scopes = vec![];
                 for scope in &self.scopes {
-                    if let BindScope::PipelineScope(pipeline_scope) = &scope {
-                       scopes.push(pipeline_scope);
+                    if let BindScope::RequestScope(request_scope) = &scope {
+                       scopes.push(request_scope);
                     }
                 }
                 scopes
@@ -163,17 +163,20 @@ pub mod config {
             }
         }
 
+        pub type Pipeline = PipelineDef<Point>;
+        pub type PipelineCtx = PipelineDef<PointCtx>;
+
         #[derive(Debug, Clone, Serialize, Deserialize )]
-        pub struct Pipeline {
-            pub segments: Vec<PipelineSegment>,
+        pub struct PipelineDef<Pnt> {
+            pub segments: Vec<PipelineSegmentDef<Pnt>>,
         }
 
-        impl Pipeline {
+        impl <Pnt> PipelineDef<Pnt> {
             pub fn new() -> Self {
                 Self { segments: vec![] }
             }
 
-            pub fn consume(&mut self) -> Option<PipelineSegment> {
+            pub fn consume(&mut self) -> Option<PipelineSegmentDef<Pnt>> {
                 if self.segments.is_empty() {
                     Option::None
                 } else {
@@ -182,12 +185,17 @@ pub mod config {
             }
         }
 
+        pub type PipelineStepCtx = PipelineStepDef<PointCtx>;
+        pub type PipelineStep = PipelineStepDef<Point>;
+
+
         #[derive(Debug, Clone, Serialize, Deserialize)]
-        pub struct PipelineStep {
+        pub struct PipelineStepDef<Pnt> {
             pub entry: MessageKind,
             pub exit: MessageKind,
-            pub blocks: Vec<PayloadBlock>,
+            pub blocks: Vec<PayloadBlockDef<Pnt>>,
         }
+
 
         impl PipelineStep {
             pub fn new(entry: MessageKind, exit: MessageKind) -> Self {
@@ -209,12 +217,15 @@ pub mod config {
 
         pub type PatternBlock = ValuePattern<PayloadPattern>;
 
+        pub type PipelineStopCtx = PipelineStopDef<PointCtx>;
+        pub type PipelineStop = PipelineStopDef<Point>;
+
         #[derive(Debug, Clone, Serialize, Deserialize )]
-        pub enum PipelineStop {
+        pub enum PipelineStopDef<Pnt> {
             Internal,
-            Call(Call),
+            Call(CallDef<Pnt>),
             Respond,
-            Point(Point),
+            Point(Pnt),
         }
 
         #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -1,6 +1,7 @@
-use crate::version::v0_0_1::payload::payload::{Payload, PayloadPattern};
+use crate::version::v0_0_1::payload::payload::{Payload, PayloadPattern, PayloadPatternDef};
 use crate::version::v0_0_1::util::ValuePattern;
 use serde::{Serialize,Deserialize};
+use crate::version::v0_0_1::id::id::{Point, PointCtx};
 
 pub mod selector {
     use std::convert::TryInto;
@@ -15,15 +16,9 @@ pub mod selector {
     use crate::error::MsgErr;
 
     use crate::version::v0_0_1::entity::entity::request::{Action, Rc, RcCommandType, RequestCore};
-    use crate::version::v0_0_1::id::id::{
-        GenericKind, GenericKindBase, Point, PointSeg, RouteSeg, Specific, Tks, Version,
-    };
+    use crate::version::v0_0_1::id::id::{GenericKind, GenericKindBase, Point, PointCtx, PointSeg, RouteSeg, Specific, Tks, Version};
     use crate::version::v0_0_1::parse::{camel_case, camel_case_to_string_matcher, consume_hierarchy, file_chars, path, path_regex, point, point_segment_selector, point_selector, Res};
-    use crate::version::v0_0_1::payload::payload::{
-        Call, CallKind, CallWithConfig, HttpCall, HttpMethod, HttpMethodType, ListPattern,
-        MapPattern, MsgCall, Payload, PayloadFormat, PayloadPattern, PayloadType,
-        PayloadTypePattern, Primitive, PrimitiveType, NumRange,
-    };
+    use crate::version::v0_0_1::payload::payload::{Call, CallKind, CallWithConfig, HttpCall, HttpMethod, HttpMethodType, ListPattern, MapPattern, MsgCall, Payload, PayloadFormat, PayloadPattern, PayloadType, PayloadTypePatternDef, Primitive, PrimitiveType, NumRange, PayloadPatternDef, CallWithConfigDef};
     use crate::version::v0_0_1::selector::selector::specific::{
         ProductSelector, VariantSelector, VendorSelector,
     };
@@ -538,15 +533,15 @@ pub mod selector {
         pub type VersionPattern = Pattern<VersionReq>;
     }
 
-    pub struct LabeledPrimitiveTypeDef {
+    pub struct LabeledPrimitiveTypeDef<Pnt> {
         pub label: String,
-        pub def: PayloadTypeDef,
+        pub def: PayloadTypeDef<Pnt>,
     }
 
-    pub struct PayloadTypeDef {
+    pub struct PayloadTypeDef<Pnt> {
         pub primitive: PayloadType,
         pub format: Option<PayloadFormat>,
-        pub verifier: Option<CallWithConfig>,
+        pub verifier: Option<CallWithConfigDef<Pnt>>,
     }
 
     #[derive(Debug, Clone, strum_macros::Display, strum_macros::EnumString, Eq, PartialEq)]
@@ -883,10 +878,13 @@ pub mod selector {
 
      */
 
+    pub type MapEntryPatternCtx = MapEntryPatternDef<PointCtx>;
+    pub type MapEntryPattern = MapEntryPatternDef<Point>;
+
     #[derive(Clone)]
-    pub struct MapEntryPattern {
+    pub struct MapEntryPatternDef<Pnt> {
         pub key: String,
-        pub payload: ValuePattern<PayloadPattern>,
+        pub payload: ValuePattern<PayloadPatternDef<Pnt>>,
     }
 
     /*
@@ -1182,10 +1180,13 @@ pub mod selector {
     }
 }
 
+pub type PayloadBlock = PayloadBlockDef<Point>;
+pub type PayloadBlockCtx = PayloadBlockDef<PointCtx>;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum PayloadBlock {
-    RequestPattern(PatternBlock),
-    ResponsePattern(PatternBlock),
+pub enum PayloadBlockDef<Pnt> {
+    RequestPattern(PatternBlockDef<Pnt>),
+    ResponsePattern(PatternBlockDef<Pnt>),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1198,4 +1199,6 @@ pub struct CreateBlock {
     pub payload: Payload,
 }
 
-pub type PatternBlock = ValuePattern<PayloadPattern>;
+pub type PatternBlock = PatternBlockDef<Point>;
+pub type PatternBlockCtx = PatternBlockDef<PointCtx>;
+pub type PatternBlockDef<Pnt> = ValuePattern<PayloadPatternDef<Pnt>>;

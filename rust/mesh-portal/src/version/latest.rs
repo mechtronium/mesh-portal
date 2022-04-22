@@ -141,7 +141,7 @@ pub mod payload {
     pub type Errors = payload::payload::Errors;
     pub type ListPattern = payload::payload::ListPattern;
     pub type Range = payload::payload::NumRange;
-    pub type PayloadTypePattern = payload::payload::PayloadTypePattern;
+    pub type PayloadTypePattern = payload::payload::PayloadTypePatternDef;
     pub type PayloadPattern = payload::payload::PayloadPattern;
     pub type CallWithConfig = payload::payload::CallWithConfig;
     pub type Call = payload::payload::Call;

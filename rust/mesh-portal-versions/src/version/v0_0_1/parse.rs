@@ -8,31 +8,40 @@ use std::str::FromStr;
 use nom::bytes::complete::{escaped, is_a, is_not};
 use nom::bytes::complete::{tag, take_till, take_until, take_until1, take_while};
 use nom::character::complete::{
-    alpha0,  alphanumeric0, alphanumeric1, anychar, char, digit0, line_ending,
-    multispace0, multispace1, newline, one_of, satisfy, space0, space1,
+    alpha0, alphanumeric0, alphanumeric1, anychar, char, digit0, line_ending, multispace0,
+    multispace1, newline, one_of, satisfy, space0, space1,
 };
-use nom::combinator::{
-     cut, eof, fail, not,  peek, recognize, success, value, verify,
+use nom::combinator::{cut, eof, fail, not, peek, recognize, success, value, verify};
+
+use crate::error::{MsgErr, ParseErrs};
+use crate::version::v0_0_1::command::command::common::{PropertyMod, SetProperties, StateSrc};
+use crate::version::v0_0_1::entity::entity::request::create::{
+    Create, CreateOp, KindTemplate, PointSegFactory, PointTemplate, PointTemplateSeg, Require,
+    Strategy, Template,
 };
-
-
+use crate::version::v0_0_1::entity::entity::request::get::{Get, GetOp};
+use crate::version::v0_0_1::entity::entity::request::select::{
+    Select, SelectIntoPayload, SelectKind,
+};
+use crate::version::v0_0_1::entity::entity::request::set::Set;
+use crate::version::v0_0_1::id::id::{
+    Point, PointCtx, PointSegCtx, PointSegDelim, RouteSeg, Version,
+};
+use crate::version::v0_0_1::security::{
+    AccessGrantKind, AccessGrantKindDef, ChildPerms, ParticlePerms, Permissions, PermissionsMask,
+    PermissionsMaskKind, Privilege,
+};
+use crate::version::v0_0_1::selector::selector::{
+    MapEntryPatternCtx, PointKindHierarchy, PointKindSeg,
+};
+use crate::version::v0_0_1::util::{MethodPattern, StringMatcher, ValuePattern};
+use crate::version::v0_0_1::{create_span, OwnedSpan, Span};
 use nom::bytes::complete::take;
 use nom::character::is_space;
 use nom_supreme::final_parser::ExtractContext;
 use regex::internal::Input;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
-use crate::error::{MsgErr, ParseErrs};
-use crate::version::v0_0_1::command::command::common::{PropertyMod, SetProperties, StateSrc};
-use crate::version::v0_0_1::entity::entity::request::create::{Create, CreateOp, KindTemplate, PointSegFactory, PointTemplate, PointTemplateSeg, Require, Strategy, Template};
-use crate::version::v0_0_1::entity::entity::request::get::{Get, GetOp};
-use crate::version::v0_0_1::entity::entity::request::select::{Select, SelectIntoPayload, SelectKind};
-use crate::version::v0_0_1::entity::entity::request::set::Set;
-use crate::version::v0_0_1::id::id::{Point, PointCtx, PointSegCtx, PointSegDelim, RouteSeg, Version};
-use crate::version::v0_0_1::security::{AccessGrantKind, AccessGrantKindDef, ChildPerms, ParticlePerms, Permissions, PermissionsMask, PermissionsMaskKind, Privilege};
-use crate::version::v0_0_1::{create_span, OwnedSpan, Span};
-use crate::version::v0_0_1::selector::selector::{PointKindHierarchy, PointKindSeg};
-use crate::version::v0_0_1::util::{MethodPattern, StringMatcher, ValuePattern};
 
 /*
 pub struct Parser {}
@@ -187,8 +196,6 @@ pub fn space_point_segment(input: Span) -> Res<Span, PointSeg> {
     .map(|(next, (space, x))| (next, PointSeg::Space(space.to_string())))
 }
 
-
-
 pub fn base_point_segment(input: Span) -> Res<Span, PointSeg> {
     preceded(
         peek(lowercase1),
@@ -196,7 +203,6 @@ pub fn base_point_segment(input: Span) -> Res<Span, PointSeg> {
     )(input)
     .map(|(next, (base, _))| (next, PointSeg::Base(base.to_string())))
 }
-
 
 pub fn version_point_segment(input: Span) -> Res<Span, PointSeg> {
     preceded(
@@ -206,13 +212,10 @@ pub fn version_point_segment(input: Span) -> Res<Span, PointSeg> {
     .map(|(next, (version, _))| (next, PointSeg::Version(version)))
 }
 
-
-
 pub fn dir_pop(input: Span) -> Res<Span, PointSegCtx> {
     context("point:dir_pop", tuple((tag(".."), opt(tag("/")))))(input)
         .map(|(next, _)| (next, PointSegCtx::Pop))
 }
-
 
 pub fn filesystem_point_segment(input: Span) -> Res<Span, PointSeg> {
     tuple((
@@ -245,30 +248,26 @@ pub fn file_point_segment(input: Span) -> Res<Span, PointSeg> {
         .map(|(next, filename)| (next, PointSeg::File(filename.to_string())))
 }
 
-
-
 pub fn point(input: Span) -> Res<Span, Point> {
     let (next, point) = point_ctx(input.clone())?;
 
-        match point.try_into() {
-            Ok(point) => {
-                Ok((next,point))
-            }
-            Err(err) => {
-                let span = input.slice(0..(input.len()-next.len()));
-                let err = ErrorTree::from_error_kind(span.clone(), ErrorKind::Tag );
-                let err = ErrorTree::add_context(span.clone(), "point", err);
-                Err(nom::Err::Error(err))
-            }
+    match point.try_into() {
+        Ok(point) => Ok((next, point)),
+        Err(err) => {
+            let span = input.slice(0..(input.len() - next.len()));
+            let err = ErrorTree::from_error_kind(span.clone(), ErrorKind::Tag);
+            let err = ErrorTree::add_context(span.clone(), "point", err);
+            Err(nom::Err::Error(err))
         }
-
+    }
 }
 
 pub fn point_ctx(input: Span) -> Res<Span, PointCtx> {
     context(
         "point",
         tuple((alt((root_point, point_non_root)), peek(eop))),
-    )(input.clone()).map(|(next,(point,_))|{(next,point)})
+    )(input.clone())
+    .map(|(next, (point, _))| (next, point))
 }
 
 pub fn root_point(input: Span) -> Res<Span, PointCtx> {
@@ -283,7 +282,6 @@ pub fn root_point(input: Span) -> Res<Span, PointCtx> {
         },
     )
 }
-
 
 pub fn point_non_root(input: Span) -> Res<Span, PointCtx> {
     context(
@@ -334,10 +332,6 @@ pub fn point_non_root(input: Span) -> Res<Span, PointCtx> {
     )
 }
 
-
-
-
-
 pub fn consume_point(input: &str) -> Result<Point, MsgErr> {
     let span = create_span(input);
     let point = result(context("consume", all_consuming(point))(span))?;
@@ -358,7 +352,6 @@ pub fn point_old(input: Span) -> Res<Span, Point> {
 }
 
  */
-
 
 /*pub fn capture_point(input: Span) -> Res<Span, CaptureAddress> {
     context(
@@ -817,8 +810,6 @@ pub fn path_regex(input: Span) -> Res<Span, Span> {
         }
     }
 }
-
-
 
 pub fn regex<T>(i: T) -> Res<T, T>
 where
@@ -1365,7 +1356,7 @@ pub fn publish(input: Span) -> Res<Span, CreateOp> {
 pub enum Ctx {
     WorkingPoint,
     WorkingPointPop,
-    PointFromRoot
+    PointFromRoot,
 }
 
 impl ToString for Ctx {
@@ -1373,27 +1364,23 @@ impl ToString for Ctx {
         match self {
             Ctx::WorkingPoint => ".".to_string(),
             Ctx::WorkingPointPop => "..".to_string(),
-            Ctx::PointFromRoot => "...".to_string()
+            Ctx::PointFromRoot => "...".to_string(),
         }
     }
 }
 
-pub struct VarResolver<'a>(Box<dyn Resolver+'a>);
-pub struct CtxResolver<'a>(Box<dyn Resolver+'a>);
+pub struct VarResolver<'a>(Box<dyn Resolver + 'a>);
+pub struct CtxResolver<'a>(Box<dyn Resolver + 'a>);
 
-impl <'a> Deref for VarResolver<'a> {
-    type Target = Box<dyn Resolver+'a>;
+impl<'a> Deref for VarResolver<'a> {
+    type Target = Box<dyn Resolver + 'a>;
 
     fn deref(&self) -> &Self::Target {
         &self.0
     }
 }
 
-
-
 pub trait Resolver {
-
-
     fn val(&self, id: &str) -> Result<String, MsgErr> {
         Err(format!("variable '{}' not found", id).into())
     }
@@ -1402,7 +1389,10 @@ pub trait Resolver {
         Err(format!("context operation '{}' not available here", ctx.to_string()).into())
     }
 
-    fn wrap<'a>(self) -> VarResolver<'a> where Self:Sized+'a{
+    fn wrap<'a>(self) -> VarResolver<'a>
+    where
+        Self: Sized + 'a,
+    {
         VarResolver(Box::new(self))
     }
 }
@@ -1424,13 +1414,11 @@ impl Resolver for NoResolver {
             Ctx::WorkingPoint => {
                 Err("context operators '.' (reference to WorkingPoint) not expected here".into())
             }
-            Ctx::WorkingPointPop => Err(
-                "context operator '..' (reference to WorkingPointPop) not expected here"
-                    .into(),
-            ),
+            Ctx::WorkingPointPop => {
+                Err("context operator '..' (reference to WorkingPointPop) not expected here".into())
+            }
             Ctx::PointFromRoot => {
-                Err("context operator '...' (reference to PointFromRoot) not expected here"
-                    .into())
+                Err("context operator '...' (reference to PointFromRoot) not expected here".into())
             }
         }
     }
@@ -1486,12 +1474,11 @@ where
 }
 
 pub trait CtxSubst<R>
-    where
-        Self: Sized,
+where
+    Self: Sized,
 {
     fn resolve_ctx(self, resolver: &VarResolver) -> Result<R, MsgErr>;
 }
-
 
 /*
 pub trait BruteResolver<Resolved>
@@ -1505,8 +1492,6 @@ where
 }
 
  */
-
-
 
 pub fn diagnose<I: Clone, O, E: ParseError<I>, F>(
     tag: &'static str,
@@ -1532,54 +1517,54 @@ where
     }
 }
 
-
-pub trait SubstParser<T:Sized>{
-
+pub trait SubstParser<T: Sized> {
     fn parse_string(&self, string: String) -> Result<T, MsgErr> {
         let span = create_span(string.as_str());
         let output = result(self.parse_span(span))?;
         Ok(output)
     }
 
-    fn parse_span<'a>(&self, input: Span<'a>) -> Res<Span<'a>,T>;
+    fn parse_span<'a>(&self, input: Span<'a>) -> Res<Span<'a>, T>;
 }
 
-pub fn ctx_seg<I: Clone, E: ParseError<I>, F>(mut f: F) -> impl FnMut(I) -> IResult<I, PointSegCtx, E>
-    where
-        I: ToString
+pub fn ctx_seg<I: Clone, E: ParseError<I>, F>(
+    mut f: F,
+) -> impl FnMut(I) -> IResult<I, PointSegCtx, E>
+where
+    I: ToString
         + InputLength
         + InputTake
         + Compare<&'static str>
         + InputIter
         + Clone
         + InputTakeAtPosition,
-        <I as InputTakeAtPosition>::Item: AsChar+Clone,
-        F: nom::Parser<I, PointSeg, E>+Clone,
-        E: nom::error::ContextError<I>,
+    <I as InputTakeAtPosition>::Item: AsChar + Clone,
+    F: nom::Parser<I, PointSeg, E> + Clone,
+    E: nom::error::ContextError<I>,
 {
-    move |input: I| alt((pop(f.clone()),working(f.clone())))(input)
+    move |input: I| alt((pop(f.clone()), working(f.clone())))(input)
 }
 
-pub fn working<I: Clone, E: ParseError<I>, F>(mut f: F) -> impl FnMut(I) -> IResult<I, PointSegCtx, E>
-    where
-        I: ToString
+pub fn working<I: Clone, E: ParseError<I>, F>(
+    mut f: F,
+) -> impl FnMut(I) -> IResult<I, PointSegCtx, E>
+where
+    I: ToString
         + InputLength
         + InputTake
         + Compare<&'static str>
         + InputIter
         + Clone
         + InputTakeAtPosition,
-        <I as InputTakeAtPosition>::Item: AsChar+Clone,
-        F: nom::Parser<I, PointSeg, E>,
-        E: nom::error::ContextError<I>,
+    <I as InputTakeAtPosition>::Item: AsChar + Clone,
+    F: nom::Parser<I, PointSeg, E>,
+    E: nom::error::ContextError<I>,
 {
-    move |input: I| match pair(tag::<&str, I, E>("."),eos)(input.clone()) {
+    move |input: I| match pair(tag::<&str, I, E>("."), eos)(input.clone()) {
         Ok((next, v)) => Ok((next, PointSegCtx::Pop)),
-        Err(err) => match f.parse(input.clone()){
-            Ok((next,seg)) => {Ok((next,seg.into()))}
-            Err(err) => {
-                Err(err)
-            }
+        Err(err) => match f.parse(input.clone()) {
+            Ok((next, seg)) => Ok((next, seg.into())),
+            Err(err) => Err(err),
         },
     }
 }
@@ -1593,22 +1578,22 @@ where
         + InputIter
         + Clone
         + InputTakeAtPosition,
-    <I as InputTakeAtPosition>::Item: AsChar+Clone,
+    <I as InputTakeAtPosition>::Item: AsChar + Clone,
     F: nom::Parser<I, PointSeg, E>,
     E: nom::error::ContextError<I>,
 {
-    move |input: I| match pair(tag::<&str, I, E>(".."),eos)(input.clone()) {
+    move |input: I| match pair(tag::<&str, I, E>(".."), eos)(input.clone()) {
         Ok((next, v)) => Ok((next, PointSegCtx::Pop)),
-        Err(err) => match f.parse(input.clone()){
-            Ok((next,seg)) => {Ok((next,seg.into()))}
-            Err(err) => {
-                Err(err)
-            }
+        Err(err) => match f.parse(input.clone()) {
+            Ok((next, seg)) => Ok((next, seg.into())),
+            Err(err) => Err(err),
         },
     }
 }
 
-pub fn mesh_seg<I: Clone, E: ParseError<I>, F>(mut f: F) -> impl FnMut(I) -> IResult<I, PointSegCtx, E>
+pub fn mesh_seg<I: Clone, E: ParseError<I>, F>(
+    mut f: F,
+) -> impl FnMut(I) -> IResult<I, PointSegCtx, E>
 where
     I: ToString
         + InputLength
@@ -1625,7 +1610,6 @@ where
         tuple((seg_delim, pop(f.clone())))(input).map(|(next, (delim, seg))| (next, seg))
     }
 }
-
 
 // end of segment
 pub fn seg_delim<I, E>(input: I) -> IResult<I, PointSegDelim, E>
@@ -1729,11 +1713,9 @@ where
 
  */
 
-pub fn variable_name(input: Span) -> Res<Span,Span>
-{
+pub fn variable_name(input: Span) -> Res<Span, Span> {
     recognize(pair(lowercase1, opt(skewer_dot)))(input).map(|(next, name)| (next, name))
 }
-
 
 pub fn ispan<'a, I: Clone, O, E: ParseError<I>, F>(
     mut f: F,
@@ -1796,10 +1778,7 @@ pub fn access_grant_kind_priv(input: Span) -> Res<Span, AccessGrantKind> {
 pub fn access_grant_kind_perm(input: Span) -> Res<Span, AccessGrantKind> {
     tuple((
         tag("perm"),
-        context(
-            "access_grant:perm",
-            tuple((space1, permissions_mask)),
-        ),
+        context("access_grant:perm", tuple((space1, permissions_mask))),
     ))(input)
     .map(|(next, (_, (_, perms)))| (next, AccessGrantKindDef::PermissionsMask(perms)))
 }
@@ -2676,10 +2655,17 @@ pub fn lex_root_scope(span: Span) -> Result<LexRootScope<Span>, MsgErr> {
 
 pub mod model {
     use crate::error::{MsgErr, ParseErrs};
-    use crate::version::v0_0_1::config::config::bind::{BindConfig, MessageKind, Pipeline, PipelineStep, PipelineStop, Selector};
+    use crate::version::v0_0_1::config::config::bind::{
+        BindConfig, MessageKind, PipelineStepCtx, PipelineStepDef, PipelineStopCtx,
+        PipelineStopDef, Selector,
+    };
     use crate::version::v0_0_1::entity::entity::EntityKind;
-    use crate::version::v0_0_1::id::id::Version;
+    use crate::version::v0_0_1::id::id::{Point, PointCtx, Version};
     use crate::version::v0_0_1::parse::error::result;
+    use crate::version::v0_0_1::parse::{
+        camel_case, lex_child_scopes, pipeline, value_pattern, var_pipeline, PipelineStepCtxParser,
+        PipelineStopCtxParser, SubstParser, VarResolver, VarSubst,
+    };
     use crate::version::v0_0_1::util::{MethodPattern, StringMatcher, ValuePattern};
     use crate::version::v0_0_1::{create_span, OwnedSpan, Span};
     use bincode::Options;
@@ -2694,7 +2680,6 @@ pub mod model {
     use std::marker::PhantomData;
     use std::ops::{Deref, DerefMut};
     use std::str::FromStr;
-    use crate::version::v0_0_1::parse::{camel_case, lex_child_scopes, pipeline, PipelineStepParser, PipelineStopParser, SubstParser, value_pattern, VarResolver, VarSubst};
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct ScopeSelectorAndFiltersDef<S, I> {
@@ -2715,18 +2700,18 @@ pub mod model {
 
     #[derive(Clone)]
     pub struct Spanned<I, E>
-        where
-            E: Clone,
-            I: ToString,
+    where
+        E: Clone,
+        I: ToString,
     {
         pub span: I,
         pub element: E,
     }
 
     impl<I, E> Spanned<I, E>
-        where
-            E: Clone,
-            I: ToString,
+    where
+        E: Clone,
+        I: ToString,
     {
         pub fn new(element: E, span: I) -> Spanned<I, E> {
             Self { span, element }
@@ -2734,9 +2719,9 @@ pub mod model {
     }
 
     impl<I, E> Spanned<I, E>
-        where
-            E: Clone + ToString,
-            I: ToString,
+    where
+        E: Clone + ToString,
+        I: ToString,
     {
         pub fn len(&self) -> usize {
             self.element.to_string().len()
@@ -2744,9 +2729,9 @@ pub mod model {
     }
 
     impl<I, E> ToString for Spanned<I, E>
-        where
-            E: Clone + ToString,
-            I: ToString,
+    where
+        E: Clone + ToString,
+        I: ToString,
     {
         fn to_string(&self) -> String {
             self.element.to_string()
@@ -2754,9 +2739,9 @@ pub mod model {
     }
 
     impl<I, E> Deref for Spanned<I, E>
-        where
-            E: Clone,
-            I: ToString,
+    where
+        E: Clone,
+        I: ToString,
     {
         type Target = E;
 
@@ -2766,9 +2751,9 @@ pub mod model {
     }
 
     impl<I, E> DerefMut for Spanned<I, E>
-        where
-            E: Clone,
-            I: ToString,
+    where
+        E: Clone,
+        I: ToString,
     {
         fn deref_mut(&mut self) -> &mut Self::Target {
             &mut self.element
@@ -2901,25 +2886,30 @@ pub mod model {
     pub type LexBlock<I> = Block<I, ()>;
     pub type LexRootScope<I> = Scope<RootScopeSelector<I, Spanned<I, Version>>, Block<I, ()>, I>;
     pub type LexScope<I> =
-    Scope<ScopeSelectorAndFiltersDef<LexScopeSelector<I>, I>, Block<I, ()>, I>;
+        Scope<ScopeSelectorAndFiltersDef<LexScopeSelector<I>, I>, Block<I, ()>, I>;
     pub type LexParentScope<'a> =
-    Scope<LexScopeSelectorAndFilters<Span<'a>>, Vec<LexScope<Span<'a>>>, Span<'a>>;
-    pub type VarPipelineSegment<I> = PipelineSegmentDef<Subst<PipelineStep, I,PipelineStepParser>, Option<Subst<PipelineStop, I,PipelineStopParser>>>;
-    pub type VarPipeline<I> = PipelineDef<VarPipelineSegment<I>>;
-    pub type LexPipelineScope<I> = PipelineScopeDef<I, VarPipeline<I>>;
-    pub type PipelineSegment = PipelineSegmentDef<PipelineStep, PipelineStop>;
-    pub type PipelineScope = PipelineScopeDef<String, Vec<MessageScope>>;
-    pub type MessageScope = ScopeDef<ValuePatternScopeSelectorAndFilters, Vec<ActionScope>>;
-    pub type ActionScope = ScopeDef<ValuePatternScopeSelectorAndFilters, Pipeline>;
+        Scope<LexScopeSelectorAndFilters<Span<'a>>, Vec<LexScope<Span<'a>>>, Span<'a>>;
+
+    pub type VarPipelineSegment = VarPipelineSegmentDef<
+        Subst<PipelineStepCtx, OwnedSpan, PipelineStepCtxParser>,
+        Option<Subst<PipelineStopCtx, OwnedSpan, PipelineStopCtxParser>>,
+    >;
+    pub type VarPipeline = PipelineDef<VarPipelineSegment>;
+    pub type LexPipelineScope<I> = PipelineScopeDef<I, VarPipeline>;
+    pub type PipelineSegmentCtx = PipelineSegmentDef<PointCtx>;
+    pub type PipelineSegment = PipelineSegmentDef<Point>;
+    pub type RequestScope = PipelineScopeDef<String, Vec<MessageScope>>;
+    pub type MessageScope = ScopeDef<ValuePatternScopeSelectorAndFilters, Vec<MethodScope>>;
+    pub type MethodScope = ScopeDef<ValuePatternScopeSelectorAndFilters, VarPipeline>;
     pub type ScopeSelector = ScopeSelectorDef<String, String>;
     pub type ValuePatternScopeSelector = ScopeSelectorDef<ValuePattern<String>, String>;
     pub type ScopeSelectorAndFilters = ScopeSelectorAndFiltersDef<ScopeSelector, String>;
     pub type ValuePatternScopeSelectorAndFilters =
-    ScopeSelectorAndFiltersDef<ValuePatternScopeSelector, String>;
+        ScopeSelectorAndFiltersDef<ValuePatternScopeSelector, String>;
     pub type LexScopeSelectorAndFilters<I> = ScopeSelectorAndFiltersDef<LexScopeSelector<I>, I>;
     //    pub type Pipeline = Vec<PipelineSegment>;
 
-    impl<'a> TryFrom<LexParentScope<'a>> for PipelineScope {
+    impl<'a> TryFrom<LexParentScope<'a>> for RequestScope {
         type Error = MsgErr;
 
         fn try_from(scope: LexParentScope) -> Result<Self, Self::Error> {
@@ -2929,11 +2919,11 @@ pub mod model {
                 match lex_child_scopes(message_scope) {
                     Ok(message_scope) => {
                         let mut block = vec![];
-                        for action_scope in message_scope.block {
-                            match action_scope.selector.to_value_pattern_scope_selector() {
+                        for method_scope in message_scope.block {
+                            match method_scope.selector.to_value_pattern_scope_selector() {
                                 Ok(selector) => {
-                                    match result(pipeline(action_scope.block.content)) {
-                                        Ok(pipeline) => block.push(ActionScope {
+                                    match result(var_pipeline(method_scope.block.content)) {
+                                        Ok(pipeline) => block.push(MethodScope {
                                             selector,
                                             block: pipeline,
                                         }),
@@ -2960,7 +2950,7 @@ pub mod model {
                 }
             }
             if errs.is_empty() {
-                Ok(PipelineScope {
+                Ok(RequestScope {
                     selector: scope.selector.to_scope_selector(),
                     block: message_scopes,
                 })
@@ -2990,15 +2980,31 @@ pub mod model {
         }
     }
 
-    #[derive(Debug, Clone, Serialize, Deserialize)]
-    pub struct PipelineSegmentDef<Step, Stop> {
+    pub struct VarPipelineSegmentDef<Step, Stop> {
         pub step: Step,
         pub stop: Stop,
     }
 
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub struct PipelineSegmentDef<Pnt> {
+        pub step: PipelineStepDef<Pnt>,
+        pub stop: PipelineStopDef<Pnt>,
+    }
+
+    pub type Pipeline = PipelineDef<PipelineSegment>;
+    pub type PipelineCtx = PipelineDef<PipelineSegmentCtx>;
+
     #[derive(Clone)]
     pub struct PipelineDef<S> {
         pub segments: Vec<S>,
+    }
+
+    impl <S> PipelineDef<S> {
+        pub fn new() -> Self {
+            Self {
+                segments: vec![]
+            }
+        }
     }
 
     impl<S> Deref for PipelineDef<S> {
@@ -3015,9 +3021,9 @@ pub mod model {
         }
     }
 
-    impl<I:ToString+Clone> VarSubst<Pipeline> for VarPipeline<I> {
-        fn resolve_vars(self, resolver: &VarResolver) -> Result<Pipeline, MsgErr> {
-            let mut pipeline = Pipeline::new();
+    impl VarSubst<PipelineCtx> for VarPipeline {
+        fn resolve_vars(self, resolver: &VarResolver) -> Result<PipelineCtx, MsgErr> {
+            let mut pipeline = PipelineCtx::new();
             let mut errs = vec![];
             for segment in self.segments {
                 match segment.resolve_vars(resolver) {
@@ -3038,8 +3044,8 @@ pub mod model {
         }
     }
 
-    impl<I:ToString+Clone> VarSubst<PipelineSegment> for VarPipelineSegment<I> {
-        fn resolve_vars(self, resolver: &VarResolver) -> Result<PipelineSegment, MsgErr> {
+    impl VarSubst<PipelineSegmentCtx> for VarPipelineSegment {
+        fn resolve_vars(self, resolver: &VarResolver) -> Result<PipelineSegmentCtx, MsgErr> {
             let mut errs = vec![];
 
             if self.stop.is_none() {
@@ -3051,7 +3057,7 @@ pub mod model {
             }
 
             let step = match self.step.resolve_vars(resolver) {
-                Ok(step) => { Some(step) }
+                Ok(step) => Some(step),
                 Err(err) => {
                     errs.push(err);
                     None
@@ -3066,15 +3072,13 @@ pub mod model {
                         None
                     }
                 },
-                None => {
-                   None
-                }
+                None => None,
             };
 
             if step.is_some() && stop.is_some() && errs.is_empty() {
                 let step = step.expect("step");
                 let stop = stop.expect("stop");
-                Ok(PipelineSegment { step, stop })
+                Ok(PipelineSegmentCtx { step, stop })
             } else {
                 Err(ParseErrs::fold(errs).into())
             }
@@ -3083,7 +3087,7 @@ pub mod model {
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub enum BindScope {
-        PipelineScope(PipelineScope),
+        RequestScope(RequestScope),
     }
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -3129,8 +3133,8 @@ pub mod model {
 
     #[derive(Clone)]
     pub struct Scope<S, B, P>
-        where
-            S: Clone,
+    where
+        S: Clone,
     {
         pub selector: S,
         pub pipeline_step: Option<P>,
@@ -3138,8 +3142,8 @@ pub mod model {
     }
 
     impl<S, B, P> Scope<S, B, P>
-        where
-            S: Clone,
+    where
+        S: Clone,
     {
         pub fn new(selector: S, block: B) -> Self {
             Self {
@@ -3159,8 +3163,8 @@ pub mod model {
     }
 
     impl<S, FromBlock, P> Scope<S, FromBlock, P>
-        where
-            S: Clone,
+    where
+        S: Clone,
     {
         pub fn upgrade<ToBlock>(self, block: ToBlock) -> Scope<S, ToBlock, P> {
             Scope {
@@ -3216,7 +3220,7 @@ pub mod model {
     }
 
     #[derive(
-    Debug, Copy, Clone, strum_macros::Display, strum_macros::EnumString, Eq, PartialEq,
+        Debug, Copy, Clone, strum_macros::Display, strum_macros::EnumString, Eq, PartialEq,
     )]
     pub enum DelimitedBlockKind {
         SingleQuotes,
@@ -3254,7 +3258,7 @@ pub mod model {
     }
 
     #[derive(
-    Debug, Copy, Clone, strum_macros::Display, strum_macros::EnumString, Eq, PartialEq,
+        Debug, Copy, Clone, strum_macros::Display, strum_macros::EnumString, Eq, PartialEq,
     )]
     pub enum NestedBlockKind {
         Curly,
@@ -3394,76 +3398,108 @@ pub mod model {
     #[derive(Clone)]
     pub enum Chunk<I> {
         Var(I),
-        Text(I)
+        Text(I),
     }
 
-    impl<I:ToString> Chunk<I> {
+    impl<'a> Into<Chunk<OwnedSpan>> for Chunk<Span<'a>> {
+        fn into(self) -> Chunk<OwnedSpan> {
+            match self {
+                Chunk::Var(var) => Chunk::Var(OwnedSpan::from(var)),
+                Chunk::Text(text) => Chunk::Text(OwnedSpan::from(text)),
+            }
+        }
+    }
+
+    impl<I: ToString> Chunk<I> {
         pub fn len(&self) -> usize {
             match self {
                 Chunk::Var(var) => {
-
                     // account for ${}
                     var.to_string().len() + 3
                 }
-                Chunk::Text(text) => {
-                    text.to_string().len()
-                }
+                Chunk::Text(text) => text.to_string().len(),
             }
         }
     }
 
     #[derive(Clone)]
-    pub struct Subst<R, I,P> where P: SubstParser<R>+Clone{
+    pub struct Subst<R, I, P>
+    where
+        P: SubstParser<R> + Clone,
+    {
         pub chunks: Vec<Chunk<I>>,
         pub parser: P,
         pub span: OwnedSpan,
-        pub phantom: PhantomData<R>
+        pub phantom: PhantomData<R>,
     }
 
-    impl<R, I:ToString,P> ToString for Subst<R, I,P> where P: SubstParser<R>+Clone{
+    impl<'a, R, P> Into<Subst<R, OwnedSpan, P>> for Subst<R, Span<'a>, P>
+    where
+        P: SubstParser<R> + Clone,
+    {
+        fn into(self) -> Subst<R, OwnedSpan, P> {
+            Subst {
+                chunks: self.chunks.into_iter().map(|c| c.into()).collect(),
+                parser: self.parser,
+                span: self.span,
+                phantom: self.phantom,
+            }
+        }
+    }
+
+    impl<R, I: ToString, P> ToString for Subst<R, I, P>
+    where
+        P: SubstParser<R> + Clone,
+    {
         fn to_string(&self) -> String {
             let mut rtn = String::new();
             for chunk in &self.chunks {
                 match chunk {
                     Chunk::Var(var) => {
                         rtn.push_str(format!("${{{}}}", var.to_string()).as_str());
-                    },
+                    }
                     Chunk::Text(text) => {
                         rtn.push_str(text.to_string().as_str());
-                    },
+                    }
                 }
             }
             rtn
         }
     }
 
-    impl<R, I: Clone,P> Subst<R,I,P> where P: SubstParser<R>+Clone{
+    impl<R, I: Clone, P> Subst<R, I, P>
+    where
+        P: SubstParser<R> + Clone,
+    {
         pub fn span(&self) -> OwnedSpan {
             self.span.clone()
         }
     }
 
-
-    impl<R, I:ToString,P> Subst<R,I,P> where P: SubstParser<R>+Clone{
+    impl<R, I: ToString, P> Subst<R, I, P>
+    where
+        P: SubstParser<R> + Clone,
+    {
         fn to_resolved_segs(&self, resolver: &VarResolver) -> Result<String, MsgErr> {
             let mut rtn = String::new();
             for chunk in &self.chunks {
                 match chunk {
                     Chunk::Var(var) => {
                         rtn.push_str(resolver.val(var.to_string().as_str())?.as_str());
-
-                    },
+                    }
                     Chunk::Text(text) => {
                         rtn.push_str(text.to_string().as_str());
-                    },
+                    }
                 }
             }
             Ok(rtn)
         }
     }
 
-
-    impl<R, I:ToString,P> VarSubst<R> for Subst<R,I,P> where P: SubstParser<R>+Clone{
+    impl<R, I: ToString, P> VarSubst<R> for Subst<R, I, P>
+    where
+        P: SubstParser<R> + Clone,
+    {
         fn resolve_vars(self, resolver: &VarResolver) -> Result<R, MsgErr> {
             let string = self.to_resolved_segs(resolver)?;
             self.parser.parse_string(string)
@@ -3473,6 +3509,7 @@ pub mod model {
 
 pub mod error {
     use crate::error::{MsgErr, ParseErrs};
+    use crate::version::v0_0_1::parse::model::NestedBlockKind;
     use crate::version::v0_0_1::parse::nospace1;
     use crate::version::v0_0_1::Span;
     use ariadne::Report;
@@ -3480,7 +3517,6 @@ pub mod error {
     use nom::{Err, Slice};
     use nom_supreme::error::{BaseErrorKind, ErrorTree, StackContext};
     use regex::{Error, Regex};
-    use crate::version::v0_0_1::parse::model::NestedBlockKind;
 
     pub fn result<R>(result: Result<(Span, R), Err<ErrorTree<Span>>>) -> Result<R, MsgErr> {
         match result {
@@ -3527,28 +3563,28 @@ pub mod error {
                 },
 
             "regex" => {
-                let span = result(nospace1(loc.clone()));
-                match span {
-                    Ok(span) => {
-                        match Regex::new(loc.to_string().as_str()) {
-                            Ok(_) => {
-                                builder.with_message("internal parse error: regex error in this expression")
-                            }
-                            Err(err) => {
-                                match err {
-                                    Error::Syntax(syntax) => {
-                                        builder.with_message(format!("Regex Syntax Error: '{}'",syntax)).with_label(Label::new(span.location_offset()..span.location_offset()+span.len()).with_message("regex syntax error"))
+                        let span = result(nospace1(loc.clone()));
+                        match span {
+                            Ok(span) => {
+                                match Regex::new(loc.to_string().as_str()) {
+                                    Ok(_) => {
+                                        builder.with_message("internal parse error: regex error in this expression")
                                     }
-                                    Error::CompiledTooBig(size) => {
-                                        builder.with_message("Regex compiled too big").with_label(Label::new(span.location_offset()..span.location_offset()+span.len()).with_message("regex compiled too big"))
-                                    }
-                                    Error::__Nonexhaustive => {
-                                        builder.with_message("Regex is nonexhaustive").with_label(Label::new(span.location_offset()..span.location_offset()+span.len()).with_message("non-exhaustive regex"))
+                                    Err(err) => {
+                                        match err {
+                                            Error::Syntax(syntax) => {
+                                                builder.with_message(format!("Regex Syntax Error: '{}'",syntax)).with_label(Label::new(span.location_offset()..span.location_offset()+span.len()).with_message("regex syntax error"))
+                                            }
+                                            Error::CompiledTooBig(size) => {
+                                                builder.with_message("Regex compiled too big").with_label(Label::new(span.location_offset()..span.location_offset()+span.len()).with_message("regex compiled too big"))
+                                            }
+                                            Error::__Nonexhaustive => {
+                                                builder.with_message("Regex is nonexhaustive").with_label(Label::new(span.location_offset()..span.location_offset()+span.len()).with_message("non-exhaustive regex"))
+                                            }
+                                        }
                                     }
                                 }
                             }
-                        }
-                    }
                     Err(_) => {
                         builder.with_message("internal parse error: could not identify regex")
                     }
@@ -3587,9 +3623,13 @@ pub mod error {
 
                 "parsed-scope-selector-kazing" => {builder.with_message("Selector needs some style with the '->' operator either right after the Selector i.e.: 'Pipeline ->' or as part of the filter declaration i.e. 'Pipeline(auth)->'").with_label(Label::new(loc.location_offset()..loc.location_offset()).with_message("Missing or Invalid Kazing Operator( -> )"))}
             "variable" => {
-                    builder.with_message("variable name must be alphanumeric lowercase, dashes and dots.  Variables are preceded by the '$' operator and must be sorounded by parenthesis $(env.valid-variable-name)")
+                    builder.with_message("variable name must be alphanumeric lowercase, dashes and dots.  Variables are preceded by the '$' operator and must be sorounded by curly brackets ${env.valid-variable-name}")
                 },
-                "child_perms" => {
+            "variable:close" => {
+                builder.with_message("variable name must be alphanumeric lowercase, dashes and dots.  Variables are preceded by the '$' operator and must be sorounded by curly brackets with no spaces ${env.valid-variable-name}").with_label(Label::new(loc.location_offset()..loc.location_offset()).with_message("Bad Variable Substitution"))
+            },
+
+            "child_perms" => {
                     builder.with_message("expecting child permissions form csd (Create, Select, Delete) uppercase indicates set permission (CSD==full permission, csd==no permission)")
                 },
                 "particle_perms" => {
@@ -3684,695 +3724,689 @@ pub mod error {
     }
 }
 
-    use std::convert::{TryFrom, TryInto};
+use ariadne::{Label, Report, ReportKind};
+use std::convert::{TryFrom, TryInto};
 use std::marker::PhantomData;
 use std::sync::Arc;
-    use ariadne::{Label, Report, ReportKind};
 
-    use nom::branch::alt;
-    use nom::character::complete::{alpha1, digit1};
-    use nom::combinator::{all_consuming, opt};
-    use nom::error::{context, ContextError, ErrorKind, ParseError, VerboseError};
-    use nom::multi::{many0, many1, separated_list0};
-    use nom::sequence::{delimited, pair, preceded, terminated, tuple};
-    use nom::{AsChar, Compare, FindToken, InputIter, InputLength, InputTake, InputTakeAtPosition, Offset, Parser, Slice, UnspecializedInput};
-    use nom::{Err, IResult};
-    use nom_locate::LocatedSpan;
+use nom::branch::alt;
+use nom::character::complete::{alpha1, digit1};
+use nom::combinator::{all_consuming, opt};
+use nom::error::{context, ContextError, ErrorKind, ParseError, VerboseError};
+use nom::multi::{many0, many1, separated_list0};
+use nom::sequence::{delimited, pair, preceded, terminated, tuple};
+use nom::{
+    AsChar, Compare, FindToken, InputIter, InputLength, InputTake, InputTakeAtPosition, Offset,
+    Parser, Slice, UnspecializedInput,
+};
+use nom::{Err, IResult};
+use nom_locate::LocatedSpan;
 
-    use crate::version::v0_0_1::id::id::{
-        GenericKind, GenericKindBase, PointKind, PointSeg, Specific
-    };
-    use crate::version::v0_0_1::selector::selector::specific::{
-        ProductSelector, VariantSelector, VendorSelector,
-    };
-    use crate::version::v0_0_1::selector::selector::{ExactPointSeg, GenericKindSelector, GenericSubKindSelector, Hop, HttpPipelineSelector, KindPattern, LabeledPrimitiveTypeDef, MapEntryPattern, MsgPipelineSelector, Pattern, PayloadTypeDef, PipelineSelector, PointSegSelector, PointSelector, RcPipelineSelector, SpecificSelector, VersionReq};
-    use nom_supreme::error::ErrorTree;
-    use nom_supreme::{parse_from_str, ParserExt};
-use crate::version::v0_0_1::config::config::bind::{BindConfig, MessageKind, Pipeline, PipelineStep, PipelineStop, Selector};
+use crate::version::v0_0_1::config::config::bind::{
+    BindConfig, MessageKind, Pipeline, PipelineStep, PipelineStepCtx, PipelineStop,
+    PipelineStopCtx, Selector,
+};
 use crate::version::v0_0_1::config::config::Config;
-    use crate::version::v0_0_1::entity::entity::request::RcCommandType;
-    use crate::version::v0_0_1::parse::error::result;
-use crate::version::v0_0_1::parse::model::{BindScope, BindScopeKind, Block, BlockKind, Chunk, DelimitedBlockKind, LexBlock, LexParentScope, LexRootScope, LexScope, LexScopeSelector, LexScopeSelectorAndFilters, NestedBlockKind, PipelineScope, PipelineSegment, RootScopeSelector, ScopeFilterDef, ScopeFiltersDef, ScopeSelectorAndFiltersDef, Spanned, Subst, TerminatedBlockKind, TextType, VarPipeline, VarPipelineSegment};
-use crate::version::v0_0_1::payload::payload::{Call, CallKind, CallWithConfig, HttpCall, HttpMethod, HttpMethodType, ListPattern, MapPattern, MsgCall, NumRange, PayloadFormat, PayloadPattern, PayloadType, PayloadTypePattern};
-    use crate::version::v0_0_1::selector::{PatternBlock, PayloadBlock, UploadBlock};
+use crate::version::v0_0_1::entity::entity::request::RcCommandType;
+use crate::version::v0_0_1::id::id::{GenericKind, GenericKindBase, PointKind, PointSeg, Specific};
+use crate::version::v0_0_1::parse::error::result;
+use crate::version::v0_0_1::parse::model::{
+    BindScope, BindScopeKind, Block, BlockKind, Chunk, DelimitedBlockKind, LexBlock,
+    LexParentScope, LexRootScope, LexScope, LexScopeSelector, LexScopeSelectorAndFilters,
+    NestedBlockKind, PipelineCtx, PipelineSegment, PipelineSegmentCtx, RequestScope,
+    RootScopeSelector, ScopeFilterDef, ScopeFiltersDef, ScopeSelectorAndFiltersDef, Spanned, Subst,
+    TerminatedBlockKind, TextType, VarPipeline, VarPipelineSegment,
+};
+use crate::version::v0_0_1::payload::payload::{Call, CallCtx, CallKind, CallWithConfig, CallWithConfigCtx, HttpCall, HttpMethod, HttpMethodType, ListPattern, MapPattern, MapPatternCtx, MsgCall, NumRange, PayloadFormat, PayloadPattern, PayloadPatternCtx, PayloadType, PayloadTypePatternCtx, PayloadTypePatternDef};
+use crate::version::v0_0_1::selector::selector::specific::{
+    ProductSelector, VariantSelector, VendorSelector,
+};
+use crate::version::v0_0_1::selector::selector::{
+    ExactPointSeg, GenericKindSelector, GenericSubKindSelector, Hop, HttpPipelineSelector,
+    KindPattern, LabeledPrimitiveTypeDef, MapEntryPattern, MsgPipelineSelector, Pattern,
+    PayloadTypeDef, PipelineSelector, PointSegSelector, PointSelector, RcPipelineSelector,
+    SpecificSelector, VersionReq,
+};
+use crate::version::v0_0_1::selector::{
+    PatternBlock, PatternBlockCtx, PayloadBlock, PayloadBlockCtx, UploadBlock,
+};
+use nom_supreme::error::ErrorTree;
+use nom_supreme::{parse_from_str, ParserExt};
 
-    fn inclusive_any_segment(input: Span) -> Res<Span, PointSegSelector> {
-        alt((tag("+*"), tag("ROOT+*")))(input)
-            .map(|(next, _)| (next, PointSegSelector::InclusiveAny))
-    }
+fn inclusive_any_segment(input: Span) -> Res<Span, PointSegSelector> {
+    alt((tag("+*"), tag("ROOT+*")))(input).map(|(next, _)| (next, PointSegSelector::InclusiveAny))
+}
 
-    fn inclusive_recursive_segment(input: Span) -> Res<Span, PointSegSelector> {
-        alt((tag("+**"), tag("ROOT+**")))(input)
-            .map(|(next, _)| (next, PointSegSelector::InclusiveRecursive))
-    }
+fn inclusive_recursive_segment(input: Span) -> Res<Span, PointSegSelector> {
+    alt((tag("+**"), tag("ROOT+**")))(input)
+        .map(|(next, _)| (next, PointSegSelector::InclusiveRecursive))
+}
 
-    fn any_segment(input: Span) -> Res<Span, PointSegSelector> {
-        tag("*")(input).map(|(next, _)| (next, PointSegSelector::Any))
-    }
+fn any_segment(input: Span) -> Res<Span, PointSegSelector> {
+    tag("*")(input).map(|(next, _)| (next, PointSegSelector::Any))
+}
 
-    fn recursive_segment(input: Span) -> Res<Span, PointSegSelector> {
-        tag("**")(input).map(|(next, _)| (next, PointSegSelector::Recursive))
-    }
+fn recursive_segment(input: Span) -> Res<Span, PointSegSelector> {
+    tag("**")(input).map(|(next, _)| (next, PointSegSelector::Recursive))
+}
 
-    fn exact_space_segment(input: Span) -> Res<Span, PointSegSelector> {
-        point_segment_chars(input).map(|(next, segment)| {
-            (
-                next,
-                PointSegSelector::Exact(ExactPointSeg::PointSeg(PointSeg::Space(
-                    segment.to_string(),
-                ))),
-            )
-        })
-    }
-
-    fn exact_base_segment(input: Span) -> Res<Span, PointSegSelector> {
-        point_segment_chars(input).map(|(next, segment)| {
-            (
-                next,
-                PointSegSelector::Exact(ExactPointSeg::PointSeg(PointSeg::Base(
-                    segment.to_string(),
-                ))),
-            )
-        })
-    }
-
-    fn exact_file_segment(input: Span) -> Res<Span, PointSegSelector> {
-        file_chars(input).map(|(next, segment)| {
-            (
-                next,
-                PointSegSelector::Exact(ExactPointSeg::PointSeg(PointSeg::File(
-                    segment.to_string(),
-                ))),
-            )
-        })
-    }
-
-    fn exact_dir_segment(input: Span) -> Res<Span, PointSegSelector> {
-        file_chars(input).map(|(next, segment)| {
-            (
-                next,
-                PointSegSelector::Exact(ExactPointSeg::PointSeg(PointSeg::Dir(
-                    segment.to_string(),
-                ))),
-            )
-        })
-    }
-
-    pub fn parse_version_chars_str<O: FromStr>(input: Span) -> Res<Span, O> {
-        let (next, rtn) = recognize(version_chars)(input)?;
-        match O::from_str(rtn.to_string().as_str()) {
-            Ok(rtn) => Ok((next, rtn)),
-            Err(err) => Err(nom::Err::Error(ErrorTree::from_error_kind(
-                next,
-                ErrorKind::Fail,
+fn exact_space_segment(input: Span) -> Res<Span, PointSegSelector> {
+    point_segment_chars(input).map(|(next, segment)| {
+        (
+            next,
+            PointSegSelector::Exact(ExactPointSeg::PointSeg(PointSeg::Space(
+                segment.to_string(),
             ))),
-        }
+        )
+    })
+}
+
+fn exact_base_segment(input: Span) -> Res<Span, PointSegSelector> {
+    point_segment_chars(input).map(|(next, segment)| {
+        (
+            next,
+            PointSegSelector::Exact(ExactPointSeg::PointSeg(PointSeg::Base(segment.to_string()))),
+        )
+    })
+}
+
+fn exact_file_segment(input: Span) -> Res<Span, PointSegSelector> {
+    file_chars(input).map(|(next, segment)| {
+        (
+            next,
+            PointSegSelector::Exact(ExactPointSeg::PointSeg(PointSeg::File(segment.to_string()))),
+        )
+    })
+}
+
+fn exact_dir_segment(input: Span) -> Res<Span, PointSegSelector> {
+    file_chars(input).map(|(next, segment)| {
+        (
+            next,
+            PointSegSelector::Exact(ExactPointSeg::PointSeg(PointSeg::Dir(segment.to_string()))),
+        )
+    })
+}
+
+pub fn parse_version_chars_str<O: FromStr>(input: Span) -> Res<Span, O> {
+    let (next, rtn) = recognize(version_chars)(input)?;
+    match O::from_str(rtn.to_string().as_str()) {
+        Ok(rtn) => Ok((next, rtn)),
+        Err(err) => Err(nom::Err::Error(ErrorTree::from_error_kind(
+            next,
+            ErrorKind::Fail,
+        ))),
     }
+}
 
-    fn exact_version_segment(input: Span) -> Res<Span, PointSegSelector> {
-        version_req(input).map(|(next, version_req)| (next, PointSegSelector::Version(version_req)))
-    }
+fn exact_version_segment(input: Span) -> Res<Span, PointSegSelector> {
+    version_req(input).map(|(next, version_req)| (next, PointSegSelector::Version(version_req)))
+}
 
-    fn version_req_segment(input: Span) -> Res<Span, PointSegSelector> {
-        delimited(tag("("), version_req, tag(")"))(input)
-            .map(|(next, version_req)| (next, PointSegSelector::Version(version_req)))
-    }
+fn version_req_segment(input: Span) -> Res<Span, PointSegSelector> {
+    delimited(tag("("), version_req, tag(")"))(input)
+        .map(|(next, version_req)| (next, PointSegSelector::Version(version_req)))
+}
 
-    pub fn point_segment_selector(input: Span) -> Res<Span, PointSegSelector> {
-        alt((
-            inclusive_recursive_segment,
-            inclusive_any_segment,
-            recursive_segment,
-            any_segment,
-            exact_space_segment,
-        ))(input)
-    }
+pub fn point_segment_selector(input: Span) -> Res<Span, PointSegSelector> {
+    alt((
+        inclusive_recursive_segment,
+        inclusive_any_segment,
+        recursive_segment,
+        any_segment,
+        exact_space_segment,
+    ))(input)
+}
 
-    fn base_segment(input: Span) -> Res<Span, PointSegSelector> {
-        alt((recursive_segment, any_segment, exact_base_segment))(input)
-    }
+fn base_segment(input: Span) -> Res<Span, PointSegSelector> {
+    alt((recursive_segment, any_segment, exact_base_segment))(input)
+}
 
-    fn file_segment(input: Span) -> Res<Span, PointSegSelector> {
-        alt((recursive_segment, any_segment, exact_file_segment))(input)
-    }
+fn file_segment(input: Span) -> Res<Span, PointSegSelector> {
+    alt((recursive_segment, any_segment, exact_file_segment))(input)
+}
 
-    fn dir_segment(input: Span) -> Res<Span, PointSegSelector> {
-        terminated(
-            alt((recursive_segment, any_segment, exact_dir_segment)),
-            tag("/"),
-        )(input)
-    }
+fn dir_segment(input: Span) -> Res<Span, PointSegSelector> {
+    terminated(
+        alt((recursive_segment, any_segment, exact_dir_segment)),
+        tag("/"),
+    )(input)
+}
 
-    fn dir_segment_meat(input: Span) -> Res<Span, PointSegSelector> {
-            alt((recursive_segment, any_segment, exact_dir_segment))(input)
-    }
+fn dir_segment_meat(input: Span) -> Res<Span, PointSegSelector> {
+    alt((recursive_segment, any_segment, exact_dir_segment))(input)
+}
 
+fn version_segment(input: Span) -> Res<Span, PointSegSelector> {
+    alt((
+        recursive_segment,
+        any_segment,
+        exact_version_segment,
+        version_req_segment,
+    ))(input)
+}
 
-
-
-    fn version_segment(input: Span) -> Res<Span, PointSegSelector> {
-        alt((
-            recursive_segment,
-            any_segment,
-            exact_version_segment,
-            version_req_segment,
-        ))(input)
-    }
-
-    /*
-    pub fn pattern<'r, O, E: ParseError<&'r str>, V>(
-        mut value: V,
-    ) -> impl FnMut(&'r str) -> IResult<&str, Pattern<O>, E>
-    where
-        V: Parser<&'r str, O, E>,
-    {
-        move |input: &str| {
-            let x: Res<Span, Span> = tag("*")(input);
-            match x {
-                Ok((next, _)) => Ok((next, Pattern::Any)),
-                Err(_) => {
-                    let (next, p) = value.parse(input)?;
-                    let pattern = Pattern::Exact(p);
-                    Ok((next, pattern))
-                }
-            }
-        }
-    }
-
-     */
-
-    pub fn pattern<'r, O, E: ParseError<Span<'r>>, V>(
-        mut value: V,
-    ) -> impl FnMut(Span<'r>) -> IResult<Span<'r>, Pattern<O>, E>
-    where
-        V: Parser<Span<'r>, O, E>,
-    {
-        move |input: Span| {
-            let x: Res<Span, Span> = tag("*")(input.clone());
-            match x {
-                Ok((next, _)) => Ok((next, Pattern::Any)),
-                Err(_) => {
-                    let (next, p) = value.parse(input)?;
-                    let pattern = Pattern::Exact(p);
-                    Ok((next, pattern))
-                }
-            }
-        }
-    }
-
-
-    /*
-    pub fn context<I: Clone, E: ContextError<I>, F, O>(
-        context: &'static str,
-        mut f: F,
-    ) -> impl FnMut(I) -> IResult<I, O, E>
-        where
-            F: Parser<I, O, E>,
-    {
-        move |i: I| match f.parse(i.clone()) {
-            Ok(o) => Ok(o),
-            Err(Err::Incomplete(i)) => Err(Err::Incomplete(i)),
-            Err(Err::Error(e)) => Err(Err::Error(E::add_context(i, context, e))),
-            Err(Err::Failure(e)) => Err(Err::Failure(E::add_context(i, context, e))),
-        }
-    }
-
-     */
-    pub fn value_pattern<I: Clone, O, E: ParseError<I>, F>(
-        mut f: F,
-    ) -> impl FnMut(I) -> IResult<I, ValuePattern<O>, E>
-    where
-        I: InputLength + InputTake + Compare<&'static str>,
-        F: Parser<I, O, E>,
-        E: nom::error::ContextError<I>,
-    {
-        move |input: I| match tag::<&'static str, I, E>("*")(input.clone()) {
-            Ok((next, _)) => Ok((next, ValuePattern::Any)),
-            Err(err) => f
-                .parse(input.clone())
-                .map(|(next, res)| (next, ValuePattern::Pattern(res))),
-        }
-    }
-    /*
-    pub fn value_pattern<E,F,O>(
-        mut f: F
-    ) -> impl Fn(&str) -> IResult<&str, ValuePattern<O>, E>
-    where F: Parser<&'static str,O,E>, E: ContextError<&'static str> {
-        move |input: &str| match tag::<&str,&'static str,ErrorTree<&'static str>>("*")(input) {
-            Ok((next, _)) => Ok((next, ValuePattern::Any)),
-            Err(err) => {
-                match f.parse(input.clone()) {
-                    Ok((input,output)) => {Ok((input,ValuePattern::Pattern(output)))}
-                    Err(Err::Incomplete(i)) => Err(Err::Incomplete(i)),
-                    Err(Err::Error(e)) => Err(Err::Error(E::add_context(input.clone(), "value_pattern", e))),
-                    Err(Err::Failure(e)) => Err(Err::Failure(E::add_context(input.clone(), "value_pattern", e))),
-                }
-            }
-        }
-    }
-
-     */
-
-    /*
-    pub fn value_pattern<P>(
-        parse: fn(input: Span) -> Res<Span, P>,
-    ) -> impl Fn(&str) -> Res<Span, ValuePattern<P>> {
-        move |input: &str| match tag::<&str, &str, VerboseError<&str>>("*")(input) {
-            Ok((next, _)) => Ok((next, ValuePattern::Any)),
+/*
+pub fn pattern<'r, O, E: ParseError<&'r str>, V>(
+    mut value: V,
+) -> impl FnMut(&'r str) -> IResult<&str, Pattern<O>, E>
+where
+    V: Parser<&'r str, O, E>,
+{
+    move |input: &str| {
+        let x: Res<Span, Span> = tag("*")(input);
+        match x {
+            Ok((next, _)) => Ok((next, Pattern::Any)),
             Err(_) => {
-                let (next, p) = parse(input)?;
-                let pattern = ValuePattern::Pattern(p);
+                let (next, p) = value.parse(input)?;
+                let pattern = Pattern::Exact(p);
                 Ok((next, pattern))
             }
         }
     }
-     */
+}
 
-    pub fn version_req(input: Span) -> Res<Span, VersionReq> {
-        let (next, version) = version_req_chars(input.clone())?;
-        let str_input = *version.fragment();
-        let rtn = semver::VersionReq::parse(str_input);
+ */
 
-        match rtn {
-            Ok(version) => Ok((next, VersionReq { version })),
-            Err(err) => {
-                let tree = Err::Error(ErrorTree::from_error_kind(input, ErrorKind::Fail));
-                Err(tree)
+pub fn pattern<'r, O, E: ParseError<Span<'r>>, V>(
+    mut value: V,
+) -> impl FnMut(Span<'r>) -> IResult<Span<'r>, Pattern<O>, E>
+where
+    V: Parser<Span<'r>, O, E>,
+{
+    move |input: Span| {
+        let x: Res<Span, Span> = tag("*")(input.clone());
+        match x {
+            Ok((next, _)) => Ok((next, Pattern::Any)),
+            Err(_) => {
+                let (next, p) = value.parse(input)?;
+                let pattern = Pattern::Exact(p);
+                Ok((next, pattern))
             }
         }
     }
+}
 
-    fn rec_domain(input: Span) -> Res<Span, Span> {
-        recognize(tuple((
-            many1(terminated(skewer_chars, tag("."))),
-            skewer_chars,
-        )))(input)
+/*
+pub fn context<I: Clone, E: ContextError<I>, F, O>(
+    context: &'static str,
+    mut f: F,
+) -> impl FnMut(I) -> IResult<I, O, E>
+    where
+        F: Parser<I, O, E>,
+{
+    move |i: I| match f.parse(i.clone()) {
+        Ok(o) => Ok(o),
+        Err(Err::Incomplete(i)) => Err(Err::Incomplete(i)),
+        Err(Err::Error(e)) => Err(Err::Error(E::add_context(i, context, e))),
+        Err(Err::Failure(e)) => Err(Err::Failure(E::add_context(i, context, e))),
     }
+}
 
-    // can be a hostname or domain name
-    fn space(input: Span) -> Res<Span, Span> {
-        recognize(alt((skewer_chars, rec_domain)))(input)
+ */
+pub fn value_pattern<I: Clone, O, E: ParseError<I>, F>(
+    mut f: F,
+) -> impl FnMut(I) -> IResult<I, ValuePattern<O>, E>
+where
+    I: InputLength + InputTake + Compare<&'static str>,
+    F: Parser<I, O, E>,
+    E: nom::error::ContextError<I>,
+{
+    move |input: I| match tag::<&'static str, I, E>("*")(input.clone()) {
+        Ok((next, _)) => Ok((next, ValuePattern::Any)),
+        Err(err) => f
+            .parse(input.clone())
+            .map(|(next, res)| (next, ValuePattern::Pattern(res))),
     }
-
-    pub fn specific_selector(input: Span) -> Res<Span, SpecificSelector> {
-        tuple((
-            pattern(rec_domain),
-            tag(":"),
-            pattern(skewer_chars),
-            tag(":"),
-            pattern(skewer_chars),
-            tag(":"),
-            delimited(tag("("), version_req, tag(")")),
-        ))(input)
-        .map(|(next, (vendor, _, product, _, variant, _, version))| {
-            let vendor: Pattern<Span> = vendor;
-            let product: Pattern<Span> = product;
-            let variant: Pattern<Span> = variant;
-
-            let vendor: VendorSelector = vendor.into();
-            let product: ProductSelector = product.into();
-            let variant: VariantSelector = variant.into();
-
-            let specific = SpecificSelector {
-                vendor,
-                product,
-                variant,
-                version,
-            };
-            (next, specific)
-        })
-    }
-
-    pub fn rec_domain_pattern(input:Span) -> Res<Span,Pattern<Span>> {
-        pattern(rec_domain)(input)
-    }
-    pub fn rec_skewer_pattern(input:Span) -> Res<Span,Pattern<Span>> {
-        pattern(skewer_chars)(input)
-    }
-
-    pub fn specific_version_req(input: Span) -> Res<Span,VersionReq> {
-        delimited(tag("("), version_req, tag(")"))(input)
-    }
-
-    #[derive(Clone)]
-    pub struct SkewerPatternParser();
-    impl SubstParser<Pattern<String>> for SkewerPatternParser {
-
-        fn parse_span<'a>(&self, span: Span<'a>) -> Res<Span<'a>,Pattern<String>> {
-            let (next,pattern) = rec_skewer_pattern(span)?;
-            let pattern = pattern.into();
-            Ok((next,pattern))
-        }
-    }
-
-    #[derive(Clone)]
-    pub struct DomainPatternParser();
-    impl SubstParser<Pattern<String>> for DomainPatternParser {
-
-        fn parse_span<'a>(&self, span: Span<'a>) -> Res<Span<'a>,Pattern<String>> {
-            let (next,pattern) = rec_domain_pattern(span)?;
-            let pattern = pattern.into();
-            Ok((next,pattern))
-        }
-    }
-
-
-
-    fn kind_parts(input: Span) -> Res<Span, GenericKind> {
-        tuple((
-            generic_kind_base,
-            opt(delimited(
-                tag("<"),
-                tuple((camel_case, opt(delimited(tag("<"), specific, tag(">"))))),
-                tag(">"),
-            )),
-        ))(input)
-        .map(|(next, (resource_type, more))| {
-            let mut parts = GenericKind {
-                kind: resource_type,
-                sub_kind: None,
-                specific: None,
-            };
-
-            match more {
-                Some((kind, specific)) => {
-                    parts.sub_kind = Option::Some(kind.to_string());
-                    parts.specific = specific;
-                }
-                None => {}
+}
+/*
+pub fn value_pattern<E,F,O>(
+    mut f: F
+) -> impl Fn(&str) -> IResult<&str, ValuePattern<O>, E>
+where F: Parser<&'static str,O,E>, E: ContextError<&'static str> {
+    move |input: &str| match tag::<&str,&'static str,ErrorTree<&'static str>>("*")(input) {
+        Ok((next, _)) => Ok((next, ValuePattern::Any)),
+        Err(err) => {
+            match f.parse(input.clone()) {
+                Ok((input,output)) => {Ok((input,ValuePattern::Pattern(output)))}
+                Err(Err::Incomplete(i)) => Err(Err::Incomplete(i)),
+                Err(Err::Error(e)) => Err(Err::Error(E::add_context(input.clone(), "value_pattern", e))),
+                Err(Err::Failure(e)) => Err(Err::Failure(E::add_context(input.clone(), "value_pattern", e))),
             }
-
-            (next, parts)
-        })
+        }
     }
+}
 
-    fn rec_kind(input: Span) -> Res<Span, Span> {
-        recognize(kind_parts)(input)
+ */
+
+/*
+pub fn value_pattern<P>(
+    parse: fn(input: Span) -> Res<Span, P>,
+) -> impl Fn(&str) -> Res<Span, ValuePattern<P>> {
+    move |input: &str| match tag::<&str, &str, VerboseError<&str>>("*")(input) {
+        Ok((next, _)) => Ok((next, ValuePattern::Any)),
+        Err(_) => {
+            let (next, p) = parse(input)?;
+            let pattern = ValuePattern::Pattern(p);
+            Ok((next, pattern))
+        }
     }
+}
+ */
 
-    pub fn kind(input: Span) -> Res<Span, GenericKind> {
-        tuple((
-            generic_kind_base,
-            opt(delimited(
-                tag("<"),
-                tuple((camel_case, opt(delimited(tag("<"), specific, tag(">"))))),
-                tag(">"),
-            )),
-        ))(input)
-        .map(|(next, (resource_type, rest))| {
-            let mut rtn = GenericKind {
-                kind: resource_type,
-                sub_kind: Option::None,
-                specific: Option::None,
-            };
+pub fn version_req(input: Span) -> Res<Span, VersionReq> {
+    let (next, version) = version_req_chars(input.clone())?;
+    let str_input = *version.fragment();
+    let rtn = semver::VersionReq::parse(str_input);
 
-            match rest {
-                Some((kind, specific)) => {
-                    rtn.sub_kind = Option::Some(kind.to_string());
-                    match specific {
-                        Some(specific) => {
-                            rtn.specific = Option::Some(specific);
-                        }
-                        None => {}
+    match rtn {
+        Ok(version) => Ok((next, VersionReq { version })),
+        Err(err) => {
+            let tree = Err::Error(ErrorTree::from_error_kind(input, ErrorKind::Fail));
+            Err(tree)
+        }
+    }
+}
+
+fn rec_domain(input: Span) -> Res<Span, Span> {
+    recognize(tuple((
+        many1(terminated(skewer_chars, tag("."))),
+        skewer_chars,
+    )))(input)
+}
+
+// can be a hostname or domain name
+fn space(input: Span) -> Res<Span, Span> {
+    recognize(alt((skewer_chars, rec_domain)))(input)
+}
+
+pub fn specific_selector(input: Span) -> Res<Span, SpecificSelector> {
+    tuple((
+        pattern(rec_domain),
+        tag(":"),
+        pattern(skewer_chars),
+        tag(":"),
+        pattern(skewer_chars),
+        tag(":"),
+        delimited(tag("("), version_req, tag(")")),
+    ))(input)
+    .map(|(next, (vendor, _, product, _, variant, _, version))| {
+        let vendor: Pattern<Span> = vendor;
+        let product: Pattern<Span> = product;
+        let variant: Pattern<Span> = variant;
+
+        let vendor: VendorSelector = vendor.into();
+        let product: ProductSelector = product.into();
+        let variant: VariantSelector = variant.into();
+
+        let specific = SpecificSelector {
+            vendor,
+            product,
+            variant,
+            version,
+        };
+        (next, specific)
+    })
+}
+
+pub fn rec_domain_pattern(input: Span) -> Res<Span, Pattern<Span>> {
+    pattern(rec_domain)(input)
+}
+pub fn rec_skewer_pattern(input: Span) -> Res<Span, Pattern<Span>> {
+    pattern(skewer_chars)(input)
+}
+
+pub fn specific_version_req(input: Span) -> Res<Span, VersionReq> {
+    delimited(tag("("), version_req, tag(")"))(input)
+}
+
+#[derive(Clone)]
+pub struct SkewerPatternParser();
+impl SubstParser<Pattern<String>> for SkewerPatternParser {
+    fn parse_span<'a>(&self, span: Span<'a>) -> Res<Span<'a>, Pattern<String>> {
+        let (next, pattern) = rec_skewer_pattern(span)?;
+        let pattern = pattern.into();
+        Ok((next, pattern))
+    }
+}
+
+#[derive(Clone)]
+pub struct DomainPatternParser();
+impl SubstParser<Pattern<String>> for DomainPatternParser {
+    fn parse_span<'a>(&self, span: Span<'a>) -> Res<Span<'a>, Pattern<String>> {
+        let (next, pattern) = rec_domain_pattern(span)?;
+        let pattern = pattern.into();
+        Ok((next, pattern))
+    }
+}
+
+fn kind_parts(input: Span) -> Res<Span, GenericKind> {
+    tuple((
+        generic_kind_base,
+        opt(delimited(
+            tag("<"),
+            tuple((camel_case, opt(delimited(tag("<"), specific, tag(">"))))),
+            tag(">"),
+        )),
+    ))(input)
+    .map(|(next, (resource_type, more))| {
+        let mut parts = GenericKind {
+            kind: resource_type,
+            sub_kind: None,
+            specific: None,
+        };
+
+        match more {
+            Some((kind, specific)) => {
+                parts.sub_kind = Option::Some(kind.to_string());
+                parts.specific = specific;
+            }
+            None => {}
+        }
+
+        (next, parts)
+    })
+}
+
+fn rec_kind(input: Span) -> Res<Span, Span> {
+    recognize(kind_parts)(input)
+}
+
+pub fn kind(input: Span) -> Res<Span, GenericKind> {
+    tuple((
+        generic_kind_base,
+        opt(delimited(
+            tag("<"),
+            tuple((camel_case, opt(delimited(tag("<"), specific, tag(">"))))),
+            tag(">"),
+        )),
+    ))(input)
+    .map(|(next, (resource_type, rest))| {
+        let mut rtn = GenericKind {
+            kind: resource_type,
+            sub_kind: Option::None,
+            specific: Option::None,
+        };
+
+        match rest {
+            Some((kind, specific)) => {
+                rtn.sub_kind = Option::Some(kind.to_string());
+                match specific {
+                    Some(specific) => {
+                        rtn.specific = Option::Some(specific);
                     }
+                    None => {}
                 }
-                None => {}
             }
+            None => {}
+        }
+
+        (next, rtn)
+    })
+}
+
+pub fn delim_kind(input: Span) -> Res<Span, GenericKind> {
+    delimited(tag("<"), kind, tag(">"))(input)
+}
+
+pub fn consume_kind(input: Span) -> Result<GenericKind, MsgErr> {
+    let (_, kind_parts) = all_consuming(kind_parts)(input)?;
+
+    Ok(kind_parts.try_into()?)
+}
+
+pub fn generic_kind_selector(input: Span) -> Res<Span, GenericSubKindSelector> {
+    pattern(kind)(input).map(|(next, kind)| (next, kind))
+}
+
+pub fn generic_kind_base(input: Span) -> Res<Span, GenericKindBase> {
+    camel_case(input).map(|(next, resource_type)| (next, resource_type.to_string()))
+}
+
+pub fn generic_kind_base_selector(input: Span) -> Res<Span, GenericKindSelector> {
+    pattern(generic_kind_base)(input)
+}
+
+pub fn kind_pattern(input: Span) -> Res<Span, KindPattern> {
+    delimited(
+        tag("<"),
+        tuple((
+            generic_kind_base_selector,
+            opt(delimited(
+                tag("<"),
+                tuple((
+                    generic_kind_selector,
+                    opt(delimited(
+                        tag("<"),
+                        value_pattern(specific_selector),
+                        tag(">"),
+                    )),
+                )),
+                tag(">"),
+            )),
+        )),
+        tag(">"),
+    )(input)
+    .map(|(next, (resource_type, kind_and_specific))| {
+        let (kind, specific) = match kind_and_specific {
+            None => (Pattern::Any, ValuePattern::Any),
+            Some((kind, specific)) => (
+                kind,
+                match specific {
+                    None => ValuePattern::Any,
+                    Some(specific) => specific,
+                },
+            ),
+        };
+
+        let tks = KindPattern {
+            kind: resource_type,
+            sub_kind: kind,
+            specific,
+        };
+
+        (next, tks)
+    })
+}
+
+fn space_hop(input: Span) -> Res<Span, Hop> {
+    tuple((point_segment_selector, opt(kind_pattern), opt(tag("+"))))(input).map(
+        |(next, (segment, kind, inclusive))| {
+            let kind = match kind {
+                None => KindPattern::any(),
+                Some(tks) => tks,
+            };
+            let inclusive = inclusive.is_some();
+            (
+                next,
+                Hop {
+                    inclusive,
+                    segment,
+                    kind,
+                },
+            )
+        },
+    )
+}
+
+fn base_hop(input: Span) -> Res<Span, Hop> {
+    tuple((base_segment, opt(kind_pattern), opt(tag("+"))))(input).map(
+        |(next, (segment, tks, inclusive))| {
+            let tks = match tks {
+                None => KindPattern::any(),
+                Some(tks) => tks,
+            };
+            let inclusive = inclusive.is_some();
+            (
+                next,
+                Hop {
+                    inclusive,
+                    segment,
+                    kind: tks,
+                },
+            )
+        },
+    )
+}
+
+fn file_hop(input: Span) -> Res<Span, Hop> {
+    tuple((file_segment, opt(tag("+"))))(input).map(|(next, (segment, inclusive))| {
+        let tks = KindPattern {
+            kind: Pattern::Exact("File".to_string()),
+            sub_kind: Pattern::Any,
+            specific: ValuePattern::Any,
+        };
+        let inclusive = inclusive.is_some();
+        (
+            next,
+            Hop {
+                inclusive,
+                segment,
+                kind: tks,
+            },
+        )
+    })
+}
+
+fn dir_hop(input: Span) -> Res<Span, Hop> {
+    tuple((dir_segment, opt(tag("+"))))(input).map(|(next, (segment, inclusive))| {
+        let tks = KindPattern::any();
+        let inclusive = inclusive.is_some();
+        (
+            next,
+            Hop {
+                inclusive,
+                segment,
+                kind: tks,
+            },
+        )
+    })
+}
+
+fn version_hop(input: Span) -> Res<Span, Hop> {
+    tuple((version_segment, opt(kind_pattern), opt(tag("+"))))(input).map(
+        |(next, (segment, tks, inclusive))| {
+            let tks = match tks {
+                None => KindPattern::any(),
+                Some(tks) => tks,
+            };
+            let inclusive = inclusive.is_some();
+            (
+                next,
+                Hop {
+                    inclusive,
+                    segment,
+                    kind: tks,
+                },
+            )
+        },
+    )
+}
+
+pub fn point_selector(input: Span) -> Res<Span, PointSelector> {
+    context(
+        "point_kind_pattern",
+        tuple((
+            space_hop,
+            many0(preceded(tag(":"), base_hop)),
+            opt(preceded(tag(":"), version_hop)),
+            opt(preceded(tag(":/"), tuple((many0(dir_hop), opt(file_hop))))),
+        )),
+    )(input)
+    .map(
+        |(next, (space_hop, base_hops, version_hop, filesystem_hops))| {
+            let mut hops = vec![];
+            hops.push(space_hop);
+            for base_hop in base_hops {
+                hops.push(base_hop);
+            }
+            if let Option::Some(version_hop) = version_hop {
+                hops.push(version_hop);
+            }
+            if let Some((dir_hops, file_hop)) = filesystem_hops {
+                // first push the filesystem root
+                hops.push(Hop {
+                    inclusive: false,
+                    segment: PointSegSelector::Exact(ExactPointSeg::PointSeg(
+                        PointSeg::FilesystemRootDir,
+                    )),
+                    kind: KindPattern {
+                        kind: Pattern::Exact("Dir".to_string()),
+                        sub_kind: Pattern::Any,
+                        specific: ValuePattern::Any,
+                    },
+                });
+                for dir_hop in dir_hops {
+                    hops.push(dir_hop);
+                }
+                if let Some(file_hop) = file_hop {
+                    hops.push(file_hop);
+                }
+            }
+
+            let rtn = PointSelector { hops };
 
             (next, rtn)
-        })
-    }
+        },
+    )
+}
 
-    pub fn delim_kind(input: Span) -> Res<Span, GenericKind> {
-        delimited(tag("<"), kind, tag(">"))(input)
-    }
+pub fn point_and_kind(input: Span) -> Res<Span, PointKind> {
+    tuple((point, kind))(input).map(|(next, (point, kind))| (next, PointKind { point, kind }))
+}
 
-    pub fn consume_kind(input: Span) -> Result<GenericKind, MsgErr> {
-        let (_, kind_parts) = all_consuming(kind_parts)(input)?;
+/*
+fn version_req(input: Span) -> Res<Span, VersionReq> {
+    let str_input = *input.fragment();
+    let rtn:IResult<&str,VersionReq,ErrorTree<&str>> = parse_from_str(version_req_chars).parse(str_input);
 
-        Ok(kind_parts.try_into()?)
-    }
-
-    pub fn generic_kind_selector(input: Span) -> Res<Span, GenericSubKindSelector> {
-        pattern(kind)(input).map(|(next, kind)| (next, kind))
-    }
-
-    pub fn generic_kind_base(input: Span) -> Res<Span, GenericKindBase> {
-        camel_case(input).map(|(next, resource_type)| (next, resource_type.to_string()))
-    }
-
-    pub fn generic_kind_base_selector(input: Span) -> Res<Span, GenericKindSelector> {
-        pattern(generic_kind_base)(input)
-    }
-
-    pub fn kind_pattern(input: Span) -> Res<Span, KindPattern> {
-        delimited(
-            tag("<"),
-            tuple((
-                generic_kind_base_selector,
-                opt(delimited(
-                    tag("<"),
-                    tuple((
-                        generic_kind_selector,
-                        opt(delimited(
-                            tag("<"),
-                            value_pattern(specific_selector),
-                            tag(">"),
-                        )),
-                    )),
-                    tag(">"),
-                )),
-            )),
-            tag(">"),
-        )(input)
-        .map(|(next, (resource_type, kind_and_specific))| {
-            let (kind, specific) = match kind_and_specific {
-                None => (Pattern::Any, ValuePattern::Any),
-                Some((kind, specific)) => (
-                    kind,
-                    match specific {
-                        None => ValuePattern::Any,
-                        Some(specific) => specific,
-                    },
-                ),
-            };
-
-            let tks = KindPattern {
-                kind: resource_type,
-                sub_kind: kind,
-                specific,
-            };
-
-            (next, tks)
-        })
-    }
-
-
-
-    fn space_hop(input: Span) -> Res<Span, Hop> {
-        tuple((point_segment_selector, opt(kind_pattern), opt(tag("+"))))(input).map(
-            |(next, (segment, kind, inclusive))| {
-                let kind = match kind {
-                    None => KindPattern::any(),
-                    Some(tks) => tks,
-                };
-                let inclusive = inclusive.is_some();
-                (
-                    next,
-                    Hop {
-                        inclusive,
-                        segment,
-                        kind,
-                    },
-                )
-            },
-        )
-    }
-
-
-
-    fn base_hop(input: Span) -> Res<Span, Hop> {
-        tuple((base_segment, opt(kind_pattern), opt(tag("+"))))(input).map(
-            |(next, (segment, tks, inclusive))| {
-                let tks = match tks {
-                    None => KindPattern::any(),
-                    Some(tks) => tks,
-                };
-                let inclusive = inclusive.is_some();
-                (
-                    next,
-                    Hop {
-                        inclusive,
-                        segment,
-                        kind: tks,
-                    },
-                )
-            },
-        )
-    }
-
-
-    fn file_hop(input: Span) -> Res<Span, Hop> {
-        tuple((file_segment, opt(tag("+"))))(input).map(|(next, (segment, inclusive))| {
-            let tks = KindPattern {
-                kind: Pattern::Exact("File".to_string()),
-                sub_kind: Pattern::Any,
-                specific: ValuePattern::Any,
-            };
-            let inclusive = inclusive.is_some();
-            (
-                next,
-                Hop {
-                    inclusive,
-                    segment,
-                    kind: tks,
-                },
-            )
-        })
-    }
-
-    fn dir_hop(input: Span) -> Res<Span, Hop> {
-        tuple((dir_segment, opt(tag("+"))))(input).map(|(next, (segment, inclusive))| {
-            let tks = KindPattern::any();
-            let inclusive = inclusive.is_some();
-            (
-                next,
-                Hop {
-                    inclusive,
-                    segment,
-                    kind: tks,
-                },
-            )
-        })
-    }
-
-
-    fn version_hop(input: Span) -> Res<Span, Hop> {
-        tuple((version_segment, opt(kind_pattern), opt(tag("+"))))(input).map(
-            |(next, (segment, tks, inclusive))| {
-                let tks = match tks {
-                    None => KindPattern::any(),
-                    Some(tks) => tks,
-                };
-                let inclusive = inclusive.is_some();
-                (
-                    next,
-                    Hop {
-                        inclusive,
-                        segment,
-                        kind: tks,
-                    },
-                )
-            },
-        )
-    }
-
-
-    pub fn point_selector(input: Span) -> Res<Span, PointSelector> {
-        context(
-            "point_kind_pattern",
-            tuple((
-                space_hop,
-                many0(preceded(tag(":"), base_hop)),
-                opt(preceded(tag(":"), version_hop)),
-                opt(preceded(tag(":/"), tuple((many0(dir_hop), opt(file_hop))))),
-            )),
-        )(input)
-        .map(
-            |(next, (space_hop, base_hops, version_hop, filesystem_hops))| {
-                let mut hops = vec![];
-                hops.push(space_hop);
-                for base_hop in base_hops {
-                    hops.push(base_hop);
-                }
-                if let Option::Some(version_hop) = version_hop {
-                    hops.push(version_hop);
-                }
-                if let Some((dir_hops, file_hop)) = filesystem_hops {
-                    // first push the filesystem root
-                    hops.push(Hop {
-                        inclusive: false,
-                        segment: PointSegSelector::Exact(ExactPointSeg::PointSeg(
-                            PointSeg::FilesystemRootDir,
-                        )),
-                        kind: KindPattern {
-                            kind: Pattern::Exact("Dir".to_string()),
-                            sub_kind: Pattern::Any,
-                            specific: ValuePattern::Any,
-                        },
-                    });
-                    for dir_hop in dir_hops {
-                        hops.push(dir_hop);
-                    }
-                    if let Some(file_hop) = file_hop {
-                        hops.push(file_hop);
-                    }
-                }
-
-                let rtn = PointSelector { hops };
-
-                (next, rtn)
-            },
-        )
-    }
-
-
-    pub fn point_and_kind(input: Span) -> Res<Span, PointKind> {
-        tuple((point, kind))(input).map(|(next, (point, kind))| (next, PointKind { point, kind }))
-    }
-
-    /*
-    fn version_req(input: Span) -> Res<Span, VersionReq> {
-        let str_input = *input.fragment();
-        let rtn:IResult<&str,VersionReq,ErrorTree<&str>> = parse_from_str(version_req_chars).parse(str_input);
-
-        match rtn {
-            Ok((next,version_req)) => {
-                Ok((span(next), version_req))
-            }
-            Err(err) => {
-                let tree = Err::Error(ErrorTree::from_error_kind(input, ErrorKind::Fail));
-                Err(tree)
-            }
+    match rtn {
+        Ok((next,version_req)) => {
+            Ok((span(next), version_req))
+        }
+        Err(err) => {
+            let tree = Err::Error(ErrorTree::from_error_kind(input, ErrorKind::Fail));
+            Err(tree)
         }
     }
+}
 
-     */
+ */
 
-    pub fn version(input: Span) -> Res<Span, Version> {
-        let (next, version) = rec_version(input.clone())?;
-        let str_input = *version.fragment();
-        let rtn = semver::Version::parse(str_input);
+pub fn version(input: Span) -> Res<Span, Version> {
+    let (next, version) = rec_version(input.clone())?;
+    let str_input = *version.fragment();
+    let rtn = semver::Version::parse(str_input);
 
-        match rtn {
-            Ok(version) => Ok((next, Version { version })),
-            Err(err) => {
-                let tree = Err::Error(ErrorTree::from_error_kind(input, ErrorKind::Fail));
-                Err(tree)
-            }
+    match rtn {
+        Ok(version) => Ok((next, Version { version })),
+        Err(err) => {
+            let tree = Err::Error(ErrorTree::from_error_kind(input, ErrorKind::Fail));
+            Err(tree)
         }
     }
+}
 
-    pub fn specific(input: Span) -> Res<Span, Specific> {
-        tuple((
-            domain_chars,
-            tag(":"),
-            skewer_chars,
-            tag(":"),
-            skewer_chars,
-            tag(":"),
+pub fn specific(input: Span) -> Res<Span, Specific> {
+    tuple((
+        domain_chars,
+        tag(":"),
+        skewer_chars,
+        tag(":"),
+        skewer_chars,
+        tag(":"),
+        version,
+    ))(input)
+    .map(|(next, (vendor, _, product, _, variant, _, version))| {
+        let specific = Specific {
+            vendor: vendor.to_string(),
+            product: product.to_string(),
+            variant: variant.to_string(),
             version,
-        ))(input)
-        .map(|(next, (vendor, _, product, _, variant, _, version))| {
-            let specific = Specific {
-                vendor: vendor.to_string(),
-                product: product.to_string(),
-                variant: variant.to_string(),
-                version,
-            };
-            (next, specific)
-        })
-    }
+        };
+        (next, specific)
+    })
+}
 //}
 
 pub fn args<T>(i: T) -> Res<T, T>
@@ -4462,7 +4496,7 @@ where
     )
 }
 
-pub fn primitive_def(input: Span) -> Res<Span, PayloadTypeDef> {
+pub fn primitive_def(input: Span) -> Res<Span, PayloadTypeDef<PointCtx>> {
     tuple((
         payload,
         opt(preceded(tag("~"), opt(format))),
@@ -4487,13 +4521,13 @@ pub fn payload(input: Span) -> Res<Span, PayloadType> {
     parse_camel_case_str(input)
 }
 
-pub fn consume_primitive_def(input: Span) -> Res<Span, PayloadTypeDef> {
+pub fn consume_primitive_def(input: Span) -> Res<Span, PayloadTypeDef<PointCtx>> {
     all_consuming(primitive_def)(input)
 }
 
-pub fn call_with_config(input: Span) -> Res<Span, CallWithConfig> {
-    tuple((call, opt(preceded(tag("+"), point))))(input)
-        .map(|(next, (call, config))| (next, CallWithConfig { call, config }))
+pub fn call_with_config(input: Span) -> Res<Span, CallWithConfigCtx> {
+    tuple((call, opt(preceded(tag("+"), point_ctx))))(input)
+        .map(|(next, (call, config))| (next, CallWithConfigCtx { call, config }))
 }
 
 pub fn parse_alpha1_str<O: FromStr>(input: Span) -> Res<Span, O> {
@@ -4543,16 +4577,16 @@ pub fn call_kind(input: Span) -> Res<Span, CallKind> {
     alt((msg_call, http_call))(input)
 }
 
-pub fn call(input: Span) -> Res<Span, Call> {
-    tuple((point, preceded(tag("^"), call_kind)))(input)
-        .map(|(next, (point, kind))| (next, Call { point, kind }))
+pub fn call(input: Span) -> Res<Span, CallCtx> {
+    tuple((point_ctx, preceded(tag("^"), call_kind)))(input)
+        .map(|(next, (point, kind))| (next, CallCtx { point, kind }))
 }
 
-pub fn consume_call(input: Span) -> Res<Span, Call> {
+pub fn consume_call(input: Span) -> Res<Span, CallCtx> {
     all_consuming(call)(input)
 }
 
-pub fn labeled_primitive_def(input: Span) -> Res<Span, LabeledPrimitiveTypeDef> {
+pub fn labeled_primitive_def(input: Span) -> Res<Span, LabeledPrimitiveTypeDef<PointCtx>> {
     tuple((skewer, delimited(tag("<"), primitive_def, tag(">"))))(input).map(
         |(next, (label, primitive_def))| {
             let labeled_def = LabeledPrimitiveTypeDef {
@@ -4601,12 +4635,12 @@ pub fn range(input: Span) -> Res<Span, NumRange> {
     })
 }
 
-pub fn primitive_data_struct(input: Span) -> Res<Span, PayloadTypePattern> {
+pub fn primitive_data_struct(input: Span) -> Res<Span, PayloadTypePatternDef<PointCtx>> {
     context("selector", payload)(input)
-        .map(|(next, primitive)| (next, PayloadTypePattern::Primitive(primitive)))
+        .map(|(next, primitive)| (next, PayloadTypePatternDef::Primitive(primitive)))
 }
 
-pub fn array_data_struct(input: Span) -> Res<Span, PayloadTypePattern> {
+pub fn array_data_struct(input: Span) -> Res<Span, PayloadTypePatternDef<PointCtx>> {
     context(
         "selector",
         tuple((
@@ -4617,16 +4651,16 @@ pub fn array_data_struct(input: Span) -> Res<Span, PayloadTypePattern> {
     .map(|(next, (primitive, range))| {
         (
             next,
-            PayloadTypePattern::List(ListPattern { primitive, range }),
+            PayloadTypePatternDef::List(ListPattern { primitive, range }),
         )
     })
 }
 
-pub fn map_entry_pattern_any(input: Span) -> Res<Span, ValuePattern<MapEntryPattern>> {
+pub fn map_entry_pattern_any(input: Span) -> Res<Span, ValuePattern<MapEntryPatternCtx>> {
     delimited(multispace0, tag("*"), multispace0)(input).map(|(next, _)| (next, ValuePattern::Any))
 }
 
-pub fn map_entry_pattern(input: Span) -> Res<Span, MapEntryPattern> {
+pub fn map_entry_pattern(input: Span) -> Res<Span, MapEntryPatternCtx> {
     tuple((skewer, opt(delimited(tag("<"), payload_pattern, tag(">")))))(input).map(
         |(next, (key_con, payload_con))| {
             let payload_con = match payload_con {
@@ -4634,7 +4668,7 @@ pub fn map_entry_pattern(input: Span) -> Res<Span, MapEntryPattern> {
                 Some(payload_con) => payload_con,
             };
 
-            let map_entry_con = MapEntryPattern {
+            let map_entry_con = MapEntryPatternCtx {
                 key: key_con.to_string(),
                 payload: payload_con,
             };
@@ -4643,27 +4677,27 @@ pub fn map_entry_pattern(input: Span) -> Res<Span, MapEntryPattern> {
     )
 }
 
-pub fn map_entry_patterns(input: Span) -> Res<Span, Vec<MapEntryPattern>> {
+pub fn map_entry_patterns(input: Span) -> Res<Span, Vec<MapEntryPatternCtx>> {
     separated_list0(
         delimited(multispace0, tag(","), multispace0),
         map_entry_pattern,
     )(input)
 }
 
-pub fn consume_map_entry_pattern(input: Span) -> Res<Span, MapEntryPattern> {
+pub fn consume_map_entry_pattern(input: Span) -> Res<Span, MapEntryPatternCtx> {
     all_consuming(map_entry_pattern)(input)
 }
 
-pub fn required_map_entry_pattern(input: Span) -> Res<Span, Vec<MapEntryPattern>> {
+pub fn required_map_entry_pattern(input: Span) -> Res<Span, Vec<MapEntryPatternCtx>> {
     delimited(tag("["), map_entry_patterns, tag("]"))(input).map(|(next, params)| (next, params))
 }
 
-pub fn allowed_map_entry_pattern(input: Span) -> Res<Span, ValuePattern<PayloadPattern>> {
+pub fn allowed_map_entry_pattern(input: Span) -> Res<Span, ValuePattern<PayloadPatternCtx>> {
     payload_pattern(input).map(|(next, con)| (next, con))
 }
 
 //  [ required1<Bin>, required2<Text> ] *<Bin>
-pub fn map_pattern_params(input: Span) -> Res<Span, MapPattern> {
+pub fn map_pattern_params(input: Span) -> Res<Span, MapPatternCtx> {
     tuple((
         opt(map_entry_patterns),
         multispace0,
@@ -4685,7 +4719,7 @@ pub fn map_pattern_params(input: Span) -> Res<Span, MapPattern> {
             None => ValuePattern::None,
         };
 
-        let con = MapPattern::new(required_map, allowed);
+        let con = MapPatternCtx::new(required_map, allowed);
 
         (next, con)
     })
@@ -4709,7 +4743,7 @@ enum MapConParam {
 
 // EXAMPLE:
 //  Map { [ required1<Bin>, required2<Text> ] *<Bin> }
-pub fn map_pattern(input: Span) -> Res<Span, MapPattern> {
+pub fn map_pattern(input: Span) -> Res<Span, MapPatternCtx> {
     tuple((
         delimited(multispace0, tag("Map"), multispace0),
         opt(delimited(
@@ -4721,7 +4755,7 @@ pub fn map_pattern(input: Span) -> Res<Span, MapPattern> {
     .map(|(next, (_, entries))| {
         let mut entries = entries;
         let con = match entries {
-            None => MapPattern::any(),
+            None => MapPatternCtx::any(),
             Some(con) => con,
         };
 
@@ -4729,7 +4763,7 @@ pub fn map_pattern(input: Span) -> Res<Span, MapPattern> {
     })
 }
 
-pub fn value_constrained_map_pattern(input: Span) -> Res<Span, ValuePattern<MapPattern>> {
+pub fn value_constrained_map_pattern(input: Span) -> Res<Span, ValuePattern<MapPatternCtx>> {
     value_pattern(map_pattern)(input)
 }
 
@@ -4864,11 +4898,11 @@ pub fn rc_pattern(input: Span) -> Res<Span, RcPipelineSelector> {
         .map(|(next, (_, pattern))| (next, pattern))
 }
 
-pub fn map_pattern_payload_structure(input: Span) -> Res<Span, PayloadTypePattern> {
-    map_pattern(input).map(|(next, con)| (next, PayloadTypePattern::Map(Box::new(con))))
+pub fn map_pattern_payload_structure(input: Span) -> Res<Span, PayloadTypePatternDef<PointCtx>> {
+    map_pattern(input).map(|(next, con)| (next, PayloadTypePatternDef::Map(Box::new(con))))
 }
 
-pub fn payload_structure(input: Span) -> Res<Span, PayloadTypePattern> {
+pub fn payload_structure(input: Span) -> Res<Span, PayloadTypePatternDef<PointCtx>> {
     alt((
         array_data_struct,
         primitive_data_struct,
@@ -4892,7 +4926,7 @@ pub fn entity_pattern(input: Span) -> Res<Span, PipelineSelector> {
     alt((msg_entity_pattern, http_entity_pattern, rc_entity_pattern))(input)
 }
 
-pub fn payload_structure_with_validation(input: Span) -> Res<Span, PayloadPattern> {
+pub fn payload_structure_with_validation(input: Span) -> Res<Span, PayloadPatternCtx> {
     tuple((
         context("selector", payload_structure),
         opt(preceded(tag("~"), opt(format))),
@@ -4901,7 +4935,7 @@ pub fn payload_structure_with_validation(input: Span) -> Res<Span, PayloadPatter
     .map(|(next, (data, format, verifier))| {
         (
             next,
-            PayloadPattern {
+            PayloadPatternCtx {
                 structure: data,
                 format: match format {
                     Some(Some(format)) => Some(format),
@@ -4913,19 +4947,19 @@ pub fn payload_structure_with_validation(input: Span) -> Res<Span, PayloadPatter
     })
 }
 
-pub fn consume_payload_structure(input: Span) -> Res<Span, PayloadTypePattern> {
+pub fn consume_payload_structure(input: Span) -> Res<Span, PayloadTypePatternCtx> {
     all_consuming(payload_structure)(input)
 }
 
-pub fn consume_data_struct_def(input: Span) -> Res<Span, PayloadPattern> {
+pub fn consume_data_struct_def(input: Span) -> Res<Span, PayloadPatternCtx> {
     all_consuming(payload_structure_with_validation)(input)
 }
 
-pub fn payload_pattern_any(input: Span) -> Res<Span, ValuePattern<PayloadPattern>> {
+pub fn payload_pattern_any(input: Span) -> Res<Span, ValuePattern<PayloadPatternCtx>> {
     tag("*")(input).map(|(next, _)| (next, ValuePattern::Any))
 }
 
-pub fn payload_pattern(input: Span) -> Res<Span, ValuePattern<PayloadPattern>> {
+pub fn payload_pattern(input: Span) -> Res<Span, ValuePattern<PayloadPatternCtx>> {
     context(
         "@payload-pattern",
         value_pattern(payload_structure_with_validation),
@@ -4933,19 +4967,19 @@ pub fn payload_pattern(input: Span) -> Res<Span, ValuePattern<PayloadPattern>> {
     .map(|(next, payload_pattern)| (next, payload_pattern))
 }
 
-pub fn payload_filter_block_empty(input: Span) -> Res<Span, PatternBlock> {
-    multispace0(input.clone()).map(|(next, _)| (input, PatternBlock::None))
+pub fn payload_filter_block_empty(input: Span) -> Res<Span, PatternBlockCtx> {
+    multispace0(input.clone()).map(|(next, _)| (input, PatternBlockCtx::None))
 }
 
-pub fn payload_filter_block_any(input: Span) -> Res<Span, PatternBlock> {
+pub fn payload_filter_block_any(input: Span) -> Res<Span, PatternBlockCtx> {
     let (next, _) = delimited(multispace0, context("selector", tag("*")), multispace0)(input)?;
 
-    Ok((next, PatternBlock::Any))
+    Ok((next, PatternBlockCtx::Any))
 }
 
-pub fn payload_filter_block_def(input: Span) -> Res<Span, PatternBlock> {
+pub fn payload_filter_block_def(input: Span) -> Res<Span, PatternBlockCtx> {
     payload_structure_with_validation(input)
-        .map(|(next, pattern)| (next, PatternBlock::Pattern(pattern)))
+        .map(|(next, pattern)| (next, PatternBlockCtx::Pattern(pattern)))
 }
 
 fn insert_block_pattern(input: Span) -> Res<Span, UploadBlock> {
@@ -4993,7 +5027,7 @@ pub fn upload_step(input: Span) -> Res<Span, UploadBlock> {
     delimited(tag("^["), upload_payload_block, tag("->"))(input)
 }
 
-pub fn request_payload_filter_block(input: Span) -> Res<Span, PayloadBlock> {
+pub fn request_payload_filter_block(input: Span) -> Res<Span, PayloadBlockCtx> {
     tuple((
         multispace0,
         alt((
@@ -5003,10 +5037,10 @@ pub fn request_payload_filter_block(input: Span) -> Res<Span, PayloadBlock> {
         )),
         multispace0,
     ))(input)
-    .map(|(next, (_, block, _))| (next, PayloadBlock::RequestPattern(block)))
+    .map(|(next, (_, block, _))| (next, PayloadBlockCtx::RequestPattern(block)))
 }
 
-pub fn response_payload_filter_block(input: Span) -> Res<Span, PayloadBlock> {
+pub fn response_payload_filter_block(input: Span) -> Res<Span, PayloadBlockCtx> {
     context(
         "response-payload-filter-block",
         terminated(
@@ -5023,17 +5057,20 @@ pub fn response_payload_filter_block(input: Span) -> Res<Span, PayloadBlock> {
             tag("]"),
         ),
     )(input)
-    .map(|(next, (_, block, _))| (next, PayloadBlock::ResponsePattern(block)))
+    .map(|(next, (_, block, _))| (next, PayloadBlockCtx::ResponsePattern(block)))
 }
 
 pub fn rough_pipeline_step(input: Span) -> Res<Span, Span> {
     recognize(tuple((
-        many0(preceded(alt((tag("-"), tag("="), tag("+"))), any_soround_lex_block)),
+        many0(preceded(
+            alt((tag("-"), tag("="), tag("+"))),
+            any_soround_lex_block,
+        )),
         alt((tag("->"), tag("=>"))),
     )))(input)
 }
 
-pub fn consume_pipeline_block(input: Span) -> Res<Span, PayloadBlock> {
+pub fn consume_pipeline_block(input: Span) -> Res<Span, PayloadBlockCtx> {
     all_consuming(request_payload_filter_block)(input)
 }
 
@@ -5189,8 +5226,8 @@ fn sematic_bind_scope(scope: LexScope<Span>) -> Result<BindScope, MsgErr> {
     match selector_name.as_str() {
         "Pipeline" => {
             let scope = lex_child_scopes(scope)?;
-            let scope = PipelineScope::try_from(scope)?;
-            Ok(BindScope::PipelineScope(scope))
+            let scope = RequestScope::try_from(scope)?;
+            Ok(BindScope::RequestScope(scope))
         }
         what => {
             let mut builder = Report::build(ReportKind::Error, (), 0);
@@ -5261,38 +5298,38 @@ pub fn no_space_with_blocks(input: Span) -> Res<Span, Span> {
     recognize(many1(alt((recognize(any_block), nospace1))))(input)
 }
 
-pub fn lex_pipeline(input: Span) -> Res<Span, VarPipeline<Span>> {
-    many1(lex_pipeline_segment)(input).map(|(next, segments)| {
+pub fn var_pipeline(input: Span) -> Res<Span, VarPipeline> {
+    many1(var_pipeline_segment)(input).map(|(next, segments)| {
         let pipeline = VarPipeline { segments };
         (next, pipeline)
     })
 }
 
-pub fn lex_pipeline_segment(input: Span) -> Res<Span, VarPipelineSegment<Span>> {
+pub fn var_pipeline_segment(input: Span) -> Res<Span, VarPipelineSegment> {
     tuple((
         multispace0,
-        subst(PipelineStepParser()),
+        subst(PipelineStepCtxParser()),
         multispace1,
-        opt(subst(PipelineStopParser())),
+        opt(subst(PipelineStopCtxParser())),
     ))(input)
     .map(|(next, (_, step, _, stop))| {
+        let step = step.into();
+        let stop = stop.into();
         let segment = VarPipelineSegment { step, stop };
 
         (next, segment)
     })
 }
 
-
 #[derive(Clone)]
-pub struct PipelineStepParser();
-impl SubstParser<PipelineStep> for PipelineStepParser {
-    fn parse_span<'a>(&self, input: Span<'a>) -> Res<Span<'a>, PipelineStep> {
-        pipeline_step(input)
+pub struct PipelineStepCtxParser();
+impl SubstParser<PipelineStepCtx> for PipelineStepCtxParser {
+    fn parse_span<'a>(&self, input: Span<'a>) -> Res<Span<'a>, PipelineStepCtx> {
+        pipeline_step_ctx(input)
     }
 }
 
-
-pub fn pipeline_step(input: Span) -> Res<Span, PipelineStep> {
+pub fn pipeline_step_ctx(input: Span) -> Res<Span, PipelineStepCtx> {
     context(
         "pipeline:step",
         tuple((
@@ -5329,7 +5366,7 @@ pub fn pipeline_step(input: Span) -> Res<Span, PipelineStep> {
 
         (
             next,
-            PipelineStep {
+            PipelineStepCtx {
                 entry,
                 exit,
                 blocks,
@@ -5338,7 +5375,7 @@ pub fn pipeline_step(input: Span) -> Res<Span, PipelineStep> {
     })
 }
 
-pub fn core_pipeline_stop(input: Span) -> Res<Span, PipelineStop> {
+pub fn core_pipeline_stop(input: Span) -> Res<Span, PipelineStopCtx> {
     context(
         "Core",
         delimited(
@@ -5347,31 +5384,31 @@ pub fn core_pipeline_stop(input: Span) -> Res<Span, PipelineStop> {
             tag("}}"),
         ),
     )(input)
-    .map(|(next, _)| (next, PipelineStop::Internal))
+    .map(|(next, _)| (next, PipelineStopCtx::Internal))
 }
 
-pub fn return_pipeline_stop(input: Span) -> Res<Span, PipelineStop> {
-    tag("&")(input).map(|(next, _)| (next, PipelineStop::Respond))
+pub fn return_pipeline_stop(input: Span) -> Res<Span, PipelineStopCtx> {
+    tag("&")(input).map(|(next, _)| (next, PipelineStopCtx::Respond))
 }
 
-pub fn call_pipeline_stop(input: Span) -> Res<Span, PipelineStop> {
-    context("Call", call)(input).map(|(next, call)| (next, PipelineStop::Call(call)))
+pub fn call_pipeline_stop(input: Span) -> Res<Span, PipelineStopCtx> {
+    context("Call", call)(input).map(|(next, call)| (next, PipelineStopCtx::Call(call)))
 }
 
-pub fn point_pipeline_stop(input: Span) -> Res<Span, PipelineStop> {
-    context("pipeline:stop:point", point)(input)
-        .map(|(next, point)| (next, PipelineStop::Point(point)))
+pub fn point_pipeline_stop(input: Span) -> Res<Span, PipelineStopCtx> {
+    context("pipeline:stop:point", point_ctx)(input)
+        .map(|(next, point)| (next, PipelineStopCtx::Point(point)))
 }
 
 #[derive(Clone)]
-pub struct PipelineStopParser();
-impl SubstParser<PipelineStop> for PipelineStopParser {
-    fn parse_span<'a>(&self, input: Span<'a>) -> Res<Span<'a>, PipelineStop> {
-        pipeline_stop(input)
+pub struct PipelineStopCtxParser();
+impl SubstParser<PipelineStopCtx> for PipelineStopCtxParser {
+    fn parse_span<'a>(&self, input: Span<'a>) -> Res<Span<'a>, PipelineStopCtx> {
+        pipeline_stop_ctx(input)
     }
 }
 
-pub fn pipeline_stop(input: Span) -> Res<Span, PipelineStop> {
+pub fn pipeline_stop_ctx(input: Span) -> Res<Span, PipelineStopCtx> {
     context(
         "Stop",
         pair(
@@ -5390,37 +5427,38 @@ pub fn pipeline_stop(input: Span) -> Res<Span, PipelineStop> {
     .map(|(next, (_, pipeline_stop))| (next, pipeline_stop))
 }
 
-pub fn consume_pipeline_step(input: Span) -> Res<Span, PipelineStep> {
-    all_consuming(pipeline_step)(input)
+pub fn consume_pipeline_step(input: Span) -> Res<Span, PipelineStepCtx> {
+    all_consuming(pipeline_step_ctx)(input)
 }
 
-pub fn consume_pipeline_stop(input: Span) -> Res<Span, PipelineStop> {
-    all_consuming(pipeline_stop)(input)
+pub fn consume_pipeline_stop(input: Span) -> Res<Span, PipelineStopCtx> {
+    all_consuming(pipeline_stop_ctx)(input)
 }
 
-pub fn pipeline_segment(input: Span) -> Res<Span, PipelineSegment> {
+pub fn pipeline_segment(input: Span) -> Res<Span, PipelineSegmentCtx> {
     tuple((
         multispace0,
-        pipeline_step,
+        pipeline_step_ctx,
         multispace0,
-        pipeline_stop,
+        pipeline_stop_ctx,
         multispace0,
     ))(input)
-    .map(|(next, (_, step, _, stop, _))| (next, PipelineSegment { step, stop }))
+    .map(|(next, (_, step, _, stop, _))| (next, PipelineSegmentCtx { step, stop }))
 }
 
-pub fn pipeline(input: Span) -> Res<Span, Pipeline> {
+pub fn pipeline(input: Span) -> Res<Span, PipelineCtx> {
     context(
         "pipeline",
         many0(delimited(multispace0, pipeline_segment, multispace0)),
     )(input)
-    .map(|(next, segments)| (next, Pipeline { segments }))
+    .map(|(next, segments)| (next, PipelineCtx { segments }))
 }
 
-pub fn consume_pipeline(input: Span) -> Res<Span, Pipeline> {
+pub fn consume_pipeline(input: Span) -> Res<Span, PipelineCtx> {
     all_consuming(pipeline)(input)
 }
 
+/*
 pub fn entity_selectors(input: Span) -> Res<Span, Vec<Selector<PipelineSelector>>> {
     many0(delimited(multispace0, entity_selector, multispace0))(input)
 }
@@ -5449,62 +5487,75 @@ pub fn consume_selector(input: Span) -> Res<Span, Selector<PipelineSelector>> {
     all_consuming(entity_selector)(input)
 }
 
+ */
 
-
-pub fn subst<T,P>(parser: P) -> impl FnMut(Span) -> Res<Span, Subst<T,Span,P>> where P: SubstParser<T>+'static+Clone{
-
-    move |input:Span| {
-        many1(chunk)(input.clone()).map( |(next,chunks)| {
-            let len:usize = chunks.iter().map(|c|c.len()).sum();
-            let span = OwnedSpan::from(input.slice(0..input.len()-next.len()));
+pub fn subst<T, P>(parser: P) -> impl FnMut(Span) -> Res<Span, Subst<T, Span, P>>
+where
+    P: SubstParser<T> + 'static + Clone,
+{
+    move |input: Span| {
+        many1(chunk)(input.clone()).map(|(next, chunks)| {
+            let len: usize = chunks.iter().map(|c| c.len()).sum();
+            let span = OwnedSpan::from(input.slice(0..input.len() - next.len()));
             let chunks = Subst {
                 chunks,
                 parser: parser.clone(),
                 span,
-                phantom: PhantomData{}
+                phantom: PhantomData {},
             };
-            (next,chunks)
-        } )
+            (next, chunks)
+        })
     }
 }
 
-pub fn chunk( input: Span ) -> Res<Span,Chunk<Span>> {
-    alt( (text_chunk,var_chunk))(input)
+pub fn chunk(input: Span) -> Res<Span, Chunk<Span>> {
+    alt((text_chunk, var_chunk))(input)
 }
-pub fn text_chunk( input: Span ) -> Res<Span,Chunk<Span>> {
-    recognize(many1(alt((recognize(any_soround_lex_block), tag("\\$"),recognize(satisfy( |c| {c != '$' && !c.is_whitespace()} ))))))(input).map( |(next,text)| {(next, Chunk::Text(text))} )
+pub fn text_chunk(input: Span) -> Res<Span, Chunk<Span>> {
+    recognize(many1(alt((
+        recognize(any_soround_lex_block),
+        tag("\\$"),
+        recognize(satisfy(|c| c != '$' && !c.is_whitespace())),
+    ))))(input)
+    .map(|(next, text)| (next, Chunk::Text(text)))
 }
 
-pub fn var_chunk( input: Span ) -> Res<Span,Chunk<Span>> {
+pub fn var_chunk(input: Span) -> Res<Span, Chunk<Span>> {
     preceded(
         tag("$"),
         context(
             "variable",
             cut(delimited(
                 context("variable:open", cut(tag("{"))),
-                context("variable:name",variable_name),
+                context("variable:name", variable_name),
                 context("variable:close", cut(tag("}"))),
             )),
         ),
-    )(input).map(|(next,variable_name)|{
-        (next,Chunk::Var(variable_name))
-    })
+    )(input)
+    .map(|(next, variable_name)| (next, Chunk::Var(variable_name)))
 }
-
-
-
-
-
-
 
 #[cfg(test)]
 pub mod test {
     use crate::error::{MsgErr, ParseErrs};
     use crate::version::v0_0_1::config::config::Config;
     use crate::version::v0_0_1::parse::error::result;
-    use crate::version::v0_0_1::parse::model::{BlockKind, DelimitedBlockKind, LexScope, NestedBlockKind, TerminatedBlockKind, };
-    use crate::version::v0_0_1::parse::{args, bind_config, subst, comment, config, expected_block_terminator_or_non_terminator, lex_block, lex_child_scopes, lex_nested_block, lex_scope, lex_scope_pipeline_step_and_block, lex_scope_selector, lex_scope_selector_and_filters, lex_scopes, lowercase1, MapResolver, mesh_eos, nested_block, nested_block_content, next_selector, no_comment, parse_include_blocks, parse_inner_block, path_regex, pipeline, pipeline_segment, pipeline_step, pipeline_stop, point, rec_version, Res, Resolver, root_scope, root_scope_selector, scope_filter, scope_filters, skewer_case, skewer_dot, space_chars, space_no_dupe_dots, space_point_segment, SubstParser, strip_comments, VarSubst, variable_name, wrapper, version};
+    use crate::version::v0_0_1::parse::model::{
+        BlockKind, DelimitedBlockKind, LexScope, NestedBlockKind, TerminatedBlockKind,
+    };
+    use crate::version::v0_0_1::parse::{
+        args, bind_config, comment, config, expected_block_terminator_or_non_terminator, lex_block,
+        lex_child_scopes, lex_nested_block, lex_scope, lex_scope_pipeline_step_and_block,
+        lex_scope_selector, lex_scope_selector_and_filters, lex_scopes, lowercase1, mesh_eos,
+        nested_block, nested_block_content, next_selector, no_comment, parse_include_blocks,
+        parse_inner_block, path_regex, pipeline, pipeline_segment, pipeline_step_ctx,
+        pipeline_stop_ctx, point, rec_version, root_scope, root_scope_selector, scope_filter,
+        scope_filters, skewer_case, skewer_dot, space_chars, space_no_dupe_dots,
+        space_point_segment, strip_comments, subst, variable_name, version, wrapper, MapResolver,
+        Res, Resolver, SubstParser, VarSubst,
+    };
     use crate::version::v0_0_1::{create_span, Span};
+    use nom::branch::alt;
     use nom::bytes::complete::{escaped, tag};
     use nom::character::complete::{alpha1, alphanumeric1, anychar, multispace0};
     use nom::character::is_alphanumeric;
@@ -5517,7 +5568,6 @@ pub mod test {
     use nom_supreme::error::ErrorTree;
     use std::rc::Rc;
     use std::sync::Arc;
-    use nom::branch::alt;
 
     #[test]
     pub fn test_lex_block() -> Result<(), MsgErr> {
@@ -5554,8 +5604,8 @@ pub mod test {
 
         log(config(bind_config_str))?;
         if let Config::Bind(bind) = log(config(bind_config_str))? {
-            assert_eq!(bind.pipelines().len(), 1);
-            let mut pipelines = bind.pipelines();
+            assert_eq!(bind.request_scopes().len(), 1);
+            let mut pipelines = bind.request_scopes();
             let pipeline_scope = pipelines.pop().unwrap();
             assert_eq!(pipeline_scope.selector.selector.name.as_str(), "Pipeline");
             let message_scope = pipeline_scope.block.first().unwrap();
@@ -5577,8 +5627,8 @@ pub mod test {
            }"#;
 
         if let Config::Bind(bind) = log(config(bind_config_str))? {
-            assert_eq!(bind.pipelines().len(), 1);
-            let mut pipelines = bind.pipelines();
+            assert_eq!(bind.request_scopes().len(), 1);
+            let mut pipelines = bind.request_scopes();
             let pipeline_scope = pipelines.pop().unwrap();
             assert_eq!(pipeline_scope.selector.selector.name.as_str(), "Pipeline");
             let message_scope = pipeline_scope.block.first().unwrap();
@@ -5664,7 +5714,9 @@ pub mod test {
         log(result(space_point_segment(create_span("localhost.com"))))?;
 
         log(result(point(create_span("mechtron.io:app:hello"))))?;
-        log(result(pipeline_stop(create_span("localhost:app:hello"))))?;
+        log(result(pipeline_stop_ctx(create_span(
+            "localhost:app:hello",
+        ))))?;
         Ok(())
     }
 
@@ -5676,14 +5728,14 @@ pub mod test {
 
     #[test]
     pub fn test_pipeline_step() -> Result<(), MsgErr> {
-        log(result(pipeline_step(create_span("->"))))?;
-        log(result(pipeline_step(create_span("-[ Text ]->"))))?;
-        log(result(pipeline_step(create_span("-[ Text ]=>"))))?;
-        log(result(pipeline_step(create_span("=[ Text ]=>"))))?;
+        log(result(pipeline_step_ctx(create_span("->"))))?;
+        log(result(pipeline_step_ctx(create_span("-[ Text ]->"))))?;
+        log(result(pipeline_step_ctx(create_span("-[ Text ]=>"))))?;
+        log(result(pipeline_step_ctx(create_span("=[ Text ]=>"))))?;
 
-        assert!(log(result(pipeline_step(create_span("=")))).is_err());
-        assert!(log(result(pipeline_step(create_span("-[ Bin ]=")))).is_err());
-        assert!(log(result(pipeline_step(create_span("[ Bin ]=>")))).is_err());
+        assert!(log(result(pipeline_step_ctx(create_span("=")))).is_err());
+        assert!(log(result(pipeline_step_ctx(create_span("-[ Bin ]=")))).is_err());
+        assert!(log(result(pipeline_step_ctx(create_span("[ Bin ]=>")))).is_err());
         Ok(())
     }
 
@@ -5785,7 +5837,7 @@ Bind(version=1.0.0)->
             result(all_consuming(lex_nested_block(NestedBlockKind::Curly))(
                 create_span("{ } }")
             ))
-                .is_err()
+            .is_err()
         );
         // this is allowed by rough_block
         result(all_consuming(lex_nested_block(NestedBlockKind::Curly))(
@@ -5801,9 +5853,9 @@ Hello my friend
 
         }"#,
         )))
-            .err()
-            .unwrap()
-            .print();
+        .err()
+        .unwrap()
+        .print();
 
         result(lex_nested_block(NestedBlockKind::Curly)(create_span(
             r#"{
@@ -5813,9 +5865,9 @@ Hello my friend
 
         "#,
         )))
-            .err()
-            .unwrap()
-            .print();
+        .err()
+        .unwrap()
+        .print();
         Ok(())
     }
 
@@ -5855,9 +5907,9 @@ Hello my friend
 
         }"#,
         )))
-            .err()
-            .unwrap()
-            .print();
+        .err()
+        .unwrap()
+        .print();
         Ok(())
     }
 
@@ -5869,7 +5921,7 @@ Hello my friend
 
             Bind(version=1.0.0)->"#,
             )))
-                .is_ok())
+            .is_ok())
         );
 
         assert!(
@@ -5878,7 +5930,7 @@ Hello my friend
 
             Bind(version=1.0.0-alpha)->"#,
             )))
-                .is_ok())
+            .is_ok())
         );
 
         result(root_scope_selector(create_span(
@@ -5886,32 +5938,30 @@ Hello my friend
 
             Bind(version=1.0.0) ->"#,
         )))
-            .err()
-            .unwrap()
-            .print();
+        .err()
+        .unwrap()
+        .print();
 
         result(root_scope_selector(create_span(
             r#"
 
         Bind   x"#,
         )))
-            .err()
-            .unwrap()
-            .print();
+        .err()
+        .unwrap()
+        .print();
 
         result(root_scope_selector(create_span(
             r#"
 
         (Bind(version=3.2.0)   "#,
         )))
-            .err()
-            .unwrap()
-            .print();
+        .err()
+        .unwrap()
+        .print();
 
         Ok(())
     }
-
-
 
     #[test]
     pub fn test_scope_filter() -> Result<(), MsgErr> {
@@ -5945,7 +5995,7 @@ Hello my friend
             next_selector(create_span("Http"))
                 .unwrap()
                 .1
-                .0
+                 .0
                 .to_string()
                 .as_str()
         );
@@ -5954,7 +6004,7 @@ Hello my friend
             next_selector(create_span("<Http>"))
                 .unwrap()
                 .1
-                .0
+                 .0
                 .to_string()
                 .as_str()
         );
@@ -5963,7 +6013,7 @@ Hello my friend
             next_selector(create_span("Http<Msg>"))
                 .unwrap()
                 .1
-                .0
+                 .0
                 .to_string()
                 .as_str()
         );
@@ -5972,7 +6022,7 @@ Hello my friend
             next_selector(create_span("<Http<Msg>>"))
                 .unwrap()
                 .1
-                .0
+                 .0
                 .to_string()
                 .as_str()
         );
@@ -5982,7 +6032,7 @@ Hello my friend
             next_selector(create_span("<*<Msg>>"))
                 .unwrap()
                 .1
-                .0
+                 .0
                 .to_string()
                 .as_str()
         );
@@ -5992,7 +6042,7 @@ Hello my friend
             next_selector(create_span("*"))
                 .unwrap()
                 .1
-                .0
+                 .0
                 .to_string()
                 .as_str()
         );
@@ -6241,7 +6291,7 @@ Hello my friend
 
             }"#,
         ))))
-            .unwrap();
+        .unwrap();
     }
 
     #[test]
@@ -6267,44 +6317,55 @@ Bind(version=1.2.3)-> {
         Ok(())
     }
     #[test]
-    pub fn test_variable_name() -> Result<(),MsgErr> {
-
-        assert_eq!("v".to_string(), log(result(lowercase1(create_span("v"))))?.to_string());
-        assert_eq!("var".to_string(), log(result(skewer_dot(create_span("var"))))?.to_string());
+    pub fn test_variable_name() -> Result<(), MsgErr> {
+        assert_eq!(
+            "v".to_string(),
+            log(result(lowercase1(create_span("v"))))?.to_string()
+        );
+        assert_eq!(
+            "var".to_string(),
+            log(result(skewer_dot(create_span("var"))))?.to_string()
+        );
 
         log(result(variable_name(create_span("var"))))?;
         Ok(())
     }
 
     #[test]
-    pub fn test_subst() -> Result<(),MsgErr> {
-
+    pub fn test_subst() -> Result<(), MsgErr> {
         #[derive(Clone)]
         pub struct SomeParser();
         impl SubstParser<String> for SomeParser {
             fn parse_span<'a>(&self, span: Span<'a>) -> Res<Span<'a>, String> {
-                recognize(terminated(recognize(many0(pair(peek(not(eof)),recognize(anychar)))),eof))(span).map( |(next,span)| {
-                    (next,span.to_string() )
-                } )
+                recognize(terminated(
+                    recognize(many0(pair(peek(not(eof)), recognize(anychar)))),
+                    eof,
+                ))(span)
+                .map(|(next, span)| (next, span.to_string()))
             }
         }
 
-       let chunks = log(result(subst(SomeParser())(create_span("123[]:${var}:abc" ))))?;
-        assert_eq!(chunks.chunks.len(),3);
-       let mut resolver = MapResolver::new();
-       resolver.insert("var","hello");
-       let resolved = log(chunks.resolve_vars(&resolver.clone().wrap()))?;
+        let chunks = log(result(subst(SomeParser())(create_span("123[]:${var}:abc"))))?;
+        assert_eq!(chunks.chunks.len(), 3);
+        let mut resolver = MapResolver::new();
+        resolver.insert("var", "hello");
+        let resolved = log(chunks.resolve_vars(&resolver.clone().wrap()))?;
 
-        let chunks = log(result(subst(SomeParser())(create_span("123[]:\\${var}:abc" ))))?;
+        let chunks = log(result(subst(SomeParser())(create_span(
+            "123[]:\\${var}:abc",
+        ))))?;
         let resolved = log(chunks.resolve_vars(&resolver.wrap()))?;
 
-        let r= log(result(subst(SomeParser())(create_span("123[    ]:${var}:abc" ))))?;
-        println!("{}",r.to_string());
-        log(result(subst(SomeParser())(create_span("123[]:${vAr}:abc" ))));
-        log(result(subst(SomeParser())(create_span("123[]:${vAr }:abc" ))));
+        let r = log(result(subst(SomeParser())(create_span(
+            "123[    ]:${var}:abc",
+        ))))?;
+        println!("{}", r.to_string());
+        log(result(subst(SomeParser())(create_span("123[]:${vAr}:abc"))));
+        log(result(subst(SomeParser())(create_span(
+            "123[]:${vAr }:abc",
+        ))));
 
         Ok(())
-
     }
 
     fn log<R>(result: Result<R, MsgErr>) -> Result<R, MsgErr> {
