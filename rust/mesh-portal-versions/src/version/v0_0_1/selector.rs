@@ -18,13 +18,12 @@ pub mod selector {
     use crate::version::v0_0_1::id::id::{
         GenericKind, GenericKindBase, Point, PointSeg, RouteSeg, Specific, Tks, Version,
     };
-    use crate::version::v0_0_1::parse::{camel_case, camel_case_to_string_matcher,  consume_hierarchy, file_chars, path, path_regex, point, Res, };
+    use crate::version::v0_0_1::parse::{camel_case, camel_case_to_string_matcher, consume_hierarchy, file_chars, path, path_regex, point, point_segment_selector, point_selector, Res};
     use crate::version::v0_0_1::payload::payload::{
         Call, CallKind, CallWithConfig, HttpCall, HttpMethod, HttpMethodType, ListPattern,
         MapPattern, MsgCall, Payload, PayloadFormat, PayloadPattern, PayloadType,
         PayloadTypePattern, Primitive, PrimitiveType, NumRange,
     };
-    use crate::version::v0_0_1::parse::parse::{pattern, point_segment_selector, point_selector, value_pattern};
     use crate::version::v0_0_1::selector::selector::specific::{
         ProductSelector, VariantSelector, VendorSelector,
     };

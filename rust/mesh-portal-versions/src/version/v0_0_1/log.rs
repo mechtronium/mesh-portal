@@ -1,6 +1,5 @@
 use crate::error::MsgErr;
 use crate::version::v0_0_1::id::id::Point;
-use crate::version::v0_0_1::parse::parse::delim_kind;
 use crate::version::v0_0_1::util::{timestamp, unique_id};
 use crate::version::v0_0_1::{mesh_portal_timestamp, Timestamp};
 use serde_json::Value;

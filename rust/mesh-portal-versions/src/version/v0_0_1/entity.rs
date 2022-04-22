@@ -280,7 +280,7 @@ pub mod entity {
             use crate::error::MsgErr;
             use crate::version::v0_0_1::bin::Bin;
             use crate::version::v0_0_1::command::command::common::{SetProperties, SetRegistry, StateSrc};
-            use crate::version::v0_0_1::id::id::{GenericKind, HostKey, Point, PointSeg};
+            use crate::version::v0_0_1::id::id::{GenericKind, HostKey, Point, PointCtx, PointSeg};
             use crate::version::v0_0_1::payload::payload::{Payload, Primitive};
             use crate::version::v0_0_1::selector::selector::SpecificSelector;
             use crate::version::v0_0_1::util::ConvertFrom;

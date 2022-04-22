@@ -4,8 +4,11 @@ use std::convert::From;
 use std::convert::TryInto;
 use std::fmt::Debug;
 use std::hash::Hash;
+use std::ops::{Range, RangeTo};
 use std::rc::Rc;
 use std::sync::Arc;
+use nom::{Offset, Slice};
+
 pub mod log;
 pub mod messaging;
 pub mod security;
@@ -30,6 +33,84 @@ use crate::version::v0_0_1::bin::Bin;
 pub type State = HashMap<String, Bin>;
 pub type Span<'a> = LocatedSpan<&'a str, SpanExtra>;
 pub type SpanExtra = Arc<String>;
+
+pub struct Spanner<I> {
+    pub spans: Vec<I>
+}
+
+impl <I> Spanner<I> {
+    pub fn new()->Self {
+        Self {
+            spans: vec![]
+        }
+    }
+}
+
+impl <I:ToString> ToString for Spanner<I> {
+    fn to_string(&self) -> String {
+        let mut rtn = String::new();
+
+        for span in &self.spans {
+            rtn.push_str(span.to_string().as_str() );
+        }
+
+        rtn
+    }
+}
+
+pub struct NamedSpan<S> {
+    pub name: String,
+    pub span: S
+}
+
+impl <S:ToString> ToString for NamedSpan<S> {
+    fn to_string(&self) -> String {
+        self.span.to_string()
+    }
+}
+
+#[derive(Clone)]
+pub struct OwnedSpan {
+    pub extra: SpanExtra,
+    pub offset: usize,
+    pub len: usize
+}
+
+impl <'a> From<Span<'a>> for OwnedSpan {
+    fn from( span: Span<'a> ) -> Self {
+        Self {
+            extra: span.extra.clone(),
+            offset: span.location_offset(),
+            len: span.len()
+        }
+    }
+}
+
+impl OwnedSpan {
+    pub fn as_str(&self) -> &str {
+        self.extra.as_str().slice( self.offset..self.offset+self.len)
+    }
+}
+
+impl ToString for OwnedSpan {
+    fn to_string(&self) -> String {
+        self.as_str().to_string()
+    }
+}
+
+impl Slice<Range<usize>> for OwnedSpan
+where
+
+{
+    fn slice(&self, range: Range<usize>) -> Self {
+        Self {
+            extra: self.extra.clone(),
+            offset: self.offset+range.start,
+            len: range.end-range.start
+        }
+    }
+}
+
 
 pub fn create_span(s: &str) -> Span {
 

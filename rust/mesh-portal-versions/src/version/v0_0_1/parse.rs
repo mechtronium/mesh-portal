@@ -1,76 +1,38 @@
-use ariadne::{Label, Report, ReportKind};
 use core::fmt;
 use std::collections::HashMap;
 use std::fmt::Formatter;
 use std::ops::{Deref, Range, RangeFrom, RangeTo};
 use std::rc::Rc;
 use std::str::FromStr;
-use std::sync::Arc;
 
-use nom::branch::alt;
 use nom::bytes::complete::{escaped, is_a, is_not};
 use nom::bytes::complete::{tag, take_till, take_until, take_until1, take_while};
 use nom::character::complete::{
-    alpha0, alpha1, alphanumeric0, alphanumeric1, anychar, char, digit0, digit1, line_ending,
+    alpha0,  alphanumeric0, alphanumeric1, anychar, char, digit0, line_ending,
     multispace0, multispace1, newline, one_of, satisfy, space0, space1,
 };
 use nom::combinator::{
-    all_consuming, cut, eof, fail, not, opt, peek, recognize, success, value, verify,
+     cut, eof, fail, not,  peek, recognize, success, value, verify,
 };
-use nom::error::{context, ContextError, Error, ErrorKind, ParseError, VerboseError};
-use nom::multi::{many0, many1, separated_list0, separated_list1};
-use nom::sequence::{delimited, pair, preceded, terminated, tuple};
-use nom::{
-    AsChar, Compare, CompareResult, FindToken, IResult, InputIter, InputLength, InputTake,
-    InputTakeAtPosition, Offset, Parser, Slice, UnspecializedInput,
-};
-use nom_supreme::parse_from_str;
 
-use crate::error::{MsgErr, ParseErrs};
-use crate::version::v0_0_1::command::command::common::{PropertyMod, SetProperties, StateSrc};
-use crate::version::v0_0_1::config::config::bind::Pipeline;
-use crate::version::v0_0_1::config::config::bind::{
-    BindConfig, ConfigScope, MessageKind, PipelineStep, PipelineStop, PipelinesSubScope, Selector,
-};
-use crate::version::v0_0_1::config::config::{bind, Config, PointConfig};
-use crate::version::v0_0_1::entity::entity::request::create::{
-    Create, CreateOp, KindTemplate, PointSegFactory, PointTemplate, PointTemplateSeg, Require,
-    Strategy, Template,
-};
-use crate::version::v0_0_1::entity::entity::request::get::{Get, GetOp};
-use crate::version::v0_0_1::entity::entity::request::select::{
-    Select, SelectIntoPayload, SelectKind,
-};
-use crate::version::v0_0_1::entity::entity::request::set::Set;
-use crate::version::v0_0_1::entity::entity::request::RcCommandType;
-use crate::version::v0_0_1::entity::entity::EntityKind;
-use crate::version::v0_0_1::id::id::{
-    Point, PointSeg, PointSegDelim, PointSegKind, PointSegPairDef,
-      RouteSeg, Version,
-};
-use crate::version::v0_0_1::parse::error::{first_context, result};
-use crate::version::v0_0_1::parse::model::{ActionScope, BindScope, BindScopeKind, Block, BlockKind, Chunk, Chunks, DelimitedBlockKind, LexBlock, LexParentScope, LexPipeline, LexPipelineScope, LexPipelineSegment, LexRootScope, LexScope, LexScopeSelector, LexScopeSelectorAndFilters, NestedBlockKind, PipelineScope, PipelineScopeDef, PipelineSegment, RootScopeSelector, Scope, ScopeFilterDef, ScopeFiltersDef, ScopeSelectorAndFilters, ScopeSelectorAndFiltersDef, ScopeSelectorDef, Spanned, TerminatedBlockKind, TextType};
-use crate::version::v0_0_1::parse::parse::{
-    delim_kind, generic_kind_base, pattern, point_selector, specific_selector, value_pattern,
-    version,
-};
-use crate::version::v0_0_1::payload::payload::{
-    Call, CallKind, CallWithConfig, HttpCall, HttpMethod, HttpMethodType, ListPattern, MapPattern,
-    MsgCall, NumRange, Payload, PayloadFormat, PayloadPattern, PayloadType, PayloadTypePattern,
-};
-use crate::version::v0_0_1::security::{AccessGrant, AccessGrantKind, AccessGrantKindDef, ChildPerms, ParticlePerms, Permissions, PermissionsMask, PermissionsMaskKind, Privilege};
-use crate::version::v0_0_1::selector::selector::{HttpPipelineSelector, LabeledPrimitiveTypeDef, MapEntryPattern, MsgPipelineSelector, Pattern, PayloadTypeDef, PipelineSelector, PointKindHierarchy, PointKindSeg, PointSelector, RcPipelineSelector};
-use crate::version::v0_0_1::selector::{selector, PatternBlock, PayloadBlock, UploadBlock};
-use crate::version::v0_0_1::util::{MethodPattern, StringMatcher, ValuePattern};
-use crate::version::v0_0_1::{create_span, Span};
+
 use nom::bytes::complete::take;
 use nom::character::is_space;
-use nom_locate::LocatedSpan;
-use nom_supreme::error::ErrorTree;
 use nom_supreme::final_parser::ExtractContext;
 use regex::internal::Input;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
+use crate::error::{MsgErr, ParseErrs};
+use crate::version::v0_0_1::command::command::common::{PropertyMod, SetProperties, StateSrc};
+use crate::version::v0_0_1::entity::entity::request::create::{Create, CreateOp, KindTemplate, PointSegFactory, PointTemplate, PointTemplateSeg, Require, Strategy, Template};
+use crate::version::v0_0_1::entity::entity::request::get::{Get, GetOp};
+use crate::version::v0_0_1::entity::entity::request::select::{Select, SelectIntoPayload, SelectKind};
+use crate::version::v0_0_1::entity::entity::request::set::Set;
+use crate::version::v0_0_1::id::id::{Point, PointCtx, PointSegCtx, PointSegDelim, RouteSeg, Version};
+use crate::version::v0_0_1::security::{AccessGrantKind, AccessGrantKindDef, ChildPerms, ParticlePerms, Permissions, PermissionsMask, PermissionsMaskKind, Privilege};
+use crate::version::v0_0_1::{create_span, OwnedSpan, Span};
+use crate::version::v0_0_1::selector::selector::{PointKindHierarchy, PointKindSeg};
+use crate::version::v0_0_1::util::{MethodPattern, StringMatcher, ValuePattern};
 
 /*
 pub struct Parser {}
@@ -155,7 +117,8 @@ pub fn point_route_segment(input: Span) -> Res<Span, RouteSeg> {
     alt((local_route_segment, other_route_segment))(input)
 }
 
-pub fn point_segment(input: Span) -> Res<Span, PointSeg> {
+/*
+pub fn point_segment(input: Span) -> Res<Span, PointSegCtx> {
     alt((
         base_point_segment,
         space_point_segment,
@@ -164,6 +127,8 @@ pub fn point_segment(input: Span) -> Res<Span, PointSeg> {
         file_point_segment,
     ))(input)
 }
+
+ */
 
 pub fn mesh_eos(input: Span) -> Res<Span, Span> {
     peek(alt((tag(":"), eop)))(input)
@@ -222,13 +187,7 @@ pub fn space_point_segment(input: Span) -> Res<Span, PointSeg> {
     .map(|(next, (space, x))| (next, PointSeg::Space(space.to_string())))
 }
 
-#[derive(Clone)]
-pub struct SpacePointSegmentParser();
-impl StringParser<PointSeg> for SpacePointSegmentParser {
-    fn parse_span<'a>(&self, span: Span<'a>) -> Res<Span<'a>, PointSeg> {
-        space_point_segment(span)
-    }
-}
+
 
 pub fn base_point_segment(input: Span) -> Res<Span, PointSeg> {
     preceded(
@@ -238,13 +197,6 @@ pub fn base_point_segment(input: Span) -> Res<Span, PointSeg> {
     .map(|(next, (base, _))| (next, PointSeg::Base(base.to_string())))
 }
 
-#[derive(Clone)]
-pub struct BasePointSegmentParser();
-impl StringParser<PointSeg> for BasePointSegmentParser {
-    fn parse_span<'a>(&self, span: Span<'a>) -> Res<Span<'a>, PointSeg> {
-        base_point_segment(span)
-    }
-}
 
 pub fn version_point_segment(input: Span) -> Res<Span, PointSeg> {
     preceded(
@@ -254,44 +206,23 @@ pub fn version_point_segment(input: Span) -> Res<Span, PointSeg> {
     .map(|(next, (version, _))| (next, PointSeg::Version(version)))
 }
 
-#[derive(Clone)]
-pub struct VersionPointSegmentParser();
-impl StringParser<PointSeg> for VersionPointSegmentParser {
-    fn parse_span<'a>(&self, span: Span<'a>) -> Res<Span<'a>, PointSeg> {
-        version_point_segment(span)
-    }
-}
 
-pub fn dir_pop(input: Span) -> Res<Span, PointSeg> {
+
+pub fn dir_pop(input: Span) -> Res<Span, PointSegCtx> {
     context("point:dir_pop", tuple((tag(".."), opt(tag("/")))))(input)
-        .map(|(next, _)| (next, PointSeg::Pop))
+        .map(|(next, _)| (next, PointSegCtx::Pop))
 }
 
-#[derive(Clone)]
-pub struct DirPopPointSegmentParser();
-impl StringParser<PointSeg> for DirPopPointSegmentParser {
-    fn parse_span<'a>(&self, span: Span<'a>) -> Res<Span<'a>, PointSeg> {
-        dir_pop(span)
-    }
-}
 
 pub fn filesystem_point_segment(input: Span) -> Res<Span, PointSeg> {
     tuple((
         peek(not(eop)),
         context(
             "point:file_or_directory",
-            cut(alt((dir_pop, dir_point_segment, file_point_segment))),
+            cut(alt((dir_point_segment, file_point_segment))),
         ),
     ))(input)
     .map(|(next, (_, seg))| (next, seg))
-}
-
-#[derive(Clone)]
-pub struct FileSystemPointSegmentParser();
-impl StringParser<PointSeg> for FileSystemPointSegmentParser {
-    fn parse_span<'a>(&self, span: Span<'a>) -> Res<Span<'a>, PointSeg> {
-        filesystem_point_segment(span)
-    }
 }
 
 pub fn dir_point_segment(input: Span) -> Res<Span, PointSeg> {
@@ -304,33 +235,47 @@ pub fn root_dir_point_segment(input: Span) -> Res<Span, PointSeg> {
         .map(|(next, _)| (next, PointSeg::FilesystemRootDir))
 }
 
+pub fn root_dir_point_segment_ctx(input: Span) -> Res<Span, PointSegCtx> {
+    context("point:root_filesystem_segment", tag(":/"))(input)
+        .map(|(next, _)| (next, PointSegCtx::FilesystemRootDir))
+}
+
 pub fn file_point_segment(input: Span) -> Res<Span, PointSeg> {
     context("point:file_segment", file_chars)(input)
         .map(|(next, filename)| (next, PointSeg::File(filename.to_string())))
 }
 
-#[derive(Clone)]
-pub struct FilePointSegmentParser();
-impl StringParser<PointSeg> for FilePointSegmentParser {
-    fn parse_span<'a>(&self, span: Span<'a>) -> Res<Span<'a>, PointSeg> {
-        file_point_segment(span)
-    }
-}
 
 
 pub fn point(input: Span) -> Res<Span, Point> {
+    let (next, point) = point_ctx(input.clone())?;
+
+        match point.try_into() {
+            Ok(point) => {
+                Ok((next,point))
+            }
+            Err(err) => {
+                let span = input.slice(0..(input.len()-next.len()));
+                let err = ErrorTree::from_error_kind(span.clone(), ErrorKind::Tag );
+                let err = ErrorTree::add_context(span.clone(), "point", err);
+                Err(nom::Err::Error(err))
+            }
+        }
+
+}
+
+pub fn point_ctx(input: Span) -> Res<Span, PointCtx> {
     context(
         "point",
         tuple((alt((root_point, point_non_root)), peek(eop))),
-    )(input)
-    .map(|(next, (point, _))| (next, point))
+    )(input.clone()).map(|(next,(point,_))|{(next,point)})
 }
 
-pub fn root_point(input: Span) -> Res<Span, Point> {
+pub fn root_point(input: Span) -> Res<Span, PointCtx> {
     tuple((opt(terminated(point_route_segment, tag("::"))), tag("ROOT")))(input).map(
         |(next, (route, _))| {
             let route = route.unwrap_or(RouteSeg::Local);
-            let point = Point {
+            let point = PointCtx {
                 route,
                 segments: vec![],
             };
@@ -340,7 +285,7 @@ pub fn root_point(input: Span) -> Res<Span, Point> {
 }
 
 
-pub fn point_non_root(input: Span) -> Res<Span, Point> {
+pub fn point_non_root(input: Span) -> Res<Span, PointCtx> {
     context(
         "point_non_root",
         tuple((
@@ -348,16 +293,16 @@ pub fn point_non_root(input: Span) -> Res<Span, Point> {
                 "point_route",
                 opt(terminated(point_route_segment, tag("::"))),
             ),
-            space_point_segment,
+            ctx_seg(space_point_segment),
             many0(tuple((
                 seg_delim,
                 peek(context("point:bad_leading", cut(alt((lowercase1, digit1))))),
-                base_point_segment,
+                pop(base_point_segment),
             ))),
             opt(mesh_seg(version_point_segment)),
             opt(tuple((
-                root_dir_point_segment,
-                many0(filesystem_point_segment),
+                root_dir_point_segment_ctx,
+                many0(pop(filesystem_point_segment)),
                 eop,
             ))),
             eop,
@@ -382,7 +327,7 @@ pub fn point_non_root(input: Span) -> Res<Span, Point> {
                 segments.append(&mut files);
             }
 
-            let point = Point { route, segments };
+            let point = PointCtx { route, segments };
 
             (next, point)
         },
@@ -873,21 +818,7 @@ pub fn path_regex(input: Span) -> Res<Span, Span> {
     }
 }
 
-pub fn rough_cap_subst(input: Span) -> Res<Span, Span> {
-    delimited(
-        tag("$("),
-        recognize(pair(
-            alpha1,
-            many0(alt((
-                alpha1,
-                digit1,
-                recognize(any_block),
-                recognize(regex),
-            ))),
-        )),
-        tag(")"),
-    )(input)
-}
+
 
 pub fn regex<T>(i: T) -> Res<T, T>
 where
@@ -1432,26 +1363,25 @@ pub fn publish(input: Span) -> Res<Span, CreateOp> {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Ctx {
-    RelativePoint,
-    RelativePointPop,
+    WorkingPoint,
+    WorkingPointPop,
+    PointFromRoot
 }
 
 impl ToString for Ctx {
     fn to_string(&self) -> String {
         match self {
-            Ctx::RelativePoint => ".".to_string(),
-            Ctx::RelativePointPop => "..".to_string(),
+            Ctx::WorkingPoint => ".".to_string(),
+            Ctx::WorkingPointPop => "..".to_string(),
+            Ctx::PointFromRoot => "...".to_string()
         }
     }
 }
 
-pub struct ResolverCtx<'a>(Box<dyn Resolver+'a>);
+pub struct VarResolver<'a>(Box<dyn Resolver+'a>);
+pub struct CtxResolver<'a>(Box<dyn Resolver+'a>);
 
-impl <'a> ResolverCtx<'a> {
-
-}
-
-impl <'a> Deref for ResolverCtx<'a> {
+impl <'a> Deref for VarResolver<'a> {
     type Target = Box<dyn Resolver+'a>;
 
     fn deref(&self) -> &Self::Target {
@@ -1472,8 +1402,8 @@ pub trait Resolver {
         Err(format!("context operation '{}' not available here", ctx.to_string()).into())
     }
 
-    fn wrap<'a>(self) ->ResolverCtx<'a> where Self:Sized+'a{
-        ResolverCtx(Box::new(self))
+    fn wrap<'a>(self) -> VarResolver<'a> where Self:Sized+'a{
+        VarResolver(Box::new(self))
     }
 }
 
@@ -1491,17 +1421,22 @@ impl Resolver for NoResolver {
     }
     fn ctx(&self, ctx: &Ctx) -> Result<String, MsgErr> {
         match ctx {
-            Ctx::RelativePoint => {
+            Ctx::WorkingPoint => {
                 Err("context operators '.' (reference to WorkingPoint) not expected here".into())
             }
-            Ctx::RelativePointPop => Err(
-                "context operator '..' (reference to WorkingPointAboveOne) not expected here"
+            Ctx::WorkingPointPop => Err(
+                "context operator '..' (reference to WorkingPointPop) not expected here"
                     .into(),
             ),
+            Ctx::PointFromRoot => {
+                Err("context operator '...' (reference to PointFromRoot) not expected here"
+                    .into())
+            }
         }
     }
 }
 
+#[derive(Clone)]
 pub struct MapResolver {
     pub working_point: Point,
     pub map: HashMap<String, String>,
@@ -1530,26 +1465,32 @@ impl Resolver for MapResolver {
 
     fn ctx(&self, ctx: &Ctx) -> Result<String, MsgErr> {
         match ctx {
-            Ctx::RelativePoint => Ok(self.working_point.to_string()),
-            Ctx::RelativePointPop => Ok(self
+            Ctx::WorkingPoint => Ok(self.working_point.to_string()),
+            Ctx::WorkingPointPop => Ok(self
                 .working_point
                 .parent()
                 .ok_or("already at the root point cannot pop any further.")?
                 .to_string()),
+            Ctx::PointFromRoot => {
+                unimplemented!()
+            }
         }
     }
 }
 
-pub trait ToResolved<Resolved>
+pub trait VarSubst<R>
 where
     Self: Sized,
 {
-    fn to_resolved(self, resolver: &ResolverCtx) -> Result<Resolved, MsgErr>;
-    fn to_resolved_str(&self, resolver: &ResolverCtx) -> Result<String, MsgErr> {
-        Err("string representation not supported".into())
-    }
+    fn resolve_vars(self, resolver: &VarResolver) -> Result<R, MsgErr>;
 }
 
+pub trait CtxSubst<R>
+    where
+        Self: Sized,
+{
+    fn resolve_ctx(self, resolver: &VarResolver) -> Result<R, MsgErr>;
+}
 
 
 /*
@@ -1592,7 +1533,7 @@ where
 }
 
 
-pub trait StringParser<T:Sized>{
+pub trait SubstParser<T:Sized>{
 
     fn parse_string(&self, string: String) -> Result<T, MsgErr> {
         let span = create_span(string.as_str());
@@ -1600,13 +1541,50 @@ pub trait StringParser<T:Sized>{
         Ok(output)
     }
 
-    fn parse_span<'a>(&self, span: Span<'a>) -> Res<Span<'a>,T>;
+    fn parse_span<'a>(&self, input: Span<'a>) -> Res<Span<'a>,T>;
 }
 
+pub fn ctx_seg<I: Clone, E: ParseError<I>, F>(mut f: F) -> impl FnMut(I) -> IResult<I, PointSegCtx, E>
+    where
+        I: ToString
+        + InputLength
+        + InputTake
+        + Compare<&'static str>
+        + InputIter
+        + Clone
+        + InputTakeAtPosition,
+        <I as InputTakeAtPosition>::Item: AsChar+Clone,
+        F: nom::Parser<I, PointSeg, E>+Clone,
+        E: nom::error::ContextError<I>,
+{
+    move |input: I| alt((pop(f.clone()),working(f.clone())))(input)
+}
 
+pub fn working<I: Clone, E: ParseError<I>, F>(mut f: F) -> impl FnMut(I) -> IResult<I, PointSegCtx, E>
+    where
+        I: ToString
+        + InputLength
+        + InputTake
+        + Compare<&'static str>
+        + InputIter
+        + Clone
+        + InputTakeAtPosition,
+        <I as InputTakeAtPosition>::Item: AsChar+Clone,
+        F: nom::Parser<I, PointSeg, E>,
+        E: nom::error::ContextError<I>,
+{
+    move |input: I| match pair(tag::<&str, I, E>("."),eos)(input.clone()) {
+        Ok((next, v)) => Ok((next, PointSegCtx::Pop)),
+        Err(err) => match f.parse(input.clone()){
+            Ok((next,seg)) => {Ok((next,seg.into()))}
+            Err(err) => {
+                Err(err)
+            }
+        },
+    }
+}
 
-
-pub fn pop<I: Clone, E: ParseError<I>, F>(mut f: F) -> impl FnMut(I) -> IResult<I, PointSeg, E>
+pub fn pop<I: Clone, E: ParseError<I>, F>(mut f: F) -> impl FnMut(I) -> IResult<I, PointSegCtx, E>
 where
     I: ToString
         + InputLength
@@ -1615,17 +1593,22 @@ where
         + InputIter
         + Clone
         + InputTakeAtPosition,
-    <I as InputTakeAtPosition>::Item: AsChar,
+    <I as InputTakeAtPosition>::Item: AsChar+Clone,
     F: nom::Parser<I, PointSeg, E>,
     E: nom::error::ContextError<I>,
 {
-    move |input: I| match tag::<&str, I, E>("..")(input.clone()) {
-        Ok((next, v)) => Ok((next, PointSeg::Pop)),
-        Err(err) => f.parse(input.clone()),
+    move |input: I| match pair(tag::<&str, I, E>(".."),eos)(input.clone()) {
+        Ok((next, v)) => Ok((next, PointSegCtx::Pop)),
+        Err(err) => match f.parse(input.clone()){
+            Ok((next,seg)) => {Ok((next,seg.into()))}
+            Err(err) => {
+                Err(err)
+            }
+        },
     }
 }
 
-pub fn mesh_seg<I: Clone, E: ParseError<I>, F>(mut f: F) -> impl FnMut(I) -> IResult<I, PointSeg, E>
+pub fn mesh_seg<I: Clone, E: ParseError<I>, F>(mut f: F) -> impl FnMut(I) -> IResult<I, PointSegCtx, E>
 where
     I: ToString
         + InputLength
@@ -2156,7 +2139,7 @@ fn block_open(input: Span) -> Res<Span, NestedBlockKind> {
     ))(input)
 }
 
-fn any_lex_block<'a, I, E>(input: I) -> IResult<I, LexBlock<I>, E>
+fn any_soround_lex_block<'a, I, E>(input: I) -> IResult<I, LexBlock<I>, E>
 where
     I: ToString
         + InputLength
@@ -2509,7 +2492,7 @@ where
             delimited(
                 tag(kind.open()),
                 recognize(many1(alt((
-                    recognize(any_lex_block),
+                    recognize(any_soround_lex_block),
                     recognize(verify(anychar, move |c| {
                         f(*c) && *c != kind.close_as_char()
                     })),
@@ -2551,7 +2534,7 @@ where
 {
     move |input: I| {
         recognize(many0(alt((
-            recognize(any_lex_block),
+            recognize(any_soround_lex_block),
             recognize(verify(anychar, move |c| *c != kind.close_as_char())),
         ))))(input)
     }
@@ -2693,18 +2676,16 @@ pub fn lex_root_scope(span: Span) -> Result<LexRootScope<Span>, MsgErr> {
 
 pub mod model {
     use crate::error::{MsgErr, ParseErrs};
-    use crate::version::v0_0_1::config::config::bind::{Pipeline, PipelineStep, PipelineStop};
+    use crate::version::v0_0_1::config::config::bind::{BindConfig, MessageKind, Pipeline, PipelineStep, PipelineStop, Selector};
     use crate::version::v0_0_1::entity::entity::EntityKind;
     use crate::version::v0_0_1::id::id::Version;
     use crate::version::v0_0_1::parse::error::result;
-    use crate::version::v0_0_1::parse::parse::value_pattern;
-    use crate::version::v0_0_1::parse::{camel_case, lex_child_scopes, pipeline, pipeline_step, pipeline_stop, Res, ResolverCtx, StringParser, ToResolved};
-    use crate::version::v0_0_1::util::ValuePattern;
-    use crate::version::v0_0_1::Span;
+    use crate::version::v0_0_1::util::{MethodPattern, StringMatcher, ValuePattern};
+    use crate::version::v0_0_1::{create_span, OwnedSpan, Span};
     use bincode::Options;
     use nom::bytes::complete::tag;
-    use nom::character::complete::multispace0;
-    use nom::combinator::{not, recognize};
+    use nom::character::complete::{alphanumeric1, multispace0, multispace1, satisfy};
+    use nom::combinator::{cut, fail, not, peek, recognize, value};
     use regex::Regex;
     use serde::de::Visitor;
     use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
@@ -2713,6 +2694,7 @@ pub mod model {
     use std::marker::PhantomData;
     use std::ops::{Deref, DerefMut};
     use std::str::FromStr;
+    use crate::version::v0_0_1::parse::{camel_case, lex_child_scopes, pipeline, PipelineStepParser, PipelineStopParser, SubstParser, value_pattern, VarResolver, VarSubst};
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct ScopeSelectorAndFiltersDef<S, I> {
@@ -2733,18 +2715,18 @@ pub mod model {
 
     #[derive(Clone)]
     pub struct Spanned<I, E>
-    where
-        E: Clone,
-        I: ToString,
+        where
+            E: Clone,
+            I: ToString,
     {
         pub span: I,
         pub element: E,
     }
 
     impl<I, E> Spanned<I, E>
-    where
-        E: Clone,
-        I: ToString,
+        where
+            E: Clone,
+            I: ToString,
     {
         pub fn new(element: E, span: I) -> Spanned<I, E> {
             Self { span, element }
@@ -2752,9 +2734,9 @@ pub mod model {
     }
 
     impl<I, E> Spanned<I, E>
-    where
-        E: Clone + ToString,
-        I: ToString,
+        where
+            E: Clone + ToString,
+            I: ToString,
     {
         pub fn len(&self) -> usize {
             self.element.to_string().len()
@@ -2762,9 +2744,9 @@ pub mod model {
     }
 
     impl<I, E> ToString for Spanned<I, E>
-    where
-        E: Clone + ToString,
-        I: ToString,
+        where
+            E: Clone + ToString,
+            I: ToString,
     {
         fn to_string(&self) -> String {
             self.element.to_string()
@@ -2772,9 +2754,9 @@ pub mod model {
     }
 
     impl<I, E> Deref for Spanned<I, E>
-    where
-        E: Clone,
-        I: ToString,
+        where
+            E: Clone,
+            I: ToString,
     {
         type Target = E;
 
@@ -2784,9 +2766,9 @@ pub mod model {
     }
 
     impl<I, E> DerefMut for Spanned<I, E>
-    where
-        E: Clone,
-        I: ToString,
+        where
+            E: Clone,
+            I: ToString,
     {
         fn deref_mut(&mut self) -> &mut Self::Target {
             &mut self.element
@@ -2919,12 +2901,12 @@ pub mod model {
     pub type LexBlock<I> = Block<I, ()>;
     pub type LexRootScope<I> = Scope<RootScopeSelector<I, Spanned<I, Version>>, Block<I, ()>, I>;
     pub type LexScope<I> =
-        Scope<ScopeSelectorAndFiltersDef<LexScopeSelector<I>, I>, Block<I, ()>, I>;
+    Scope<ScopeSelectorAndFiltersDef<LexScopeSelector<I>, I>, Block<I, ()>, I>;
     pub type LexParentScope<'a> =
-        Scope<LexScopeSelectorAndFilters<Span<'a>>, Vec<LexScope<Span<'a>>>, Span<'a>>;
-    pub type LexPipelineSegment<I> = PipelineSegmentDef<I, Option<I>>;
-    pub type LexPipeline<I> = PipelineDef<LexPipelineSegment<I>>;
-    pub type LexPipelineScope<I> = PipelineScopeDef<I, LexPipeline<I>>;
+    Scope<LexScopeSelectorAndFilters<Span<'a>>, Vec<LexScope<Span<'a>>>, Span<'a>>;
+    pub type VarPipelineSegment<I> = PipelineSegmentDef<Subst<PipelineStep, I,PipelineStepParser>, Option<Subst<PipelineStop, I,PipelineStopParser>>>;
+    pub type VarPipeline<I> = PipelineDef<VarPipelineSegment<I>>;
+    pub type LexPipelineScope<I> = PipelineScopeDef<I, VarPipeline<I>>;
     pub type PipelineSegment = PipelineSegmentDef<PipelineStep, PipelineStop>;
     pub type PipelineScope = PipelineScopeDef<String, Vec<MessageScope>>;
     pub type MessageScope = ScopeDef<ValuePatternScopeSelectorAndFilters, Vec<ActionScope>>;
@@ -2933,7 +2915,7 @@ pub mod model {
     pub type ValuePatternScopeSelector = ScopeSelectorDef<ValuePattern<String>, String>;
     pub type ScopeSelectorAndFilters = ScopeSelectorAndFiltersDef<ScopeSelector, String>;
     pub type ValuePatternScopeSelectorAndFilters =
-        ScopeSelectorAndFiltersDef<ValuePatternScopeSelector, String>;
+    ScopeSelectorAndFiltersDef<ValuePatternScopeSelector, String>;
     pub type LexScopeSelectorAndFilters<I> = ScopeSelectorAndFiltersDef<LexScopeSelector<I>, I>;
     //    pub type Pipeline = Vec<PipelineSegment>;
 
@@ -3007,6 +2989,7 @@ pub mod model {
             })
         }
     }
+
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct PipelineSegmentDef<Step, Stop> {
         pub step: Step,
@@ -3032,12 +3015,12 @@ pub mod model {
         }
     }
 
-    impl<'a> LexPipeline<Span<'a>> {
-        pub fn to_pipeline(self) -> Result<Pipeline, MsgErr> {
+    impl<I:ToString+Clone> VarSubst<Pipeline> for VarPipeline<I> {
+        fn resolve_vars(self, resolver: &VarResolver) -> Result<Pipeline, MsgErr> {
             let mut pipeline = Pipeline::new();
             let mut errs = vec![];
             for segment in self.segments {
-                match segment.to_pipeline_segment() {
+                match segment.resolve_vars(resolver) {
                     Ok(segment) => {
                         pipeline.segments.push(segment);
                     }
@@ -3055,20 +3038,28 @@ pub mod model {
         }
     }
 
-    impl<'a> LexPipelineSegment<Span<'a>> {
-        pub fn to_pipeline_segment(self) -> Result<PipelineSegment, MsgErr> {
+    impl<I:ToString+Clone> VarSubst<PipelineSegment> for VarPipelineSegment<I> {
+        fn resolve_vars(self, resolver: &VarResolver) -> Result<PipelineSegment, MsgErr> {
             let mut errs = vec![];
 
-            let step = match result(pipeline_step(self.step.clone())) {
-                Ok(step) => Some(step),
+            if self.stop.is_none() {
+                errs.push(ParseErrs::from_owned_span(
+                    "expecting Pipeline Stop to follow Pipeline Step",
+                    "Needs a following Pipeline Stop",
+                    self.step.span(),
+                ));
+            }
+
+            let step = match self.step.resolve_vars(resolver) {
+                Ok(step) => { Some(step) }
                 Err(err) => {
                     errs.push(err);
                     None
                 }
             };
 
-            let stop = match &self.stop {
-                Some(stop) => match result(pipeline_stop(stop.clone())) {
+            let stop = match self.stop {
+                Some(stop) => match stop.resolve_vars(resolver) {
                     Ok(stop) => Some(stop),
                     Err(err) => {
                         errs.push(err);
@@ -3076,18 +3067,13 @@ pub mod model {
                     }
                 },
                 None => {
-                    errs.push(ParseErrs::new(
-                        "expecting Pipeline Stop to follow Pipeline Step",
-                        "Needs a following Pipeline Stop",
-                        self.step.clone(),
-                    ));
-                    None
+                   None
                 }
             };
 
             if step.is_some() && stop.is_some() && errs.is_empty() {
                 let step = step.expect("step");
-                let stop = stop.expect("step");
+                let stop = stop.expect("stop");
                 Ok(PipelineSegment { step, stop })
             } else {
                 Err(ParseErrs::fold(errs).into())
@@ -3129,6 +3115,7 @@ pub mod model {
             })
         }
     }
+
     #[derive(Clone)]
     pub enum BindScopeKind {
         Pipelines,
@@ -3142,8 +3129,8 @@ pub mod model {
 
     #[derive(Clone)]
     pub struct Scope<S, B, P>
-    where
-        S: Clone,
+        where
+            S: Clone,
     {
         pub selector: S,
         pub pipeline_step: Option<P>,
@@ -3151,8 +3138,8 @@ pub mod model {
     }
 
     impl<S, B, P> Scope<S, B, P>
-    where
-        S: Clone,
+        where
+            S: Clone,
     {
         pub fn new(selector: S, block: B) -> Self {
             Self {
@@ -3172,8 +3159,8 @@ pub mod model {
     }
 
     impl<S, FromBlock, P> Scope<S, FromBlock, P>
-    where
-        S: Clone,
+        where
+            S: Clone,
     {
         pub fn upgrade<ToBlock>(self, block: ToBlock) -> Scope<S, ToBlock, P> {
             Scope {
@@ -3229,7 +3216,7 @@ pub mod model {
     }
 
     #[derive(
-        Debug, Copy, Clone, strum_macros::Display, strum_macros::EnumString, Eq, PartialEq,
+    Debug, Copy, Clone, strum_macros::Display, strum_macros::EnumString, Eq, PartialEq,
     )]
     pub enum DelimitedBlockKind {
         SingleQuotes,
@@ -3267,7 +3254,7 @@ pub mod model {
     }
 
     #[derive(
-        Debug, Copy, Clone, strum_macros::Display, strum_macros::EnumString, Eq, PartialEq,
+    Debug, Copy, Clone, strum_macros::Display, strum_macros::EnumString, Eq, PartialEq,
     )]
     pub enum NestedBlockKind {
         Curly,
@@ -3405,42 +3392,87 @@ pub mod model {
     }
 
     #[derive(Clone)]
-    pub enum Chunk{
-        Var(String),
-        Text(String)
+    pub enum Chunk<I> {
+        Var(I),
+        Text(I)
     }
 
-    pub struct Chunks<R> {
-        pub chunks: Vec<Chunk>,
-        pub parser: Box<dyn StringParser<R>>
-    }
+    impl<I:ToString> Chunk<I> {
+        pub fn len(&self) -> usize {
+            match self {
+                Chunk::Var(var) => {
 
-    impl <R> ToResolved<R> for Chunks<R> {
-        fn to_resolved(self, resolver: &ResolverCtx) -> Result<R, MsgErr> {
-            let string = self.to_resolved_str(resolver)?;
-            self.parser.parse_string(string)
+                    // account for ${}
+                    var.to_string().len() + 3
+                }
+                Chunk::Text(text) => {
+                    text.to_string().len()
+                }
+            }
         }
+    }
 
-        fn to_resolved_str(&self, resolver: &ResolverCtx) -> Result<String, MsgErr> {
+    #[derive(Clone)]
+    pub struct Subst<R, I,P> where P: SubstParser<R>+Clone{
+        pub chunks: Vec<Chunk<I>>,
+        pub parser: P,
+        pub span: OwnedSpan,
+        pub phantom: PhantomData<R>
+    }
+
+    impl<R, I:ToString,P> ToString for Subst<R, I,P> where P: SubstParser<R>+Clone{
+        fn to_string(&self) -> String {
             let mut rtn = String::new();
             for chunk in &self.chunks {
                 match chunk {
                     Chunk::Var(var) => {
-                        rtn.push_str(resolver.val(var.as_str())?.as_str());
+                        rtn.push_str(format!("${{{}}}", var.to_string()).as_str());
                     },
                     Chunk::Text(text) => {
-                        rtn.push_str(text.as_str());
+                        rtn.push_str(text.to_string().as_str());
+                    },
+                }
+            }
+            rtn
+        }
+    }
+
+    impl<R, I: Clone,P> Subst<R,I,P> where P: SubstParser<R>+Clone{
+        pub fn span(&self) -> OwnedSpan {
+            self.span.clone()
+        }
+    }
+
+
+    impl<R, I:ToString,P> Subst<R,I,P> where P: SubstParser<R>+Clone{
+        fn to_resolved_segs(&self, resolver: &VarResolver) -> Result<String, MsgErr> {
+            let mut rtn = String::new();
+            for chunk in &self.chunks {
+                match chunk {
+                    Chunk::Var(var) => {
+                        rtn.push_str(resolver.val(var.to_string().as_str())?.as_str());
+
+                    },
+                    Chunk::Text(text) => {
+                        rtn.push_str(text.to_string().as_str());
                     },
                 }
             }
             Ok(rtn)
         }
     }
+
+
+    impl<R, I:ToString,P> VarSubst<R> for Subst<R,I,P> where P: SubstParser<R>+Clone{
+        fn resolve_vars(self, resolver: &VarResolver) -> Result<R, MsgErr> {
+            let string = self.to_resolved_segs(resolver)?;
+            self.parser.parse_string(string)
+        }
+    }
 }
 
 pub mod error {
     use crate::error::{MsgErr, ParseErrs};
-    use crate::version::v0_0_1::parse::model::NestedBlockKind;
     use crate::version::v0_0_1::parse::nospace1;
     use crate::version::v0_0_1::Span;
     use ariadne::Report;
@@ -3448,6 +3480,7 @@ pub mod error {
     use nom::{Err, Slice};
     use nom_supreme::error::{BaseErrorKind, ErrorTree, StackContext};
     use regex::{Error, Regex};
+    use crate::version::v0_0_1::parse::model::NestedBlockKind;
 
     pub fn result<R>(result: Result<(Span, R), Err<ErrorTree<Span>>>) -> Result<R, MsgErr> {
         match result {
@@ -3651,38 +3684,37 @@ pub mod error {
     }
 }
 
-pub mod parse {
     use std::convert::{TryFrom, TryInto};
-    use std::str::FromStr;
+use std::marker::PhantomData;
+use std::sync::Arc;
+    use ariadne::{Label, Report, ReportKind};
 
     use nom::branch::alt;
-    use nom::bytes::complete::tag;
     use nom::character::complete::{alpha1, digit1};
-    use nom::combinator::{all_consuming, opt, recognize};
+    use nom::combinator::{all_consuming, opt};
     use nom::error::{context, ContextError, ErrorKind, ParseError, VerboseError};
-    use nom::multi::{many0, many1};
-    use nom::sequence::{delimited, preceded, terminated, tuple};
-    use nom::{Compare, InputIter, InputLength, InputTake, Parser, UnspecializedInput};
+    use nom::multi::{many0, many1, separated_list0};
+    use nom::sequence::{delimited, pair, preceded, terminated, tuple};
+    use nom::{AsChar, Compare, FindToken, InputIter, InputLength, InputTake, InputTakeAtPosition, Offset, Parser, Slice, UnspecializedInput};
     use nom::{Err, IResult};
+    use nom_locate::LocatedSpan;
 
-    use crate::error::MsgErr;
     use crate::version::v0_0_1::id::id::{
-        GenericKind, GenericKindBase, PointKind, PointSeg, Specific, Version,
+        GenericKind, GenericKindBase, PointKind, PointSeg, Specific
     };
-    use crate::version::v0_0_1::parse::{camel_case, diagnose, domain_chars, file_chars, point, point_segment_chars, rec_version, skewer_chars, version_chars, version_point_segment, version_req_chars, Res,   StringParser};
     use crate::version::v0_0_1::selector::selector::specific::{
         ProductSelector, VariantSelector, VendorSelector,
     };
-    use crate::version::v0_0_1::selector::selector::{
-        ExactPointSeg, GenericKindSelector, GenericSubKindSelector, Hop, KindPattern,
-         Pattern, PointSegSelector, PointSelector,
-        SpecificSelector,  VersionReq,
-    };
-    use crate::version::v0_0_1::util::ValuePattern;
-    use crate::version::v0_0_1::{create_span, Span};
+    use crate::version::v0_0_1::selector::selector::{ExactPointSeg, GenericKindSelector, GenericSubKindSelector, Hop, HttpPipelineSelector, KindPattern, LabeledPrimitiveTypeDef, MapEntryPattern, MsgPipelineSelector, Pattern, PayloadTypeDef, PipelineSelector, PointSegSelector, PointSelector, RcPipelineSelector, SpecificSelector, VersionReq};
     use nom_supreme::error::ErrorTree;
     use nom_supreme::{parse_from_str, ParserExt};
+use crate::version::v0_0_1::config::config::bind::{BindConfig, MessageKind, Pipeline, PipelineStep, PipelineStop, Selector};
+use crate::version::v0_0_1::config::config::Config;
+    use crate::version::v0_0_1::entity::entity::request::RcCommandType;
     use crate::version::v0_0_1::parse::error::result;
+use crate::version::v0_0_1::parse::model::{BindScope, BindScopeKind, Block, BlockKind, Chunk, DelimitedBlockKind, LexBlock, LexParentScope, LexRootScope, LexScope, LexScopeSelector, LexScopeSelectorAndFilters, NestedBlockKind, PipelineScope, PipelineSegment, RootScopeSelector, ScopeFilterDef, ScopeFiltersDef, ScopeSelectorAndFiltersDef, Spanned, Subst, TerminatedBlockKind, TextType, VarPipeline, VarPipelineSegment};
+use crate::version::v0_0_1::payload::payload::{Call, CallKind, CallWithConfig, HttpCall, HttpMethod, HttpMethodType, ListPattern, MapPattern, MsgCall, NumRange, PayloadFormat, PayloadPattern, PayloadType, PayloadTypePattern};
+    use crate::version::v0_0_1::selector::{PatternBlock, PayloadBlock, UploadBlock};
 
     fn inclusive_any_segment(input: Span) -> Res<Span, PointSegSelector> {
         alt((tag("+*"), tag("ROOT+*")))(input)
@@ -3984,7 +4016,7 @@ pub mod parse {
 
     #[derive(Clone)]
     pub struct SkewerPatternParser();
-    impl StringParser<Pattern<String>> for SkewerPatternParser {
+    impl SubstParser<Pattern<String>> for SkewerPatternParser {
 
         fn parse_span<'a>(&self, span: Span<'a>) -> Res<Span<'a>,Pattern<String>> {
             let (next,pattern) = rec_skewer_pattern(span)?;
@@ -3995,7 +4027,7 @@ pub mod parse {
 
     #[derive(Clone)]
     pub struct DomainPatternParser();
-    impl StringParser<Pattern<String>> for DomainPatternParser {
+    impl SubstParser<Pattern<String>> for DomainPatternParser {
 
         fn parse_span<'a>(&self, span: Span<'a>) -> Res<Span<'a>,Pattern<String>> {
             let (next,pattern) = rec_domain_pattern(span)?;
@@ -4341,7 +4373,7 @@ pub mod parse {
             (next, specific)
         })
     }
-}
+//}
 
 pub fn args<T>(i: T) -> Res<T, T>
 where
@@ -4996,7 +5028,7 @@ pub fn response_payload_filter_block(input: Span) -> Res<Span, PayloadBlock> {
 
 pub fn rough_pipeline_step(input: Span) -> Res<Span, Span> {
     recognize(tuple((
-        many0(preceded(alt((tag("-"), tag("="), tag("+"))), any_lex_block)),
+        many0(preceded(alt((tag("-"), tag("="), tag("+"))), any_soround_lex_block)),
         alt((tag("->"), tag("=>"))),
     )))(input)
 }
@@ -5229,27 +5261,35 @@ pub fn no_space_with_blocks(input: Span) -> Res<Span, Span> {
     recognize(many1(alt((recognize(any_block), nospace1))))(input)
 }
 
-pub fn lex_pipeline(input: Span) -> Res<Span, LexPipeline<Span>> {
+pub fn lex_pipeline(input: Span) -> Res<Span, VarPipeline<Span>> {
     many1(lex_pipeline_segment)(input).map(|(next, segments)| {
-        let pipeline = LexPipeline { segments };
+        let pipeline = VarPipeline { segments };
         (next, pipeline)
     })
 }
 
-pub fn lex_pipeline_segment(input: Span) -> Res<Span, LexPipelineSegment<Span>> {
+pub fn lex_pipeline_segment(input: Span) -> Res<Span, VarPipelineSegment<Span>> {
     tuple((
         multispace0,
-        no_space_with_blocks,
+        subst(PipelineStepParser()),
         multispace1,
-        opt(no_space_with_blocks),
+        opt(subst(PipelineStopParser())),
     ))(input)
     .map(|(next, (_, step, _, stop))| {
-        let segment = LexPipelineSegment { step, stop };
+        let segment = VarPipelineSegment { step, stop };
 
         (next, segment)
     })
 }
 
+
+#[derive(Clone)]
+pub struct PipelineStepParser();
+impl SubstParser<PipelineStep> for PipelineStepParser {
+    fn parse_span<'a>(&self, input: Span<'a>) -> Res<Span<'a>, PipelineStep> {
+        pipeline_step(input)
+    }
+}
 
 
 pub fn pipeline_step(input: Span) -> Res<Span, PipelineStep> {
@@ -5321,6 +5361,14 @@ pub fn call_pipeline_stop(input: Span) -> Res<Span, PipelineStop> {
 pub fn point_pipeline_stop(input: Span) -> Res<Span, PipelineStop> {
     context("pipeline:stop:point", point)(input)
         .map(|(next, point)| (next, PipelineStop::Point(point)))
+}
+
+#[derive(Clone)]
+pub struct PipelineStopParser();
+impl SubstParser<PipelineStop> for PipelineStopParser {
+    fn parse_span<'a>(&self, input: Span<'a>) -> Res<Span<'a>, PipelineStop> {
+        pipeline_stop(input)
+    }
 }
 
 pub fn pipeline_stop(input: Span) -> Res<Span, PipelineStop> {
@@ -5403,26 +5451,31 @@ pub fn consume_selector(input: Span) -> Res<Span, Selector<PipelineSelector>> {
 
 
 
-pub fn chunks<T>(parser: impl StringParser<T>+'static+Clone) -> impl FnMut(Span) -> Res<Span,Chunks<T>>{
+pub fn subst<T,P>(parser: P) -> impl FnMut(Span) -> Res<Span, Subst<T,Span,P>> where P: SubstParser<T>+'static+Clone{
+
     move |input:Span| {
-        many1(chunk)(input).map( |(next,chunks)| {
-            let chunks = Chunks {
+        many1(chunk)(input.clone()).map( |(next,chunks)| {
+            let len:usize = chunks.iter().map(|c|c.len()).sum();
+            let span = OwnedSpan::from(input.slice(0..input.len()-next.len()));
+            let chunks = Subst {
                 chunks,
-                parser: Box::new(parser.clone())
+                parser: parser.clone(),
+                span,
+                phantom: PhantomData{}
             };
             (next,chunks)
         } )
     }
 }
 
-pub fn chunk( input: Span ) -> Res<Span,Chunk> {
+pub fn chunk( input: Span ) -> Res<Span,Chunk<Span>> {
     alt( (text_chunk,var_chunk))(input)
 }
-pub fn text_chunk( input: Span ) -> Res<Span,Chunk> {
-    recognize(many1(satisfy( |c| {c != '$' && !c.is_whitespace()} )))(input).map( |(next,text)| {(next,Chunk::Text(text.to_string()))} )
+pub fn text_chunk( input: Span ) -> Res<Span,Chunk<Span>> {
+    recognize(many1(alt((recognize(any_soround_lex_block), tag("\\$"),recognize(satisfy( |c| {c != '$' && !c.is_whitespace()} ))))))(input).map( |(next,text)| {(next, Chunk::Text(text))} )
 }
 
-pub fn var_chunk( input: Span ) -> Res<Span,Chunk> {
+pub fn var_chunk( input: Span ) -> Res<Span,Chunk<Span>> {
     preceded(
         tag("$"),
         context(
@@ -5434,7 +5487,7 @@ pub fn var_chunk( input: Span ) -> Res<Span,Chunk> {
             )),
         ),
     )(input).map(|(next,variable_name)|{
-        (next,Chunk::Var(variable_name.to_string()))
+        (next,Chunk::Var(variable_name))
     })
 }
 
@@ -5449,16 +5502,13 @@ pub mod test {
     use crate::error::{MsgErr, ParseErrs};
     use crate::version::v0_0_1::config::config::Config;
     use crate::version::v0_0_1::parse::error::result;
-    use crate::version::v0_0_1::parse::model::{
-        BlockKind, DelimitedBlockKind, LexScope, NestedBlockKind, TerminatedBlockKind,
-    };
-    use crate::version::v0_0_1::parse::parse::version;
-    use crate::version::v0_0_1::parse::{args, bind_config, chunks, comment, config, expected_block_terminator_or_non_terminator, lex_block, lex_child_scopes, lex_nested_block, lex_scope, lex_scope_pipeline_step_and_block, lex_scope_selector, lex_scope_selector_and_filters, lex_scopes, lowercase1, MapResolver, mesh_eos, nested_block, nested_block_content, next_selector, no_comment, parse_include_blocks, parse_inner_block, path_regex, pipeline, pipeline_segment, pipeline_step, pipeline_stop, point, rec_version, Res, Resolver, root_scope, root_scope_selector, scope_filter, scope_filters, skewer_case, skewer_dot, space_chars, space_no_dupe_dots, space_point_segment, StringParser, strip_comments, ToResolved, variable_name, wrapper};
+    use crate::version::v0_0_1::parse::model::{BlockKind, DelimitedBlockKind, LexScope, NestedBlockKind, TerminatedBlockKind, };
+    use crate::version::v0_0_1::parse::{args, bind_config, subst, comment, config, expected_block_terminator_or_non_terminator, lex_block, lex_child_scopes, lex_nested_block, lex_scope, lex_scope_pipeline_step_and_block, lex_scope_selector, lex_scope_selector_and_filters, lex_scopes, lowercase1, MapResolver, mesh_eos, nested_block, nested_block_content, next_selector, no_comment, parse_include_blocks, parse_inner_block, path_regex, pipeline, pipeline_segment, pipeline_step, pipeline_stop, point, rec_version, Res, Resolver, root_scope, root_scope_selector, scope_filter, scope_filters, skewer_case, skewer_dot, space_chars, space_no_dupe_dots, space_point_segment, SubstParser, strip_comments, VarSubst, variable_name, wrapper, version};
     use crate::version::v0_0_1::{create_span, Span};
     use nom::bytes::complete::{escaped, tag};
     use nom::character::complete::{alpha1, alphanumeric1, anychar, multispace0};
     use nom::character::is_alphanumeric;
-    use nom::combinator::{all_consuming, eof, opt, peek, recognize};
+    use nom::combinator::{all_consuming, eof, not, opt, peek, recognize};
     use nom::error::context;
     use nom::multi::{many0, many1};
     use nom::sequence::{delimited, pair, terminated, tuple};
@@ -5861,43 +5911,7 @@ Hello my friend
         Ok(())
     }
 
-    #[test]
-    pub fn test_root_scope() -> Result<(), MsgErr> {
-        assert!(
-            (result(root_scope(create_span(
-                r#"
-            Bind(version=1.0.0)->{
 
-
-            }"#,
-            )))
-                .is_ok())
-        );
-
-        assert!(
-            (result(root_scope(create_span(
-                r#"
-            Bind(version=1.0.0)->    {
-               Pipes {
-               }
-            }"#,
-            )))
-                .is_ok())
-        );
-
-        result(root_scope(create_span(
-            r#"
-    Bind(version=1.0.0)->{
-               Pipes {
-
-            }   "#,
-        )))
-            .err()
-            .unwrap()
-            .print();
-
-        Ok(())
-    }
 
     #[test]
     pub fn test_scope_filter() -> Result<(), MsgErr> {
@@ -6263,23 +6277,31 @@ Bind(version=1.2.3)-> {
     }
 
     #[test]
-    pub fn test_chunks() -> Result<(),MsgErr> {
+    pub fn test_subst() -> Result<(),MsgErr> {
 
         #[derive(Clone)]
         pub struct SomeParser();
-        impl StringParser<String> for SomeParser {
+        impl SubstParser<String> for SomeParser {
             fn parse_span<'a>(&self, span: Span<'a>) -> Res<Span<'a>, String> {
-                recognize(terminated(many1(alt((alphanumeric1,tag(":")))),eof))(span).map( |(next,span)| {
+                recognize(terminated(recognize(many0(pair(peek(not(eof)),recognize(anychar)))),eof))(span).map( |(next,span)| {
                     (next,span.to_string() )
                 } )
             }
         }
 
-       let chunks = log(result(chunks(SomeParser())(create_span("123:${var}:abc" ))))?;
+       let chunks = log(result(subst(SomeParser())(create_span("123[]:${var}:abc" ))))?;
         assert_eq!(chunks.chunks.len(),3);
        let mut resolver = MapResolver::new();
        resolver.insert("var","hello");
-       let resolved = log(chunks.to_resolved(&resolver.wrap()))?;
+       let resolved = log(chunks.resolve_vars(&resolver.clone().wrap()))?;
+
+        let chunks = log(result(subst(SomeParser())(create_span("123[]:\\${var}:abc" ))))?;
+        let resolved = log(chunks.resolve_vars(&resolver.wrap()))?;
+
+        let r= log(result(subst(SomeParser())(create_span("123[    ]:${var}:abc" ))))?;
+        println!("{}",r.to_string());
+        log(result(subst(SomeParser())(create_span("123[]:${vAr}:abc" ))));
+        log(result(subst(SomeParser())(create_span("123[]:${vAr }:abc" ))));
 
         Ok(())
 
