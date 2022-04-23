@@ -1369,31 +1369,13 @@ impl ToString for Ctx {
     }
 }
 
-pub struct VarResolver<'a>(Box<dyn Resolver + 'a>);
-pub struct CtxResolver<'a>(Box<dyn Resolver + 'a>);
-
-impl<'a> Deref for VarResolver<'a> {
-    type Target = Box<dyn Resolver + 'a>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
+pub trait CtxResolver {
+    fn ctx(&self, ctx: &Ctx) -> Result<String, MsgErr>;
 }
 
-pub trait Resolver {
-    fn val(&self, id: &str) -> Result<String, MsgErr> {
-        Err(format!("variable '{}' not found", id).into())
-    }
-
-    fn ctx(&self, ctx: &Ctx) -> Result<String, MsgErr> {
-        Err(format!("context operation '{}' not available here", ctx.to_string()).into())
-    }
-
-    fn wrap<'a>(self) -> VarResolver<'a>
-    where
-        Self: Sized + 'a,
-    {
-        VarResolver(Box::new(self))
+pub trait VarResolver {
+    fn val(&self, var: &str) -> Result<String, MsgErr> {
+        Err(format!("variable '{}' not found", var).into())
     }
 }
 
@@ -1405,28 +1387,14 @@ impl NoResolver {
     }
 }
 
-impl Resolver for NoResolver {
+impl VarResolver for NoResolver {
     fn val(&self, id: &str) -> Result<String, MsgErr> {
         Err(format!("unexpected variable '{}'. variables not expected here", id).into())
-    }
-    fn ctx(&self, ctx: &Ctx) -> Result<String, MsgErr> {
-        match ctx {
-            Ctx::WorkingPoint => {
-                Err("context operators '.' (reference to WorkingPoint) not expected here".into())
-            }
-            Ctx::WorkingPointPop => {
-                Err("context operator '..' (reference to WorkingPointPop) not expected here".into())
-            }
-            Ctx::PointFromRoot => {
-                Err("context operator '...' (reference to PointFromRoot) not expected here".into())
-            }
-        }
     }
 }
 
 #[derive(Clone)]
 pub struct MapResolver {
-    pub working_point: Point,
     pub map: HashMap<String, String>,
 }
 
@@ -1434,7 +1402,6 @@ impl MapResolver {
     pub fn new() -> Self {
         Self {
             map: HashMap::new(),
-            working_point: Point::root(),
         }
     }
 
@@ -1443,7 +1410,7 @@ impl MapResolver {
     }
 }
 
-impl Resolver for MapResolver {
+impl VarResolver for MapResolver {
     fn val(&self, id: &str) -> Result<String, MsgErr> {
         self.map
             .get(id)
@@ -1451,16 +1418,24 @@ impl Resolver for MapResolver {
             .ok_or(format!("variable not found: '{}'", id).into())
     }
 
+
+}
+
+pub struct MockCtxResolver {
+    pub point: Point
+}
+
+impl CtxResolver for MockCtxResolver {
     fn ctx(&self, ctx: &Ctx) -> Result<String, MsgErr> {
         match ctx {
-            Ctx::WorkingPoint => Ok(self.working_point.to_string()),
+            Ctx::WorkingPoint => Ok(self.point.to_string()),
             Ctx::WorkingPointPop => Ok(self
-                .working_point
+                .point
                 .parent()
                 .ok_or("already at the root point cannot pop any further.")?
                 .to_string()),
             Ctx::PointFromRoot => {
-                unimplemented!()
+                Err("PointFromRoot operator '...' not available in this resolver".into())
             }
         }
     }
@@ -1470,14 +1445,14 @@ pub trait VarSubst<R>
 where
     Self: Sized,
 {
-    fn resolve_vars(self, resolver: &VarResolver) -> Result<R, MsgErr>;
+    fn resolve_vars(self, resolver: &dyn VarResolver) -> Result<R, MsgErr>;
 }
 
 pub trait CtxSubst<R>
 where
     Self: Sized,
 {
-    fn resolve_ctx(self, resolver: &VarResolver) -> Result<R, MsgErr>;
+    fn resolve_ctx(self, resolver: &dyn CtxResolver) -> Result<R, MsgErr>;
 }
 
 /*
@@ -3023,7 +2998,7 @@ pub mod model {
     }
 
     impl VarSubst<PipelineCtx> for VarPipeline {
-        fn resolve_vars(self, resolver: &VarResolver) -> Result<PipelineCtx, MsgErr> {
+        fn resolve_vars(self, resolver: &dyn VarResolver) -> Result<PipelineCtx, MsgErr> {
             let mut pipeline = PipelineCtx::new();
             let mut errs = vec![];
             for segment in self.segments {
@@ -3046,7 +3021,7 @@ pub mod model {
     }
 
     impl VarSubst<PipelineSegmentCtx> for VarPipelineSegment {
-        fn resolve_vars(self, resolver: &VarResolver) -> Result<PipelineSegmentCtx, MsgErr> {
+        fn resolve_vars(self, resolver: &dyn VarResolver) -> Result<PipelineSegmentCtx, MsgErr> {
             let mut errs = vec![];
 
             if self.stop.is_none() {
@@ -3481,7 +3456,7 @@ pub mod model {
     where
         P: SubstParser<R> + Clone,
     {
-        fn to_resolved_segs(&self, resolver: &VarResolver) -> Result<String, MsgErr> {
+        fn to_resolved_segs(&self, resolver: &dyn VarResolver) -> Result<String, MsgErr> {
             let mut rtn = String::new();
             for chunk in &self.chunks {
                 match chunk {
@@ -3501,7 +3476,7 @@ pub mod model {
     where
         P: SubstParser<R> + Clone,
     {
-        fn resolve_vars(self, resolver: &VarResolver) -> Result<R, MsgErr> {
+        fn resolve_vars(self, resolver: &dyn VarResolver) -> Result<R, MsgErr> {
             let string = self.to_resolved_segs(resolver)?;
             self.parser.parse_string(string)
         }
@@ -3559,7 +3534,7 @@ pub mod error {
                 builder.with_message("Invalid capture path. Legal characters are filesystem characters plus captures $(var=.*) i.e. /users/$(user=.*)").with_label(Label::new(loc.location_offset()..loc.location_offset()).with_message("Illegal capture path"))
 
             }
-                "point" => {
+            "point" => {
                     builder.with_message("Invalid Point").with_label(Label::new(loc.location_offset()..loc.location_offset()).with_message("Invalid Point"))
                 },
 
@@ -5556,7 +5531,7 @@ pub mod test {
         pipeline_stop_ctx, point, rec_version, root_scope, root_scope_selector, scope_filter,
         scope_filters, skewer_case, skewer_dot, space_chars, space_no_dupe_dots,
         space_point_segment, strip_comments, subst, variable_name, version, wrapper, MapResolver,
-        Res, Resolver, SubstParser, VarSubst,
+        Res, VarResolver, SubstParser, VarSubst,
     };
     use crate::version::v0_0_1::{create_span, Span};
     use nom::branch::alt;
@@ -6353,12 +6328,12 @@ Bind(version=1.2.3)-> {
         assert_eq!(chunks.chunks.len(), 3);
         let mut resolver = MapResolver::new();
         resolver.insert("var", "hello");
-        let resolved = log(chunks.resolve_vars(&resolver.clone().wrap()))?;
+        let resolved = log(chunks.resolve_vars(&resolver))?;
 
         let chunks = log(result(subst(SomeParser())(create_span(
             "123[]:\\${var}:abc",
         ))))?;
-        let resolved = log(chunks.resolve_vars(&resolver.wrap()))?;
+        let resolved = log(chunks.resolve_vars(&resolver))?;
 
         let r = log(result(subst(SomeParser())(create_span(
             "123[    ]:${var}:abc",
