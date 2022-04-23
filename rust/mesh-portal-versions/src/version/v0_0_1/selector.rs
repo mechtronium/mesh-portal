@@ -1,7 +1,9 @@
 use crate::version::v0_0_1::payload::payload::{Payload, PayloadPattern, PayloadPatternDef};
 use crate::version::v0_0_1::util::ValuePattern;
 use serde::{Serialize,Deserialize};
+use crate::error::MsgErr;
 use crate::version::v0_0_1::id::id::{Point, PointCtx};
+use crate::version::v0_0_1::parse::{CtxResolver, CtxSubst};
 
 pub mod selector {
     use std::convert::TryInto;
@@ -1188,8 +1190,20 @@ pub enum PayloadBlockDef<Pnt> {
     RequestPattern(PatternBlockDef<Pnt>),
     ResponsePattern(PatternBlockDef<Pnt>),
 }
+impl CtxSubst<PayloadBlock> for PayloadBlockCtx{
+    fn resolve_ctx(self, resolver: &dyn CtxResolver) -> Result<PayloadBlock, MsgErr> {
+        match self {
+            PayloadBlockCtx::RequestPattern(pattern) => {
+                Ok(PayloadBlock::RequestPattern(pattern.resolve_ctx(resolver)?))
+            }
+            PayloadBlockCtx::ResponsePattern(pattern) => {
+                Ok(PayloadBlock::ResponsePattern(pattern.resolve_ctx(resolver)?))
+            }
+        }
+    }
+}
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+    #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UploadBlock {
     pub name: String,
 }
@@ -1202,3 +1216,16 @@ pub struct CreateBlock {
 pub type PatternBlock = PatternBlockDef<Point>;
 pub type PatternBlockCtx = PatternBlockDef<PointCtx>;
 pub type PatternBlockDef<Pnt> = ValuePattern<PayloadPatternDef<Pnt>>;
+
+
+impl CtxSubst<PatternBlock> for PatternBlockCtx{
+    fn resolve_ctx(self, resolver: &dyn CtxResolver) -> Result<PatternBlock, MsgErr> {
+        match self {
+            PatternBlockCtx::Any => Ok(PatternBlock::Any),
+            PatternBlockCtx::None => Ok(PatternBlock::None),
+            PatternBlockCtx::Pattern(pattern) => {
+                Ok(PatternBlock::Pattern(pattern.resolve_ctx(resolver)?))
+            }
+        }
+    }
+}

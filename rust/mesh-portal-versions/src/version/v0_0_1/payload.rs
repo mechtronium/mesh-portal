@@ -3,7 +3,7 @@ pub mod payload {
     use std::collections::HashMap;
     use std::ops::{Deref, DerefMut};
 
-    use crate::error::MsgErr;
+    use crate::error::{MsgErr, ParseErrs};
     use crate::version::v0_0_1::bin::Bin;
     use crate::version::v0_0_1::entity::entity::request::{Action, Rc, RcCommandType, RequestCore};
     use crate::version::v0_0_1::id::id::{GenericKind, GenericKindBase, Meta, Point, PointCtx};
@@ -13,6 +13,7 @@ pub mod payload {
     use http::{Method, Uri};
     use std::str::FromStr;
     use std::sync::Arc;
+    use crate::version::v0_0_1::parse::{CtxResolver, CtxSubst};
 
     #[derive(
         Debug,
@@ -430,6 +431,20 @@ pub mod payload {
         Map(Box<MapPatternDef<Pnt>>),
     }
 
+
+    impl CtxSubst<PayloadTypePatternDef<Point>> for PayloadTypePatternDef<PointCtx>{
+        fn resolve_ctx(self, resolver: &dyn CtxResolver) -> Result<PayloadTypePatternDef<Point>, MsgErr> {
+            match self {
+                PayloadTypePatternDef::Empty => Ok(PayloadTypePatternDef::Empty),
+                PayloadTypePatternDef::Primitive(payload_type) =>Ok(PayloadTypePatternDef::Primitive(payload_type)),
+                PayloadTypePatternDef::List(list)=>Ok(PayloadTypePatternDef::List(list)),
+                PayloadTypePatternDef::Map(map)  => {
+                    Err("MapPatternCtx resolution not supported yet...".into())
+                }
+            }
+        }
+    }
+
     impl <Pnt> PayloadTypePatternDef<Pnt> {
         pub fn is_match(&self, payload: &Payload) -> Result<(), MsgErr> {
             unimplemented!();
@@ -506,7 +521,44 @@ pub mod payload {
         pub validator: Option<CallWithConfigDef<Pnt>>,
     }
 
-    impl <Pnt> ValueMatcher<Payload> for PayloadPatternDef<Pnt> {
+    impl CtxSubst<PayloadPattern> for PayloadPatternCtx{
+        fn resolve_ctx(self, resolver: &dyn CtxResolver) -> Result<PayloadPattern, MsgErr> {
+            let mut errs = vec![];
+            let structure = match self.structure.resolve_ctx(resolver) {
+              Ok(structure) => Some(structure),
+                Err(err) => {
+                    errs.push(err);
+                    None
+                }
+            };
+            let validator = match self.validator {
+                None => None,
+                Some(validator) => {
+                    match validator.resolve_ctx(resolver) {
+                        Ok(validator) => Some(validator),
+                        Err(err) => {
+                            errs.push(err);
+                            None
+                        }
+                    }
+                }
+            };
+
+
+            if errs.is_empty() {
+                Ok(PayloadPattern {
+                    structure: structure.expect("structure"),
+                    validator: validator,
+                    format: self.format
+                })
+            } else {
+                Err(ParseErrs::fold(errs).into())
+            }
+        }
+    }
+
+
+        impl <Pnt> ValueMatcher<Payload> for PayloadPatternDef<Pnt> {
         fn is_match(&self, payload: &Payload) -> Result<(), MsgErr> {
             self.structure.is_match(&payload)?;
 
@@ -523,8 +575,55 @@ pub mod payload {
 
     pub type CallWithConfig = CallWithConfigDef<Point>;
     pub type CallWithConfigCtx = CallWithConfigDef<PointCtx>;
+
+    impl CtxSubst<CallWithConfig> for CallWithConfigCtx {
+        fn resolve_ctx(self, resolver: &dyn CtxResolver) -> Result<CallWithConfig, MsgErr> {
+            let mut errs = vec![];
+            let call = match self.call.resolve_ctx(resolver) {
+                Ok(call) => Some(call),
+                Err(err) => {
+                    errs.push(err);
+                    None
+                }
+            };
+            let config = match self.config {
+                None => None,
+                Some(config) => {
+                    match config.resolve_ctx(resolver) {
+                        Ok(config) => Some(config),
+                        Err(err) => {
+                            errs.push(err);
+                            None
+                        }
+                    }
+                }
+            };
+
+            if errs.is_empty() {
+                Ok(CallWithConfig {
+                    call: call.expect("call"),
+                    config
+                })
+            } else {
+                Err(ParseErrs::fold(errs).into())
+            }
+        }
+    }
+
+
+
     pub type Call = CallDef<Point>;
     pub type CallCtx = CallDef<PointCtx>;
+
+    impl CtxSubst<Call> for CallCtx{
+        fn resolve_ctx(self, resolver: &dyn CtxResolver) -> Result<Call, MsgErr> {
+            Ok(Call {
+                point: self.point.resolve_ctx(resolver)?,
+                kind: self.kind
+            })
+        }
+    }
+
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct CallDef<Pnt> {

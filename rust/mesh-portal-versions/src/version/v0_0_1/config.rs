@@ -81,7 +81,7 @@ pub mod config {
     }
 
     pub mod bind {
-        use crate::error::MsgErr;
+        use crate::error::{MsgErr, ParseErrs};
         use crate::version::v0_0_1::entity::entity::request::{Rc, RequestCore};
         use crate::version::v0_0_1::entity::entity::EntityKind;
         use crate::version::v0_0_1::id::id::{Point, PointCtx};
@@ -93,6 +93,7 @@ pub mod config {
         use crate::version::v0_0_1::util::{ValueMatcher, ValuePattern};
         use serde::{Deserialize, Serialize};
         use std::convert::TryInto;
+        use crate::version::v0_0_1::parse::{CtxResolver, CtxSubst};
         use crate::version::v0_0_1::parse::model::{BindScope, RequestScope, PipelineSegment, PipelineSegmentDef};
         use crate::version::v0_0_1::selector::{PayloadBlock, PayloadBlockDef};
 
@@ -196,6 +197,27 @@ pub mod config {
             pub blocks: Vec<PayloadBlockDef<Pnt>>,
         }
 
+        impl CtxSubst<PipelineStep> for PipelineStepCtx{
+            fn resolve_ctx(self, resolver: &dyn CtxResolver) -> Result<PipelineStep, MsgErr> {
+                let mut errs = vec![];
+                let mut blocks = vec![];
+                for block in self.blocks {
+                    match block.resolve_ctx(resolver) {
+                        Ok(block)=>blocks.push(block),
+                        Err(err)=>errs.push(err)
+                    }
+                }
+                if errs.is_empty() {
+                    Ok(PipelineStep{
+                        entry:self.entry,
+                        exit: self.exit,
+                        blocks
+                    })
+                } else {
+                    Err(ParseErrs::fold(errs).into())
+                }
+            }
+        }
 
         impl PipelineStep {
             pub fn new(entry: MessageKind, exit: MessageKind) -> Self {
@@ -226,6 +248,17 @@ pub mod config {
             Call(CallDef<Pnt>),
             Respond,
             Point(Pnt),
+        }
+
+        impl CtxSubst<PipelineStop> for PipelineStopCtx {
+            fn resolve_ctx(self, resolver: &dyn CtxResolver) -> Result<PipelineStop, MsgErr> {
+                match self {
+                    PipelineStopCtx::Internal => Ok(PipelineStop::Internal),
+                    PipelineStopCtx::Call(call) => Ok(PipelineStop::Call(call.resolve_ctx(resolver)?)),
+                    PipelineStopCtx::Respond => Ok(PipelineStop::Respond),
+                    PipelineStopCtx::Point(point) => Ok(PipelineStop::Point(point.resolve_ctx(resolver)?))
+                }
+            }
         }
 
         #[derive(Debug, Clone, Serialize, Deserialize)]

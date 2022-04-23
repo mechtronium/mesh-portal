@@ -15,7 +15,7 @@ pub mod id {
     use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 
     use crate::error::MsgErr;
-    use crate::version::v0_0_1::parse::{camel_case, consume_point, kind, point_and_kind, point_route_segment,  Res, VarResolver, VarSubst};
+    use crate::version::v0_0_1::parse::{camel_case, consume_point, Ctx, CtxResolver, CtxSubst, kind, point_and_kind, point_route_segment, Res, VarResolver, VarSubst};
 
     use crate::version::v0_0_1::selector::selector::{Pattern, PointSelector, SpecificSelector, VersionReq};
     use crate::version::v0_0_1::{create_span, Span};
@@ -568,8 +568,88 @@ pub mod id {
     pub type Point = PointDef<RouteSeg, PointSeg>;
     pub type PointCtx = PointDef<RouteSeg, PointSegCtx>;
 
+    impl CtxSubst<Point> for PointCtx {
+        fn resolve_ctx(self, resolver: &dyn CtxResolver) -> Result<Point, MsgErr> {
+           if self.segments.is_empty() {
+               return Ok(Point{
+                   route: self.route,
+                   segments:vec![]
+               })
+           }
 
-    impl TryInto<Point> for PointCtx {
+           let mut segments = vec![];
+
+           let mut old = self;
+           let first_segment = old.segments.remove(0);
+           let point = match first_segment {
+                PointSegCtx::Working => resolver.ctx(&Ctx::WorkingPoint)?,
+                PointSegCtx::Pop => resolver.ctx(&Ctx::WorkingPointPop)?,
+                PointSegCtx::Root => "".to_string(),
+                PointSegCtx::Space(space) => space,
+                PointSegCtx::Base(base) => base,
+                PointSegCtx::FilesystemRootDir => "/".to_string(),
+                PointSegCtx::Dir(dir) => dir,
+                PointSegCtx::File(file) => file,
+                PointSegCtx::Version(version) => version.to_string()
+            };
+
+            let mut point = consume_point(point.as_str())?;
+
+            let mut filesystem_count = 0;
+            for segment in old.segments {
+                match segment {
+                   PointSegCtx::Working => {}
+                   PointSegCtx::Pop => {
+                       let segment = segments.pop();
+                       if let Option::Some(PointSeg::FilesystemRootDir) = segment {
+                           filesystem_count = filesystem_count - 1;
+                       }
+                   }
+                    PointSegCtx::FilesystemRootDir => {
+                        filesystem_count = filesystem_count + 1;
+                        segments.push(PointSeg::FilesystemRootDir);
+                    }
+
+                    PointSegCtx::Root => {
+                        //segments.push(PointSeg::Root)
+                    }
+                    PointSegCtx::Space(space) => {
+                        segments.push(PointSeg::Space(space))
+                    }
+                    PointSegCtx::Base(base) => {
+                        segments.push(PointSeg::Base(base))
+                    }
+                    PointSegCtx::Dir(dir) => {
+                        segments.push(PointSeg::Dir(dir))
+                    }
+                    PointSegCtx::File(file) => {
+                        segments.push(PointSeg::File(file))
+                    }
+                    PointSegCtx::Version(version) => {
+                        segments.push(PointSeg::Version(version))
+                    }
+                }
+            }
+
+
+            let mut point_builder = String::new();
+            point_builder.push_str( point.to_string().as_str() );
+            let mut post_filesystem = point.has_filesystem();
+            for segment in segments {
+                point_builder.push_str( segment.kind().preceding_delim(post_filesystem));
+                point_builder.push_str( segment.to_string().as_str() );
+                if segment.kind() == PointSegKind::FilesystemRootDir {
+                    post_filesystem=true;
+                }
+            }
+
+            let point = consume_point(point_builder.as_str())?;
+
+            Ok(point)
+        }
+    }
+
+        impl TryInto<Point> for PointCtx {
         type Error = MsgErr;
 
         fn try_into(self) -> Result<Point, Self::Error> {

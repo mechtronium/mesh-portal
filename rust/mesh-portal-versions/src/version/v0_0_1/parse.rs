@@ -2637,10 +2637,7 @@ pub mod model {
     use crate::version::v0_0_1::entity::entity::EntityKind;
     use crate::version::v0_0_1::id::id::{Point, PointCtx, Version};
     use crate::version::v0_0_1::parse::error::result;
-    use crate::version::v0_0_1::parse::{
-        camel_case, lex_child_scopes, pipeline, value_pattern, var_pipeline, PipelineStepCtxParser,
-        PipelineStopCtxParser, SubstParser, VarResolver, VarSubst,
-    };
+    use crate::version::v0_0_1::parse::{camel_case, lex_child_scopes, pipeline, value_pattern, var_pipeline, PipelineStepCtxParser, PipelineStopCtxParser, SubstParser, VarResolver, VarSubst, CtxSubst, CtxResolver};
     use crate::version::v0_0_1::util::{MethodPattern, StringMatcher, ValuePattern};
     use crate::version::v0_0_1::{create_span, OwnedSpan, Span};
     use bincode::Options;
@@ -2872,6 +2869,36 @@ pub mod model {
     pub type VarPipeline = PipelineDef<VarPipelineSegment>;
     pub type LexPipelineScope<I> = PipelineScopeDef<I, VarPipeline>;
     pub type PipelineSegmentCtx = PipelineSegmentDef<PointCtx>;
+
+    impl CtxSubst<PipelineSegment> for PipelineSegmentCtx{
+        fn resolve_ctx(self, resolver: &dyn CtxResolver) -> Result<PipelineSegment, MsgErr> {
+            let mut errs = vec![];
+            let step = match self.step.resolve_ctx(resolver) {
+                Ok(step) => Some(step),
+                Err(err) => {
+                    errs.push(err);
+                    None
+                }
+            };
+            let stop = match self.stop.resolve_ctx(resolver) {
+                Ok(stop) => Some(stop),
+                Err(err) => {
+                    errs.push(err);
+                    None
+                }
+            };
+            if errs.is_empty() {
+                Ok(PipelineSegment {
+                    step: step.expect("step"),
+                    stop: stop.expect("stop")
+                })
+            } else {
+                Err(ParseErrs::fold(errs).into())
+            }
+        }
+    }
+
+
     pub type PipelineSegment = PipelineSegmentDef<Point>;
     pub type RequestScope = PipelineScopeDef<String, Vec<MessageScope>>;
     pub type MessageScope = ScopeDef<ValuePatternScopeSelectorAndFilters, Vec<MethodScope>>;
@@ -2969,6 +2996,25 @@ pub mod model {
 
     pub type Pipeline = PipelineDef<PipelineSegment>;
     pub type PipelineCtx = PipelineDef<PipelineSegmentCtx>;
+
+
+    impl CtxSubst<Pipeline> for PipelineCtx {
+        fn resolve_ctx(self, resolver: &dyn CtxResolver) -> Result<Pipeline, MsgErr> {
+            let mut errs = vec![];
+            let mut segments = vec![];
+            for segment in self.segments {
+                match segment.resolve_ctx(resolver) {
+                    Ok(segment) => segments.push(segment),
+                    Err(err) => errs.push(err)
+                }
+            }
+            if errs.is_empty() {
+                Ok( Pipeline { segments })
+            } else {
+                Err(ParseErrs::fold(errs).into())
+            }
+        }
+    }
 
     #[derive(Debug,Clone,Serialize,Deserialize)]
     pub struct PipelineDef<S> {
