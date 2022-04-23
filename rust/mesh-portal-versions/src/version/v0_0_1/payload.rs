@@ -506,7 +506,7 @@ pub mod payload {
         pub validator: Option<CallWithConfigDef<Pnt>>,
     }
 
-    impl ValueMatcher<Payload> for PayloadPattern {
+    impl <Pnt> ValueMatcher<Payload> for PayloadPatternDef<Pnt> {
         fn is_match(&self, payload: &Payload) -> Result<(), MsgErr> {
             self.structure.is_match(&payload)?;
 
@@ -795,7 +795,7 @@ pub mod payload {
 
     impl <Pnt> Default for MapPatternDef<Pnt> {
         fn default() -> Self {
-            MapPattern {
+            MapPatternDef {
                 required: Default::default(),
                 allowed: ValuePattern::Any,
             }

@@ -2980,6 +2980,7 @@ pub mod model {
         }
     }
 
+    #[derive(Debug,Clone,Serialize,Deserialize)]
     pub struct VarPipelineSegmentDef<Step, Stop> {
         pub step: Step,
         pub stop: Stop,
@@ -2994,7 +2995,7 @@ pub mod model {
     pub type Pipeline = PipelineDef<PipelineSegment>;
     pub type PipelineCtx = PipelineDef<PipelineSegmentCtx>;
 
-    #[derive(Clone)]
+    #[derive(Debug,Clone,Serialize,Deserialize)]
     pub struct PipelineDef<S> {
         pub segments: Vec<S>,
     }
@@ -3395,7 +3396,7 @@ pub mod model {
         }
     }
 
-    #[derive(Clone)]
+    #[derive(Debug,Clone,Serialize,Deserialize)]
     pub enum Chunk<I> {
         Var(I),
         Text(I),
@@ -3422,7 +3423,7 @@ pub mod model {
         }
     }
 
-    #[derive(Clone)]
+    #[derive(Debug,Clone,Serialize,Deserialize)]
     pub struct Subst<R, I, P>
     where
         P: SubstParser<R> + Clone,
@@ -5314,14 +5315,17 @@ pub fn var_pipeline_segment(input: Span) -> Res<Span, VarPipelineSegment> {
     ))(input)
     .map(|(next, (_, step, _, stop))| {
         let step = step.into();
-        let stop = stop.into();
+        let stop = match stop {
+            None => None,
+            Some(stop) => {Some(stop.into())}
+        };
         let segment = VarPipelineSegment { step, stop };
 
         (next, segment)
     })
 }
 
-#[derive(Clone)]
+#[derive(Debug,Clone,Serialize,Deserialize)]
 pub struct PipelineStepCtxParser();
 impl SubstParser<PipelineStepCtx> for PipelineStepCtxParser {
     fn parse_span<'a>(&self, input: Span<'a>) -> Res<Span<'a>, PipelineStepCtx> {
@@ -5400,7 +5404,7 @@ pub fn point_pipeline_stop(input: Span) -> Res<Span, PipelineStopCtx> {
         .map(|(next, point)| (next, PipelineStopCtx::Point(point)))
 }
 
-#[derive(Clone)]
+#[derive(Debug,Clone,Serialize,Deserialize)]
 pub struct PipelineStopCtxParser();
 impl SubstParser<PipelineStopCtx> for PipelineStopCtxParser {
     fn parse_span<'a>(&self, input: Span<'a>) -> Res<Span<'a>, PipelineStopCtx> {

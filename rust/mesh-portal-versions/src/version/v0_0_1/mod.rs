@@ -69,7 +69,7 @@ impl <S:ToString> ToString for NamedSpan<S> {
     }
 }
 
-#[derive(Clone)]
+#[derive(Debug,Clone,Serialize,Deserialize)]
 pub struct OwnedSpan {
     pub extra: SpanExtra,
     pub offset: usize,
