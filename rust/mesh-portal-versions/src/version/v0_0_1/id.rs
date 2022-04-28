@@ -24,7 +24,7 @@ pub mod id {
     use crate::version::v0_0_1::selector::selector::{
         Pattern, PointSelector, SpecificSelector, VersionReq,
     };
-    use crate::version::v0_0_1::span::{create_span, Span};
+    use crate::version::v0_0_1::span::{create_span, BorrowedSpan};
 
     pub type GenericKindBase = String;
 

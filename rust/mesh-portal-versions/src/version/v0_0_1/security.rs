@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::ops::{Deref, DerefMut};
 use std::str::FromStr;
-use crate::version::v0_0_1::span::{create_span, Span};
+use crate::version::v0_0_1::span::{create_span, BorrowedSpan};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Access {

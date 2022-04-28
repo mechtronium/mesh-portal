@@ -98,30 +98,30 @@ where
     )
 }
 
-pub fn local_route_segment(input: Span) -> Res<Span, RouteSeg> {
+pub fn local_route_segment(input: BorrowedSpan) -> Res<BorrowedSpan, RouteSeg> {
     alt((recognize(tag(".")), recognize(not(other_route_segment))))(input)
         .map(|(next, _)| (next, RouteSeg::Local))
 }
 
-pub fn domain_route_segment(input: Span) -> Res<Span, RouteSeg> {
+pub fn domain_route_segment(input: BorrowedSpan) -> Res<BorrowedSpan, RouteSeg> {
     domain_chars(input).map(|(next, domain)| (next, RouteSeg::Domain(domain.to_string())))
 }
 
-pub fn tag_route_segment(input: Span) -> Res<Span, RouteSeg> {
+pub fn tag_route_segment(input: BorrowedSpan) -> Res<BorrowedSpan, RouteSeg> {
     delimited(tag("["), skewer_chars, tag("]"))(input)
         .map(|(next, tag)| (next, RouteSeg::Tag(tag.to_string())))
 }
 
-pub fn mesh_route_segment(input: Span) -> Res<Span, RouteSeg> {
+pub fn mesh_route_segment(input: BorrowedSpan) -> Res<BorrowedSpan, RouteSeg> {
     delimited(tag("<<"), mesh_route_chars, tag(">>"))(input)
         .map(|(next, tag)| (next, RouteSeg::Tag(tag.to_string())))
 }
 
-pub fn other_route_segment(input: Span) -> Res<Span, RouteSeg> {
+pub fn other_route_segment(input: BorrowedSpan) -> Res<BorrowedSpan, RouteSeg> {
     alt((tag_route_segment, domain_route_segment, mesh_route_segment))(input)
 }
 
-pub fn point_route_segment(input: Span) -> Res<Span, RouteSeg> {
+pub fn point_route_segment(input: BorrowedSpan) -> Res<BorrowedSpan, RouteSeg> {
     alt((local_route_segment, other_route_segment))(input)
 }
 
@@ -138,11 +138,11 @@ pub fn point_segment(input: Span) -> Res<Span, PointSegCtx> {
 
  */
 
-pub fn mesh_eos(input: Span) -> Res<Span, Span> {
+pub fn mesh_eos(input: BorrowedSpan) -> Res<BorrowedSpan, BorrowedSpan> {
     peek(alt((tag(":"), eop)))(input)
 }
 
-pub fn fs_trailing(input: Span) -> Res<Span, Span> {
+pub fn fs_trailing(input: BorrowedSpan) -> Res<BorrowedSpan, BorrowedSpan> {
     peek(pair(
         recognize(tag(":")),
         context("point:version:root_not_trailing", cut(tag("/"))),
@@ -151,12 +151,12 @@ pub fn fs_trailing(input: Span) -> Res<Span, Span> {
 }
 
 // version end of segment
-pub fn ver_eos(input: Span) -> Res<Span, Span> {
+pub fn ver_eos(input: BorrowedSpan) -> Res<BorrowedSpan, BorrowedSpan> {
     peek(alt((fs_trailing, tag(":/"), eop)))(input)
 }
 
 // end of point
-pub fn eop(input: Span) -> Res<Span, Span> {
+pub fn eop(input: BorrowedSpan) -> Res<BorrowedSpan, BorrowedSpan> {
     peek(alt((
         eof,
         multispace1,
@@ -172,7 +172,7 @@ pub fn eop(input: Span) -> Res<Span, Span> {
     )))(input)
 }
 
-pub fn space_no_dupe_dots(input: Span) -> Res<Span, ()> {
+pub fn space_no_dupe_dots(input: BorrowedSpan) -> Res<BorrowedSpan, ()> {
     context(
         "point:space_segment:dot_dupes",
         peek(cut(not(take_until("..")))),
@@ -180,7 +180,7 @@ pub fn space_no_dupe_dots(input: Span) -> Res<Span, ()> {
     .map(|(next, _)| (next, ()))
 }
 
-pub fn space_point_segment(input: Span) -> Res<Span, PointSeg> {
+pub fn space_point_segment(input: BorrowedSpan) -> Res<BorrowedSpan, PointSeg> {
     context(
         "point:space_segment",
         cut(pair(
@@ -195,7 +195,7 @@ pub fn space_point_segment(input: Span) -> Res<Span, PointSeg> {
     .map(|(next, (space, x))| (next, PointSeg::Space(space.to_string())))
 }
 
-pub fn base_point_segment(input: Span) -> Res<Span, PointSeg> {
+pub fn base_point_segment(input: BorrowedSpan) -> Res<BorrowedSpan, PointSeg> {
     preceded(
         peek(lowercase1),
         context("point:base_segment", cut(pair(rec_skewer, mesh_eos))),
@@ -203,7 +203,7 @@ pub fn base_point_segment(input: Span) -> Res<Span, PointSeg> {
     .map(|(next, (base, _))| (next, PointSeg::Base(base.to_string())))
 }
 
-pub fn version_point_segment(input: Span) -> Res<Span, PointSeg> {
+pub fn version_point_segment(input: BorrowedSpan) -> Res<BorrowedSpan, PointSeg> {
     preceded(
         peek(digit0),
         context("point:version_segment", cut(tuple((version, ver_eos)))),
@@ -211,12 +211,12 @@ pub fn version_point_segment(input: Span) -> Res<Span, PointSeg> {
     .map(|(next, (version, _))| (next, PointSeg::Version(version)))
 }
 
-pub fn dir_pop(input: Span) -> Res<Span, PointSegCtx> {
+pub fn dir_pop(input: BorrowedSpan) -> Res<BorrowedSpan, PointSegCtx> {
     context("point:dir_pop", tuple((tag(".."), opt(tag("/")))))(input)
         .map(|(next, _)| (next, PointSegCtx::Pop))
 }
 
-pub fn filesystem_point_segment(input: Span) -> Res<Span, PointSeg> {
+pub fn filesystem_point_segment(input: BorrowedSpan) -> Res<BorrowedSpan, PointSeg> {
     tuple((
         peek(not(eop)),
         context(
@@ -227,27 +227,27 @@ pub fn filesystem_point_segment(input: Span) -> Res<Span, PointSeg> {
     .map(|(next, (_, seg))| (next, seg))
 }
 
-pub fn dir_point_segment(input: Span) -> Res<Span, PointSeg> {
+pub fn dir_point_segment(input: BorrowedSpan) -> Res<BorrowedSpan, PointSeg> {
     context("point:dir_segment", terminated(file_chars, tag("/")))(input)
         .map(|(next, dir)| (next, PointSeg::Dir(format!("{}/", dir))))
 }
 
-pub fn root_dir_point_segment(input: Span) -> Res<Span, PointSeg> {
+pub fn root_dir_point_segment(input: BorrowedSpan) -> Res<BorrowedSpan, PointSeg> {
     context("point:root_filesystem_segment", tag(":/"))(input)
         .map(|(next, _)| (next, PointSeg::FilesystemRootDir))
 }
 
-pub fn root_dir_point_segment_ctx(input: Span) -> Res<Span, PointSegCtx> {
+pub fn root_dir_point_segment_ctx(input: BorrowedSpan) -> Res<BorrowedSpan, PointSegCtx> {
     context("point:root_filesystem_segment", tag(":/"))(input)
         .map(|(next, _)| (next, PointSegCtx::FilesystemRootDir))
 }
 
-pub fn file_point_segment(input: Span) -> Res<Span, PointSeg> {
+pub fn file_point_segment(input: BorrowedSpan) -> Res<BorrowedSpan, PointSeg> {
     context("point:file_segment", file_chars)(input)
         .map(|(next, filename)| (next, PointSeg::File(filename.to_string())))
 }
 
-pub fn point(input: Span) -> Res<Span, Point> {
+pub fn point(input: BorrowedSpan) -> Res<BorrowedSpan, Point> {
     let (next, point) = point_ctx(input.clone())?;
 
     match point.try_into() {
@@ -261,7 +261,7 @@ pub fn point(input: Span) -> Res<Span, Point> {
     }
 }
 
-pub fn point_ctx(input: Span) -> Res<Span, PointCtx> {
+pub fn point_ctx(input: BorrowedSpan) -> Res<BorrowedSpan, PointCtx> {
     context(
         "point",
         tuple((alt((root_point, point_non_root)), peek(eop))),
@@ -269,7 +269,7 @@ pub fn point_ctx(input: Span) -> Res<Span, PointCtx> {
     .map(|(next, (point, _))| (next, point))
 }
 
-pub fn root_point(input: Span) -> Res<Span, PointCtx> {
+pub fn root_point(input: BorrowedSpan) -> Res<BorrowedSpan, PointCtx> {
     tuple((opt(terminated(point_route_segment, tag("::"))), tag("ROOT")))(input).map(
         |(next, (route, _))| {
             let route = route.unwrap_or(RouteSeg::Local);
@@ -282,7 +282,7 @@ pub fn root_point(input: Span) -> Res<Span, PointCtx> {
     )
 }
 
-pub fn point_non_root(input: Span) -> Res<Span, PointCtx> {
+pub fn point_non_root(input: BorrowedSpan) -> Res<BorrowedSpan, PointCtx> {
     context(
         "point_non_root",
         tuple((
@@ -425,7 +425,7 @@ pub fn file_point_capture_segment(input: Span) -> Res<Span, PointSeg> {
 }
  */
 
-pub fn space_point_kind_segment(input: Span) -> Res<Span, PointKindSeg> {
+pub fn space_point_kind_segment(input: BorrowedSpan) -> Res<BorrowedSpan, PointKindSeg> {
     tuple((space_point_segment, delim_kind))(input).map(|(next, (point_segment, kind))| {
         (
             next,
@@ -437,7 +437,7 @@ pub fn space_point_kind_segment(input: Span) -> Res<Span, PointKindSeg> {
     })
 }
 
-pub fn base_point_kind_segment(input: Span) -> Res<Span, PointKindSeg> {
+pub fn base_point_kind_segment(input: BorrowedSpan) -> Res<BorrowedSpan, PointKindSeg> {
     tuple((base_point_segment, delim_kind))(input).map(|(next, (point_segment, kind))| {
         (
             next,
@@ -449,10 +449,10 @@ pub fn base_point_kind_segment(input: Span) -> Res<Span, PointKindSeg> {
     })
 }
 
-pub fn filepath_point_kind_segment(input: Span) -> Res<Span, PointKindSeg> {
+pub fn filepath_point_kind_segment(input: BorrowedSpan) -> Res<BorrowedSpan, PointKindSeg> {
     alt((file_point_kind_segment, dir_point_kind_segment))(input)
 }
-pub fn dir_point_kind_segment(input: Span) -> Res<Span, PointKindSeg> {
+pub fn dir_point_kind_segment(input: BorrowedSpan) -> Res<BorrowedSpan, PointKindSeg> {
     tuple((dir_point_segment, delim_kind))(input).map(|(next, (point_segment, kind))| {
         (
             next,
@@ -464,7 +464,7 @@ pub fn dir_point_kind_segment(input: Span) -> Res<Span, PointKindSeg> {
     })
 }
 
-pub fn file_point_kind_segment(input: Span) -> Res<Span, PointKindSeg> {
+pub fn file_point_kind_segment(input: BorrowedSpan) -> Res<BorrowedSpan, PointKindSeg> {
     tuple((file_point_segment, delim_kind))(input).map(|(next, (point_segment, kind))| {
         (
             next,
@@ -476,7 +476,7 @@ pub fn file_point_kind_segment(input: Span) -> Res<Span, PointKindSeg> {
     })
 }
 
-pub fn version_point_kind_segment(input: Span) -> Res<Span, PointKindSeg> {
+pub fn version_point_kind_segment(input: BorrowedSpan) -> Res<BorrowedSpan, PointKindSeg> {
     tuple((version_point_segment, delim_kind))(input).map(|(next, (point_segment, kind))| {
         (
             next,
@@ -488,12 +488,12 @@ pub fn version_point_kind_segment(input: Span) -> Res<Span, PointKindSeg> {
     })
 }
 
-pub fn consume_hierarchy(input: Span) -> Result<PointKindHierarchy, MsgErr> {
+pub fn consume_hierarchy(input: BorrowedSpan) -> Result<PointKindHierarchy, MsgErr> {
     let (_, rtn) = all_consuming(point_kind_hierarchy)(input)?;
     Ok(rtn)
 }
 
-pub fn point_kind_hierarchy(input: Span) -> Res<Span, PointKindHierarchy> {
+pub fn point_kind_hierarchy(input: BorrowedSpan) -> Res<BorrowedSpan, PointKindHierarchy> {
     tuple((
         tuple((point_route_segment, space_point_kind_segment)),
         many0(base_point_kind_segment),
@@ -687,11 +687,11 @@ where
     )
 }
 
-pub fn rec_skewer(input: Span) -> Res<Span, Span> {
+pub fn rec_skewer(input: BorrowedSpan) -> Res<BorrowedSpan, BorrowedSpan> {
     recognize(tuple((lowercase1, opt(skewer))))(input)
 }
 
-pub fn rec_skewer_capture(input: Span) -> Res<Span, Span> {
+pub fn rec_skewer_capture(input: BorrowedSpan) -> Res<BorrowedSpan, BorrowedSpan> {
     recognize(tuple((lowercase1, opt(skewer_chars_plus_capture))))(input)
 }
 
@@ -794,7 +794,7 @@ where
     )
 }
 
-pub fn path_regex(input: Span) -> Res<Span, Span> {
+pub fn path_regex(input: BorrowedSpan) -> Res<BorrowedSpan, BorrowedSpan> {
     let (next, regex_span) = context("regex", recognize(pair(tag("/"), nospace0)))(input.clone())?;
 
     let regex_string = regex_span.to_string();
@@ -901,28 +901,28 @@ where
     )
 }
 
-pub fn not_space(input: Span) -> Res<Span, Span> {
+pub fn not_space(input: BorrowedSpan) -> Res<BorrowedSpan, BorrowedSpan> {
     is_not(" \n\r\t")(input)
 }
 
-pub fn path(input: Span) -> Res<Span, Span> {
+pub fn path(input: BorrowedSpan) -> Res<BorrowedSpan, BorrowedSpan> {
     recognize(tuple((tag("/"), opt(filepath_chars))))(input)
 }
 
-pub fn capture_path(input: Span) -> Res<Span, Span> {
+pub fn capture_path(input: BorrowedSpan) -> Res<BorrowedSpan, BorrowedSpan> {
     recognize(tuple((tag("/"), opt(file_chars_plus_capture))))(input)
 }
 
-pub fn consume_path(input: Span) -> Res<Span, Span> {
+pub fn consume_path(input: BorrowedSpan) -> Res<BorrowedSpan, BorrowedSpan> {
     all_consuming(path)(input)
 }
 
-pub fn camel_case(input: Span) -> Res<Span, Span> {
+pub fn camel_case(input: BorrowedSpan) -> Res<BorrowedSpan, BorrowedSpan> {
     recognize(tuple((is_a("ABCDEFGHIJKLMNOPQRSTUVWXYZ"), alphanumeric0)))(input)
     //recognize(alpha1)(input)
 }
 
-pub fn skewer_case(input: Span) -> Res<Span, Span> {
+pub fn skewer_case(input: BorrowedSpan) -> Res<BorrowedSpan, BorrowedSpan> {
     rec_skewer(input)
     //recognize(alpha1)(input)
 }
@@ -940,18 +940,18 @@ where
     }
 }
 
-pub fn single_lowerscase(input: Span) -> Res<Span, Span> {
+pub fn single_lowerscase(input: BorrowedSpan) -> Res<BorrowedSpan, BorrowedSpan> {
     is_a("abcdefghijklmnopqrstuvwxyz")(input)
 }
-pub fn single_digit(input: Span) -> Res<Span, Span> {
+pub fn single_digit(input: BorrowedSpan) -> Res<BorrowedSpan, BorrowedSpan> {
     is_a("abcdefghijklmnopqrstuvwxyz")(input)
 }
 
-pub fn camel_case_to_string_matcher(input: Span) -> Res<Span, StringMatcher> {
+pub fn camel_case_to_string_matcher(input: BorrowedSpan) -> Res<BorrowedSpan, StringMatcher> {
     camel_case(input).map(|(next, camel)| (next, StringMatcher::new(camel.to_string())))
 }
 
-fn parse_version_major_minor_patch(input: Span) -> Res<Span, (Span, Span, Span)> {
+fn parse_version_major_minor_patch(input: BorrowedSpan) -> Res<BorrowedSpan, (BorrowedSpan, BorrowedSpan, BorrowedSpan)> {
     context(
         "version_major_minor_patch",
         tuple((
@@ -962,18 +962,18 @@ fn parse_version_major_minor_patch(input: Span) -> Res<Span, (Span, Span, Span)>
     )(input)
 }
 
-pub fn parse_version(input: Span) -> Res<Span, ((Span, Span, Span), Option<Span>)> {
+pub fn parse_version(input: BorrowedSpan) -> Res<BorrowedSpan, ((BorrowedSpan, BorrowedSpan, BorrowedSpan), Option<BorrowedSpan>)> {
     tuple((
         parse_version_major_minor_patch,
         opt(preceded(tag("-"), skewer_chars)),
     ))(input)
 }
 
-pub fn rec_version(input: Span) -> Res<Span, Span> {
+pub fn rec_version(input: BorrowedSpan) -> Res<BorrowedSpan, BorrowedSpan> {
     recognize(parse_version)(input)
 }
 
-pub fn base_point_segment_wildcard(input: Span) -> Res<Span, PointTemplateSeg> {
+pub fn base_point_segment_wildcard(input: BorrowedSpan) -> Res<BorrowedSpan, PointTemplateSeg> {
     preceded(
         tag(":"),
         recognize(tuple((many0(skewer), tag("%"), many0(skewer)))),
@@ -981,7 +981,7 @@ pub fn base_point_segment_wildcard(input: Span) -> Res<Span, PointTemplateSeg> {
     .map(|(next, base)| (next, PointTemplateSeg::Wildcard(base.to_string())))
 }
 
-pub fn base_point_segment_template(input: Span) -> Res<Span, PointTemplateSeg> {
+pub fn base_point_segment_template(input: BorrowedSpan) -> Res<BorrowedSpan, PointTemplateSeg> {
     preceded(tag(":"), rec_skewer)(input).map(|(next, base)| {
         (
             next,
@@ -990,7 +990,7 @@ pub fn base_point_segment_template(input: Span) -> Res<Span, PointTemplateSeg> {
     })
 }
 
-pub fn filepath_point_segment_wildcard(input: Span) -> Res<Span, PointTemplateSeg> {
+pub fn filepath_point_segment_wildcard(input: BorrowedSpan) -> Res<BorrowedSpan, PointTemplateSeg> {
     recognize(tuple((
         many0(filepath_chars),
         tag("%"),
@@ -999,12 +999,12 @@ pub fn filepath_point_segment_wildcard(input: Span) -> Res<Span, PointTemplateSe
     .map(|(next, base)| (next, PointTemplateSeg::Wildcard(base.to_string())))
 }
 
-pub fn filepath_point_segment_template(input: Span) -> Res<Span, PointTemplateSeg> {
+pub fn filepath_point_segment_template(input: BorrowedSpan) -> Res<BorrowedSpan, PointTemplateSeg> {
     filesystem_point_segment(input)
         .map(|(next, segment)| (next, PointTemplateSeg::ExactSeg(segment)))
 }
 
-pub fn point_template(input: Span) -> Res<Span, PointTemplate> {
+pub fn point_template(input: BorrowedSpan) -> Res<BorrowedSpan, PointTemplate> {
     let (next, ((hub, space), mut bases, version, root, mut files)) = tuple((
         tuple((point_route_segment, space_point_segment)),
         many0(alt((
@@ -1134,7 +1134,7 @@ pub fn point_template(input: Span) -> Res<Span, PointTemplate> {
     Ok((next, point_template))
 }
 
-pub fn kind_template(input: Span) -> Res<Span, KindTemplate> {
+pub fn kind_template(input: BorrowedSpan) -> Res<BorrowedSpan, KindTemplate> {
     tuple((
         generic_kind_base,
         opt(delimited(
@@ -1165,12 +1165,12 @@ pub fn kind_template(input: Span) -> Res<Span, KindTemplate> {
     })
 }
 
-pub fn template(input: Span) -> Res<Span, Template> {
+pub fn template(input: BorrowedSpan) -> Res<BorrowedSpan, Template> {
     tuple((point_template, delimited(tag("<"), kind_template, tag(">"))))(input)
         .map(|(next, (point, kind))| (next, Template { point, kind }))
 }
 
-pub fn set_property_mod(input: Span) -> Res<Span, PropertyMod> {
+pub fn set_property_mod(input: BorrowedSpan) -> Res<BorrowedSpan, PropertyMod> {
     tuple((tag("+"), skewer_dot, tag("="), property_value))(input).map(
         |(next, (_, key, _, value))| {
             (
@@ -1185,7 +1185,7 @@ pub fn set_property_mod(input: Span) -> Res<Span, PropertyMod> {
     )
 }
 
-pub fn set_property_mod_lock(input: Span) -> Res<Span, PropertyMod> {
+pub fn set_property_mod_lock(input: BorrowedSpan) -> Res<BorrowedSpan, PropertyMod> {
     tuple((tag("+@"), skewer_dot, tag("="), property_value))(input).map(
         |(next, (_, key, _, value))| {
             (
@@ -1200,19 +1200,19 @@ pub fn set_property_mod_lock(input: Span) -> Res<Span, PropertyMod> {
     )
 }
 
-pub fn property_value_not_space_or_comma(input: Span) -> Res<Span, Span> {
+pub fn property_value_not_space_or_comma(input: BorrowedSpan) -> Res<BorrowedSpan, BorrowedSpan> {
     is_not(" \n\r\t,")(input)
 }
 
-pub fn property_value_single_quotes(input: Span) -> Res<Span, Span> {
+pub fn property_value_single_quotes(input: BorrowedSpan) -> Res<BorrowedSpan, BorrowedSpan> {
     delimited(tag("'"), is_not("'"), tag("'"))(input)
 }
 
-pub fn property_value_double_quotes(input: Span) -> Res<Span, Span> {
+pub fn property_value_double_quotes(input: BorrowedSpan) -> Res<BorrowedSpan, BorrowedSpan> {
     delimited(tag("\""), is_not("\""), tag("\""))(input)
 }
 
-pub fn property_value(input: Span) -> Res<Span, Span> {
+pub fn property_value(input: BorrowedSpan) -> Res<BorrowedSpan, BorrowedSpan> {
     alt((
         property_value_single_quotes,
         property_value_double_quotes,
@@ -1220,16 +1220,16 @@ pub fn property_value(input: Span) -> Res<Span, Span> {
     ))(input)
 }
 
-pub fn unset_property_mod(input: Span) -> Res<Span, PropertyMod> {
+pub fn unset_property_mod(input: BorrowedSpan) -> Res<BorrowedSpan, PropertyMod> {
     tuple((tag("!"), skewer_dot))(input)
         .map(|(next, (_, name))| (next, PropertyMod::UnSet(name.to_string())))
 }
 
-pub fn property_mod(input: Span) -> Res<Span, PropertyMod> {
+pub fn property_mod(input: BorrowedSpan) -> Res<BorrowedSpan, PropertyMod> {
     alt((set_property_mod, unset_property_mod))(input)
 }
 
-pub fn set_properties(input: Span) -> Res<Span, SetProperties> {
+pub fn set_properties(input: BorrowedSpan) -> Res<BorrowedSpan, SetProperties> {
     separated_list0(tag(","), tuple((multispace0, property_mod, multispace0)))(input).map(
         |(next, properties)| {
             let mut set_properties = SetProperties::new();
@@ -1241,7 +1241,7 @@ pub fn set_properties(input: Span) -> Res<Span, SetProperties> {
     )
 }
 
-pub fn get_properties(input: Span) -> Res<Span, Vec<String>> {
+pub fn get_properties(input: BorrowedSpan) -> Res<BorrowedSpan, Vec<String>> {
     separated_list0(tag(","), tuple((multispace0, skewer, multispace0)))(input).map(
         |(next, keys)| {
             let keys: Vec<String> = keys.iter().map(|(_, key, _)| key.to_string()).collect();
@@ -1250,7 +1250,7 @@ pub fn get_properties(input: Span) -> Res<Span, Vec<String>> {
     )
 }
 
-pub fn create(input: Span) -> Res<Span, Create> {
+pub fn create(input: BorrowedSpan) -> Res<BorrowedSpan, Create> {
     tuple((template, opt(delimited(tag("{"), set_properties, tag("}")))))(input).map(
         |(next, (template, properties))| {
             let properties = match properties {
@@ -1269,7 +1269,7 @@ pub fn create(input: Span) -> Res<Span, Create> {
     )
 }
 
-pub fn set(input: Span) -> Res<Span, Set> {
+pub fn set(input: BorrowedSpan) -> Res<BorrowedSpan, Set> {
     tuple((point, delimited(tag("{"), set_properties, tag("}"))))(input).map(
         |(next, (point, properties))| {
             let set = Set { point, properties };
@@ -1278,7 +1278,7 @@ pub fn set(input: Span) -> Res<Span, Set> {
     )
 }
 
-pub fn get(input: Span) -> Res<Span, Get> {
+pub fn get(input: BorrowedSpan) -> Res<BorrowedSpan, Get> {
     tuple((point, opt(delimited(tag("{"), get_properties, tag("}")))))(input).map(
         |(next, (point, keys))| {
             let op = match keys {
@@ -1292,7 +1292,7 @@ pub fn get(input: Span) -> Res<Span, Get> {
     )
 }
 
-pub fn select(input: Span) -> Res<Span, Select> {
+pub fn select(input: BorrowedSpan) -> Res<BorrowedSpan, Select> {
     point_selector(input).map(|(next, point_kind_pattern)| {
         let select = Select {
             pattern: point_kind_pattern,
@@ -1304,7 +1304,7 @@ pub fn select(input: Span) -> Res<Span, Select> {
     })
 }
 
-pub fn publish(input: Span) -> Res<Span, CreateOp> {
+pub fn publish(input: BorrowedSpan) -> Res<BorrowedSpan, CreateOp> {
     let (next, (upload, _, point)) = tuple((upload_step, space1, point))(input.clone())?;
 
     let parent = match point.parent() {
@@ -1372,8 +1372,13 @@ pub trait CtxResolver {
     fn ctx(&self, ctx: &Ctx) -> Result<String, MsgErr>;
 }
 
+
+pub enum VarResolverErr {
+    NotFound
+}
+
 pub trait VarResolver {
-    fn val(&self, var: &str) -> Result<String, MsgErr> {
+    fn val(&self, var: &str) -> Result<String, VarResolverErr> {
         Err(format!("variable '{}' not found", var).into())
     }
 }
@@ -1498,7 +1503,7 @@ pub trait SubstParser<T: Sized> {
         Ok(output)
     }
 
-    fn parse_span<'a>(&self, input: Span<'a>) -> Res<Span<'a>, T>;
+    fn parse_span<'a>(&self, input: BorrowedSpan<'a>) -> Res<BorrowedSpan<'a>, T>;
 }
 
 
@@ -1702,7 +1707,7 @@ where
 
  */
 
-pub fn variable_name(input: Span) -> Res<Span, Span> {
+pub fn variable_name(input: BorrowedSpan) -> Res<BorrowedSpan, BorrowedSpan> {
     recognize(pair(lowercase1, opt(skewer_dot)))(input).map(|(next, name)| (next, name))
 }
 
@@ -1728,12 +1733,12 @@ where
     }
 }
 
-pub fn span<'a, O, F>(mut f: F) -> impl FnMut(Span<'a>) -> Res<Span, Spanned<Span<'a>, O>>
+pub fn span<'a, O, F>(mut f: F) -> impl FnMut(BorrowedSpan<'a>) -> Res<BorrowedSpan, Spanned<BorrowedSpan<'a>, O>>
 where
-    F: nom::Parser<Span<'a>, O, ErrorTree<Span<'a>>>,
+    F: nom::Parser<BorrowedSpan<'a>, O, ErrorTree<BorrowedSpan<'a>>>,
     O: Clone,
 {
-    move |input: Span| {
+    move |input: BorrowedSpan| {
         let (next, element) = f.parse(input.clone())?;
         Ok((
             next.clone(),
@@ -1742,7 +1747,7 @@ where
     }
 }
 
-pub fn access_grant_kind(input: Span) -> Res<Span, AccessGrantKind> {
+pub fn access_grant_kind(input: BorrowedSpan) -> Res<BorrowedSpan, AccessGrantKind> {
     tuple((
         context(
             "access_grant_kind",
@@ -1756,7 +1761,7 @@ pub fn access_grant_kind(input: Span) -> Res<Span, AccessGrantKind> {
     .map(|(next, (_, kind))| (next, kind))
 }
 
-pub fn access_grant_kind_priv(input: Span) -> Res<Span, AccessGrantKind> {
+pub fn access_grant_kind_priv(input: BorrowedSpan) -> Res<BorrowedSpan, AccessGrantKind> {
     tuple((
         tag("priv"),
         context("access_grant:priv", tuple((space1, privilege))),
@@ -1764,7 +1769,7 @@ pub fn access_grant_kind_priv(input: Span) -> Res<Span, AccessGrantKind> {
     .map(|(next, (_, (_, privilege)))| (next, AccessGrantKindDef::Privilege(privilege)))
 }
 
-pub fn access_grant_kind_perm(input: Span) -> Res<Span, AccessGrantKind> {
+pub fn access_grant_kind_perm(input: BorrowedSpan) -> Res<BorrowedSpan, AccessGrantKind> {
     tuple((
         tag("perm"),
         context("access_grant:perm", tuple((space1, permissions_mask))),
@@ -1772,7 +1777,7 @@ pub fn access_grant_kind_perm(input: Span) -> Res<Span, AccessGrantKind> {
     .map(|(next, (_, (_, perms)))| (next, AccessGrantKindDef::PermissionsMask(perms)))
 }
 
-pub fn privilege(input: Span) -> Res<Span, Privilege> {
+pub fn privilege(input: BorrowedSpan) -> Res<BorrowedSpan, Privilege> {
     context("privilege", alt((tag("*"), skewer_colon)))(input).map(|(next, prv)| {
         let prv = match prv.to_string().as_str() {
             "*" => Privilege::Full,
@@ -1782,7 +1787,7 @@ pub fn privilege(input: Span) -> Res<Span, Privilege> {
     })
 }
 
-pub fn permissions_mask(input: Span) -> Res<Span, PermissionsMask> {
+pub fn permissions_mask(input: BorrowedSpan) -> Res<BorrowedSpan, PermissionsMask> {
     context(
         "permissions_mask",
         tuple((
@@ -1800,7 +1805,7 @@ pub fn permissions_mask(input: Span) -> Res<Span, PermissionsMask> {
     })
 }
 
-pub fn permissions(input: Span) -> Res<Span, Permissions> {
+pub fn permissions(input: BorrowedSpan) -> Res<BorrowedSpan, Permissions> {
     context(
         "permissions",
         tuple((child_perms, tag("-"), particle_perms)),
@@ -1811,7 +1816,7 @@ pub fn permissions(input: Span) -> Res<Span, Permissions> {
     })
 }
 
-pub fn child_perms(input: Span) -> Res<Span, ChildPerms> {
+pub fn child_perms(input: BorrowedSpan) -> Res<BorrowedSpan, ChildPerms> {
     context(
         "child_perms",
         alt((
@@ -1833,7 +1838,7 @@ pub fn child_perms(input: Span) -> Res<Span, ChildPerms> {
     })
 }
 
-pub fn particle_perms(input: Span) -> Res<Span, ParticlePerms> {
+pub fn particle_perms(input: BorrowedSpan) -> Res<BorrowedSpan, ParticlePerms> {
     context(
         "particle_perms",
         tuple((
@@ -2032,12 +2037,12 @@ where
     }
 }
 
-pub fn nested_block_content(kind: NestedBlockKind) -> impl FnMut(Span) -> Res<Span, Span> {
-    move |input: Span| nested_block(kind)(input).map(|(next, block)| (next, block.content))
+pub fn nested_block_content(kind: NestedBlockKind) -> impl FnMut(BorrowedSpan) -> Res<BorrowedSpan, BorrowedSpan> {
+    move |input: BorrowedSpan| nested_block(kind)(input).map(|(next, block)| (next, block.content))
 }
 
-pub fn nested_block(kind: NestedBlockKind) -> impl FnMut(Span) -> Res<Span, Block<Span, ()>> {
-    move |input: Span| {
+pub fn nested_block(kind: NestedBlockKind) -> impl FnMut(BorrowedSpan) -> Res<BorrowedSpan, Block<BorrowedSpan, ()>> {
+    move |input: BorrowedSpan| {
         let (next, content) = context(
             kind.context(),
             delimited(
@@ -2098,7 +2103,7 @@ where
     }
 }
 
-fn block_open(input: Span) -> Res<Span, NestedBlockKind> {
+fn block_open(input: BorrowedSpan) -> Res<BorrowedSpan, NestedBlockKind> {
     alt((
         value(NestedBlockKind::Curly, tag(NestedBlockKind::Curly.open())),
         value(NestedBlockKind::Angle, tag(NestedBlockKind::Angle.open())),
@@ -2133,7 +2138,7 @@ where
     ))(input)
 }
 
-fn any_block(input: Span) -> Res<Span, LexBlock<Span>> {
+fn any_block(input: BorrowedSpan) -> Res<BorrowedSpan, LexBlock<BorrowedSpan>> {
     alt((
         nested_block(NestedBlockKind::Curly),
         nested_block(NestedBlockKind::Angle),
@@ -2199,7 +2204,7 @@ pub fn lex_hierarchy_scope<'a>(
     Ok(LexHierarchyScope::new(scope.selector.clone(), children))
 }*/
 
-pub fn lex_child_scopes<'a>(parent: LexScope<Span<'a>>) -> Result<LexParentScope<'a>, MsgErr> {
+pub fn lex_child_scopes<'a>(parent: LexScope<BorrowedSpan<'a>>) -> Result<LexParentScope<'a>, MsgErr> {
     if parent.selector.selector.children.is_some() {
         let (_, child_selector) = all_consuming(lex_scope_selector)(
             parent
@@ -2235,7 +2240,7 @@ pub fn lex_child_scopes<'a>(parent: LexScope<Span<'a>>) -> Result<LexParentScope
     }
 }
 
-pub fn lex_scope(input: Span) -> Res<Span, LexScope<Span>> {
+pub fn lex_scope(input: BorrowedSpan) -> Res<BorrowedSpan, LexScope<BorrowedSpan>> {
     context(
         "scope",
         tuple((
@@ -2255,7 +2260,7 @@ pub fn lex_scope(input: Span) -> Res<Span, LexScope<Span>> {
     })
 }
 
-pub fn lex_scoped_block_kind(input: Span) -> Res<Span, BlockKind> {
+pub fn lex_scoped_block_kind(input: BorrowedSpan) -> Res<BorrowedSpan, BlockKind> {
     alt((
         value(
             BlockKind::Nested(NestedBlockKind::Curly),
@@ -2276,7 +2281,7 @@ pub fn lex_scoped_block_kind(input: Span) -> Res<Span, BlockKind> {
     ))(input)
 }
 
-pub fn lex_scope_pipeline_step_and_block(input: Span) -> Res<Span, (Option<Span>, LexBlock<Span>)> {
+pub fn lex_scope_pipeline_step_and_block(input: BorrowedSpan) -> Res<BorrowedSpan, (Option<BorrowedSpan>, LexBlock<BorrowedSpan>)> {
     let (_, block_kind) = peek(lex_scoped_block_kind)(input.clone())?;
     match block_kind {
         BlockKind::Nested(_) => tuple((
@@ -2293,7 +2298,7 @@ pub fn lex_scope_pipeline_step_and_block(input: Span) -> Res<Span, (Option<Span>
     }
 }
 
-pub fn lex_sub_scope_selectors_and_filters_and_block(input: Span) -> Res<Span, LexBlock<Span>> {
+pub fn lex_sub_scope_selectors_and_filters_and_block(input: BorrowedSpan) -> Res<BorrowedSpan, LexBlock<BorrowedSpan>> {
     recognize(pair(
         nested_block_content(NestedBlockKind::Angle),
         tuple((
@@ -2319,7 +2324,7 @@ pub fn lex_sub_scope_selectors_and_filters_and_block(input: Span) -> Res<Span, L
     })
 }
 
-pub fn root_scope(input: Span) -> Res<Span, LexRootScope<Span>> {
+pub fn root_scope(input: BorrowedSpan) -> Res<BorrowedSpan, LexRootScope<BorrowedSpan>> {
     context(
         "root-scope",
         tuple((
@@ -2338,7 +2343,7 @@ pub fn root_scope(input: Span) -> Res<Span, LexRootScope<Span>> {
     })
 }
 
-pub fn lex_scopes(input: Span) -> Result<Vec<LexScope<Span>>, MsgErr> {
+pub fn lex_scopes(input: BorrowedSpan) -> Result<Vec<LexScope<BorrowedSpan>>, MsgErr> {
     if input.len() == 0 {
         return Ok(vec![]);
     }
@@ -2360,7 +2365,7 @@ pub fn lex_scopes(input: Span) -> Result<Vec<LexScope<Span>>, MsgErr> {
             ))),
         )(input)
         .map(|(next, scopes)| {
-            let scopes: Vec<LexScope<Span>> = scopes.into_iter().map(|scope| scope.1).collect();
+            let scopes: Vec<LexScope<BorrowedSpan>> = scopes.into_iter().map(|scope| scope.1).collect();
             (next, scopes)
         }),
     )
@@ -2383,7 +2388,7 @@ pub fn lex_scope_selector_no_filters(
 
  */
 
-pub fn next_selector(input: Span) -> Res<Span, (Span, Option<Span>)> {
+pub fn next_selector(input: BorrowedSpan) -> Res<BorrowedSpan, (BorrowedSpan, Option<BorrowedSpan>)> {
     match wrapper(
         input.clone(),
         pair(
@@ -2410,8 +2415,8 @@ pub fn next_selector(input: Span) -> Res<Span, (Span, Option<Span>)> {
 }
 
 pub fn lex_scope_selector_and_filters(
-    input: Span,
-) -> Res<Span, ScopeSelectorAndFiltersDef<LexScopeSelector<Span>, Span>> {
+    input: BorrowedSpan,
+) -> Res<BorrowedSpan, ScopeSelectorAndFiltersDef<LexScopeSelector<BorrowedSpan>, BorrowedSpan>> {
     context(
         "parsed-scope-selector-and-filter",
         pair(lex_scope_selector, scope_filters),
@@ -2419,7 +2424,7 @@ pub fn lex_scope_selector_and_filters(
     .map(|(next, (selector, filters))| (next, ScopeSelectorAndFiltersDef::new(selector, filters)))
 }
 
-pub fn lex_scope_selector(input: Span) -> Res<Span, LexScopeSelector<Span>> {
+pub fn lex_scope_selector(input: BorrowedSpan) -> Res<BorrowedSpan, LexScopeSelector<BorrowedSpan>> {
     context("parsed-scope-selector", next_selector)(input)
         .map(|(next, (name, children))| (next, LexScopeSelector::new(name, children)))
 }
@@ -2508,7 +2513,7 @@ where
     }
 }
 
-pub fn scope_filters<'a>(input: Span) -> Res<Span, ScopeFiltersDef<Span>> {
+pub fn scope_filters<'a>(input: BorrowedSpan) -> Res<BorrowedSpan, ScopeFiltersDef<BorrowedSpan>> {
     tuple((
         pair(opt(scope_filter), many0(preceded(tag("-"), scope_filter))),
         opt(recognize(pair(
@@ -2530,7 +2535,7 @@ pub fn scope_filters<'a>(input: Span) -> Res<Span, ScopeFiltersDef<Span>> {
     })
 }
 
-pub fn scope_filter(input: Span) -> Res<Span, ScopeFilterDef<Span>> {
+pub fn scope_filter(input: BorrowedSpan) -> Res<BorrowedSpan, ScopeFilterDef<BorrowedSpan>> {
     delimited(
         tag("("),
         context(
@@ -2554,13 +2559,13 @@ pub fn scope_filter(input: Span) -> Res<Span, ScopeFilterDef<Span>> {
     })
 }
 
-pub fn scope_name(input: Span) -> Res<Span, Span> {
+pub fn scope_name(input: BorrowedSpan) -> Res<BorrowedSpan, BorrowedSpan> {
     recognize(pair(skewer_case, peek(alt((eof, multispace1, tag(")"))))))(input)
 }
 
 pub fn root_scope_selector<'a>(
-    input: Span,
-) -> Res<Span, RootScopeSelector<Span, Spanned<Span, Version>>> {
+    input: BorrowedSpan,
+) -> Res<BorrowedSpan, RootScopeSelector<BorrowedSpan, Spanned<BorrowedSpan, Version>>> {
     context(
         "root-scope-selector",
         cut(preceded(
@@ -2574,7 +2579,7 @@ pub fn root_scope_selector<'a>(
     .map(|(next, (name, version))| (next, RootScopeSelector { version, name }))
 }
 
-pub fn scope_version(input: Span) -> Res<Span, Spanned<Span, Version>> {
+pub fn scope_version(input: BorrowedSpan) -> Res<BorrowedSpan, Spanned<BorrowedSpan, Version>> {
     context(
         "scope-selector-version",
         tuple((
@@ -2605,7 +2610,7 @@ pub fn mytag<O>( tag: &str ) -> impl Fn(Span) -> Res<Span,O>
 
  */
 
-pub fn scope_selector_name(input: Span) -> Res<Span, Span> {
+pub fn scope_selector_name(input: BorrowedSpan) -> Res<BorrowedSpan, BorrowedSpan> {
     context(
         "scope-selector-name",
         delimited(
@@ -2629,7 +2634,7 @@ pub fn scope_selector_name(input: Span) -> Res<Span, Span> {
     .map(|(next, name)| (next, name))
 }
 
-pub fn root_scope_selector_name(input: Span) -> Res<Span, Span> {
+pub fn root_scope_selector_name(input: BorrowedSpan) -> Res<BorrowedSpan, BorrowedSpan> {
     context(
         "root-scope-selector-name",
         pair((peek(alpha1)), alphanumeric1),
@@ -2637,7 +2642,7 @@ pub fn root_scope_selector_name(input: Span) -> Res<Span, Span> {
     .map(|(next, (_, name))| (next, name))
 }
 
-pub fn lex_root_scope(span: Span) -> Result<LexRootScope<Span>, MsgErr> {
+pub fn lex_root_scope(span: BorrowedSpan) -> Result<LexRootScope<BorrowedSpan>, MsgErr> {
     let root_scope = result(delimited(multispace0, root_scope, multispace0)(span))?;
     Ok(root_scope)
 }
@@ -2665,7 +2670,7 @@ pub mod model {
     use std::marker::PhantomData;
     use std::ops::{Deref, DerefMut};
     use std::str::FromStr;
-    use crate::version::v0_0_1::span::{create_span, OwnedSpan, Span};
+    use crate::version::v0_0_1::span::{create_span, OwnedSpan, BorrowedSpan, SpanHistory, to_owned};
 
     #[derive(Clone)]
     pub struct ScopeSelectorAndFiltersDef<S, I> {
@@ -2874,7 +2879,7 @@ pub mod model {
     pub type LexScope<I> =
         Scope<ScopeSelectorAndFiltersDef<LexScopeSelector<I>, I>, Block<I, ()>, I>;
     pub type LexParentScope<'a> =
-        Scope<LexScopeSelectorAndFilters<Span<'a>>, Vec<LexScope<Span<'a>>>, Span<'a>>;
+        Scope<LexScopeSelectorAndFilters<BorrowedSpan<'a>>, Vec<LexScope<BorrowedSpan<'a>>>, BorrowedSpan<'a>>;
 
     pub type VarPipelineSegment = VarPipelineSegmentDef<
         Subst<PipelineStepCtx, OwnedSpan, PipelineStepCtxParser>,
@@ -2985,7 +2990,7 @@ pub mod model {
         }
     }
 
-    impl<'a> LexScopeSelectorAndFilters<Span<'a>> {
+    impl<'a> LexScopeSelectorAndFilters<BorrowedSpan<'a>> {
         pub fn to_value_pattern_scope_selector(
             self,
         ) -> Result<ValuePatternScopeSelectorAndFilters, MsgErr> {
@@ -3148,7 +3153,7 @@ pub mod model {
         }
     }
 
-    impl<'a> LexScopeSelector<Span<'a>> {
+    impl<'a> LexScopeSelector<BorrowedSpan<'a>> {
         pub fn to_value_pattern_scope_selector(self) -> Result<ValuePatternScopeSelector, MsgErr> {
             Ok(ValuePatternScopeSelector {
                 name: result(value_pattern(camel_case)(self.name))?.stringify(),
@@ -3315,7 +3320,7 @@ pub mod model {
             }
         }
 
-        pub fn error_message(span: &Span, context: &str) -> Result<&'static str, ()> {
+        pub fn error_message(span: &BorrowedSpan, context: &str) -> Result<&'static str, ()> {
             if Self::Curly.open_context() == context {
                 Ok("expecting '{' (open scope block)")
             } else if Self::Parens.open_context() == context {
@@ -3438,11 +3443,11 @@ pub mod model {
         Text(I),
     }
 
-    impl<'a> Into<Chunk<OwnedSpan>> for Chunk<Span<'a>> {
+    impl<'a> Into<Chunk<OwnedSpan>> for Chunk<BorrowedSpan<'a>> {
         fn into(self) -> Chunk<OwnedSpan> {
             match self {
-                Chunk::Var(var) => Chunk::Var(OwnedSpan::from(var)),
-                Chunk::Text(text) => Chunk::Text(OwnedSpan::from(text)),
+                Chunk::Var(var) => Chunk::Var(to_owned(var)),
+                Chunk::Text(text) => Chunk::Text(to_owned(text)),
             }
         }
     }
@@ -3470,7 +3475,8 @@ pub mod model {
         pub phantom: PhantomData<R>,
     }
 
-    impl<'a, R, P> Into<Subst<R, OwnedSpan, P>> for Subst<R, Span<'a>, P>
+
+    impl<'a, R, P> Into<Subst<R, OwnedSpan, P>> for Subst<R, BorrowedSpan<'a>, P>
     where
         P: SubstParser<R> + Clone,
     {
@@ -3513,15 +3519,22 @@ pub mod model {
         }
     }
 
-    impl<R, I: ToString, P> Subst<R, I, P>
+    impl<'a,R,P> Subst<R, BorrowedSpan<'a>, P>
     where
         P: SubstParser<R> + Clone,
     {
-        fn to_resolved_segs(&self, resolver: &dyn VarResolver) -> Result<String, MsgErr> {
-            let mut rtn = String::new();
+        fn to_resolved_segs(&self, resolver: &dyn VarResolver) -> Result<Vec<SpanHistory>, MsgErr> {
+            let mut rtn = vec![];
             for chunk in &self.chunks {
                 match chunk {
                     Chunk::Var(var) => {
+                        match resolver.val( var.to_string().as_str() ) {
+                            Ok(val) => {
+                                rtn.push( SpanHistory::new(var).with_revision("variable-substitution", val.as_str()))
+                                rtn.push_str(val);
+                            }
+                            Err(err) => {}
+                        }
                         rtn.push_str(resolver.val(var.to_string().as_str())?.as_str());
                     }
                     Chunk::Text(text) => {
@@ -3548,14 +3561,14 @@ pub mod error {
     use crate::error::{MsgErr, ParseErrs};
     use crate::version::v0_0_1::parse::model::NestedBlockKind;
     use crate::version::v0_0_1::parse::nospace1;
-    use crate::version::v0_0_1::span::Span;
+    use crate::version::v0_0_1::span::BorrowedSpan;
     use ariadne::Report;
     use ariadne::{Label, ReportKind, Source};
     use nom::{Err, Slice};
     use nom_supreme::error::{BaseErrorKind, ErrorTree, StackContext};
     use regex::{Error, Regex};
 
-    pub fn result<R>(result: Result<(Span, R), Err<ErrorTree<Span>>>) -> Result<R, MsgErr> {
+    pub fn result<R>(result: Result<(BorrowedSpan, R), Err<ErrorTree<BorrowedSpan>>>) -> Result<R, MsgErr> {
         match result {
             Ok((_, e)) => Ok(e),
             Err(err) => Err(find_parse_err(&err)),
@@ -3577,7 +3590,7 @@ pub mod error {
 
      */
 
-    fn create_err_report(context: &str, loc: Span) -> MsgErr {
+    fn create_err_report(context: &str, loc: BorrowedSpan) -> MsgErr {
         let mut builder = Report::build(ReportKind::Error, (), 23);
 
         match NestedBlockKind::error_message(&loc, context) {
@@ -3709,7 +3722,7 @@ pub mod error {
         ParseErrs::from_report(builder.finish(), loc.extra).into()
     }
 
-    pub fn find_parse_err(err: &Err<ErrorTree<Span>>) -> MsgErr {
+    pub fn find_parse_err(err: &Err<ErrorTree<BorrowedSpan>>) -> MsgErr {
         match err {
             Err::Incomplete(_) => "internal parser error: Incomplete".into(),
             Err::Error(err) => find_tree(err),
@@ -3722,7 +3735,7 @@ pub mod error {
         Message(String),
     }
 
-    pub fn find_tree(err: &ErrorTree<Span>) -> MsgErr {
+    pub fn find_tree(err: &ErrorTree<BorrowedSpan>) -> MsgErr {
         match err {
             ErrorTree::Stack { base, contexts } => {
                 let (span, context) = contexts.first().unwrap();
@@ -3809,26 +3822,26 @@ use crate::version::v0_0_1::selector::{
 };
 use nom_supreme::error::ErrorTree;
 use nom_supreme::{parse_from_str, ParserExt};
-use crate::version::v0_0_1::span::{create_span, OwnedSpan, Span};
+use crate::version::v0_0_1::span::{create_span, OwnedSpan, BorrowedSpan, SpanHistory, to_owned};
 
-fn inclusive_any_segment(input: Span) -> Res<Span, PointSegSelector> {
+fn inclusive_any_segment(input: BorrowedSpan) -> Res<BorrowedSpan, PointSegSelector> {
     alt((tag("+*"), tag("ROOT+*")))(input).map(|(next, _)| (next, PointSegSelector::InclusiveAny))
 }
 
-fn inclusive_recursive_segment(input: Span) -> Res<Span, PointSegSelector> {
+fn inclusive_recursive_segment(input: BorrowedSpan) -> Res<BorrowedSpan, PointSegSelector> {
     alt((tag("+**"), tag("ROOT+**")))(input)
         .map(|(next, _)| (next, PointSegSelector::InclusiveRecursive))
 }
 
-fn any_segment(input: Span) -> Res<Span, PointSegSelector> {
+fn any_segment(input: BorrowedSpan) -> Res<BorrowedSpan, PointSegSelector> {
     tag("*")(input).map(|(next, _)| (next, PointSegSelector::Any))
 }
 
-fn recursive_segment(input: Span) -> Res<Span, PointSegSelector> {
+fn recursive_segment(input: BorrowedSpan) -> Res<BorrowedSpan, PointSegSelector> {
     tag("**")(input).map(|(next, _)| (next, PointSegSelector::Recursive))
 }
 
-fn exact_space_segment(input: Span) -> Res<Span, PointSegSelector> {
+fn exact_space_segment(input: BorrowedSpan) -> Res<BorrowedSpan, PointSegSelector> {
     point_segment_chars(input).map(|(next, segment)| {
         (
             next,
@@ -3839,7 +3852,7 @@ fn exact_space_segment(input: Span) -> Res<Span, PointSegSelector> {
     })
 }
 
-fn exact_base_segment(input: Span) -> Res<Span, PointSegSelector> {
+fn exact_base_segment(input: BorrowedSpan) -> Res<BorrowedSpan, PointSegSelector> {
     point_segment_chars(input).map(|(next, segment)| {
         (
             next,
@@ -3848,7 +3861,7 @@ fn exact_base_segment(input: Span) -> Res<Span, PointSegSelector> {
     })
 }
 
-fn exact_file_segment(input: Span) -> Res<Span, PointSegSelector> {
+fn exact_file_segment(input: BorrowedSpan) -> Res<BorrowedSpan, PointSegSelector> {
     file_chars(input).map(|(next, segment)| {
         (
             next,
@@ -3857,7 +3870,7 @@ fn exact_file_segment(input: Span) -> Res<Span, PointSegSelector> {
     })
 }
 
-fn exact_dir_segment(input: Span) -> Res<Span, PointSegSelector> {
+fn exact_dir_segment(input: BorrowedSpan) -> Res<BorrowedSpan, PointSegSelector> {
     file_chars(input).map(|(next, segment)| {
         (
             next,
@@ -3866,7 +3879,7 @@ fn exact_dir_segment(input: Span) -> Res<Span, PointSegSelector> {
     })
 }
 
-pub fn parse_version_chars_str<O: FromStr>(input: Span) -> Res<Span, O> {
+pub fn parse_version_chars_str<O: FromStr>(input: BorrowedSpan) -> Res<BorrowedSpan, O> {
     let (next, rtn) = recognize(version_chars)(input)?;
     match O::from_str(rtn.to_string().as_str()) {
         Ok(rtn) => Ok((next, rtn)),
@@ -3877,16 +3890,16 @@ pub fn parse_version_chars_str<O: FromStr>(input: Span) -> Res<Span, O> {
     }
 }
 
-fn exact_version_segment(input: Span) -> Res<Span, PointSegSelector> {
+fn exact_version_segment(input: BorrowedSpan) -> Res<BorrowedSpan, PointSegSelector> {
     version_req(input).map(|(next, version_req)| (next, PointSegSelector::Version(version_req)))
 }
 
-fn version_req_segment(input: Span) -> Res<Span, PointSegSelector> {
+fn version_req_segment(input: BorrowedSpan) -> Res<BorrowedSpan, PointSegSelector> {
     delimited(tag("("), version_req, tag(")"))(input)
         .map(|(next, version_req)| (next, PointSegSelector::Version(version_req)))
 }
 
-pub fn point_segment_selector(input: Span) -> Res<Span, PointSegSelector> {
+pub fn point_segment_selector(input: BorrowedSpan) -> Res<BorrowedSpan, PointSegSelector> {
     alt((
         inclusive_recursive_segment,
         inclusive_any_segment,
@@ -3896,26 +3909,26 @@ pub fn point_segment_selector(input: Span) -> Res<Span, PointSegSelector> {
     ))(input)
 }
 
-fn base_segment(input: Span) -> Res<Span, PointSegSelector> {
+fn base_segment(input: BorrowedSpan) -> Res<BorrowedSpan, PointSegSelector> {
     alt((recursive_segment, any_segment, exact_base_segment))(input)
 }
 
-fn file_segment(input: Span) -> Res<Span, PointSegSelector> {
+fn file_segment(input: BorrowedSpan) -> Res<BorrowedSpan, PointSegSelector> {
     alt((recursive_segment, any_segment, exact_file_segment))(input)
 }
 
-fn dir_segment(input: Span) -> Res<Span, PointSegSelector> {
+fn dir_segment(input: BorrowedSpan) -> Res<BorrowedSpan, PointSegSelector> {
     terminated(
         alt((recursive_segment, any_segment, exact_dir_segment)),
         tag("/"),
     )(input)
 }
 
-fn dir_segment_meat(input: Span) -> Res<Span, PointSegSelector> {
+fn dir_segment_meat(input: BorrowedSpan) -> Res<BorrowedSpan, PointSegSelector> {
     alt((recursive_segment, any_segment, exact_dir_segment))(input)
 }
 
-fn version_segment(input: Span) -> Res<Span, PointSegSelector> {
+fn version_segment(input: BorrowedSpan) -> Res<BorrowedSpan, PointSegSelector> {
     alt((
         recursive_segment,
         any_segment,
@@ -3946,14 +3959,14 @@ where
 
  */
 
-pub fn pattern<'r, O, E: ParseError<Span<'r>>, V>(
+pub fn pattern<'r, O, E: ParseError<BorrowedSpan<'r>>, V>(
     mut value: V,
-) -> impl FnMut(Span<'r>) -> IResult<Span<'r>, Pattern<O>, E>
+) -> impl FnMut(BorrowedSpan<'r>) -> IResult<BorrowedSpan<'r>, Pattern<O>, E>
 where
-    V: Parser<Span<'r>, O, E>,
+    V: Parser<BorrowedSpan<'r>, O, E>,
 {
-    move |input: Span| {
-        let x: Res<Span, Span> = tag("*")(input.clone());
+    move |input: BorrowedSpan| {
+        let x: Res<BorrowedSpan, BorrowedSpan> = tag("*")(input.clone());
         match x {
             Ok((next, _)) => Ok((next, Pattern::Any)),
             Err(_) => {
@@ -4032,7 +4045,7 @@ pub fn value_pattern<P>(
 }
  */
 
-pub fn version_req(input: Span) -> Res<Span, VersionReq> {
+pub fn version_req(input: BorrowedSpan) -> Res<BorrowedSpan, VersionReq> {
     let (next, version) = version_req_chars(input.clone())?;
     let str_input = *version.fragment();
     let rtn = semver::VersionReq::parse(str_input);
@@ -4046,7 +4059,7 @@ pub fn version_req(input: Span) -> Res<Span, VersionReq> {
     }
 }
 
-fn rec_domain(input: Span) -> Res<Span, Span> {
+fn rec_domain(input: BorrowedSpan) -> Res<BorrowedSpan, BorrowedSpan> {
     recognize(tuple((
         many1(terminated(skewer_chars, tag("."))),
         skewer_chars,
@@ -4054,11 +4067,11 @@ fn rec_domain(input: Span) -> Res<Span, Span> {
 }
 
 // can be a hostname or domain name
-fn space(input: Span) -> Res<Span, Span> {
+fn space(input: BorrowedSpan) -> Res<BorrowedSpan, BorrowedSpan> {
     recognize(alt((skewer_chars, rec_domain)))(input)
 }
 
-pub fn specific_selector(input: Span) -> Res<Span, SpecificSelector> {
+pub fn specific_selector(input: BorrowedSpan) -> Res<BorrowedSpan, SpecificSelector> {
     tuple((
         pattern(rec_domain),
         tag(":"),
@@ -4069,9 +4082,9 @@ pub fn specific_selector(input: Span) -> Res<Span, SpecificSelector> {
         delimited(tag("("), version_req, tag(")")),
     ))(input)
     .map(|(next, (vendor, _, product, _, variant, _, version))| {
-        let vendor: Pattern<Span> = vendor;
-        let product: Pattern<Span> = product;
-        let variant: Pattern<Span> = variant;
+        let vendor: Pattern<BorrowedSpan> = vendor;
+        let product: Pattern<BorrowedSpan> = product;
+        let variant: Pattern<BorrowedSpan> = variant;
 
         let vendor: VendorSelector = vendor.into();
         let product: ProductSelector = product.into();
@@ -4087,21 +4100,21 @@ pub fn specific_selector(input: Span) -> Res<Span, SpecificSelector> {
     })
 }
 
-pub fn rec_domain_pattern(input: Span) -> Res<Span, Pattern<Span>> {
+pub fn rec_domain_pattern(input: BorrowedSpan) -> Res<BorrowedSpan, Pattern<BorrowedSpan>> {
     pattern(rec_domain)(input)
 }
-pub fn rec_skewer_pattern(input: Span) -> Res<Span, Pattern<Span>> {
+pub fn rec_skewer_pattern(input: BorrowedSpan) -> Res<BorrowedSpan, Pattern<BorrowedSpan>> {
     pattern(skewer_chars)(input)
 }
 
-pub fn specific_version_req(input: Span) -> Res<Span, VersionReq> {
+pub fn specific_version_req(input: BorrowedSpan) -> Res<BorrowedSpan, VersionReq> {
     delimited(tag("("), version_req, tag(")"))(input)
 }
 
 #[derive(Clone)]
 pub struct SkewerPatternParser();
 impl SubstParser<Pattern<String>> for SkewerPatternParser {
-    fn parse_span<'a>(&self, span: Span<'a>) -> Res<Span<'a>, Pattern<String>> {
+    fn parse_span<'a>(&self, span: BorrowedSpan<'a>) -> Res<BorrowedSpan<'a>, Pattern<String>> {
         let (next, pattern) = rec_skewer_pattern(span)?;
         let pattern = pattern.into();
         Ok((next, pattern))
@@ -4111,14 +4124,14 @@ impl SubstParser<Pattern<String>> for SkewerPatternParser {
 #[derive(Clone)]
 pub struct DomainPatternParser();
 impl SubstParser<Pattern<String>> for DomainPatternParser {
-    fn parse_span<'a>(&self, span: Span<'a>) -> Res<Span<'a>, Pattern<String>> {
+    fn parse_span<'a>(&self, span: BorrowedSpan<'a>) -> Res<BorrowedSpan<'a>, Pattern<String>> {
         let (next, pattern) = rec_domain_pattern(span)?;
         let pattern = pattern.into();
         Ok((next, pattern))
     }
 }
 
-fn kind_parts(input: Span) -> Res<Span, GenericKind> {
+fn kind_parts(input: BorrowedSpan) -> Res<BorrowedSpan, GenericKind> {
     tuple((
         generic_kind_base,
         opt(delimited(
@@ -4146,11 +4159,11 @@ fn kind_parts(input: Span) -> Res<Span, GenericKind> {
     })
 }
 
-fn rec_kind(input: Span) -> Res<Span, Span> {
+fn rec_kind(input: BorrowedSpan) -> Res<BorrowedSpan, BorrowedSpan> {
     recognize(kind_parts)(input)
 }
 
-pub fn kind(input: Span) -> Res<Span, GenericKind> {
+pub fn kind(input: BorrowedSpan) -> Res<BorrowedSpan, GenericKind> {
     tuple((
         generic_kind_base,
         opt(delimited(
@@ -4183,29 +4196,29 @@ pub fn kind(input: Span) -> Res<Span, GenericKind> {
     })
 }
 
-pub fn delim_kind(input: Span) -> Res<Span, GenericKind> {
+pub fn delim_kind(input: BorrowedSpan) -> Res<BorrowedSpan, GenericKind> {
     delimited(tag("<"), kind, tag(">"))(input)
 }
 
-pub fn consume_kind(input: Span) -> Result<GenericKind, MsgErr> {
+pub fn consume_kind(input: BorrowedSpan) -> Result<GenericKind, MsgErr> {
     let (_, kind_parts) = all_consuming(kind_parts)(input)?;
 
     Ok(kind_parts.try_into()?)
 }
 
-pub fn generic_kind_selector(input: Span) -> Res<Span, GenericSubKindSelector> {
+pub fn generic_kind_selector(input: BorrowedSpan) -> Res<BorrowedSpan, GenericSubKindSelector> {
     pattern(kind)(input).map(|(next, kind)| (next, kind))
 }
 
-pub fn generic_kind_base(input: Span) -> Res<Span, GenericKindBase> {
+pub fn generic_kind_base(input: BorrowedSpan) -> Res<BorrowedSpan, GenericKindBase> {
     camel_case(input).map(|(next, resource_type)| (next, resource_type.to_string()))
 }
 
-pub fn generic_kind_base_selector(input: Span) -> Res<Span, GenericKindSelector> {
+pub fn generic_kind_base_selector(input: BorrowedSpan) -> Res<BorrowedSpan, GenericKindSelector> {
     pattern(generic_kind_base)(input)
 }
 
-pub fn kind_pattern(input: Span) -> Res<Span, KindPattern> {
+pub fn kind_pattern(input: BorrowedSpan) -> Res<BorrowedSpan, KindPattern> {
     delimited(
         tag("<"),
         tuple((
@@ -4247,7 +4260,7 @@ pub fn kind_pattern(input: Span) -> Res<Span, KindPattern> {
     })
 }
 
-fn space_hop(input: Span) -> Res<Span, Hop> {
+fn space_hop(input: BorrowedSpan) -> Res<BorrowedSpan, Hop> {
     tuple((point_segment_selector, opt(kind_pattern), opt(tag("+"))))(input).map(
         |(next, (segment, kind, inclusive))| {
             let kind = match kind {
@@ -4267,7 +4280,7 @@ fn space_hop(input: Span) -> Res<Span, Hop> {
     )
 }
 
-fn base_hop(input: Span) -> Res<Span, Hop> {
+fn base_hop(input: BorrowedSpan) -> Res<BorrowedSpan, Hop> {
     tuple((base_segment, opt(kind_pattern), opt(tag("+"))))(input).map(
         |(next, (segment, tks, inclusive))| {
             let tks = match tks {
@@ -4287,7 +4300,7 @@ fn base_hop(input: Span) -> Res<Span, Hop> {
     )
 }
 
-fn file_hop(input: Span) -> Res<Span, Hop> {
+fn file_hop(input: BorrowedSpan) -> Res<BorrowedSpan, Hop> {
     tuple((file_segment, opt(tag("+"))))(input).map(|(next, (segment, inclusive))| {
         let tks = KindPattern {
             kind: Pattern::Exact("File".to_string()),
@@ -4306,7 +4319,7 @@ fn file_hop(input: Span) -> Res<Span, Hop> {
     })
 }
 
-fn dir_hop(input: Span) -> Res<Span, Hop> {
+fn dir_hop(input: BorrowedSpan) -> Res<BorrowedSpan, Hop> {
     tuple((dir_segment, opt(tag("+"))))(input).map(|(next, (segment, inclusive))| {
         let tks = KindPattern::any();
         let inclusive = inclusive.is_some();
@@ -4321,7 +4334,7 @@ fn dir_hop(input: Span) -> Res<Span, Hop> {
     })
 }
 
-fn version_hop(input: Span) -> Res<Span, Hop> {
+fn version_hop(input: BorrowedSpan) -> Res<BorrowedSpan, Hop> {
     tuple((version_segment, opt(kind_pattern), opt(tag("+"))))(input).map(
         |(next, (segment, tks, inclusive))| {
             let tks = match tks {
@@ -4341,7 +4354,7 @@ fn version_hop(input: Span) -> Res<Span, Hop> {
     )
 }
 
-pub fn point_selector(input: Span) -> Res<Span, PointSelector> {
+pub fn point_selector(input: BorrowedSpan) -> Res<BorrowedSpan, PointSelector> {
     context(
         "point_kind_pattern",
         tuple((
@@ -4389,7 +4402,7 @@ pub fn point_selector(input: Span) -> Res<Span, PointSelector> {
     )
 }
 
-pub fn point_and_kind(input: Span) -> Res<Span, PointKind> {
+pub fn point_and_kind(input: BorrowedSpan) -> Res<BorrowedSpan, PointKind> {
     tuple((point, kind))(input).map(|(next, (point, kind))| (next, PointKind { point, kind }))
 }
 
@@ -4411,7 +4424,7 @@ fn version_req(input: Span) -> Res<Span, VersionReq> {
 
  */
 
-pub fn version(input: Span) -> Res<Span, Version> {
+pub fn version(input: BorrowedSpan) -> Res<BorrowedSpan, Version> {
     let (next, version) = rec_version(input.clone())?;
     let str_input = *version.fragment();
     let rtn = semver::Version::parse(str_input);
@@ -4425,7 +4438,7 @@ pub fn version(input: Span) -> Res<Span, Version> {
     }
 }
 
-pub fn specific(input: Span) -> Res<Span, Specific> {
+pub fn specific(input: BorrowedSpan) -> Res<BorrowedSpan, Specific> {
     tuple((
         domain_chars,
         tag(":"),
@@ -4534,7 +4547,7 @@ where
     )
 }
 
-pub fn primitive_def(input: Span) -> Res<Span, PayloadTypeDef<PointCtx>> {
+pub fn primitive_def(input: BorrowedSpan) -> Res<BorrowedSpan, PayloadTypeDef<PointCtx>> {
     tuple((
         payload,
         opt(preceded(tag("~"), opt(format))),
@@ -4555,20 +4568,20 @@ pub fn primitive_def(input: Span) -> Res<Span, PayloadTypeDef<PointCtx>> {
     })
 }
 
-pub fn payload(input: Span) -> Res<Span, PayloadType> {
+pub fn payload(input: BorrowedSpan) -> Res<BorrowedSpan, PayloadType> {
     parse_camel_case_str(input)
 }
 
-pub fn consume_primitive_def(input: Span) -> Res<Span, PayloadTypeDef<PointCtx>> {
+pub fn consume_primitive_def(input: BorrowedSpan) -> Res<BorrowedSpan, PayloadTypeDef<PointCtx>> {
     all_consuming(primitive_def)(input)
 }
 
-pub fn call_with_config(input: Span) -> Res<Span, CallWithConfigCtx> {
+pub fn call_with_config(input: BorrowedSpan) -> Res<BorrowedSpan, CallWithConfigCtx> {
     tuple((call, opt(preceded(tag("+"), point_ctx))))(input)
         .map(|(next, (call, config))| (next, CallWithConfigCtx { call, config }))
 }
 
-pub fn parse_alpha1_str<O: FromStr>(input: Span) -> Res<Span, O> {
+pub fn parse_alpha1_str<O: FromStr>(input: BorrowedSpan) -> Res<BorrowedSpan, O> {
     let (next, rtn) = recognize(alpha1)(input)?;
     match O::from_str(rtn.to_string().as_str()) {
         Ok(rtn) => Ok((next, rtn)),
@@ -4579,11 +4592,11 @@ pub fn parse_alpha1_str<O: FromStr>(input: Span) -> Res<Span, O> {
     }
 }
 
-pub fn rc_command(input: Span) -> Res<Span, RcCommandType> {
+pub fn rc_command(input: BorrowedSpan) -> Res<BorrowedSpan, RcCommandType> {
     parse_alpha1_str(input)
 }
 
-pub fn msg_call(input: Span) -> Res<Span, CallKind> {
+pub fn msg_call(input: BorrowedSpan) -> Res<BorrowedSpan, CallKind> {
     tuple((
         delimited(tag("Msg<"), alphanumeric1, tag(">")),
         opt(recognize(capture_path)),
@@ -4600,7 +4613,7 @@ pub fn msg_call(input: Span) -> Res<Span, CallKind> {
     })
 }
 
-pub fn http_call(input: Span) -> Res<Span, CallKind> {
+pub fn http_call(input: BorrowedSpan) -> Res<BorrowedSpan, CallKind> {
     tuple((delimited(tag("Http<"), http_method, tag(">")), capture_path))(input).map(
         |(next, (method, path))| {
             (
@@ -4611,20 +4624,20 @@ pub fn http_call(input: Span) -> Res<Span, CallKind> {
     )
 }
 
-pub fn call_kind(input: Span) -> Res<Span, CallKind> {
+pub fn call_kind(input: BorrowedSpan) -> Res<BorrowedSpan, CallKind> {
     alt((msg_call, http_call))(input)
 }
 
-pub fn call(input: Span) -> Res<Span, CallCtx> {
+pub fn call(input: BorrowedSpan) -> Res<BorrowedSpan, CallCtx> {
     tuple((point_ctx, preceded(tag("^"), call_kind)))(input)
         .map(|(next, (point, kind))| (next, CallCtx { point, kind }))
 }
 
-pub fn consume_call(input: Span) -> Res<Span, CallCtx> {
+pub fn consume_call(input: BorrowedSpan) -> Res<BorrowedSpan, CallCtx> {
     all_consuming(call)(input)
 }
 
-pub fn labeled_primitive_def(input: Span) -> Res<Span, LabeledPrimitiveTypeDef<PointCtx>> {
+pub fn labeled_primitive_def(input: BorrowedSpan) -> Res<BorrowedSpan, LabeledPrimitiveTypeDef<PointCtx>> {
     tuple((skewer, delimited(tag("<"), primitive_def, tag(">"))))(input).map(
         |(next, (label, primitive_def))| {
             let labeled_def = LabeledPrimitiveTypeDef {
@@ -4636,7 +4649,7 @@ pub fn labeled_primitive_def(input: Span) -> Res<Span, LabeledPrimitiveTypeDef<P
     )
 }
 
-pub fn digit_range(input: Span) -> Res<Span, NumRange> {
+pub fn digit_range(input: BorrowedSpan) -> Res<BorrowedSpan, NumRange> {
     tuple((digit1, tag("-"), digit1))(input).map(|(next, (min, _, max))| {
         let min: usize = usize::from_str(min.to_string().as_str()).expect("usize");
         let max: usize = usize::from_str(max.to_string().as_str()).expect("usize");
@@ -4646,7 +4659,7 @@ pub fn digit_range(input: Span) -> Res<Span, NumRange> {
     })
 }
 
-pub fn exact_range(input: Span) -> Res<Span, NumRange> {
+pub fn exact_range(input: BorrowedSpan) -> Res<BorrowedSpan, NumRange> {
     digit1(input).map(|(next, exact)| {
         (
             next,
@@ -4658,7 +4671,7 @@ pub fn exact_range(input: Span) -> Res<Span, NumRange> {
     })
 }
 
-pub fn range(input: Span) -> Res<Span, NumRange> {
+pub fn range(input: BorrowedSpan) -> Res<BorrowedSpan, NumRange> {
     delimited(
         multispace0,
         opt(alt((digit_range, exact_range))),
@@ -4673,12 +4686,12 @@ pub fn range(input: Span) -> Res<Span, NumRange> {
     })
 }
 
-pub fn primitive_data_struct(input: Span) -> Res<Span, PayloadTypePatternDef<PointCtx>> {
+pub fn primitive_data_struct(input: BorrowedSpan) -> Res<BorrowedSpan, PayloadTypePatternDef<PointCtx>> {
     context("selector", payload)(input)
         .map(|(next, primitive)| (next, PayloadTypePatternDef::Primitive(primitive)))
 }
 
-pub fn array_data_struct(input: Span) -> Res<Span, PayloadTypePatternDef<PointCtx>> {
+pub fn array_data_struct(input: BorrowedSpan) -> Res<BorrowedSpan, PayloadTypePatternDef<PointCtx>> {
     context(
         "selector",
         tuple((
@@ -4694,11 +4707,11 @@ pub fn array_data_struct(input: Span) -> Res<Span, PayloadTypePatternDef<PointCt
     })
 }
 
-pub fn map_entry_pattern_any(input: Span) -> Res<Span, ValuePattern<MapEntryPatternCtx>> {
+pub fn map_entry_pattern_any(input: BorrowedSpan) -> Res<BorrowedSpan, ValuePattern<MapEntryPatternCtx>> {
     delimited(multispace0, tag("*"), multispace0)(input).map(|(next, _)| (next, ValuePattern::Any))
 }
 
-pub fn map_entry_pattern(input: Span) -> Res<Span, MapEntryPatternCtx> {
+pub fn map_entry_pattern(input: BorrowedSpan) -> Res<BorrowedSpan, MapEntryPatternCtx> {
     tuple((skewer, opt(delimited(tag("<"), payload_pattern, tag(">")))))(input).map(
         |(next, (key_con, payload_con))| {
             let payload_con = match payload_con {
@@ -4715,27 +4728,27 @@ pub fn map_entry_pattern(input: Span) -> Res<Span, MapEntryPatternCtx> {
     )
 }
 
-pub fn map_entry_patterns(input: Span) -> Res<Span, Vec<MapEntryPatternCtx>> {
+pub fn map_entry_patterns(input: BorrowedSpan) -> Res<BorrowedSpan, Vec<MapEntryPatternCtx>> {
     separated_list0(
         delimited(multispace0, tag(","), multispace0),
         map_entry_pattern,
     )(input)
 }
 
-pub fn consume_map_entry_pattern(input: Span) -> Res<Span, MapEntryPatternCtx> {
+pub fn consume_map_entry_pattern(input: BorrowedSpan) -> Res<BorrowedSpan, MapEntryPatternCtx> {
     all_consuming(map_entry_pattern)(input)
 }
 
-pub fn required_map_entry_pattern(input: Span) -> Res<Span, Vec<MapEntryPatternCtx>> {
+pub fn required_map_entry_pattern(input: BorrowedSpan) -> Res<BorrowedSpan, Vec<MapEntryPatternCtx>> {
     delimited(tag("["), map_entry_patterns, tag("]"))(input).map(|(next, params)| (next, params))
 }
 
-pub fn allowed_map_entry_pattern(input: Span) -> Res<Span, ValuePattern<PayloadPatternCtx>> {
+pub fn allowed_map_entry_pattern(input: BorrowedSpan) -> Res<BorrowedSpan, ValuePattern<PayloadPatternCtx>> {
     payload_pattern(input).map(|(next, con)| (next, con))
 }
 
 //  [ required1<Bin>, required2<Text> ] *<Bin>
-pub fn map_pattern_params(input: Span) -> Res<Span, MapPatternCtx> {
+pub fn map_pattern_params(input: BorrowedSpan) -> Res<BorrowedSpan, MapPatternCtx> {
     tuple((
         opt(map_entry_patterns),
         multispace0,
@@ -4763,7 +4776,7 @@ pub fn map_pattern_params(input: Span) -> Res<Span, MapPatternCtx> {
     })
 }
 
-pub fn format(input: Span) -> Res<Span, PayloadFormat> {
+pub fn format(input: BorrowedSpan) -> Res<BorrowedSpan, PayloadFormat> {
     let (next, format) = recognize(alpha1)(input)?;
     match PayloadFormat::from_str(format.to_string().as_str()) {
         Ok(format) => Ok((next, format)),
@@ -4781,7 +4794,7 @@ enum MapConParam {
 
 // EXAMPLE:
 //  Map { [ required1<Bin>, required2<Text> ] *<Bin> }
-pub fn map_pattern(input: Span) -> Res<Span, MapPatternCtx> {
+pub fn map_pattern(input: BorrowedSpan) -> Res<BorrowedSpan, MapPatternCtx> {
     tuple((
         delimited(multispace0, tag("Map"), multispace0),
         opt(delimited(
@@ -4801,15 +4814,15 @@ pub fn map_pattern(input: Span) -> Res<Span, MapPatternCtx> {
     })
 }
 
-pub fn value_constrained_map_pattern(input: Span) -> Res<Span, ValuePattern<MapPatternCtx>> {
+pub fn value_constrained_map_pattern(input: BorrowedSpan) -> Res<BorrowedSpan, ValuePattern<MapPatternCtx>> {
     value_pattern(map_pattern)(input)
 }
 
-pub fn msg_action(input: Span) -> Res<Span, ValuePattern<StringMatcher>> {
+pub fn msg_action(input: BorrowedSpan) -> Res<BorrowedSpan, ValuePattern<StringMatcher>> {
     value_pattern(camel_case_to_string_matcher)(input)
 }
 
-pub fn msg_pattern_scoped(input: Span) -> Res<Span, MsgPipelineSelector> {
+pub fn msg_pattern_scoped(input: BorrowedSpan) -> Res<BorrowedSpan, MsgPipelineSelector> {
     tuple((delimited(tag("<"), msg_action, tag(">")), opt(path_regex)))(input).map(
         |(next, (action, path_regex))| {
             let path_regex = match path_regex {
@@ -4825,7 +4838,7 @@ pub fn msg_pattern_scoped(input: Span) -> Res<Span, MsgPipelineSelector> {
     )
 }
 
-pub fn msg_pattern(input: Span) -> Res<Span, MsgPipelineSelector> {
+pub fn msg_pattern(input: BorrowedSpan) -> Res<BorrowedSpan, MsgPipelineSelector> {
     tuple((
         tag("Msg"),
         delimited(tag("<"), msg_action, tag(">")),
@@ -4844,7 +4857,7 @@ pub fn msg_pattern(input: Span) -> Res<Span, MsgPipelineSelector> {
     })
 }
 
-pub fn parse_camel_case_str<O: FromStr>(input: Span) -> Res<Span, O> {
+pub fn parse_camel_case_str<O: FromStr>(input: BorrowedSpan) -> Res<BorrowedSpan, O> {
     let (next, rtn) = recognize(camel_case)(input)?;
     match O::from_str(rtn.to_string().as_str()) {
         Ok(rtn) => Ok((next, rtn)),
@@ -4855,13 +4868,13 @@ pub fn parse_camel_case_str<O: FromStr>(input: Span) -> Res<Span, O> {
     }
 }
 
-pub fn http_method(input: Span) -> Res<Span, HttpMethod> {
+pub fn http_method(input: BorrowedSpan) -> Res<BorrowedSpan, HttpMethod> {
     context("http_method", parse_camel_case_str)
         .parse(input)
-        .map(|(next, method): (Span, HttpMethodType)| (next, method.to_method()))
+        .map(|(next, method): (BorrowedSpan, HttpMethodType)| (next, method.to_method()))
 }
 
-pub fn http_method_pattern(input: Span) -> Res<Span, MethodPattern> {
+pub fn http_method_pattern(input: BorrowedSpan) -> Res<BorrowedSpan, MethodPattern> {
     context("@http_method_pattern", method_pattern(http_method))(input)
 }
 
@@ -4881,7 +4894,7 @@ where
     }
 }
 
-pub fn http_pattern_scoped(input: Span) -> Res<Span, HttpPipelineSelector> {
+pub fn http_pattern_scoped(input: BorrowedSpan) -> Res<BorrowedSpan, HttpPipelineSelector> {
     tuple((
         delimited(
             context("angle_bracket_open", tag("<")),
@@ -4903,7 +4916,7 @@ pub fn http_pattern_scoped(input: Span) -> Res<Span, HttpPipelineSelector> {
     })
 }
 
-pub fn http_pattern(input: Span) -> Res<Span, HttpPipelineSelector> {
+pub fn http_pattern(input: BorrowedSpan) -> Res<BorrowedSpan, HttpPipelineSelector> {
     tuple((
         tag("Http"),
         delimited(tag("<"), http_method_pattern, tag(">")),
@@ -4922,25 +4935,25 @@ pub fn http_pattern(input: Span) -> Res<Span, HttpPipelineSelector> {
     })
 }
 
-pub fn rc_command_type(input: Span) -> Res<Span, RcCommandType> {
+pub fn rc_command_type(input: BorrowedSpan) -> Res<BorrowedSpan, RcCommandType> {
     parse_alpha1_str(input)
 }
 
-pub fn rc_pattern_scoped(input: Span) -> Res<Span, RcPipelineSelector> {
+pub fn rc_pattern_scoped(input: BorrowedSpan) -> Res<BorrowedSpan, RcPipelineSelector> {
     pattern(delimited(tag("<"), rc_command_type, tag(">")))(input)
         .map(|(next, command)| (next, RcPipelineSelector { command }))
 }
 
-pub fn rc_pattern(input: Span) -> Res<Span, RcPipelineSelector> {
+pub fn rc_pattern(input: BorrowedSpan) -> Res<BorrowedSpan, RcPipelineSelector> {
     tuple((tag("Rc"), delimited(tag("<"), rc_pattern_scoped, tag(">"))))(input)
         .map(|(next, (_, pattern))| (next, pattern))
 }
 
-pub fn map_pattern_payload_structure(input: Span) -> Res<Span, PayloadTypePatternDef<PointCtx>> {
+pub fn map_pattern_payload_structure(input: BorrowedSpan) -> Res<BorrowedSpan, PayloadTypePatternDef<PointCtx>> {
     map_pattern(input).map(|(next, con)| (next, PayloadTypePatternDef::Map(Box::new(con))))
 }
 
-pub fn payload_structure(input: Span) -> Res<Span, PayloadTypePatternDef<PointCtx>> {
+pub fn payload_structure(input: BorrowedSpan) -> Res<BorrowedSpan, PayloadTypePatternDef<PointCtx>> {
     alt((
         array_data_struct,
         primitive_data_struct,
@@ -4948,23 +4961,23 @@ pub fn payload_structure(input: Span) -> Res<Span, PayloadTypePatternDef<PointCt
     ))(input)
 }
 
-pub fn msg_entity_pattern(input: Span) -> Res<Span, PipelineSelector> {
+pub fn msg_entity_pattern(input: BorrowedSpan) -> Res<BorrowedSpan, PipelineSelector> {
     msg_pattern(input).map(|(next, pattern)| (next, PipelineSelector::Msg(pattern)))
 }
 
-pub fn http_entity_pattern(input: Span) -> Res<Span, PipelineSelector> {
+pub fn http_entity_pattern(input: BorrowedSpan) -> Res<BorrowedSpan, PipelineSelector> {
     http_pattern(input).map(|(next, pattern)| (next, PipelineSelector::Http(pattern)))
 }
 
-pub fn rc_entity_pattern(input: Span) -> Res<Span, PipelineSelector> {
+pub fn rc_entity_pattern(input: BorrowedSpan) -> Res<BorrowedSpan, PipelineSelector> {
     rc_pattern(input).map(|(next, pattern)| (next, PipelineSelector::Rc(pattern)))
 }
 
-pub fn entity_pattern(input: Span) -> Res<Span, PipelineSelector> {
+pub fn entity_pattern(input: BorrowedSpan) -> Res<BorrowedSpan, PipelineSelector> {
     alt((msg_entity_pattern, http_entity_pattern, rc_entity_pattern))(input)
 }
 
-pub fn payload_structure_with_validation(input: Span) -> Res<Span, PayloadPatternCtx> {
+pub fn payload_structure_with_validation(input: BorrowedSpan) -> Res<BorrowedSpan, PayloadPatternCtx> {
     tuple((
         context("selector", payload_structure),
         opt(preceded(tag("~"), opt(format))),
@@ -4985,19 +4998,19 @@ pub fn payload_structure_with_validation(input: Span) -> Res<Span, PayloadPatter
     })
 }
 
-pub fn consume_payload_structure(input: Span) -> Res<Span, PayloadTypePatternCtx> {
+pub fn consume_payload_structure(input: BorrowedSpan) -> Res<BorrowedSpan, PayloadTypePatternCtx> {
     all_consuming(payload_structure)(input)
 }
 
-pub fn consume_data_struct_def(input: Span) -> Res<Span, PayloadPatternCtx> {
+pub fn consume_data_struct_def(input: BorrowedSpan) -> Res<BorrowedSpan, PayloadPatternCtx> {
     all_consuming(payload_structure_with_validation)(input)
 }
 
-pub fn payload_pattern_any(input: Span) -> Res<Span, ValuePattern<PayloadPatternCtx>> {
+pub fn payload_pattern_any(input: BorrowedSpan) -> Res<BorrowedSpan, ValuePattern<PayloadPatternCtx>> {
     tag("*")(input).map(|(next, _)| (next, ValuePattern::Any))
 }
 
-pub fn payload_pattern(input: Span) -> Res<Span, ValuePattern<PayloadPatternCtx>> {
+pub fn payload_pattern(input: BorrowedSpan) -> Res<BorrowedSpan, ValuePattern<PayloadPatternCtx>> {
     context(
         "@payload-pattern",
         value_pattern(payload_structure_with_validation),
@@ -5005,22 +5018,22 @@ pub fn payload_pattern(input: Span) -> Res<Span, ValuePattern<PayloadPatternCtx>
     .map(|(next, payload_pattern)| (next, payload_pattern))
 }
 
-pub fn payload_filter_block_empty(input: Span) -> Res<Span, PatternBlockCtx> {
+pub fn payload_filter_block_empty(input: BorrowedSpan) -> Res<BorrowedSpan, PatternBlockCtx> {
     multispace0(input.clone()).map(|(next, _)| (input, PatternBlockCtx::None))
 }
 
-pub fn payload_filter_block_any(input: Span) -> Res<Span, PatternBlockCtx> {
+pub fn payload_filter_block_any(input: BorrowedSpan) -> Res<BorrowedSpan, PatternBlockCtx> {
     let (next, _) = delimited(multispace0, context("selector", tag("*")), multispace0)(input)?;
 
     Ok((next, PatternBlockCtx::Any))
 }
 
-pub fn payload_filter_block_def(input: Span) -> Res<Span, PatternBlockCtx> {
+pub fn payload_filter_block_def(input: BorrowedSpan) -> Res<BorrowedSpan, PatternBlockCtx> {
     payload_structure_with_validation(input)
         .map(|(next, pattern)| (next, PatternBlockCtx::Pattern(pattern)))
 }
 
-fn insert_block_pattern(input: Span) -> Res<Span, UploadBlock> {
+fn insert_block_pattern(input: BorrowedSpan) -> Res<BorrowedSpan, UploadBlock> {
     delimited(multispace0, filename, multispace0)(input).map(|(next, filename)| {
         (
             next,
@@ -5050,7 +5063,7 @@ pub fn text_payload_block(input: Span) -> Res<Span, PayloadBlock> {
     })
 }*/
 
-pub fn upload_payload_block(input: Span) -> Res<Span, UploadBlock> {
+pub fn upload_payload_block(input: BorrowedSpan) -> Res<BorrowedSpan, UploadBlock> {
     delimited(multispace0, file_chars, multispace0)(input).map(|(next, filename)| {
         (
             next,
@@ -5061,11 +5074,11 @@ pub fn upload_payload_block(input: Span) -> Res<Span, UploadBlock> {
     })
 }
 
-pub fn upload_step(input: Span) -> Res<Span, UploadBlock> {
+pub fn upload_step(input: BorrowedSpan) -> Res<BorrowedSpan, UploadBlock> {
     delimited(tag("^["), upload_payload_block, tag("->"))(input)
 }
 
-pub fn request_payload_filter_block(input: Span) -> Res<Span, PayloadBlockCtx> {
+pub fn request_payload_filter_block(input: BorrowedSpan) -> Res<BorrowedSpan, PayloadBlockCtx> {
     tuple((
         multispace0,
         alt((
@@ -5078,7 +5091,7 @@ pub fn request_payload_filter_block(input: Span) -> Res<Span, PayloadBlockCtx> {
     .map(|(next, (_, block, _))| (next, PayloadBlockCtx::RequestPattern(block)))
 }
 
-pub fn response_payload_filter_block(input: Span) -> Res<Span, PayloadBlockCtx> {
+pub fn response_payload_filter_block(input: BorrowedSpan) -> Res<BorrowedSpan, PayloadBlockCtx> {
     context(
         "response-payload-filter-block",
         terminated(
@@ -5098,7 +5111,7 @@ pub fn response_payload_filter_block(input: Span) -> Res<Span, PayloadBlockCtx> 
     .map(|(next, (_, block, _))| (next, PayloadBlockCtx::ResponsePattern(block)))
 }
 
-pub fn rough_pipeline_step(input: Span) -> Res<Span, Span> {
+pub fn rough_pipeline_step(input: BorrowedSpan) -> Res<BorrowedSpan, BorrowedSpan> {
     recognize(tuple((
         many0(preceded(
             alt((tag("-"), tag("="), tag("+"))),
@@ -5108,7 +5121,7 @@ pub fn rough_pipeline_step(input: Span) -> Res<Span, Span> {
     )))(input)
 }
 
-pub fn consume_pipeline_block(input: Span) -> Res<Span, PayloadBlockCtx> {
+pub fn consume_pipeline_block(input: BorrowedSpan) -> Res<BorrowedSpan, PayloadBlockCtx> {
     all_consuming(request_payload_filter_block)(input)
 }
 
@@ -5236,7 +5249,7 @@ pub fn config(src: &str) -> Result<Document, MsgErr> {
     }
 }
 
-fn bind_config(input: Span) -> Result<BindConfig, MsgErr> {
+fn bind_config(input: BorrowedSpan) -> Result<BindConfig, MsgErr> {
     let lex_scopes = lex_scopes(input)?;
     let mut scopes = vec![];
     let mut errors = vec![];
@@ -5259,7 +5272,7 @@ fn bind_config(input: Span) -> Result<BindConfig, MsgErr> {
     Ok(config)
 }
 
-fn sematic_bind_scope(scope: LexScope<Span>) -> Result<BindScope, MsgErr> {
+fn sematic_bind_scope(scope: LexScope<BorrowedSpan>) -> Result<BindScope, MsgErr> {
     let selector_name = scope.selector.selector.name.to_string();
     match selector_name.as_str() {
         "Pipeline" => {
@@ -5288,7 +5301,7 @@ fn sematic_bind_scope(scope: LexScope<Span>) -> Result<BindScope, MsgErr> {
     }
 }
 
-fn parse_bind_pipelines_scope<'a>(input: Span) -> Result<Spanned<Span, BindScopeKind>, ParseErrs> {
+fn parse_bind_pipelines_scope<'a>(input: BorrowedSpan) -> Result<Spanned<BorrowedSpan, BindScopeKind>, ParseErrs> {
     unimplemented!()
     /*
     let (next, lex_scopes) = lex_scopes(input.clone())?;
@@ -5321,29 +5334,29 @@ fn parse_bind_pipelines_scope<'a>(input: Span) -> Result<Spanned<Span, BindScope
      */
 }
 
-pub fn nospace0(input: Span) -> Res<Span, Span> {
+pub fn nospace0(input: BorrowedSpan) -> Res<BorrowedSpan, BorrowedSpan> {
     recognize(many0(satisfy(|c| !c.is_whitespace())))(input)
 }
 
-pub fn nospace1(input: Span) -> Res<Span, Span> {
+pub fn nospace1(input: BorrowedSpan) -> Res<BorrowedSpan, BorrowedSpan> {
     recognize(pair(
         satisfy(|c| !c.is_whitespace()),
         many0(satisfy(|c| !c.is_whitespace())),
     ))(input)
 }
 
-pub fn no_space_with_blocks(input: Span) -> Res<Span, Span> {
+pub fn no_space_with_blocks(input: BorrowedSpan) -> Res<BorrowedSpan, BorrowedSpan> {
     recognize(many1(alt((recognize(any_block), nospace1))))(input)
 }
 
-pub fn var_pipeline(input: Span) -> Res<Span, VarPipeline> {
+pub fn var_pipeline(input: BorrowedSpan) -> Res<BorrowedSpan, VarPipeline> {
     many1(var_pipeline_segment)(input).map(|(next, segments)| {
         let pipeline = VarPipeline { segments };
         (next, pipeline)
     })
 }
 
-pub fn var_pipeline_segment(input: Span) -> Res<Span, VarPipelineSegment> {
+pub fn var_pipeline_segment(input: BorrowedSpan) -> Res<BorrowedSpan, VarPipelineSegment> {
     tuple((
         multispace0,
         subst(PipelineStepCtxParser()),
@@ -5365,12 +5378,12 @@ pub fn var_pipeline_segment(input: Span) -> Res<Span, VarPipelineSegment> {
 #[derive(Debug,Clone,Serialize,Deserialize)]
 pub struct PipelineStepCtxParser();
 impl SubstParser<PipelineStepCtx> for PipelineStepCtxParser {
-    fn parse_span<'a>(&self, input: Span<'a>) -> Res<Span<'a>, PipelineStepCtx> {
+    fn parse_span<'a>(&self, input: BorrowedSpan<'a>) -> Res<BorrowedSpan<'a>, PipelineStepCtx> {
         pipeline_step_ctx(input)
     }
 }
 
-pub fn pipeline_step_ctx(input: Span) -> Res<Span, PipelineStepCtx> {
+pub fn pipeline_step_ctx(input: BorrowedSpan) -> Res<BorrowedSpan, PipelineStepCtx> {
     context(
         "pipeline:step",
         tuple((
@@ -5416,7 +5429,7 @@ pub fn pipeline_step_ctx(input: Span) -> Res<Span, PipelineStepCtx> {
     })
 }
 
-pub fn core_pipeline_stop(input: Span) -> Res<Span, PipelineStopCtx> {
+pub fn core_pipeline_stop(input: BorrowedSpan) -> Res<BorrowedSpan, PipelineStopCtx> {
     context(
         "Core",
         delimited(
@@ -5428,15 +5441,15 @@ pub fn core_pipeline_stop(input: Span) -> Res<Span, PipelineStopCtx> {
     .map(|(next, _)| (next, PipelineStopCtx::Internal))
 }
 
-pub fn return_pipeline_stop(input: Span) -> Res<Span, PipelineStopCtx> {
+pub fn return_pipeline_stop(input: BorrowedSpan) -> Res<BorrowedSpan, PipelineStopCtx> {
     tag("&")(input).map(|(next, _)| (next, PipelineStopCtx::Respond))
 }
 
-pub fn call_pipeline_stop(input: Span) -> Res<Span, PipelineStopCtx> {
+pub fn call_pipeline_stop(input: BorrowedSpan) -> Res<BorrowedSpan, PipelineStopCtx> {
     context("Call", call)(input).map(|(next, call)| (next, PipelineStopCtx::Call(call)))
 }
 
-pub fn point_pipeline_stop(input: Span) -> Res<Span, PipelineStopCtx> {
+pub fn point_pipeline_stop(input: BorrowedSpan) -> Res<BorrowedSpan, PipelineStopCtx> {
     context("pipeline:stop:point", point_ctx)(input)
         .map(|(next, point)| (next, PipelineStopCtx::Point(point)))
 }
@@ -5444,12 +5457,12 @@ pub fn point_pipeline_stop(input: Span) -> Res<Span, PipelineStopCtx> {
 #[derive(Debug,Clone,Serialize,Deserialize)]
 pub struct PipelineStopCtxParser();
 impl SubstParser<PipelineStopCtx> for PipelineStopCtxParser {
-    fn parse_span<'a>(&self, input: Span<'a>) -> Res<Span<'a>, PipelineStopCtx> {
+    fn parse_span<'a>(&self, input: BorrowedSpan<'a>) -> Res<BorrowedSpan<'a>, PipelineStopCtx> {
         pipeline_stop_ctx(input)
     }
 }
 
-pub fn pipeline_stop_ctx(input: Span) -> Res<Span, PipelineStopCtx> {
+pub fn pipeline_stop_ctx(input: BorrowedSpan) -> Res<BorrowedSpan, PipelineStopCtx> {
     context(
         "Stop",
         pair(
@@ -5468,15 +5481,15 @@ pub fn pipeline_stop_ctx(input: Span) -> Res<Span, PipelineStopCtx> {
     .map(|(next, (_, pipeline_stop))| (next, pipeline_stop))
 }
 
-pub fn consume_pipeline_step(input: Span) -> Res<Span, PipelineStepCtx> {
+pub fn consume_pipeline_step(input: BorrowedSpan) -> Res<BorrowedSpan, PipelineStepCtx> {
     all_consuming(pipeline_step_ctx)(input)
 }
 
-pub fn consume_pipeline_stop(input: Span) -> Res<Span, PipelineStopCtx> {
+pub fn consume_pipeline_stop(input: BorrowedSpan) -> Res<BorrowedSpan, PipelineStopCtx> {
     all_consuming(pipeline_stop_ctx)(input)
 }
 
-pub fn pipeline_segment(input: Span) -> Res<Span, PipelineSegmentCtx> {
+pub fn pipeline_segment(input: BorrowedSpan) -> Res<BorrowedSpan, PipelineSegmentCtx> {
     tuple((
         multispace0,
         pipeline_step_ctx,
@@ -5487,7 +5500,7 @@ pub fn pipeline_segment(input: Span) -> Res<Span, PipelineSegmentCtx> {
     .map(|(next, (_, step, _, stop, _))| (next, PipelineSegmentCtx { step, stop }))
 }
 
-pub fn pipeline(input: Span) -> Res<Span, PipelineCtx> {
+pub fn pipeline(input: BorrowedSpan) -> Res<BorrowedSpan, PipelineCtx> {
     context(
         "pipeline",
         many0(delimited(multispace0, pipeline_segment, multispace0)),
@@ -5495,7 +5508,7 @@ pub fn pipeline(input: Span) -> Res<Span, PipelineCtx> {
     .map(|(next, segments)| (next, PipelineCtx { segments }))
 }
 
-pub fn consume_pipeline(input: Span) -> Res<Span, PipelineCtx> {
+pub fn consume_pipeline(input: BorrowedSpan) -> Res<BorrowedSpan, PipelineCtx> {
     all_consuming(pipeline)(input)
 }
 
@@ -5530,14 +5543,14 @@ pub fn consume_selector(input: Span) -> Res<Span, Selector<PipelineSelector>> {
 
  */
 
-pub fn subst<T, P>(parser: P) -> impl FnMut(Span) -> Res<Span, Subst<T, Span, P>>
+pub fn subst<T, P>(parser: P) -> impl FnMut(BorrowedSpan) -> Res<BorrowedSpan, Subst<T, BorrowedSpan, P>>
 where
     P: SubstParser<T> + 'static + Clone,
 {
-    move |input: Span| {
+    move |input: BorrowedSpan| {
         many1(chunk)(input.clone()).map(|(next, chunks)| {
             let len: usize = chunks.iter().map(|c| c.len()).sum();
-            let span = OwnedSpan::from(input.slice(0..input.len() - next.len()));
+            let span = to_owned(input.slice(0..input.len() - next.len()));
             let chunks = Subst {
                 chunks,
                 parser: parser.clone(),
@@ -5549,10 +5562,10 @@ where
     }
 }
 
-pub fn chunk(input: Span) -> Res<Span, Chunk<Span>> {
+pub fn chunk(input: BorrowedSpan) -> Res<BorrowedSpan, Chunk<BorrowedSpan>> {
     alt((text_chunk, var_chunk))(input)
 }
-pub fn text_chunk(input: Span) -> Res<Span, Chunk<Span>> {
+pub fn text_chunk(input: BorrowedSpan) -> Res<BorrowedSpan, Chunk<BorrowedSpan>> {
     recognize(many1(alt((
         recognize(any_soround_lex_block),
         tag("\\$"),
@@ -5561,7 +5574,7 @@ pub fn text_chunk(input: Span) -> Res<Span, Chunk<Span>> {
     .map(|(next, text)| (next, Chunk::Text(text)))
 }
 
-pub fn var_chunk(input: Span) -> Res<Span, Chunk<Span>> {
+pub fn var_chunk(input: BorrowedSpan) -> Res<BorrowedSpan, Chunk<BorrowedSpan>> {
     preceded(
         tag("$"),
         context(
@@ -5598,7 +5611,7 @@ pub mod test {
     use nom_supreme::error::ErrorTree;
     use std::rc::Rc;
     use std::sync::Arc;
-    use crate::version::v0_0_1::span::{create_span, Span};
+    use crate::version::v0_0_1::span::{create_span, BorrowedSpan};
 
     #[test]
     pub fn test_var_subst() -> Result<(),MsgErr>{
@@ -5607,7 +5620,7 @@ pub mod test {
         let pipeline = log(result(var_pipeline(create_span(pipeline_var_cfg_str) )))?;
 
         let mut resolver = MapResolver::new();
-        //resolver.insert("user","kitty");
+        //resolver.insert("user","bAts");
 
         let pipeline = log(pipeline.resolve_vars(&resolver))?;
 
@@ -6381,7 +6394,7 @@ Bind(version=1.2.3)-> {
         #[derive(Clone)]
         pub struct SomeParser();
         impl SubstParser<String> for SomeParser {
-            fn parse_span<'a>(&self, span: Span<'a>) -> Res<Span<'a>, String> {
+            fn parse_span<'a>(&self, span: BorrowedSpan<'a>) -> Res<BorrowedSpan<'a>, String> {
                 recognize(terminated(
                     recognize(many0(pair(peek(not(eof)), recognize(anychar)))),
                     eof,

@@ -1,11 +1,14 @@
 use nom_locate::LocatedSpan;
 use std::sync::Arc;
-use nom::{FindSubstring, FindToken, InputLength, InputTake, InputTakeAtPosition, Slice};
+use nom::{AsBytes, FindSubstring, FindToken, InputLength, InputTake, InputTakeAtPosition, IResult, Slice};
 use std::ops::{Deref, Range, RangeFrom, RangeTo};
+use nom::error::{ErrorKind, ParseError};
 
-pub type Span<'a> = LocatedSpan<&'a str, SpanExtra>;
+pub type BorrowedSpan<'a> = LocatedSpan<&'a str, SpanExtra>;
+pub type OwnedSpan = LocatedSpan<Morphile,SpanExtra>;
 pub type SpanExtra = Arc<String>;
 
+/*
 pub trait ISpan<T> :InputLength+InputTake+InputTakeAtPosition+FindToken<T>+FindSubstring<T> where Self: Slice<RangeFrom<usize>> + Slice<RangeTo<usize>> + Clone{
     fn location_offset(&self) -> usize;
     fn location_line(&self) -> u32;
@@ -16,6 +19,8 @@ pub trait ISpan<T> :InputLength+InputTake+InputTakeAtPosition+FindToken<T>+FindS
 }
 
 
+
+ */
 
 pub struct Spanner<I> {
     pub spans: Vec<I>
@@ -52,22 +57,15 @@ impl <S:ToString> ToString for NamedSpan<S> {
     }
 }
 
+/*
 #[derive(Clone)]
 pub struct OwnedSpan {
     pub extra: SpanExtra,
     pub offset: usize,
-    pub len: usize
+    pub len: usize,
+    pub line: u32
 }
 
-impl <'a> From<Span<'a>> for OwnedSpan {
-    fn from( span: Span<'a> ) -> Self {
-        Self {
-            extra: span.extra.clone(),
-            offset: span.location_offset(),
-            len: span.len()
-        }
-    }
-}
 
 impl OwnedSpan {
     pub fn as_str(&self) -> &str {
@@ -89,15 +87,17 @@ where
         Self {
             extra: self.extra.clone(),
             offset: self.offset+range.start,
-            len: range.end-range.start
+            len: range.end-range.start,
+            line: self.line
         }
     }
 }
 
 
-pub fn create_span(s: &str) -> Span {
+ */
 
-    Span::new_extra(s, Arc::new(s.to_string()))
+pub fn create_span(s: &str) -> BorrowedSpan {
+    BorrowedSpan::new_extra(s, Arc::new(s.to_string()))
 }
 
 pub struct SpanRevision {
@@ -106,12 +106,49 @@ pub struct SpanRevision {
 }
 
 impl SpanRevision {
-    pub fn new( name: &str, before: Span ) -> Self {
-        let before = OwnedSpan::from(before);
+    pub fn new(name: &str, before: &BorrowedSpan) -> Self {
+        let before = to_owned(before);
         Self {
             name: name.to_string(),
             before
         }
+    }
+}
+
+
+
+pub fn to_owned<'a>(span: &BorrowedSpan<'a>) -> OwnedSpan {
+        LocatedSpan::new_extra(Morphile::new(span.to_string()),span.extra.clone())
+}
+
+#[derive(Clone)]
+pub struct Morphile {
+    pub string: String
+}
+
+impl ToString for Morphile {
+    fn to_string(&self) -> String {
+        self.string.clone()
+    }
+}
+
+impl Morphile {
+    pub fn new(string: String) -> Self {
+        Self{string}
+    }
+}
+
+impl Deref for Morphile {
+    type Target = String;
+
+    fn deref(&self) -> &Self::Target {
+        &self.string
+    }
+}
+
+impl  AsBytes for Morphile {
+    fn as_bytes(&self) -> &[u8] {
+        self.string.as_bytes()
     }
 }
 
@@ -121,15 +158,16 @@ pub struct SpanHistory {
 }
 
 impl  SpanHistory {
-    pub fn new<'a>(span: Span<'a>) -> Self{
+    pub fn new(span: &BorrowedSpan) -> Self{
         Self {
             revisions: vec![],
-            span: OwnedSpan::from(span)
+            span: to_owned(span)
         }
     }
 
-    pub fn push( &mut self, revision_name: &str, span: Span) {
-        self.revisions.push(SpanRevision::new(revision_name, span));
+    pub fn with_revision(mut self, revision_name: &str, revision: &str ) -> Self {
+        self.revisions.push(SpanRevision::new(revision_name, &create_span(revision) ));
+        self
     }
 }
 
@@ -140,3 +178,4 @@ impl Deref for SpanHistory {
         &self.span
     }
 }
+

@@ -19,7 +19,7 @@ pub mod particle {
     use crate::version::v0_0_1::parse::{Res};
     use crate::version::v0_0_1::payload::payload::{Payload, PayloadMap};
     use crate::version::v0_0_1::parse::parse_alpha1_str;
-    use crate::version::v0_0_1::span::Span;
+    use crate::version::v0_0_1::span::BorrowedSpan;
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct StatusUpdate {
@@ -78,11 +78,11 @@ pub mod particle {
         }
     }
 
-    pub fn ok_code(input: Span) -> Res<Span, Code> {
+    pub fn ok_code(input: BorrowedSpan) -> Res<BorrowedSpan, Code> {
         tag("Ok")(input).map(|(next, code)| (next, Code::Ok))
     }
 
-    pub fn error_code(input: Span) -> Res<Span, Code> {
+    pub fn error_code(input: BorrowedSpan) -> Res<BorrowedSpan, Code> {
         let (next, err_code) = delimited(tag("Err("), digit1, tag(")"))(input.clone())?;
         Ok((
             next,
@@ -98,11 +98,11 @@ pub mod particle {
         ))
     }
 
-    pub fn code(input: Span) -> Res<Span, Code> {
+    pub fn code(input: BorrowedSpan) -> Res<BorrowedSpan, Code> {
         alt((error_code, ok_code))(input)
     }
 
-    pub fn status(input: Span) -> Res<Span, Status> {
+    pub fn status(input: BorrowedSpan) -> Res<BorrowedSpan, Status> {
         parse_alpha1_str(input)
     }
 

@@ -42,7 +42,7 @@ pub mod selector {
     use regex::Regex;
     use std::collections::HashMap;
     use crate::version::v0_0_1::parse::error::result;
-    use crate::version::v0_0_1::span::{create_span, Span};
+    use crate::version::v0_0_1::span::{create_span, BorrowedSpan};
 
     pub type KindPattern=KindPatternDef<GenericKindSelector,GenericSubKindSelector,SpecificSelector>;
 
@@ -949,7 +949,7 @@ pub mod selector {
         Exact(P),
     }
 
-    impl <'a> Into<Pattern<String>> for Pattern<Span<'a>> {
+    impl <'a> Into<Pattern<String>> for Pattern<BorrowedSpan<'a>> {
         fn into(self) -> Pattern<String> {
             match self {
                 Pattern::Any => Pattern::Any,

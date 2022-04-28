@@ -69,7 +69,7 @@ pub mod path {
     use crate::version::v0_0_1::parse::consume_path;
     use serde::{Deserialize, Serialize};
     use std::str::FromStr;
-    use crate::version::v0_0_1::span::{create_span, Span};
+    use crate::version::v0_0_1::span::{create_span, BorrowedSpan};
 
     #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
     pub struct Path {

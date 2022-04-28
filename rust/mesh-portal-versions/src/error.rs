@@ -15,7 +15,7 @@ use std::rc::Rc;
 use std::sync::Arc;
 use ariadne::{Label, Report, ReportKind, Source};
 use crate::version::v0_0_1::parse::error::find_parse_err;
-use crate::version::v0_0_1::span::{OwnedSpan, Span};
+use crate::version::v0_0_1::span::{OwnedSpan, BorrowedSpan};
 
 pub enum MsgErr {
     Status {
@@ -311,9 +311,9 @@ impl From<ToStrError> for MsgErr {
     }
 }
 
-impl <'a> From<nom::Err<ErrorTree<Span<'a>>>> for MsgErr {
-    fn from(err: Err<ErrorTree<Span<'a>>>) -> Self {
-        fn handle<'b>(err: ErrorTree<Span<'b>>) -> MsgErr {
+impl <'a> From<nom::Err<ErrorTree<BorrowedSpan<'a>>>> for MsgErr {
+    fn from(err: Err<ErrorTree<BorrowedSpan<'a>>>) -> Self {
+        fn handle<'b>(err: ErrorTree<BorrowedSpan<'b>>) -> MsgErr {
             match err {
                 ErrorTree::Base {
                     location,
@@ -402,7 +402,7 @@ impl ParseErrs {
         }
     }
 
-    pub fn from_loc_span<'a>(message: &str, label: &str, span: Span<'a>) -> MsgErr{
+    pub fn from_loc_span<'a>(message: &str, label: &str, span: BorrowedSpan<'a>) -> MsgErr{
 
         let mut builder = Report::build(ReportKind::Error, (), 23);
         let report = builder.with_message(message).with_label(
@@ -415,7 +415,7 @@ impl ParseErrs {
     pub fn from_owned_span(message: &str, label: &str, span: OwnedSpan) -> MsgErr{
         let mut builder = Report::build(ReportKind::Error, (), 23);
         let report = builder.with_message(message).with_label(
-            Label::new(span.offset..(span.offset+span.len)).with_message(label),
+            Label::new(span.location_offset()..(span.location_offset()+span.len())).with_message(label),
         ).finish();
         return ParseErrs::from_report(report, span.extra).into();
     }
