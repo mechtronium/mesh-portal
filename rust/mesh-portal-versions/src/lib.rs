@@ -1,5 +1,5 @@
 #![allow(warnings)]
-#![feature(unboxed_closures)]
+//# ! [feature(unboxed_closures)]
 #[no_std]
 
 #[macro_use]

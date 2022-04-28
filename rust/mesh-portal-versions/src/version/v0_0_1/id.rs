@@ -15,11 +15,16 @@ pub mod id {
     use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 
     use crate::error::MsgErr;
-    use crate::version::v0_0_1::parse::{camel_case, consume_point, Ctx, CtxResolver, CtxSubst, kind, point_and_kind, point_route_segment, Res, VarResolver, VarSubst};
+    use crate::version::v0_0_1::parse::{
+        camel_case, consume_point, Ctx, CtxResolver, CtxSubst, kind, point_and_kind,
+        point_route_segment, Res, VarResolver, VarSubst,
+    };
 
-    use crate::version::v0_0_1::selector::selector::{Pattern, PointSelector, SpecificSelector, VersionReq};
-    use crate::version::v0_0_1::{create_span, Span};
     use crate::version::v0_0_1::parse::error::result;
+    use crate::version::v0_0_1::selector::selector::{
+        Pattern, PointSelector, SpecificSelector, VersionReq,
+    };
+    use crate::version::v0_0_1::span::{create_span, Span};
 
     pub type GenericKindBase = String;
 
@@ -45,7 +50,7 @@ pub mod id {
         type Err = MsgErr;
 
         fn from_str(s: &str) -> Result<Self, Self::Err> {
-            let point_and_kind :PointKind= result(all_consuming(point_and_kind)(create_span(s)))?;
+            let point_and_kind: PointKind = result(all_consuming(point_and_kind)(create_span(s)))?;
             Ok(point_and_kind)
         }
     }
@@ -253,7 +258,7 @@ pub mod id {
                     true => "",
                     false => ":",
                 },
-                Self::Working=> match post_fileroot {
+                Self::Working => match post_fileroot {
                     true => "",
                     false => ":",
                 },
@@ -263,14 +268,14 @@ pub mod id {
         pub fn is_normalized(&self) -> bool {
             match self {
                 Self::Pop => false,
-                Self::Working=> false,
+                Self::Working => false,
                 _ => true,
             }
         }
 
         pub fn is_version(&self) -> bool {
             match self {
-                Self::Version=> true,
+                Self::Version => true,
                 _ => false,
             }
         }
@@ -292,7 +297,7 @@ pub mod id {
                 PointSegKind::File => true,
                 PointSegKind::Version => false,
                 PointSegKind::Pop => true,
-                PointSegKind::Working => true
+                PointSegKind::Working => true,
             }
         }
 
@@ -357,7 +362,7 @@ pub mod id {
                 Self::File(_) => PointSegKind::File,
                 Self::Version(_) => PointSegKind::Version,
                 Self::Pop => PointSegKind::Pop,
-                Self::Working=> PointSegKind::Working,
+                Self::Working => PointSegKind::Working,
             }
         }
 
@@ -420,7 +425,6 @@ pub mod id {
             self.kind().is_version()
         }
 
-
         pub fn is_filesystem_seg(&self) -> bool {
             self.kind().is_filesystem_seg()
         }
@@ -429,7 +433,7 @@ pub mod id {
         }
     }
 
-    #[derive(Debug, Clone,Serialize,Deserialize)]
+    #[derive(Debug, Clone, Serialize, Deserialize)]
     pub enum PointSegDelim {
         Empty,
         Mesh,
@@ -448,7 +452,7 @@ pub mod id {
 
     pub type PointSegPair = PointSegPairDef<PointSeg>;
 
-    #[derive(Debug,Clone,Serialize,Deserialize)]
+    #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct PointSegPairDef<Seg> {
         pub delim: PointSegDelim,
         pub seg: Seg,
@@ -460,7 +464,6 @@ pub mod id {
         }
     }
 
-
     impl<Seg> ToString for PointSegPairDef<Seg>
     where
         Seg: ToString,
@@ -470,7 +473,7 @@ pub mod id {
         }
     }
 
-   /*
+    /*
     impl PointSeg {
         pub fn apply_captures(self, captures: &Captures) -> Result<Self, MsgErr> {
             match self {
@@ -570,18 +573,18 @@ pub mod id {
 
     impl CtxSubst<Point> for PointCtx {
         fn resolve_ctx(self, resolver: &dyn CtxResolver) -> Result<Point, MsgErr> {
-           if self.segments.is_empty() {
-               return Ok(Point{
-                   route: self.route,
-                   segments:vec![]
-               })
-           }
+            if self.segments.is_empty() {
+                return Ok(Point {
+                    route: self.route,
+                    segments: vec![],
+                });
+            }
 
-           let mut segments = vec![];
+            let mut segments = vec![];
 
-           let mut old = self;
-           let first_segment = old.segments.remove(0);
-           let point = match first_segment {
+            let mut old = self;
+            let first_segment = old.segments.remove(0);
+            let point = match first_segment {
                 PointSegCtx::Working => resolver.ctx(&Ctx::WorkingPoint)?,
                 PointSegCtx::Pop => resolver.ctx(&Ctx::WorkingPointPop)?,
                 PointSegCtx::Root => "".to_string(),
@@ -590,7 +593,7 @@ pub mod id {
                 PointSegCtx::FilesystemRootDir => "/".to_string(),
                 PointSegCtx::Dir(dir) => dir,
                 PointSegCtx::File(file) => file,
-                PointSegCtx::Version(version) => version.to_string()
+                PointSegCtx::Version(version) => version.to_string(),
             };
 
             let mut point = consume_point(point.as_str())?;
@@ -598,13 +601,13 @@ pub mod id {
             let mut filesystem_count = 0;
             for segment in old.segments {
                 match segment {
-                   PointSegCtx::Working => {}
-                   PointSegCtx::Pop => {
-                       let segment = segments.pop();
-                       if let Option::Some(PointSeg::FilesystemRootDir) = segment {
-                           filesystem_count = filesystem_count - 1;
-                       }
-                   }
+                    PointSegCtx::Working => {}
+                    PointSegCtx::Pop => {
+                        let segment = segments.pop();
+                        if let Option::Some(PointSeg::FilesystemRootDir) = segment {
+                            filesystem_count = filesystem_count - 1;
+                        }
+                    }
                     PointSegCtx::FilesystemRootDir => {
                         filesystem_count = filesystem_count + 1;
                         segments.push(PointSeg::FilesystemRootDir);
@@ -613,33 +616,22 @@ pub mod id {
                     PointSegCtx::Root => {
                         //segments.push(PointSeg::Root)
                     }
-                    PointSegCtx::Space(space) => {
-                        segments.push(PointSeg::Space(space))
-                    }
-                    PointSegCtx::Base(base) => {
-                        segments.push(PointSeg::Base(base))
-                    }
-                    PointSegCtx::Dir(dir) => {
-                        segments.push(PointSeg::Dir(dir))
-                    }
-                    PointSegCtx::File(file) => {
-                        segments.push(PointSeg::File(file))
-                    }
-                    PointSegCtx::Version(version) => {
-                        segments.push(PointSeg::Version(version))
-                    }
+                    PointSegCtx::Space(space) => segments.push(PointSeg::Space(space)),
+                    PointSegCtx::Base(base) => segments.push(PointSeg::Base(base)),
+                    PointSegCtx::Dir(dir) => segments.push(PointSeg::Dir(dir)),
+                    PointSegCtx::File(file) => segments.push(PointSeg::File(file)),
+                    PointSegCtx::Version(version) => segments.push(PointSeg::Version(version)),
                 }
             }
 
-
             let mut point_builder = String::new();
-            point_builder.push_str( point.to_string().as_str() );
+            point_builder.push_str(point.to_string().as_str());
             let mut post_filesystem = point.has_filesystem();
             for segment in segments {
-                point_builder.push_str( segment.kind().preceding_delim(post_filesystem));
-                point_builder.push_str( segment.to_string().as_str() );
+                point_builder.push_str(segment.kind().preceding_delim(post_filesystem));
+                point_builder.push_str(segment.to_string().as_str());
                 if segment.kind() == PointSegKind::FilesystemRootDir {
-                    post_filesystem=true;
+                    post_filesystem = true;
                 }
             }
 
@@ -649,7 +641,7 @@ pub mod id {
         }
     }
 
-        impl TryInto<Point> for PointCtx {
+    impl TryInto<Point> for PointCtx {
         type Error = MsgErr;
 
         fn try_into(self) -> Result<Point, Self::Error> {
@@ -659,7 +651,7 @@ pub mod id {
             }
             Ok(Point {
                 route: self.route,
-                segments: rtn
+                segments: rtn,
             })
         }
     }
@@ -680,13 +672,11 @@ pub mod id {
         }
     }
 
-
     #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
     pub struct PointDef<Route, Seg> {
         pub route: Route,
         pub segments: Vec<Seg>,
     }
-
 
     impl Point {
         pub fn normalize(self) -> Result<Point, MsgErr> {
@@ -934,7 +924,6 @@ pub mod id {
         }
     }
 
-
     impl Point {
         pub fn parent(&self) -> Option<Point> {
             if self.segments.is_empty() {
@@ -966,7 +955,6 @@ pub mod id {
             self.segments.is_empty()
         }
     }
-
 
     /*
     #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]

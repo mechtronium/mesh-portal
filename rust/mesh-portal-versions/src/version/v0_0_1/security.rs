@@ -2,15 +2,15 @@ use crate::error::MsgErr;
 use crate::version::v0_0_1::id::id::Point;
 use crate::version::v0_0_1::messaging::messaging::ScopeGrant;
 use crate::version::v0_0_1::parse::error::result;
-use crate::version::v0_0_1::parse::{MapResolver, particle_perms, permissions_mask, privilege, VarResolver,  VarSubst};
+use crate::version::v0_0_1::parse::{MapResolver, particle_perms, permissions_mask, privilege, VarResolver, VarSubst};
 use crate::version::v0_0_1::selector::selector::PointSelector;
-use crate::version::v0_0_1::{create_span, Span};
 use nom::combinator::all_consuming;
 use nom_supreme::parser_ext::MapRes;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::ops::{Deref, DerefMut};
 use std::str::FromStr;
+use crate::version::v0_0_1::span::{create_span, Span};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Access {

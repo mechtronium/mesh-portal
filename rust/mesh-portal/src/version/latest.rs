@@ -206,7 +206,7 @@ pub mod config {
     pub type PortalConfig = config::config::PortalConfig;
     pub type Assign = config::config::Assign;
     pub type Config<BODY> = config::config::PointConfig<BODY>;
-    pub type ConfigBody = config::config::Config;
+    pub type ConfigBody = config::config::Document;
     pub type ResourceConfigBody = config::config::ParticleConfigBody;
 
 

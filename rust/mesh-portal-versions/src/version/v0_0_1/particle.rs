@@ -19,7 +19,7 @@ pub mod particle {
     use crate::version::v0_0_1::parse::{Res};
     use crate::version::v0_0_1::payload::payload::{Payload, PayloadMap};
     use crate::version::v0_0_1::parse::parse_alpha1_str;
-    use crate::version::v0_0_1::Span;
+    use crate::version::v0_0_1::span::Span;
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct StatusUpdate {

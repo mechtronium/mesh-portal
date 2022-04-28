@@ -69,9 +69,9 @@ pub mod config {
         }
     }
 
-    #[derive(Debug, Clone, Serialize, Deserialize)]
-    pub enum Config {
-        Bind(BindConfig),
+    #[derive(Clone)]
+    pub enum Document {
+        BindConfig(BindConfig),
     }
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -97,7 +97,7 @@ pub mod config {
         use crate::version::v0_0_1::parse::model::{BindScope, RequestScope, PipelineSegment, PipelineSegmentDef};
         use crate::version::v0_0_1::selector::{PayloadBlock, PayloadBlockDef};
 
-        #[derive(Debug,Clone, Serialize, Deserialize)]
+        #[derive(Clone)]
         pub struct BindConfig {
             pub scopes: Vec<BindScope>
             /*pub msg: ConfigScope<EntityKind, Selector<MsgPipelineSelector>>,

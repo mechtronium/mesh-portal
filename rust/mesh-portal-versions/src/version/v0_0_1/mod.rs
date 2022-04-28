@@ -23,6 +23,7 @@ mod msg;
 mod entity;
 mod particle;
 mod portal;
+pub mod span;
 
 
 use serde::{Deserialize, Serialize};
@@ -31,91 +32,6 @@ use crate::error::MsgErr;
 use crate::version::v0_0_1::bin::Bin;
 
 pub type State = HashMap<String, Bin>;
-pub type Span<'a> = LocatedSpan<&'a str, SpanExtra>;
-pub type SpanExtra = Arc<String>;
-
-pub struct Spanner<I> {
-    pub spans: Vec<I>
-}
-
-impl <I> Spanner<I> {
-    pub fn new()->Self {
-        Self {
-            spans: vec![]
-        }
-    }
-}
-
-impl <I:ToString> ToString for Spanner<I> {
-    fn to_string(&self) -> String {
-        let mut rtn = String::new();
-
-        for span in &self.spans {
-            rtn.push_str(span.to_string().as_str() );
-        }
-
-        rtn
-    }
-}
-
-pub struct NamedSpan<S> {
-    pub name: String,
-    pub span: S
-}
-
-impl <S:ToString> ToString for NamedSpan<S> {
-    fn to_string(&self) -> String {
-        self.span.to_string()
-    }
-}
-
-#[derive(Debug,Clone,Serialize,Deserialize)]
-pub struct OwnedSpan {
-    pub extra: SpanExtra,
-    pub offset: usize,
-    pub len: usize
-}
-
-impl <'a> From<Span<'a>> for OwnedSpan {
-    fn from( span: Span<'a> ) -> Self {
-        Self {
-            extra: span.extra.clone(),
-            offset: span.location_offset(),
-            len: span.len()
-        }
-    }
-}
-
-impl OwnedSpan {
-    pub fn as_str(&self) -> &str {
-        self.extra.as_str().slice( self.offset..self.offset+self.len)
-    }
-}
-
-impl ToString for OwnedSpan {
-    fn to_string(&self) -> String {
-        self.as_str().to_string()
-    }
-}
-
-impl Slice<Range<usize>> for OwnedSpan
-where
-
-{
-    fn slice(&self, range: Range<usize>) -> Self {
-        Self {
-            extra: self.extra.clone(),
-            offset: self.offset+range.start,
-            len: range.end-range.start
-        }
-    }
-}
-
-
-pub fn create_span(s: &str) -> Span {
-
-    Span::new_extra(s, Arc::new(s.to_string()))
-}
 pub type Timestamp = String;
 
 extern "C" {
@@ -151,9 +67,9 @@ pub type Port = String;
 pub mod path {
     use crate::error::MsgErr;
     use crate::version::v0_0_1::parse::consume_path;
-    use crate::version::v0_0_1::{create_span, Span};
     use serde::{Deserialize, Serialize};
     use std::str::FromStr;
+    use crate::version::v0_0_1::span::{create_span, Span};
 
     #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
     pub struct Path {

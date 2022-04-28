@@ -35,7 +35,6 @@ use crate::version::v0_0_1::selector::selector::{
     MapEntryPatternCtx, PointKindHierarchy, PointKindSeg,
 };
 use crate::version::v0_0_1::util::{MethodPattern, StringMatcher, ValuePattern};
-use crate::version::v0_0_1::{create_span, OwnedSpan, Span};
 use nom::bytes::complete::take;
 use nom::character::is_space;
 use nom_supreme::final_parser::ExtractContext;
@@ -294,7 +293,7 @@ pub fn point_non_root(input: Span) -> Res<Span, PointCtx> {
             ctx_seg(space_point_segment),
             many0(tuple((
                 seg_delim,
-                peek(context("point:bad_leading", cut(alt((lowercase1, digit1))))),
+                peek(context("point:bad_leading", cut(alt((tag("."),lowercase1, digit1))))),
                 pop(base_point_segment),
             ))),
             opt(mesh_seg(version_point_segment)),
@@ -1502,22 +1501,37 @@ pub trait SubstParser<T: Sized> {
     fn parse_span<'a>(&self, input: Span<'a>) -> Res<Span<'a>, T>;
 }
 
-pub fn ctx_seg<I: Clone, E: ParseError<I>, F>(
-    mut f: F,
-) -> impl FnMut(I) -> IResult<I, PointSegCtx, E>
-where
-    I: ToString
+
+
+pub fn ctx_seg<I: Clone, E: ParseError<I>, F>(mut f: F) -> impl FnMut(I) -> IResult<I, PointSegCtx, E>
+    where
+        I: ToString
         + InputLength
         + InputTake
         + Compare<&'static str>
         + InputIter
         + Clone
         + InputTakeAtPosition,
-    <I as InputTakeAtPosition>::Item: AsChar + Clone,
-    F: nom::Parser<I, PointSeg, E> + Clone,
-    E: nom::error::ContextError<I>,
+        <I as InputTakeAtPosition>::Item: AsChar + Clone,
+        F: nom::Parser<I, PointSeg, E>,
+        E: nom::error::ContextError<I>,
 {
-    move |input: I| alt((pop(f.clone()), working(f.clone())))(input)
+    move |input: I| match pair(tag::<&str, I, E>(".."), eos)(input.clone()) {
+        Ok((next, v)) => Ok((next, PointSegCtx::Pop)),
+        Err(err) => {
+            match pair(tag::<&str, I, E>("."), eos)(input.clone()) {
+                Ok((next, _)) => Ok((next,PointSegCtx::Working)),
+                Err(err) => {
+                    match f.parse(input) {
+                        Ok((next,seg)) => Ok((next,seg.into())),
+                        Err(err) => {
+                            Err(err)
+                        }
+                    }
+                }
+            }
+        },
+    }
 }
 
 pub fn working<I: Clone, E: ParseError<I>, F>(
@@ -1619,7 +1633,7 @@ where
     <I as InputTakeAtPosition>::Item: AsChar + Clone,
     E: nom::error::ContextError<I> + nom::error::ParseError<I>,
 {
-    peek(alt((tag("/"), tag(":"), space1)))(input).map(|(next, _)| (next, ()))
+    peek(alt((tag("/"), tag(":"), space1,eof)))(input).map(|(next, _)| (next, ()))
 }
 
 /*
@@ -2637,9 +2651,8 @@ pub mod model {
     use crate::version::v0_0_1::entity::entity::EntityKind;
     use crate::version::v0_0_1::id::id::{Point, PointCtx, Version};
     use crate::version::v0_0_1::parse::error::result;
-    use crate::version::v0_0_1::parse::{camel_case, lex_child_scopes, pipeline, value_pattern, var_pipeline, PipelineStepCtxParser, PipelineStopCtxParser, SubstParser, VarResolver, VarSubst, CtxSubst, CtxResolver};
+    use crate::version::v0_0_1::parse::{camel_case, CtxResolver, CtxSubst, lex_child_scopes, pipeline, PipelineStepCtxParser, PipelineStopCtxParser, SubstParser, value_pattern, var_pipeline, VarResolver, VarSubst};
     use crate::version::v0_0_1::util::{MethodPattern, StringMatcher, ValuePattern};
-    use crate::version::v0_0_1::{create_span, OwnedSpan, Span};
     use bincode::Options;
     use nom::bytes::complete::tag;
     use nom::character::complete::{alphanumeric1, multispace0, multispace1, satisfy};
@@ -2652,8 +2665,9 @@ pub mod model {
     use std::marker::PhantomData;
     use std::ops::{Deref, DerefMut};
     use std::str::FromStr;
+    use crate::version::v0_0_1::span::{create_span, OwnedSpan, Span};
 
-    #[derive(Debug, Clone, Serialize, Deserialize)]
+    #[derive(Clone)]
     pub struct ScopeSelectorAndFiltersDef<S, I> {
         pub selector: S,
         pub filters: ScopeFiltersDef<I>,
@@ -2753,7 +2767,7 @@ pub mod model {
         }
     }
 
-    #[derive(Debug, Clone, Serialize, Deserialize)]
+    #[derive(Clone)]
     pub struct ScopeSelectorDef<N, I> {
         pub name: N,
         pub filters: ScopeFiltersDef<I>,
@@ -2797,7 +2811,7 @@ pub mod model {
         }
     }
 
-    #[derive(Debug, Clone, Serialize, Deserialize)]
+    #[derive(Clone)]
     pub struct ScopeFiltersDef<I> {
         pub path: Option<I>,
         pub filters: Vec<ScopeFilterDef<I>>,
@@ -2834,7 +2848,7 @@ pub mod model {
         }
     }
 
-    #[derive(Debug, Clone, Serialize, Deserialize)]
+    #[derive(Clone)]
     pub struct ScopeFilterDef<I> {
         pub name: I,
         pub args: Option<I>,
@@ -2988,6 +3002,7 @@ pub mod model {
         pub stop: Stop,
     }
 
+
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct PipelineSegmentDef<Pnt> {
         pub step: PipelineStepDef<Pnt>,
@@ -3107,7 +3122,7 @@ pub mod model {
         }
     }
 
-    #[derive(Debug, Clone, Serialize, Deserialize)]
+    #[derive(Clone)]
     pub enum BindScope {
         RequestScope(RequestScope),
     }
@@ -3118,7 +3133,7 @@ pub mod model {
         pub block: B,
     }
 
-    #[derive(Debug, Clone, Serialize, Deserialize)]
+    #[derive(Clone)]
     pub struct PipelineScopeDef<I, P> {
         pub selector: ScopeSelectorAndFiltersDef<ScopeSelectorDef<I, I>, I>,
         pub block: P,
@@ -3444,7 +3459,7 @@ pub mod model {
         }
     }
 
-    #[derive(Debug,Clone,Serialize,Deserialize)]
+    #[derive(Clone)]
     pub struct Subst<R, I, P>
     where
         P: SubstParser<R> + Clone,
@@ -3533,7 +3548,7 @@ pub mod error {
     use crate::error::{MsgErr, ParseErrs};
     use crate::version::v0_0_1::parse::model::NestedBlockKind;
     use crate::version::v0_0_1::parse::nospace1;
-    use crate::version::v0_0_1::Span;
+    use crate::version::v0_0_1::span::Span;
     use ariadne::Report;
     use ariadne::{Label, ReportKind, Source};
     use nom::{Err, Slice};
@@ -3768,7 +3783,7 @@ use crate::version::v0_0_1::config::config::bind::{
     BindConfig, MessageKind, Pipeline, PipelineStep, PipelineStepCtx, PipelineStop,
     PipelineStopCtx, Selector,
 };
-use crate::version::v0_0_1::config::config::Config;
+use crate::version::v0_0_1::config::config::Document;
 use crate::version::v0_0_1::entity::entity::request::RcCommandType;
 use crate::version::v0_0_1::id::id::{GenericKind, GenericKindBase, PointKind, PointSeg, Specific};
 use crate::version::v0_0_1::parse::error::result;
@@ -3794,6 +3809,7 @@ use crate::version::v0_0_1::selector::{
 };
 use nom_supreme::error::ErrorTree;
 use nom_supreme::{parse_from_str, ParserExt};
+use crate::version::v0_0_1::span::{create_span, OwnedSpan, Span};
 
 fn inclusive_any_segment(input: Span) -> Res<Span, PointSegSelector> {
     alt((tag("+*"), tag("ROOT+*")))(input).map(|(next, _)| (next, PointSegSelector::InclusiveAny))
@@ -5171,7 +5187,7 @@ where
     .map(|(next, comment)| (next, TextType::Comment(comment)))
 }
 
-pub fn config(src: &str) -> Result<Config, MsgErr> {
+pub fn config(src: &str) -> Result<Document, MsgErr> {
     let (next, stripped) = strip_comments(src)?;
     let span = LocatedSpan::new_extra(stripped.as_str(), Arc::new(src.to_string()));
     let lex_root_scope = lex_root_scope(span.clone())?;
@@ -5179,7 +5195,7 @@ pub fn config(src: &str) -> Result<Config, MsgErr> {
     if root_scope_selector.name.as_str() == "Bind" {
         if root_scope_selector.version == Version::from_str("1.0.0")? {
             let bind = bind_config(lex_root_scope.block.content.clone())?;
-            return Ok(Config::Bind(bind));
+            return Ok(Document::BindConfig(bind));
         } else {
             let message = format!(
                 "ConfigParser does not know how to process a Bind at version '{}'",
@@ -5439,7 +5455,7 @@ pub fn pipeline_stop_ctx(input: Span) -> Res<Span, PipelineStopCtx> {
         pair(
             context(
                 "pipeline:stop:expecting",
-                cut(peek(alt((alpha1, tag("&"))))),
+                cut(peek(alt(( tag("."), alpha1, tag("&"))))),
             ),
             alt((
                 core_pipeline_stop,
@@ -5563,23 +5579,12 @@ pub fn var_chunk(input: Span) -> Res<Span, Chunk<Span>> {
 #[cfg(test)]
 pub mod test {
     use crate::error::{MsgErr, ParseErrs};
-    use crate::version::v0_0_1::config::config::Config;
+    use crate::version::v0_0_1::config::config::Document;
     use crate::version::v0_0_1::parse::error::result;
     use crate::version::v0_0_1::parse::model::{
         BlockKind, DelimitedBlockKind, LexScope, NestedBlockKind, TerminatedBlockKind,
     };
-    use crate::version::v0_0_1::parse::{
-        args, bind_config, comment, config, expected_block_terminator_or_non_terminator, lex_block,
-        lex_child_scopes, lex_nested_block, lex_scope, lex_scope_pipeline_step_and_block,
-        lex_scope_selector, lex_scope_selector_and_filters, lex_scopes, lowercase1, mesh_eos,
-        nested_block, nested_block_content, next_selector, no_comment, parse_include_blocks,
-        parse_inner_block, path_regex, pipeline, pipeline_segment, pipeline_step_ctx,
-        pipeline_stop_ctx, point, rec_version, root_scope, root_scope_selector, scope_filter,
-        scope_filters, skewer_case, skewer_dot, space_chars, space_no_dupe_dots,
-        space_point_segment, strip_comments, subst, variable_name, version, wrapper, MapResolver,
-        Res, VarResolver, SubstParser, VarSubst,
-    };
-    use crate::version::v0_0_1::{create_span, Span};
+    use crate::version::v0_0_1::parse::{args, bind_config, comment, config, ctx_seg, expected_block_terminator_or_non_terminator, lex_block, lex_child_scopes, lex_nested_block, lex_scope, lex_scope_pipeline_step_and_block, lex_scope_selector, lex_scope_selector_and_filters, lex_scopes, lowercase1, MapResolver, mesh_eos, nested_block, nested_block_content, next_selector, no_comment, parse_include_blocks, parse_inner_block, path_regex, pipeline, pipeline_segment, pipeline_step_ctx, pipeline_stop_ctx, point, point_ctx, rec_version, Res, root_scope, root_scope_selector, scope_filter, scope_filters, skewer_case, skewer_dot, space_chars, space_no_dupe_dots, space_point_segment, strip_comments, subst, SubstParser, var_pipeline, variable_name, VarResolver, VarSubst, version, wrapper};
     use nom::branch::alt;
     use nom::bytes::complete::{escaped, tag};
     use nom::character::complete::{alpha1, alphanumeric1, anychar, multispace0};
@@ -5593,6 +5598,21 @@ pub mod test {
     use nom_supreme::error::ErrorTree;
     use std::rc::Rc;
     use std::sync::Arc;
+    use crate::version::v0_0_1::span::{create_span, Span};
+
+    #[test]
+    pub fn test_var_subst() -> Result<(),MsgErr>{
+
+        let pipeline_var_cfg_str = r#"-> .:users:${user} => &"#;
+        let pipeline = log(result(var_pipeline(create_span(pipeline_var_cfg_str) )))?;
+
+        let mut resolver = MapResolver::new();
+        //resolver.insert("user","kitty");
+
+        let pipeline = log(pipeline.resolve_vars(&resolver))?;
+
+        Ok(())
+    }
 
     #[test]
     pub fn test_lex_block() -> Result<(), MsgErr> {
@@ -5628,7 +5648,7 @@ pub mod test {
         "#;
 
         log(config(bind_config_str))?;
-        if let Config::Bind(bind) = log(config(bind_config_str))? {
+        if let Document::BindConfig(bind) = log(config(bind_config_str))? {
             assert_eq!(bind.request_scopes().len(), 1);
             let mut pipelines = bind.request_scopes();
             let pipeline_scope = pipelines.pop().unwrap();
@@ -5651,7 +5671,7 @@ pub mod test {
               Pipeline<Rc<Create>> -> localhost:app => &;
            }"#;
 
-        if let Config::Bind(bind) = log(config(bind_config_str))? {
+        if let Document::BindConfig(bind) = log(config(bind_config_str))? {
             assert_eq!(bind.request_scopes().len(), 1);
             let mut pipelines = bind.request_scopes();
             let pipeline_scope = pipelines.pop().unwrap();
@@ -5673,7 +5693,7 @@ pub mod test {
         let bind_config_str = r#"  Bind(version=1.0.0) {
               Pipeline -> {
                  <*> -> {
-                    <Get>(auth)/users/(?P<user>)/.* -> localhost:users:$(user) => &;
+                    <Get>(auth)/users/(?P<user>)/.* -> localhost:users:${user} => &;
                  }
               }
            }

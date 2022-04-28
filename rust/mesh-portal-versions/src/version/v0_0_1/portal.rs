@@ -114,7 +114,7 @@ pub mod portal {
 
         use crate::error::MsgErr;
         use crate::version::v0_0_1::artifact::{Artifact, ArtifactResponse};
-        use crate::version::v0_0_1::config::config::{Assign, PointConfig, Config};
+        use crate::version::v0_0_1::config::config::{Assign, PointConfig, Document};
         use crate::version::v0_0_1::frame::frame::{CloseReason, PrimitiveFrame};
         use crate::version::v0_0_1::id::id::{GenericKind, GenericKindBase, Point};
         use crate::version::v0_0_1::messaging::messaging::{Request, Response, Session};

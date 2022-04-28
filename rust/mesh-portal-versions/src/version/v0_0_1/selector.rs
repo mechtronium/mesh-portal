@@ -1,6 +1,6 @@
 use crate::version::v0_0_1::payload::payload::{Payload, PayloadPattern, PayloadPatternDef};
 use crate::version::v0_0_1::util::ValuePattern;
-use serde::{Serialize,Deserialize};
+use serde::{Deserialize, Serialize};
 use crate::error::MsgErr;
 use crate::version::v0_0_1::id::id::{Point, PointCtx};
 use crate::version::v0_0_1::parse::{CtxResolver, CtxSubst};
@@ -20,12 +20,12 @@ pub mod selector {
     use crate::version::v0_0_1::entity::entity::request::{Action, Rc, RcCommandType, RequestCore};
     use crate::version::v0_0_1::id::id::{GenericKind, GenericKindBase, Point, PointCtx, PointSeg, RouteSeg, Specific, Tks, Version};
     use crate::version::v0_0_1::parse::{camel_case, camel_case_to_string_matcher, consume_hierarchy, file_chars, path, path_regex, point, point_segment_selector, point_selector, Res};
-    use crate::version::v0_0_1::payload::payload::{Call, CallKind, CallWithConfig, HttpCall, HttpMethod, HttpMethodType, ListPattern, MapPattern, MsgCall, Payload, PayloadFormat, PayloadPattern, PayloadType, PayloadTypePatternDef, Primitive, PrimitiveType, NumRange, PayloadPatternDef, CallWithConfigDef};
+    use crate::version::v0_0_1::payload::payload::{Call, CallKind, CallWithConfig, CallWithConfigDef, HttpCall, HttpMethod, HttpMethodType, ListPattern, MapPattern, MsgCall, NumRange, Payload, PayloadFormat, PayloadPattern, PayloadPatternDef, PayloadType, PayloadTypePatternDef, Primitive, PrimitiveType};
     use crate::version::v0_0_1::selector::selector::specific::{
         ProductSelector, VariantSelector, VendorSelector,
     };
     use crate::version::v0_0_1::util::{MethodPattern, StringMatcher, ValueMatcher, ValuePattern};
-    use crate::version::v0_0_1::{parse, create_span, Span};
+    use crate::version::v0_0_1::parse;
     use crate::{Deserialize, Serialize};
     use nom::branch::alt;
     use nom::bytes::complete::tag;
@@ -42,6 +42,7 @@ pub mod selector {
     use regex::Regex;
     use std::collections::HashMap;
     use crate::version::v0_0_1::parse::error::result;
+    use crate::version::v0_0_1::span::{create_span, Span};
 
     pub type KindPattern=KindPatternDef<GenericKindSelector,GenericSubKindSelector,SpecificSelector>;
 
