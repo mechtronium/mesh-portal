@@ -11,18 +11,20 @@ use nom_locate::LocatedSpan;
 use nom_supreme::error::{ErrorTree, StackContext};
 use semver::{ReqParseError, SemVerError};
 use std::num::ParseIntError;
+use std::ops::Range;
 use std::rc::Rc;
 use std::sync::Arc;
-use ariadne::{Label, Report, ReportKind, Source};
+use ariadne::{Label, Report, ReportBuilder, ReportKind, Source};
 use crate::version::v0_0_1::parse::error::find_parse_err;
-use crate::version::v0_0_1::span::{OwnedSpan, BorrowedSpan};
+use crate::version::v0_0_1::span::{OwnedSpan, BorrowedSpan, SuperSpan, SpanHistory};
 
 pub enum MsgErr {
     Status {
         status: u16,
         message: String,
     },
-    ParseErrs(ParseErrs)
+    ParseErrs(ParseErrs),
+//    SubstErr(SubstErr)
 }
 
 impl Into<ParseErrs> for MsgErr {
@@ -388,10 +390,23 @@ impl From<nom::Err<ErrorTree<LocatedSpan<&str, Arc<std::string::String>>>>> for 
 }
 
 
+pub struct SubstErr {
+    pub span: SpanHistory<OwnedSpan>,
+}
+
+impl SubstErr {
+
+    pub fn report( &self ) -> Result<Report,MsgErr> {
+        unimplemented!()
+    }
+
+}
+
 pub struct ParseErrs {
     pub report: Vec<Report>,
     pub source: Option<Arc<String>>
 }
+
 
 impl ParseErrs {
 
@@ -407,7 +422,7 @@ impl ParseErrs {
         let mut builder = Report::build(ReportKind::Error, (), 23);
         let report = builder.with_message(message).with_label(
             Label::new(span.location_offset()..(span.location_offset()+span.len())).with_message(label),
-        ).finish();
+        ).with_help("Help").with_code("some code").with_note("A Note").finish();
         return ParseErrs::from_report(report, span.extra).into();
     }
 
@@ -416,9 +431,10 @@ impl ParseErrs {
         let mut builder = Report::build(ReportKind::Error, (), 23);
         let report = builder.with_message(message).with_label(
             Label::new(span.location_offset()..(span.location_offset()+span.len())).with_message(label),
-        ).finish();
+        ).with_help("It's Help").with_code("Some Code").finish();
         return ParseErrs::from_report(report, span.extra).into();
     }
+
 
     pub fn print(&self) {
         if let Some(source) = self.source.as_ref() {

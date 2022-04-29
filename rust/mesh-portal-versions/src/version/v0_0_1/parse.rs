@@ -1379,7 +1379,7 @@ pub enum VarResolverErr {
 
 pub trait VarResolver {
     fn val(&self, var: &str) -> Result<String, VarResolverErr> {
-        Err(format!("variable '{}' not found", var).into())
+        Err(VarResolverErr::NotFound)
     }
 }
 
@@ -1392,9 +1392,6 @@ impl NoResolver {
 }
 
 impl VarResolver for NoResolver {
-    fn val(&self, id: &str) -> Result<String, MsgErr> {
-        Err(format!("unexpected variable '{}'. variables not expected here", id).into())
-    }
 }
 
 #[derive(Clone)]
@@ -1415,11 +1412,11 @@ impl MapResolver {
 }
 
 impl VarResolver for MapResolver {
-    fn val(&self, id: &str) -> Result<String, MsgErr> {
+    fn val(&self, id: &str) -> Result<String, VarResolverErr> {
         self.map
             .get(id)
             .cloned()
-            .ok_or(format!("variable not found: '{}'", id).into())
+            .ok_or(VarResolverErr::NotFound )
     }
 
 
@@ -2670,7 +2667,7 @@ pub mod model {
     use std::marker::PhantomData;
     use std::ops::{Deref, DerefMut};
     use std::str::FromStr;
-    use crate::version::v0_0_1::span::{create_span, OwnedSpan, BorrowedSpan, SpanHistory, to_owned};
+    use crate::version::v0_0_1::span::{create_span, OwnedSpan, BorrowedSpan, SpanHistory, to_owned_span, SpanData, SpanRevisionKind, SuperSpanBuilder, SuperSpan, to_borrowed_span, Span, SpanErrKind};
 
     #[derive(Clone)]
     pub struct ScopeSelectorAndFiltersDef<S, I> {
@@ -2882,8 +2879,8 @@ pub mod model {
         Scope<LexScopeSelectorAndFilters<BorrowedSpan<'a>>, Vec<LexScope<BorrowedSpan<'a>>>, BorrowedSpan<'a>>;
 
     pub type VarPipelineSegment = VarPipelineSegmentDef<
-        Subst<PipelineStepCtx, OwnedSpan, PipelineStepCtxParser>,
-        Option<Subst<PipelineStopCtx, OwnedSpan, PipelineStopCtxParser>>,
+        Subst<PipelineStepCtx,OwnedSpan, PipelineStepCtxParser>,
+        Option<Subst<PipelineStopCtx,OwnedSpan, PipelineStopCtxParser>>,
     >;
     pub type VarPipeline = PipelineDef<VarPipelineSegment>;
     pub type LexPipelineScope<I> = PipelineScopeDef<I, VarPipeline>;
@@ -3098,7 +3095,7 @@ pub mod model {
                 ));
             }
 
-            let step = match self.step.resolve_vars(resolver) {
+            let step = match self.step.resolve(resolver) {
                 Ok(step) => Some(step),
                 Err(err) => {
                     errs.push(err);
@@ -3107,7 +3104,7 @@ pub mod model {
             };
 
             let stop = match self.stop {
-                Some(stop) => match stop.resolve_vars(resolver) {
+                Some(stop) => match stop.resolve(resolver) {
                     Ok(stop) => Some(stop),
                     Err(err) => {
                         errs.push(err);
@@ -3443,16 +3440,35 @@ pub mod model {
         Text(I),
     }
 
-    impl<'a> Into<Chunk<OwnedSpan>> for Chunk<BorrowedSpan<'a>> {
-        fn into(self) -> Chunk<OwnedSpan> {
+    impl <I> Chunk<I> {
+        pub fn span(&self) -> &I {
             match self {
-                Chunk::Var(var) => Chunk::Var(to_owned(var)),
-                Chunk::Text(text) => Chunk::Text(to_owned(text)),
+                Chunk::Var(var) => var,
+                Chunk::Text(text) => text
             }
         }
     }
 
-    impl<I: ToString> Chunk<I> {
+    impl<'a> Into<Chunk<Span<'a>>> for Chunk<BorrowedSpan<'a>> {
+        fn into(self) -> Chunk<Span<'a>> {
+            match self {
+                Chunk::Var(var) => Chunk::Var(Span::Borrowed(var)),
+                Chunk::Text(text) => Chunk::Text(Span::Borrowed(text)),
+            }
+        }
+    }
+
+    impl<'a> Into<Chunk<OwnedSpan>> for Chunk<Span<'a>> {
+        fn into(self) -> Chunk<OwnedSpan> {
+            match self {
+                Chunk::Var(var) => Chunk::Var(var.into()),
+                Chunk::Text(text) => Chunk::Text(text.into()),
+            }
+        }
+    }
+
+
+    impl<I:ToString> Chunk<I> {
         pub fn len(&self) -> usize {
             match self {
                 Chunk::Var(var) => {
@@ -3465,7 +3481,7 @@ pub mod model {
     }
 
     #[derive(Clone)]
-    pub struct Subst<R, I, P>
+    pub struct Subst<R,I,P>
     where
         P: SubstParser<R> + Clone,
     {
@@ -3476,13 +3492,14 @@ pub mod model {
     }
 
 
-    impl<'a, R, P> Into<Subst<R, OwnedSpan, P>> for Subst<R, BorrowedSpan<'a>, P>
+    impl<'a,R,P> Into<Subst<R,OwnedSpan,P>> for Subst<R,BorrowedSpan<'a>,P>
     where
-        P: SubstParser<R> + Clone,
+        P: SubstParser<R> + Clone
     {
-        fn into(self) -> Subst<R, OwnedSpan, P> {
+        fn into(self) -> Subst<R,OwnedSpan,P> {
+
             Subst {
-                chunks: self.chunks.into_iter().map(|c| c.into()).collect(),
+                chunks: self.chunks.into_iter().map(|c| c.into() ).map(|c: Chunk<Span>| c.into() ).collect(),
                 parser: self.parser,
                 span: self.span,
                 phantom: self.phantom,
@@ -3490,9 +3507,10 @@ pub mod model {
         }
     }
 
-    impl<R, I: ToString, P> ToString for Subst<R, I, P>
+
+    impl<R,I,P> ToString for Subst<R,I,P>
     where
-        P: SubstParser<R> + Clone,
+        P: SubstParser<R> + Clone, I: ToString
     {
         fn to_string(&self) -> String {
             let mut rtn = String::new();
@@ -3510,7 +3528,7 @@ pub mod model {
         }
     }
 
-    impl<R, I: Clone, P> Subst<R, I, P>
+    impl<R,I: Clone, P> Subst<R,I,P>
     where
         P: SubstParser<R> + Clone,
     {
@@ -3519,42 +3537,48 @@ pub mod model {
         }
     }
 
-    impl<'a,R,P> Subst<R, BorrowedSpan<'a>, P>
-    where
-        P: SubstParser<R> + Clone,
-    {
-        fn to_resolved_segs(&self, resolver: &dyn VarResolver) -> Result<Vec<SpanHistory>, MsgErr> {
-            let mut rtn = vec![];
-            for chunk in &self.chunks {
-                match chunk {
-                    Chunk::Var(var) => {
-                        match resolver.val( var.to_string().as_str() ) {
-                            Ok(val) => {
-                                rtn.push( SpanHistory::new(var).with_revision("variable-substitution", val.as_str()))
-                                rtn.push_str(val);
-                            }
-                            Err(err) => {}
-                        }
-                        rtn.push_str(resolver.val(var.to_string().as_str())?.as_str());
-                    }
-                    Chunk::Text(text) => {
-                        rtn.push_str(text.to_string().as_str());
-                    }
-                }
-            }
-            Ok(rtn)
-        }
-    }
-
+    /*
     impl<R, I: ToString, P> VarSubst<R> for Subst<R, I, P>
     where
         P: SubstParser<R> + Clone,
     {
         fn resolve_vars(self, resolver: &dyn VarResolver) -> Result<R, MsgErr> {
-            let string = self.to_resolved_segs(resolver)?;
+            let string = self.resolve(resolver)?;
             self.parser.parse_string(string)
         }
     }
+
+     */
+
+    impl<'a,R,I,P> Subst<R,I,P>
+        where
+            P: SubstParser<R> + Clone, Span<'a>: From<I>, I: Clone+ToString
+    {
+        fn resolve(&self, resolver: &dyn VarResolver) -> Result<R, MsgErr> {
+            let mut span_builder = SuperSpanBuilder::new(self.span());
+            for chunk in &self.chunks {
+                let mut history_builder = span_builder.original(&Span::from(chunk.span().clone()).into());
+                match chunk {
+                    Chunk::Var(var) => {
+                        match resolver.val( var.to_string().as_str() ) {
+                            Ok(val) => {
+                                history_builder.revise(SpanRevisionKind::VarSubst(var.to_string()), val.as_str() );
+                            }
+                            Err(err) => {
+                                history_builder.err(SpanErrKind::VarNotFound(var.to_string()));
+                            }
+                        }
+                    }
+                    Chunk::Text(text) => {
+                        // nothing since it's already been pushed in the original and is not revised
+                    }
+                }
+            }
+            let super_span = span_builder.build();
+            result(self.parser.parse_span(to_borrowed_span(&super_span.span)))
+        }
+    }
+
 }
 
 pub mod error {
@@ -3822,7 +3846,7 @@ use crate::version::v0_0_1::selector::{
 };
 use nom_supreme::error::ErrorTree;
 use nom_supreme::{parse_from_str, ParserExt};
-use crate::version::v0_0_1::span::{create_span, OwnedSpan, BorrowedSpan, SpanHistory, to_owned};
+use crate::version::v0_0_1::span::{create_span, OwnedSpan, BorrowedSpan, SpanHistory, to_owned_span, Span};
 
 fn inclusive_any_segment(input: BorrowedSpan) -> Res<BorrowedSpan, PointSegSelector> {
     alt((tag("+*"), tag("ROOT+*")))(input).map(|(next, _)| (next, PointSegSelector::InclusiveAny))
@@ -5543,14 +5567,14 @@ pub fn consume_selector(input: Span) -> Res<Span, Selector<PipelineSelector>> {
 
  */
 
-pub fn subst<T, P>(parser: P) -> impl FnMut(BorrowedSpan) -> Res<BorrowedSpan, Subst<T, BorrowedSpan, P>>
+pub fn subst<T,P>(parser: P) -> impl FnMut(BorrowedSpan) -> Res<BorrowedSpan, Subst<T,BorrowedSpan,P>>
 where
     P: SubstParser<T> + 'static + Clone,
 {
     move |input: BorrowedSpan| {
         many1(chunk)(input.clone()).map(|(next, chunks)| {
             let len: usize = chunks.iter().map(|c| c.len()).sum();
-            let span = to_owned(input.slice(0..input.len() - next.len()));
+            let span = to_owned_span(&input.slice(0..input.len() - next.len()));
             let chunks = Subst {
                 chunks,
                 parser: parser.clone(),
@@ -5565,6 +5589,7 @@ where
 pub fn chunk(input: BorrowedSpan) -> Res<BorrowedSpan, Chunk<BorrowedSpan>> {
     alt((text_chunk, var_chunk))(input)
 }
+
 pub fn text_chunk(input: BorrowedSpan) -> Res<BorrowedSpan, Chunk<BorrowedSpan>> {
     recognize(many1(alt((
         recognize(any_soround_lex_block),
@@ -6391,6 +6416,7 @@ Bind(version=1.2.3)-> {
 
     #[test]
     pub fn test_subst() -> Result<(), MsgErr> {
+        /*
         #[derive(Clone)]
         pub struct SomeParser();
         impl SubstParser<String> for SomeParser {
@@ -6424,6 +6450,9 @@ Bind(version=1.2.3)-> {
         ))));
 
         Ok(())
+
+         */
+        unimplemented!()
     }
 
     fn log<R>(result: Result<R, MsgErr>) -> Result<R, MsgErr> {
