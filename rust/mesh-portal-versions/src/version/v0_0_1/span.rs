@@ -33,6 +33,7 @@ impl <'a> From<OwnedSpan> for Span<'a> {
     }
 }
 
+/*
 impl<'a,'b> Into<BorrowedSpan<'b>> for Span<'a> {
     fn into(self) -> BorrowedSpan<'b> {
         match self {
@@ -45,6 +46,10 @@ impl<'a,'b> Into<BorrowedSpan<'b>> for Span<'a> {
         }
     }
 }
+ */
+
+
+
 
 impl<'a> Into<OwnedSpan> for Span<'a> {
     fn into(self) -> OwnedSpan {

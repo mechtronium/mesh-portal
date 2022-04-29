@@ -3467,6 +3467,20 @@ pub mod model {
         }
     }
 
+    impl Chunk<OwnedSpan> {
+        pub fn to_borrrowed<'a>(&'a self) -> Chunk<BorrowedSpan<'a>> {
+            match self {
+                Chunk::Var(var) => {
+                    Chunk::Var(to_borrowed_span(var))
+                }
+                Chunk::Text(text) => {
+                    Chunk::Text(to_borrowed_span(text))
+                }
+            }
+        }
+
+    }
+
 
     impl<I:ToString> Chunk<I> {
         pub fn len(&self) -> usize {
@@ -3550,14 +3564,14 @@ pub mod model {
 
      */
 
-    impl<'a,R,I,P> Subst<R,I,P>
+    impl<'a,R,P> Subst<R,OwnedSpan,P>
         where
-            P: SubstParser<R> + Clone, Span<'a>: From<I>, I: Clone+ToString
+            P: SubstParser<R> + Clone
     {
         fn resolve(&self, resolver: &dyn VarResolver) -> Result<R, MsgErr> {
             let mut span_builder = SuperSpanBuilder::new(self.span());
             for chunk in &self.chunks {
-                let mut history_builder = span_builder.original(&Span::from(chunk.span().clone()).into());
+                let mut history_builder = span_builder.original(&chunk.to_borrrowed().span());
                 match chunk {
                     Chunk::Var(var) => {
                         match resolver.val( var.to_string().as_str() ) {

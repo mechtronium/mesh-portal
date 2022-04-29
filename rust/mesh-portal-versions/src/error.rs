@@ -391,7 +391,6 @@ impl From<nom::Err<ErrorTree<LocatedSpan<&str, Arc<std::string::String>>>>> for 
 
 
 pub struct SubstErr {
-    pub span: SpanHistory<OwnedSpan>,
 }
 
 impl SubstErr {
