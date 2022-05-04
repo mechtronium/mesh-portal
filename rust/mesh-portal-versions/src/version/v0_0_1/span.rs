@@ -1,153 +1,29 @@
 use crate::error::{MsgErr, ParseErrs};
 use nom::error::{ErrorKind, ParseError};
-use nom::{
-    AsBytes, FindSubstring, FindToken, IResult, InputLength, InputTake, InputTakeAtPosition, Slice,
-};
+use nom::{AsBytes, FindSubstring, FindToken, IResult, InputLength, InputTake, InputTakeAtPosition, Slice, Err, Offset, Compare, CompareResult, InputIter, Needed};
 use nom_locate::LocatedSpan;
 use std::borrow::Borrow;
 use std::cell::Cell;
 use std::ops;
 use std::ops::{Deref, Range, RangeFrom, RangeTo};
+use std::str::{CharIndices, Chars};
 use std::sync::{Arc, Mutex};
+use ariadne::Span;
+use nom_supreme::error::{ErrorTree, StackContext};
 use nom_supreme::ParserExt;
 
-pub type BorrowedSpan<'a> = LocatedSpan<&'a str, SpanExtra>;
-pub type OwnedSpan = LocatedSpan<Morphile, SpanExtra>;
+pub type OwnedSpan = LocatedSpan<SliceStr, SpanExtra>;
 pub type SpanExtra = Arc<String>;
 
-#[derive(Clone)]
-pub enum Span<'a> {
-    Borrowed(BorrowedSpan<'a>),
-    Owned(OwnedSpan),
+pub fn new_span<S: ToString>(s: S) -> OwnedSpan{
+    let s = Arc::new(s.to_string());
+    let slice = SliceStr::from_arc(s.clone());
+    OwnedSpan::new_extra(slice, s)
 }
 
-impl <'a> From<BorrowedSpan<'a>> for Span<'a> {
-    fn from(span: BorrowedSpan<'a>) -> Self {
-        Span::Borrowed(span)
-    }
-}
-
-impl <'a> From<OwnedSpan> for Span<'a> {
-    fn from(span: OwnedSpan) -> Self {
-        Span::Owned(span)
-    }
-}
-
-/*
-impl<'a,'b> Into<BorrowedSpan<'b>> for Span<'a> {
-    fn into(self) -> BorrowedSpan<'b> {
-        match self {
-            Span::Borrowed(borrowed) => {
-                let extra = borrowed.extra.clone();
-                let string = extra.as_str().slice( borrowed.location_offset()..borrowed.location_offset()+borrowed.len() );
-                LocatedSpan::<&'b str,SpanExtra>::new_extra(string,extra.clone() )
-            },
-            Span::Owned(owned) => to_borrowed_span(&owned)
-        }
-    }
-}
- */
-
-
-
-
-impl<'a> Into<OwnedSpan> for Span<'a> {
-    fn into(self) -> OwnedSpan {
-        match self {
-            Span::Borrowed(borrowed) => to_owned_span(&borrowed),
-            Span::Owned(owned) => owned,
-        }
-    }
-}
-
-/*
-pub trait ISpan<T> :InputLength+InputTake+InputTakeAtPosition+FindToken<T>+FindSubstring<T> where Self: Slice<RangeFrom<usize>> + Slice<RangeTo<usize>> + Clone{
-    fn location_offset(&self) -> usize;
-    fn location_line(&self) -> u32;
-    fn get_line_beginning(&self) -> &[u8];
-    fn get_column(&self) -> usize;
-    fn get_utf8_column(&self) -> usize;
-    fn naive_get_utf8_column(&self) -> usize;
-}
-
-
-
- */
-
-pub struct Spanner<I> {
-    pub spans: Vec<I>,
-}
-
-impl<I> Spanner<I> {
-    pub fn new() -> Self {
-        Self { spans: vec![] }
-    }
-}
-
-impl<I: ToString> ToString for Spanner<I> {
-    fn to_string(&self) -> String {
-        let mut rtn = String::new();
-
-        for span in &self.spans {
-            rtn.push_str(span.to_string().as_str());
-        }
-
-        rtn
-    }
-}
-
-pub struct NamedSpan<S> {
-    pub name: String,
-    pub span: S,
-}
-
-impl<S: ToString> ToString for NamedSpan<S> {
-    fn to_string(&self) -> String {
-        self.span.to_string()
-    }
-}
-
-/*
-#[derive(Clone)]
-pub struct OwnedSpan {
-    pub extra: SpanExtra,
-    pub offset: usize,
-    pub len: usize,
-    pub line: u32
-}
-
-
-impl OwnedSpan {
-    pub fn as_str(&self) -> &str {
-        self.extra.as_str().slice( self.offset..self.offset+self.len)
-    }
-}
-
-impl ToString for OwnedSpan {
-    fn to_string(&self) -> String {
-        self.as_str().to_string()
-    }
-}
-
-impl Slice<Range<usize>> for OwnedSpan
-where
-
-{
-    fn slice(&self, range: Range<usize>) -> Self {
-        Self {
-            extra: self.extra.clone(),
-            offset: self.offset+range.start,
-            len: range.end-range.start,
-            line: self.line
-        }
-    }
-}
-
-
- */
-
-pub fn create_span(s: &str) -> BorrowedSpan {
-    BorrowedSpan::new_extra(s, Arc::new(s.to_string()))
+pub fn span_with_extra<S: ToString>(s: S, extra: Arc<String>) -> OwnedSpan{
+    let slice = SliceStr::new(s.to_string() );
+    OwnedSpan::new_extra(slice, extra)
 }
 
 #[derive(Clone)]
@@ -174,8 +50,8 @@ impl SpanRevision<SpanValue> {
                 let value = unsafe {
                     OwnedSpan::new_from_raw_offset(
                         span_data.offset,
-                        span_data.line,
-                        Morphile::new(self.value.to_string()),
+                        span_data.line+1,
+                        SliceStr::new(self.value.to_string()),
                         span_data.extra.clone(),
                     )
                 };
@@ -209,44 +85,7 @@ impl SpanRevision<SpanValue> {
     }
 }
 
-pub fn to_owned_span<'a>(span: &BorrowedSpan<'a>) -> OwnedSpan {
-    LocatedSpan::new_extra(Morphile::new(span.to_string()), span.extra.clone())
-}
 
-pub fn to_borrowed_span(span: &OwnedSpan) -> BorrowedSpan {
-    LocatedSpan::new_extra(span.string.as_str(), span.extra.clone())
-}
-
-#[derive(Clone)]
-pub struct Morphile {
-    pub string: String,
-}
-
-impl ToString for Morphile {
-    fn to_string(&self) -> String {
-        self.string.clone()
-    }
-}
-
-impl Morphile {
-    pub fn new(string: String) -> Self {
-        Self { string }
-    }
-}
-
-impl Deref for Morphile {
-    type Target = String;
-
-    fn deref(&self) -> &Self::Target {
-        &self.string
-    }
-}
-
-impl AsBytes for Morphile {
-    fn as_bytes(&self) -> &[u8] {
-        self.string.as_bytes()
-    }
-}
 
 #[derive(Clone)]
 pub enum SpanValue {
@@ -276,9 +115,9 @@ pub struct SpanHistory<V> {
 }
 
 impl<V> SpanHistory<V> {
-    pub fn new(original: &BorrowedSpan) -> Self {
+    pub fn new(original: &OwnedSpan) -> Self {
         Self {
-            original: to_owned_span(original),
+            original: original.clone(),
             revisions: vec![],
             error: Box::new(None),
         }
@@ -305,7 +144,7 @@ impl SpanHistory<SpanValue> {
 impl SpanHistory<SpanValue> {
     pub fn value(&self) -> SpanValue {
         match self.last_revision() {
-            None => SpanValue::String(self.original.string.clone()),
+            None => SpanValue::String(self.original.to_string()),
             Some(last) => last.value.clone(),
         }
     }
@@ -390,18 +229,6 @@ impl ops::Add<SpanData> for SpanData {
     }
 }
 
-impl<'a> ops::Add<&BorrowedSpan<'a>> for SpanData {
-    type Output = SpanData;
-
-    fn add(self, rhs: &BorrowedSpan<'a>) -> Self::Output {
-        SpanData {
-            extra: rhs.extra.clone(),
-            offset: self.offset + rhs.location_offset(),
-            len: self.len + rhs.len(),
-            line: self.line + (rhs.location_line() - 1),
-        }
-    }
-}
 
 impl ops::Add<&OwnedSpan> for SpanData {
     type Output = SpanData;
@@ -416,16 +243,6 @@ impl ops::Add<&OwnedSpan> for SpanData {
     }
 }
 
-impl<'a> From<BorrowedSpan<'a>> for SpanData {
-    fn from(span: BorrowedSpan) -> Self {
-        SpanData {
-            extra: span.extra.clone(),
-            offset: span.location_offset(),
-            len: span.len(),
-            line: span.location_line() - 1,
-        }
-    }
-}
 
 impl From<OwnedSpan> for SpanData {
     fn from(span: OwnedSpan) -> Self {
@@ -472,19 +289,19 @@ impl SpanSegment<OwnedSpan> {
 }
 
 pub struct SuperSpanBuilder {
-    span: OwnedSpan,
+    previous: OwnedSpan,
     segments: Vec<SpanResult<SpanSegment<SpanValue>, SpanErr>>,
 }
 
 impl SuperSpanBuilder {
-    pub fn new(span: OwnedSpan) -> Self {
+    pub fn new(previous: OwnedSpan) -> Self {
         Self {
-            span,
+            previous,
             segments: vec![],
         }
     }
 
-    pub fn original<'b>(&'b mut self, original: &BorrowedSpan) -> SpanSegmentBuilder<'b> {
+    pub fn original<'b>(&'b mut self, original: &OwnedSpan) -> SpanSegmentBuilder<'b> {
         SpanSegmentBuilder {
             err: None,
             builder: self,
@@ -498,10 +315,10 @@ impl SuperSpanBuilder {
 
     pub fn build(self) -> SuperSpan {
         let mut span_data = {
-            let offset = self.span.location_offset();
-            let mut line = self.span.location_line() - 1;
+            let offset = self.previous.location_offset();
+            let mut line = self.previous.location_line() - 1;
             SpanData {
-                extra: self.span.extra.clone(),
+                extra: self.previous.extra.clone(),
                 offset,
                 line,
                 len: 0,
@@ -510,6 +327,7 @@ impl SuperSpanBuilder {
 
         let mut segments = vec![];
         let mut errs = vec![];
+        let mut span = String::new();
         for segment in self.segments {
             match segment {
                 SpanResult::Ok(segment) => {
@@ -523,13 +341,45 @@ impl SuperSpanBuilder {
                     let segment = segment.to_owned_span(&span_data);
                     span_data.line = span_data.line + lines;
                     span_data = span_data + &segment.value();
+                    span.push_str( segment.value().to_string().as_str() );
                     segments.push(SpanResult::Ok(segment));
                 }
-                SpanResult::Err(err) => segments.push(SpanResult::Err(err)),
+                SpanResult::Err(err) => {
+                    match &err.err {
+                        SpanErrKind::VarNotFound(var) => {
+                            span.push_str(format!("${{{}}}", var).as_str() );
+                        }
+                        SpanErrKind::SubstNoParseErr(_) => {}
+                    }
+                    segments.push(SpanResult::Err(err))
+                },
             }
         }
+
+        use crate::version::v0_0_1::span::new_span as create_span;
+        let span = create_span( span.as_str());
+        // now lets colate the errors
+        {
+            let mut offset = 0;
+            for segment in &segments {
+                match segment {
+                    SpanResult::Err(err) => {
+                        let span = span.slice( offset..offset+err.history.len()+3);
+                        match &err.err {
+                            SpanErrKind::VarNotFound(var) => {
+                                errs.push(ParseErrs::from_loc_span(format!("Variable '{}' cannot be resolved in this scope", var ).as_str(),"Var Not Found", span));
+                            }
+                            _ => {}
+                        }
+                    }
+                    _ => {}
+                }
+                offset = segment.offset()+segment.len();
+            }
+        }
+
         SuperSpan {
-            span: self.span,
+            span,
             segments,
             errs,
         }
@@ -549,7 +399,7 @@ pub struct SpanSegmentBuilder<'a> {
 }
 
 impl<'a> SpanSegmentBuilder<'a> {
-    pub fn new(builder: &'a mut SuperSpanBuilder, original: &BorrowedSpan) -> Self {
+    pub fn new(builder: &'a mut SuperSpanBuilder, original: &OwnedSpan) -> Self {
         Self {
             err: None,
             builder,
@@ -602,6 +452,29 @@ pub enum SpanResult<T, E> {
     Err(E),
 }
 
+impl SpanResult<SpanSegment<OwnedSpan>,SpanErr> {
+    pub fn offset(&self) -> usize {
+        match self {
+            SpanResult::Ok(segment) => {
+                segment.history.location_offset()
+            }
+            SpanResult::Err(err) => {
+                err.history.location_offset()
+            }
+        }
+    }
+    pub fn len(&self) -> usize {
+        match self {
+            SpanResult::Ok(segment) => {
+                segment.history.len()
+            }
+            SpanResult::Err(err) => {
+                err.history.len()
+            }
+        }
+    }
+}
+
 impl<T, E> ToString for SpanResult<T, E>
 where
     T: ToString,
@@ -612,5 +485,268 @@ where
             SpanResult::Ok(ok) => ok.to_string(),
             SpanResult::Err(err) => err.to_string(),
         }
+    }
+}
+
+
+
+
+
+
+
+
+
+#[derive(Debug,Clone)]
+pub struct SliceStr {
+    location_offset: usize,
+    len: usize,
+    string: Arc<String>,
+}
+
+impl ToString for SliceStr {
+    fn to_string(&self) -> String {
+        self.string.as_str().slice(self.location_offset..self.location_offset+self.len ).to_string()
+    }
+}
+
+impl SliceStr {
+    pub fn new(string: String) -> Self {
+        Self::from_arc(Arc::new(string))
+    }
+
+    pub fn from_arc(string: Arc<String>) -> Self {
+        Self {
+            len: string.len(),
+            string,
+            location_offset: 0,
+            }
+    }
+
+
+    pub fn from(string: Arc<String>, location_offset: usize, len: usize) -> Self {
+        Self { string,
+            location_offset,
+            len }
+    }
+}
+
+impl SliceStr {
+    pub fn as_str(&self) -> &str {
+        &self.string.as_str().slice(self.location_offset..self.location_offset+self.len)
+    }
+}
+
+impl Deref for SliceStr {
+    type Target = str;
+
+    fn deref(&self) -> &Self::Target {
+        self.as_str()
+    }
+}
+
+impl AsBytes for SliceStr {
+    fn as_bytes(&self) -> &[u8] {
+        self.string.as_bytes().slice(self.location_offset..self.location_offset+self.len)
+    }
+}
+
+impl Slice<Range<usize>> for SliceStr {
+    fn slice(&self, range: Range<usize>) -> Self {
+        SliceStr{
+            location_offset: self.location_offset+range.start(),
+            len: range.end()-range.start(),
+            string: self.string.clone()
+        }
+    }
+}
+
+impl Slice<RangeFrom<usize>> for SliceStr {
+    fn slice(&self, range: RangeFrom<usize>) -> Self {
+        SliceStr{
+            location_offset: self.location_offset+range.start,
+            len: self.len-range.start,
+            string: self.string.clone()
+        }
+    }
+}
+
+impl Slice<RangeTo<usize>> for SliceStr {
+    fn slice(&self, range: RangeTo<usize>) -> Self {
+        SliceStr{
+            location_offset: self.location_offset,
+            len: range.end,
+            string: self.string.clone()
+        }
+    }
+}
+
+impl Compare<&str> for SliceStr {
+    fn compare(&self, t: &str) -> CompareResult {
+        self.as_str().compare(t)
+    }
+
+    fn compare_no_case(&self, t: &str) -> CompareResult {
+        self.as_str().compare_no_case(t)
+    }
+}
+
+impl InputLength for SliceStr {
+    fn input_len(&self) -> usize {
+        self.len
+    }
+}
+
+impl Offset for SliceStr {
+    fn offset(&self, second: &Self) -> usize {
+        self.location_offset
+    }
+}
+
+pub struct MyCharIterator {
+
+}
+
+pub struct MyChars {
+    index:usize,
+    slice:SliceStr
+}
+
+impl MyChars {
+    pub fn new( slice: SliceStr ) -> Self {
+        Self {
+            index: 0,
+            slice
+        }
+    }
+
+}
+
+impl Iterator for MyChars {
+    type Item = char;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let mut chars = self.slice.as_str().chars();
+        let next = chars.nth(self.index );
+        match next {
+            None => None,
+            Some(next) => {
+                self.index = self.index +1;
+                Some(next)
+            }
+        }
+    }
+}
+pub struct CharIterator {
+    index:usize,
+    slice:SliceStr
+}
+
+impl CharIterator {
+    pub fn new( slice: SliceStr ) -> Self {
+        Self {
+            index: 0,
+            slice
+        }
+    }
+}
+impl Iterator for CharIterator {
+    type Item = (usize,char);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let mut chars = self.slice.as_str().chars();
+        let next = chars.nth(self.index );
+        match next {
+            None => None,
+            Some(next) => {
+                let byte_index = self.index * std::mem::size_of::<char>();
+                self.index = self.index +1;
+                Some((byte_index,next))
+            }
+        }
+    }
+}
+
+
+impl  InputIter for SliceStr {
+    type Item = char;
+    type Iter = CharIterator;
+    type IterElem = MyChars;
+
+    #[inline]
+    fn iter_indices(&self) -> Self::Iter {
+        CharIterator::new(self.clone())
+    }
+    #[inline]
+    fn iter_elements(&self) -> Self::IterElem {
+        MyChars::new(self.clone())
+    }
+    #[inline]
+    fn position<P>(&self, predicate: P) -> Option<usize>
+        where
+            P: Fn(Self::Item) -> bool,
+    {
+        self.as_str().position(predicate)
+    }
+
+    #[inline]
+    fn slice_index(&self, count: usize) -> Result<usize, nom::Needed> {
+        self.as_str().slice_index(count)
+    }
+
+}
+
+impl  InputTakeAtPosition for SliceStr{
+    type Item = char;
+
+    fn split_at_position<P, E: ParseError<Self>>(&self, predicate: P) -> IResult<Self, Self, E> where P: Fn(Self::Item) -> bool {
+        match self.split_at_position(predicate) {
+            Err(Err::Incomplete(_)) => Ok(self.take_split(self.input_len())),
+            res => res,
+        }
+    }
+
+    fn split_at_position1<P, E: ParseError<Self>>(&self, predicate: P, e: ErrorKind) -> IResult<Self, Self, E> where P: Fn(Self::Item) -> bool {
+        match self.as_str().position(predicate) {
+            Some(0) => Err(Err::Error(E::from_error_kind(self.clone(), e))),
+            Some(n) => Ok(self.take_split(n)),
+            None => Err(Err::Incomplete(nom::Needed::new(1))),
+        }
+    }
+
+    fn split_at_position_complete<P, E: ParseError<Self>>(&self, predicate: P) -> IResult<Self, Self, E> where P: Fn(Self::Item) -> bool {
+        match self.split_at_position(predicate) {
+            Err(Err::Incomplete(_)) => Ok(self.take_split(self.input_len())),
+            res => res,
+        }
+    }
+
+    fn split_at_position1_complete<P, E: ParseError<Self>>(&self, predicate: P, e: ErrorKind) -> IResult<Self, Self, E> where P: Fn(Self::Item) -> bool {
+        match self.as_str().position(predicate) {
+            Some(0) => Err(Err::Error(E::from_error_kind(self.clone(), e))),
+            Some(n) => Ok(self.take_split(n)),
+            None => {
+                if self.as_str().input_len() == 0 {
+                    Err(Err::Error(E::from_error_kind(self.clone(), e)))
+                } else {
+                    Ok(self.take_split(self.input_len()))
+                }
+            }
+        }
+    }
+}
+
+impl InputTake for SliceStr {
+    fn take(&self, count: usize) -> Self {
+        self.slice(..count)
+    }
+
+    fn take_split(&self, count: usize) -> (Self, Self) {
+        (self.slice(count..), self.slice(..count))
+    }
+}
+
+impl FindSubstring<&str> for SliceStr {
+    fn find_substring(&self, substr: &str) -> Option<usize> {
+        self.as_str().find_substring(substr)
     }
 }

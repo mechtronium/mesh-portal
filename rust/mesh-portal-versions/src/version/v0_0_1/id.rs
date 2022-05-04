@@ -15,6 +15,7 @@ pub mod id {
     use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 
     use crate::error::MsgErr;
+    use crate::version::v0_0_1::id::id::PointSegCtx::Working;
     use crate::version::v0_0_1::parse::{
         camel_case, consume_point, Ctx, CtxResolver, CtxSubst, kind, point_and_kind,
         point_route_segment, Res, VarResolver, VarSubst,
@@ -24,7 +25,7 @@ pub mod id {
     use crate::version::v0_0_1::selector::selector::{
         Pattern, PointSelector, SpecificSelector, VersionReq,
     };
-    use crate::version::v0_0_1::span::{create_span, BorrowedSpan};
+    use crate::version::v0_0_1::span::{new_span};
 
     pub type GenericKindBase = String;
 
@@ -50,7 +51,7 @@ pub mod id {
         type Err = MsgErr;
 
         fn from_str(s: &str) -> Result<Self, Self::Err> {
-            let point_and_kind: PointKind = result(all_consuming(point_and_kind)(create_span(s)))?;
+            let point_and_kind: PointKind = result(all_consuming(point_and_kind)(new_span(s)))?;
             Ok(point_and_kind)
         }
     }
@@ -207,11 +208,31 @@ pub mod id {
         }
     }
 
+    #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
+    pub enum RouteSegVar {
+        Local,
+        Domain(String),
+        Tag(String),
+        Mesh(String),
+        Var(String)
+    }
+
+    impl Into<RouteSegVar> for RouteSeg {
+        fn into(self) -> RouteSegVar {
+            match self {
+                RouteSeg::Local => RouteSegVar::Local,
+                RouteSeg::Domain(domain) => RouteSegVar::Domain(domain),
+                RouteSeg::Tag(tag) => RouteSegVar::Tag(tag),
+                RouteSeg::Mesh(mesh) => RouteSegVar::Mesh(mesh)
+            }
+        }
+    }
+
     impl FromStr for RouteSeg {
         type Err = MsgErr;
 
         fn from_str(s: &str) -> Result<Self, Self::Err> {
-            let s = create_span(s);
+            let s = new_span(s);
             Ok(all_consuming(point_route_segment)(s)?.1)
         }
     }
@@ -242,6 +263,7 @@ pub mod id {
         Version,
         Pop,
         Working,
+        Var,
     }
 
     impl PointSegKind {
@@ -262,6 +284,10 @@ pub mod id {
                     true => "",
                     false => ":",
                 },
+                PointSegKind::Var => match post_fileroot {
+                    true => "",
+                    false => ":"
+                }
             }
         }
 
@@ -269,6 +295,7 @@ pub mod id {
             match self {
                 Self::Pop => false,
                 Self::Working => false,
+                Self::Var => false,
                 _ => true,
             }
         }
@@ -298,6 +325,7 @@ pub mod id {
                 PointSegKind::Version => false,
                 PointSegKind::Pop => true,
                 PointSegKind::Working => true,
+                PointSegKind::Var => true
             }
         }
 
@@ -312,6 +340,7 @@ pub mod id {
                 PointSegKind::Version => true,
                 PointSegKind::Pop => true,
                 PointSegKind::Working => true,
+                PointSegKind::Var => true
             }
         }
     }
@@ -328,6 +357,87 @@ pub mod id {
         Working,
         Pop,
     }
+
+    #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
+    pub enum PointSegVar{
+        Root,
+        Space(String),
+        Base(String),
+        FilesystemRootDir,
+        Dir(String),
+        File(String),
+        Version(Version),
+        Working,
+        Pop,
+        Var(String),
+    }
+    impl PointSegVar{
+        pub fn kind(&self) -> PointSegKind {
+            match self {
+                Self::Root => PointSegKind::Root,
+                Self::Space(_) => PointSegKind::Space,
+                Self::Base(_) => PointSegKind::Base,
+                Self::FilesystemRootDir => PointSegKind::FilesystemRootDir,
+                Self::Dir(_) => PointSegKind::Dir,
+                Self::File(_) => PointSegKind::File,
+                Self::Version(_) => PointSegKind::Version,
+                Self::Pop => PointSegKind::Pop,
+                Self::Working => PointSegKind::Working,
+                Self::Var(_) => PointSegKind::Var
+            }
+        }
+
+        pub fn is_normalized(&self) -> bool {
+            self.kind().is_normalized()
+        }
+
+        pub fn is_filesystem_seg(&self) -> bool {
+            self.kind().is_filesystem_seg()
+        }
+    }
+
+    impl Into<PointSegVar> for PointSegCtx {
+        fn into(self) -> PointSegVar {
+            match self {
+                PointSegCtx::Root => PointSegVar::Root,
+                PointSegCtx::Space(space) => PointSegVar::Space(space),
+                PointSegCtx::Base(base) => PointSegVar::Base(base),
+                PointSegCtx::FilesystemRootDir => PointSegVar::FilesystemRootDir,
+                PointSegCtx::Dir(dir) => PointSegVar::Dir(dir),
+                PointSegCtx::File(file) => PointSegVar::File(file),
+                PointSegCtx::Version(version) => PointSegVar::Version(version),
+                PointSegCtx::Working => PointSegVar::Working,
+                PointSegCtx::Pop => PointSegVar::Pop
+            }
+        }
+    }
+
+    impl TryInto<PointSeg> for PointSegVar {
+        type Error = MsgErr;
+
+        fn try_into(self) -> Result<PointSeg, Self::Error> {
+            match self {
+                PointSegVar::Root => Ok(PointSeg::Root),
+                PointSegVar::Space(space) => Ok(PointSeg::Space(space)),
+                PointSegVar::Base(base) => Ok(PointSeg::Base(base)),
+                PointSegVar::FilesystemRootDir => Ok(PointSeg::FilesystemRootDir),
+                PointSegVar::Dir(dir) => Ok(PointSeg::Dir(dir)),
+                PointSegVar::File(file) => Ok(PointSeg::File(file)),
+                PointSegVar::Version(version) => Ok(PointSeg::Version(version)),
+                PointSegVar::Working => {
+                    Err("cannot convert working directory operator '.' into a point segment without context".into())
+                }
+                PointSegVar::Pop => {
+                    Err("cannot convert pop working directory operator '..' into a point segment without context".into())
+                }
+                PointSegVar::Var(var) => {
+                    Err(format!("cannot resolve var '{}'",var).into())
+                }
+            }
+        }
+    }
+
+
 
     impl TryInto<PointSeg> for PointSegCtx {
         type Error = MsgErr;
@@ -387,17 +497,17 @@ pub mod id {
     }
 
     impl Into<PointSegCtx> for PointSeg {
-        fn into(self) -> PointSegCtx {
-            match self {
-                PointSeg::Root => PointSegCtx::Root,
-                PointSeg::Space(space) => PointSegCtx::Space(space),
-                PointSeg::Base(base) => PointSegCtx::Base(base),
-                PointSeg::FilesystemRootDir => PointSegCtx::FilesystemRootDir,
-                PointSeg::Dir(dir) => PointSegCtx::Dir(dir),
-                PointSeg::File(file) => PointSegCtx::File(file),
-                PointSeg::Version(version) => PointSegCtx::Version(version),
+            fn into(self) -> PointSegCtx {
+                match self {
+                    PointSeg::Root => PointSegCtx::Root,
+                    PointSeg::Space(space) => PointSegCtx::Space(space),
+                    PointSeg::Base(base) => PointSegCtx::Base(base),
+                    PointSeg::FilesystemRootDir => PointSegCtx::FilesystemRootDir,
+                    PointSeg::Dir(dir) => PointSegCtx::Dir(dir),
+                    PointSeg::File(file) => PointSegCtx::File(file),
+                    PointSeg::Version(version) => PointSegCtx::Version(version),
+                }
             }
-        }
     }
 
     impl PointSeg {
@@ -570,6 +680,7 @@ pub mod id {
 
     pub type Point = PointDef<RouteSeg, PointSeg>;
     pub type PointCtx = PointDef<RouteSeg, PointSegCtx>;
+    pub type PointVar = PointDef<RouteSegVar, PointSegVar>;
 
     impl CtxSubst<Point> for PointCtx {
         fn resolve_ctx(self, resolver: &dyn CtxResolver) -> Result<Point, MsgErr> {
@@ -1047,7 +1158,7 @@ pub mod id {
         type Err = MsgErr;
 
         fn from_str(s: &str) -> Result<Self, Self::Err> {
-            let (_, kind) = all_consuming(kind)(create_span(s))?;
+            let (_, kind) = all_consuming(kind)(new_span(s))?;
 
             Ok(kind)
         }

@@ -42,7 +42,7 @@ pub mod selector {
     use regex::Regex;
     use std::collections::HashMap;
     use crate::version::v0_0_1::parse::error::result;
-    use crate::version::v0_0_1::span::{create_span, BorrowedSpan};
+    use crate::version::v0_0_1::span::{OwnedSpan, new_span};
 
     pub type KindPattern=KindPatternDef<GenericKindSelector,GenericSubKindSelector,SpecificSelector>;
 
@@ -111,7 +111,7 @@ pub mod selector {
         type Err = MsgErr;
 
         fn from_str(s: &str) -> Result<Self, Self::Err> {
-            let (_, rtn) = all_consuming(point_selector)(create_span(s))?;
+            let (_, rtn) = all_consuming(point_selector)(new_span(s))?;
             Ok(rtn)
         }
     }
@@ -372,7 +372,7 @@ pub mod selector {
         type Err = MsgErr;
 
         fn from_str(s: &str) -> Result<Self, Self::Err> {
-            result(all_consuming(point_segment_selector)(create_span(s)))
+            result(all_consuming(point_segment_selector)(new_span(s)))
         }
     }
 
@@ -949,7 +949,7 @@ pub mod selector {
         Exact(P),
     }
 
-    impl <'a> Into<Pattern<String>> for Pattern<BorrowedSpan<'a>> {
+    impl Into<Pattern<String>> for Pattern<OwnedSpan> {
         fn into(self) -> Pattern<String> {
             match self {
                 Pattern::Any => Pattern::Any,
@@ -1178,7 +1178,7 @@ pub mod selector {
         type Err = MsgErr;
 
         fn from_str(s: &str) -> Result<Self, Self::Err> {
-            Ok(consume_hierarchy(create_span(s))?)
+            Ok(consume_hierarchy(new_span(s))?)
         }
     }
 }

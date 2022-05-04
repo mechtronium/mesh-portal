@@ -69,7 +69,7 @@ pub mod path {
     use crate::version::v0_0_1::parse::consume_path;
     use serde::{Deserialize, Serialize};
     use std::str::FromStr;
-    use crate::version::v0_0_1::span::{create_span, BorrowedSpan};
+    use crate::version::v0_0_1::span::{new_span};
 
     #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
     pub struct Path {
@@ -147,7 +147,7 @@ pub mod path {
         type Err = MsgErr;
 
         fn from_str(s: &str) -> Result<Self, Self::Err> {
-            let (_, path) = consume_path(create_span(s))?;
+            let (_, path) = consume_path(new_span(s))?;
             Ok(Self {
                 string: path.to_string(),
             })

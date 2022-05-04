@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::ops::{Deref, DerefMut};
 use std::str::FromStr;
-use crate::version::v0_0_1::span::{create_span, BorrowedSpan};
+use crate::version::v0_0_1::span::{new_span};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Access {
@@ -183,7 +183,7 @@ impl FromStr for Privilege {
     type Err = MsgErr;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let span = create_span(s);
+        let span = new_span(s);
         Ok(result(all_consuming(privilege)(span))?)
     }
 }
@@ -251,7 +251,7 @@ impl FromStr for PermissionsMask {
     type Err = MsgErr;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let s = create_span(s);
+        let s = new_span(s);
         Ok(result(all_consuming(permissions_mask)(s))?)
     }
 }
@@ -407,7 +407,7 @@ impl FromStr for ParticlePerms {
     type Err = MsgErr;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let s = create_span(s);
+        let s = new_span(s);
         Ok(result(all_consuming(particle_perms)(s))?)
     }
 }

@@ -16,7 +16,7 @@ use std::rc::Rc;
 use std::sync::Arc;
 use ariadne::{Label, Report, ReportBuilder, ReportKind, Source};
 use crate::version::v0_0_1::parse::error::find_parse_err;
-use crate::version::v0_0_1::span::{OwnedSpan, BorrowedSpan, SuperSpan, SpanHistory};
+use crate::version::v0_0_1::span::{OwnedSpan, SuperSpan, SpanHistory};
 
 pub enum MsgErr {
     Status {
@@ -313,9 +313,9 @@ impl From<ToStrError> for MsgErr {
     }
 }
 
-impl <'a> From<nom::Err<ErrorTree<BorrowedSpan<'a>>>> for MsgErr {
-    fn from(err: Err<ErrorTree<BorrowedSpan<'a>>>) -> Self {
-        fn handle<'b>(err: ErrorTree<BorrowedSpan<'b>>) -> MsgErr {
+impl <'a> From<nom::Err<ErrorTree<OwnedSpan>>> for MsgErr {
+    fn from(err: Err<ErrorTree<OwnedSpan>>) -> Self {
+        fn handle(err: ErrorTree<OwnedSpan>) -> MsgErr {
             match err {
                 ErrorTree::Base {
                     location,
@@ -375,8 +375,8 @@ impl From<ParseErrs> for MsgErr {
         MsgErr::ParseErrs(errs)
     }
 }
-impl From<nom::Err<ErrorTree<LocatedSpan<&str, Arc<std::string::String>>>>> for ParseErrs {
-    fn from(err: Err<ErrorTree<LocatedSpan<&str, Arc<String>>>>) -> Self {
+impl From<nom::Err<ErrorTree<OwnedSpan>>> for ParseErrs {
+    fn from(err: Err<ErrorTree<OwnedSpan>>) -> Self {
         match find_parse_err(&err) {
             MsgErr::Status { .. } => {
                 ParseErrs {
@@ -416,12 +416,12 @@ impl ParseErrs {
         }
     }
 
-    pub fn from_loc_span<'a>(message: &str, label: &str, span: BorrowedSpan<'a>) -> MsgErr{
+    pub fn from_loc_span(message: &str, label: &str, span: OwnedSpan) -> MsgErr{
 
         let mut builder = Report::build(ReportKind::Error, (), 23);
         let report = builder.with_message(message).with_label(
             Label::new(span.location_offset()..(span.location_offset()+span.len())).with_message(label),
-        ).with_help("Help").with_code("some code").with_note("A Note").finish();
+        ).finish();
         return ParseErrs::from_report(report, span.extra).into();
     }
 
@@ -430,7 +430,7 @@ impl ParseErrs {
         let mut builder = Report::build(ReportKind::Error, (), 23);
         let report = builder.with_message(message).with_label(
             Label::new(span.location_offset()..(span.location_offset()+span.len())).with_message(label),
-        ).with_help("It's Help").with_code("Some Code").finish();
+        ).finish();
         return ParseErrs::from_report(report, span.extra).into();
     }
 
