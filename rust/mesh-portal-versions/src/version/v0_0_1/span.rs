@@ -12,7 +12,7 @@ use ariadne::Span;
 use nom_supreme::error::{ErrorTree, StackContext};
 use nom_supreme::ParserExt;
 
-pub type OwnedSpan = LocatedSpan<SliceStr, SpanExtra>;
+pub type OwnedSpan<'a> = LocatedSpan<SliceStr<'a>, SpanExtra>;
 pub type SpanExtra = Arc<String>;
 
 pub fn new_span<S: ToString>(s: S) -> OwnedSpan{
@@ -497,19 +497,19 @@ where
 
 
 #[derive(Debug,Clone)]
-pub struct SliceStr {
+pub struct SliceStr<'a> {
     location_offset: usize,
     len: usize,
     string: Arc<String>,
 }
 
-impl ToString for SliceStr {
+impl <'a> ToString for SliceStr<'a> {
     fn to_string(&self) -> String {
         self.string.as_str().slice(self.location_offset..self.location_offset+self.len ).to_string()
     }
 }
 
-impl SliceStr {
+impl <'a> SliceStr<'a> {
     pub fn new(string: String) -> Self {
         Self::from_arc(Arc::new(string))
     }
@@ -546,6 +546,7 @@ impl Deref for SliceStr {
 
 impl AsBytes for SliceStr {
     fn as_bytes(&self) -> &[u8] {
+println!("AS BYTES: {}",self.string.as_bytes().len());
         self.string.as_bytes().slice(self.location_offset..self.location_offset+self.len)
     }
 }
@@ -606,6 +607,7 @@ pub struct MyCharIterator {
 
 }
 
+/*
 pub struct MyChars {
     index:usize,
     slice:SliceStr
@@ -618,8 +620,8 @@ impl MyChars {
             slice
         }
     }
-
 }
+
 
 impl Iterator for MyChars {
     type Item = char;
@@ -636,6 +638,7 @@ impl Iterator for MyChars {
         }
     }
 }
+
 pub struct CharIterator {
     index:usize,
     slice:SliceStr
@@ -658,16 +661,57 @@ impl Iterator for CharIterator {
         match next {
             None => None,
             Some(next) => {
-                let byte_index = self.index * std::mem::size_of::<char>();
+                //let byte_index = self.index * std::mem::size_of::<char>();
+                let byte_index = self.index;
                 self.index = self.index +1;
                 Some((byte_index,next))
             }
         }
     }
 }
+ */
 
 
-impl  InputIter for SliceStr {
+impl<'a> InputIter for SliceStr<'a> {
+    type Item = char;
+    type Iter = CharIndices<'a>;
+    type IterElem = Chars<'a>;
+    #[inline]
+    fn iter_indices(&self) -> Self::Iter {
+        self.as_str().char_indices()
+    }
+    #[inline]
+    fn iter_elements(&self) -> Self::IterElem {
+        self.chars()
+    }
+    fn position<P>(&self, predicate: P) -> Option<usize>
+        where
+            P: Fn(Self::Item) -> bool,
+    {
+        for (o, c) in self.as_str().char_indices() {
+            if predicate(c) {
+                return Some(o);
+            }
+        }
+        None
+    }
+    #[inline]
+    fn slice_index(&self, count: usize) -> Result<usize, Needed> {
+        let mut cnt = 0;
+        for (index, _) in self.as_str().char_indices() {
+            if cnt == count {
+                return Ok(index);
+            }
+            cnt += 1;
+        }
+        if cnt == count {
+            return Ok(self.len());
+        }
+        Err(Needed::Unknown)
+    }
+}
+
+/*impl  InputIter for SliceStr {
     type Item = char;
     type Iter = CharIterator;
     type IterElem = MyChars;
@@ -694,6 +738,8 @@ impl  InputIter for SliceStr {
     }
 
 }
+
+ */
 
 impl  InputTakeAtPosition for SliceStr{
     type Item = char;
@@ -737,11 +783,11 @@ impl  InputTakeAtPosition for SliceStr{
 
 impl InputTake for SliceStr {
     fn take(&self, count: usize) -> Self {
-        self.slice(..count)
+        self.slice(count..)
     }
 
     fn take_split(&self, count: usize) -> (Self, Self) {
-        (self.slice(count..), self.slice(..count))
+         (self.slice(count..), self.slice(..count))
     }
 }
 
@@ -749,4 +795,29 @@ impl FindSubstring<&str> for SliceStr {
     fn find_substring(&self, substr: &str) -> Option<usize> {
         self.as_str().find_substring(substr)
     }
+}
+
+
+#[cfg(test)]
+pub mod test {
+    use nom::Slice;
+    use crate::version::v0_0_1::span::SliceStr;
+
+    #[test]
+    pub fn test () {
+        let s = SliceStr::new("abc123".to_string() );
+        assert_eq!( 6, s.len() );
+
+        let s = s.slice(0..3);
+        assert_eq!( 3, s.len() );
+        assert_eq!( "abc", s.as_str() );
+
+        println!("bytes: {}", s.as_bytes().len());
+        println!("chars: {}", s.chars().count());
+
+        let s = SliceStr::new("abc123".to_string() );
+        assert_eq!( "123", s.slice(3..).as_str());
+        assert_eq!( "abc", s.slice(..3).as_str());
+    }
+
 }

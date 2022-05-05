@@ -5765,7 +5765,7 @@ pub mod test {
     #[test]
     pub fn test_point_var() -> Result<(),MsgErr>{
 
-        let pipeline = log(result(point_var(new_span("my-domain.com:base") )))?;
+        let pipeline = log(result(point(new_span("my-domain.com:base") )))?;
 
        Ok(())
     }
