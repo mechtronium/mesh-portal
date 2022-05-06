@@ -16,6 +16,7 @@ use std::rc::Rc;
 use std::sync::Arc;
 use ariadne::{Label, Report, ReportBuilder, ReportKind, Source};
 use crate::version::v0_0_1::parse::error::find_parse_err;
+use crate::version::v0_0_1::span::SpanExtra;
 use crate::version::v0_0_1::wrap::Span;
 
 pub enum MsgErr {
@@ -424,6 +425,16 @@ impl ParseErrs {
         ).finish();
         return ParseErrs::from_report(report, span.extra()).into();
     }
+
+    pub fn from_range(message: &str, label: &str, range: Range<usize>, extra: SpanExtra ) -> MsgErr{
+
+        let mut builder = Report::build(ReportKind::Error, (), 23);
+        let report = builder.with_message(message).with_label(
+            Label::new(range).with_message(label),
+        ).finish();
+        return ParseErrs::from_report(report, extra).into();
+    }
+
 
 
     pub fn from_owned_span<I:Span>(message: &str, label: &str, span: I) -> MsgErr{

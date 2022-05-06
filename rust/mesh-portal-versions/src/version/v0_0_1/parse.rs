@@ -24,7 +24,7 @@ use crate::version::v0_0_1::entity::entity::request::select::{
     Select, SelectIntoPayload, SelectKind,
 };
 use crate::version::v0_0_1::entity::entity::request::set::Set;
-use crate::version::v0_0_1::id::id::{Point, PointCtx, PointSegCtx, PointSegDelim, PointSegVar, PointVar, RouteSeg, RouteSegVar, Version};
+use crate::version::v0_0_1::id::id::{Point, PointCtx, PointSegCtx, PointSegDelim, PointSegment, PointSegVar, PointVar, RouteSeg, RouteSegVar, Variable, Version};
 use crate::version::v0_0_1::security::{
     AccessGrantKind, AccessGrantKindDef, ChildPerms, ParticlePerms, Permissions, PermissionsMask,
     PermissionsMaskKind, Privilege,
@@ -317,17 +317,33 @@ pub fn var<O,F,P>(mut f: F ) -> impl FnMut(I) -> Res<I,Var<O,P>> where F: Parser
 
  */
 
-pub fn var_seg <F,I: Span>(mut f: F ) -> impl FnMut(I) -> Res<I,PointSegVar> where F: Parser<I,PointSegCtx,ErrorTree<I>>{
+pub fn var_seg <F,I: Span>(mut f: F ) -> impl FnMut(I) -> Res<I,PointSegVar>+Copy where F: Parser<I,PointSegCtx,ErrorTree<I>>+Copy{
 
     move | input: I | {
+        let offset = input.location_offset();
         let result = pair(peek(tag("$")),context("var",cut(delimited(tag("${"), skewer_case, tag("}") ))))(input.clone());
 
         match result {
             Ok((next,(_,var))) => {
-                Ok( (next, PointSegVar::Var(var.to_string())) )
+                let range = Range {
+                    start: offset,
+                    end: next.location_offset()
+                };
+                let var = Variable::new(var.to_string(), range, next.extra() );
+                Ok( (next, PointSegVar::Var(var)) )
             }
             Err(err) => {
-                f.parse(input).map(|(next,seg)|(next,seg.into()))
+                match err {
+                    Err::Incomplete(needed) => {
+                        return Err(nom::Err::Incomplete(needed))
+                    }
+                    Err::Failure(err) => {
+                        return Err(nom::Err::Failure(err))
+                    }
+                    Err::Error(_) => {
+                        f.parse(input).map(|(next,seg)|(next,seg.into()))
+                    }
+                }
             }
         }
     }
@@ -335,10 +351,16 @@ pub fn var_seg <F,I: Span>(mut f: F ) -> impl FnMut(I) -> Res<I,PointSegVar> whe
 
 pub fn var_route<'a,F,I: Span>(mut f: F ) -> impl FnMut(I) -> Res<I,RouteSegVar> where F: Parser<I,RouteSeg,ErrorTree<I>>{
     move | input: I | {
+        let offset = input.location_offset();
         let result = pair(peek(tag("$")),context("var",cut(delimited(tag("${"), skewer_case, tag("}") ))))(input.clone());
         match result {
             Ok((next,(_,var))) => {
-                Ok( (next, RouteSegVar::Var(var.to_string())) )
+                let range = Range {
+                    start: offset,
+                    end: next.location_offset()
+                };
+                let var = Variable::new(var.to_string(), range, next.extra() );
+                Ok( (next, RouteSegVar::Var(var)) )
             }
             Err(err) => {
                 f.parse(input).map(|(next,seg)|(next,seg.into()))
@@ -383,12 +405,10 @@ pub fn point_non_root_var<I: Span>(input: I) -> Res<I, PointVar> {
                 opt(terminated(var_route(point_route_segment), tag("::"))),
             ),
             var_seg(ctx_seg(space_point_segment)),
-            many0(tuple((
-                seg_delim,
-                peek(context("point:bad_leading", cut(alt((tag("$"),tag("."),lowercase1, digit1))))),
-                var_seg(pop(base_point_segment)),
-            ))),
-            opt(var_seg(mesh_seg(version_point_segment))),
+            many0(
+                mesh_seg(var_seg(pop(base_point_segment)))
+            ),
+            opt(mesh_seg(var_seg(pop(version_point_segment)))),
             opt(tuple((
                 root_dir_point_segment_var,
                 many0(terminated(var_seg(pop(dir_point_segment ) ),tag("/"))),
@@ -402,7 +422,7 @@ pub fn point_non_root_var<I: Span>(input: I) -> Res<I, PointVar> {
             |(next, (route, space, mut bases, version, filesystem, _))| {
                 let route = route.unwrap_or(RouteSegVar::Local);
                 let mut segments = vec![];
-                let mut bases = bases.into_iter().map(|(_, _, seg)| seg).collect();
+                let mut bases : Vec<PointSegVar> = bases;
                 segments.push(space);
                 segments.append(&mut bases);
                 match version {
@@ -480,6 +500,12 @@ pub fn point_non_root<I: Span>(input: I) -> Res<I, PointCtx> {
 pub fn consume_point(input: &str) -> Result<Point, MsgErr> {
     let span = new_span(input);
     let point = result(context("consume", all_consuming(point))(span))?;
+    Ok(point)
+}
+
+pub fn consume_point_ctx(input: &str) -> Result<PointCtx, MsgErr> {
+    let span = new_span(input);
+    let point = result(context("consume", all_consuming(point_ctx))(span))?;
     Ok(point)
 }
 
@@ -1651,7 +1677,7 @@ pub trait SubstParser<T: Sized> {
 
 
 
-pub fn ctx_seg<I: Span, E: ParseError<I>, F>(mut f: F) -> impl FnMut(I) -> IResult<I, PointSegCtx, E>
+pub fn ctx_seg<I: Span, E: ParseError<I>, F>(mut f: F) -> impl FnMut(I) -> IResult<I, PointSegCtx, E>+Copy
     where
         I: ToString
         + InputLength
@@ -1661,7 +1687,7 @@ pub fn ctx_seg<I: Span, E: ParseError<I>, F>(mut f: F) -> impl FnMut(I) -> IResu
         + Clone
         + InputTakeAtPosition,
         <I as InputTakeAtPosition>::Item: AsChar + Clone,
-        F: nom::Parser<I, PointSeg, E>,
+        F: nom::Parser<I, PointSeg, E>+Copy,
         E: nom::error::ContextError<I>,
 {
     move |input: I| match pair(tag::<&str, I, E>(".."), eos)(input.clone()) {
@@ -1706,7 +1732,7 @@ where
     }
 }
 
-pub fn pop<I: Span, E: ParseError<I>, F>(mut f: F) -> impl FnMut(I) -> IResult<I, PointSegCtx, E>
+pub fn pop<I: Span, E: ParseError<I>, F>(mut f: F) -> impl FnMut(I) -> IResult<I, PointSegCtx, E>+Copy
 where
     I: ToString
         + InputLength
@@ -1716,7 +1742,7 @@ where
         + Clone
         + InputTakeAtPosition,
     <I as InputTakeAtPosition>::Item: AsChar + Clone,
-    F: nom::Parser<I, PointSeg, E>,
+    F: nom::Parser<I, PointSeg, E>+Copy,
     E: nom::error::ContextError<I>,
 {
     move |input: I| match pair(tag::<&str, I, E>(".."), eos)(input.clone()) {
@@ -1728,23 +1754,17 @@ where
     }
 }
 
-pub fn mesh_seg<I: Span, E: ParseError<I>, F>(
+pub fn mesh_seg<I: Span, E: ParseError<I>, F,S1,S2>(
     mut f: F,
-) -> impl FnMut(I) -> IResult<I, PointSegCtx, E>
+) -> impl FnMut(I) -> IResult<I, S2, E>
 where
-    I: ToString
-        + InputLength
-        + InputTake
-        + Compare<&'static str>
-        + InputIter
-        + Clone
-        + InputTakeAtPosition,
-    <I as InputTakeAtPosition>::Item: AsChar + Clone,
-    F: nom::Parser<I, PointSeg, E> + Copy,
+    F: nom::Parser<I, S1, E> + Copy,
     E: nom::error::ContextError<I>,
+    S1: PointSegment+Into<S2>,
+    S2: PointSegment
 {
-    move |input: I| {
-        tuple((seg_delim, pop(f)))(input).map(|(next, (delim, seg))| (next, seg))
+move |input: I| {
+        tuple((seg_delim, f, peek(eos)))(input).map(|(next, (delim, seg,_))| (next, seg.into()))
     }
 }
 
@@ -2800,7 +2820,7 @@ pub mod model {
     use crate::version::v0_0_1::entity::entity::EntityKind;
     use crate::version::v0_0_1::id::id::{Point, PointCtx, Version};
     use crate::version::v0_0_1::parse::error::result;
-    use crate::version::v0_0_1::parse::{camel_case, CtxResolver, CtxSubst, lex_child_scopes, pipeline, PipelineStepCtxParser, PipelineStopCtxParser, SubstParser, value_pattern, var_pipeline, VarResolver, VarSubst};
+    use crate::version::v0_0_1::parse::{camel_case, CtxResolver, CtxSubst, lex_child_scopes, pipeline, PipelineStepCtxParser, PipelineStopCtxParser, Res, SubstParser, value_pattern, var_pipeline, VarResolver, VarSubst};
     use crate::version::v0_0_1::util::{MethodPattern, StringMatcher, ValuePattern};
     use bincode::Options;
     use nom::bytes::complete::tag;
@@ -2813,6 +2833,7 @@ pub mod model {
     use std::fmt::{Formatter, Write};
     use std::marker::PhantomData;
     use std::ops::{Deref, DerefMut};
+    use std::rc::Rc;
     use std::str::FromStr;
     use crate::version::v0_0_1::span::{new_span};
     use crate::version::v0_0_1::wrap::Span;
@@ -3157,6 +3178,20 @@ pub mod model {
                 selector: self.selector.to_value_pattern_scope_selector()?,
                 filters: self.filters.to_scope_filters(),
             })
+        }
+    }
+
+    pub fn wrap<I,F,O>( mut f: F) -> impl FnMut(I) -> Res<I,O>
+        where I:Span, F: FnMut(I) -> Res<I,O>+Copy{
+        move | input: I | {
+            f(input)
+        }
+    }
+
+    pub fn len<I,F,O>( span: I, f: F ) -> usize where I:Span, F: FnMut(I) -> Res<I,O>+Copy{
+        match recognize(wrap(f))(span) {
+            Ok((_,span)) => span.len(),
+            Err(_) => 0
         }
     }
 
@@ -3709,11 +3744,17 @@ pub mod model {
 
 pub mod error {
     use crate::error::{MsgErr, ParseErrs};
-    use crate::version::v0_0_1::parse::model::NestedBlockKind;
-    use crate::version::v0_0_1::parse::nospace1;
+    use crate::version::v0_0_1::parse::model::{len, NestedBlockKind};
+    use crate::version::v0_0_1::parse::{nospace1, skewer};
     use ariadne::Report;
     use ariadne::{Label, ReportKind, Source};
     use nom::{Err, Slice};
+    use nom::branch::alt;
+    use nom::bytes::complete::tag;
+    use nom::character::complete::{alphanumeric0, alphanumeric1, multispace1};
+    use nom::combinator::not;
+    use nom::multi::many0;
+    use nom::sequence::{preceded, tuple};
     use nom_supreme::error::{BaseErrorKind, ErrorTree, StackContext};
     use regex::{Error, Regex};
     use crate::version::v0_0_1::wrap::Span;
@@ -3754,6 +3795,12 @@ pub mod error {
         }
 
         let builder = match context {
+            "var" => {
+                let f = |input| {preceded(tag("$"),many0(alt((tag("{"),alphanumeric1,tag("-"),tag("_"),multispace1))))(input)};
+                let len = len(loc.clone(),f)+1;
+                builder.with_message("Variables should be skewer case with a leading alphabet character and surrounded by ${} i.e.:'${var-name}' ").with_label(Label::new(loc.location_offset()..loc.location_offset()+len).with_message("Bad Variable Substitution"))
+            },
+
             "capture-path" => {
                 builder.with_message("Invalid capture path. Legal characters are filesystem characters plus captures $(var=.*) i.e. /users/$(user=.*)").with_label(Label::new(loc.location_offset()..loc.location_offset()).with_message("Illegal capture path"))
 
@@ -5748,7 +5795,7 @@ pub mod test {
     use crate::version::v0_0_1::parse::model::{
         BlockKind, DelimitedBlockKind, LexScope, NestedBlockKind, TerminatedBlockKind,
     };
-    use crate::version::v0_0_1::parse::{args, base_point_segment, bind_config, comment, config, ctx_seg, expected_block_terminator_or_non_terminator, lex_block, lex_child_scopes, lex_nested_block, lex_scope, lex_scope_pipeline_step_and_block, lex_scope_selector, lex_scope_selector_and_filters, lex_scopes,  lowercase1, MapResolver, mesh_eos, nested_block, nested_block_content, next_selector, no_comment, parse_include_blocks, parse_inner_block, path_regex, pipeline, pipeline_segment, pipeline_step_ctx, pipeline_stop_ctx, point, point_ctx, point_non_root, point_non_root_var, point_var, rec_version, Res, root_scope, root_scope_selector, scope_filter, scope_filters, skewer_case, skewer_dot, space_chars, space_no_dupe_dots, space_point_segment, strip_comments, subst, SubstParser, var_pipeline, var_seg, variable_name, VarResolver, VarSubst, version, version_point_segment, wrapper};
+    use crate::version::v0_0_1::parse::{args, base_point_segment, bind_config, comment, config, ctx_seg, expected_block_terminator_or_non_terminator, lex_block, lex_child_scopes, lex_nested_block, lex_scope, lex_scope_pipeline_step_and_block, lex_scope_selector, lex_scope_selector_and_filters, lex_scopes, lowercase1, MapResolver, mesh_eos, nested_block, nested_block_content, next_selector, no_comment, parse_include_blocks, parse_inner_block, path_regex, pipeline, pipeline_segment, pipeline_step_ctx, pipeline_stop_ctx, point, point_ctx, point_non_root, point_non_root_var, point_var, pop, rec_version, Res, root_scope, root_scope_selector, scope_filter, scope_filters, skewer_case, skewer_dot, space_chars, space_no_dupe_dots, space_point_segment, strip_comments, subst, SubstParser, var_pipeline, var_seg, variable_name, VarResolver, VarSubst, version, version_point_segment, wrapper};
     use nom::branch::alt;
     use nom::bytes::complete::{escaped, tag};
     use nom::character::complete::{alpha1, alphanumeric1, anychar, multispace0};
@@ -5768,12 +5815,13 @@ pub mod test {
     #[test]
     pub fn test_point_var() -> Result<(),MsgErr>{
 
-        log(result(point_var(new_span("[hub]::my-domain.com:${name}:base"))))?;
-        log(result(point_var(new_span("[hub]::my-domain.com:1.0.0:/dorko/x/"))))?;
-        log(result(point_var(new_span("[hub]::my-domain.com:1.0.0:/dorko/${x}/"))))?;
+        log(result(all_consuming(var_seg(pop(space_point_segment)))(new_span("${BAD}"))));
+        log(result(all_consuming(point_var)(new_span("[hub]::my-domain.com:${name}:base"))))?;
+        log(result(all_consuming(point_var)(new_span("[hub]::my-domain.com:1.0.0:/dorko/x/"))))?;
+        log(result(all_consuming(point_var)(new_span("[hub]::my-domain.com:1.0.0:/dorko/${x}/"))))?;
         let point = log(result(point_var(new_span("[hub]::my-domain.com:1.0.0:/dorko/${x}/file.txt"))))?;
         if let Some(PointSegVar::Var(var)) = point.segments.get(4){
-            assert_eq!("x",var.as_str());
+            assert_eq!("x",var.name.as_str());
         } else {
             assert!(false);
         }
@@ -5787,8 +5835,12 @@ pub mod test {
 
         let point = log(result(point_var(new_span("${route}::my-domain.com:${name}:base"))))?;
 
+
+        // this one SHOULD fail and an appropriate error should be located at BAD
+        log(result(point_var(new_span("${route}::my-domain.com:${BAD}:base"))));
+
         if let RouteSegVar::Var(var) = point.route {
-            assert_eq!("route",var.as_str());
+            assert_eq!("route",var.name.as_str());
         } else {
             assert!(false);
         }
@@ -5800,8 +5852,8 @@ pub mod test {
             assert!(false);
         }
 
-        if let Some(PointSegVar::Var(name)) = point.segments.get(1) {
-            assert_eq!("name",name.as_str());
+        if let Some(PointSegVar::Var(var)) = point.segments.get(1) {
+            assert_eq!("name",var.name.as_str());
         } else {
             assert!(false);
         }
@@ -5813,6 +5865,16 @@ pub mod test {
             assert!(false);
         }
 
+
+        Ok(())
+    }
+
+    #[test]
+    pub fn test_point() -> Result<(),MsgErr>{
+
+        log(result(all_consuming(point)(new_span("[hub]::my-domain.com:name:base"))))?;
+        log(result(all_consuming(point)(new_span("[hub]::my-domain.com:1.0.0:/dorko/x/"))))?;
+        log(result(all_consuming(point)(new_span("[hub]::my-domain.com:1.0.0:/dorko/xyz/"))))?;
 
         Ok(())
     }

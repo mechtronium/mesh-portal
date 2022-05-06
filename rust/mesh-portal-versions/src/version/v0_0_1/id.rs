@@ -6,7 +6,7 @@ pub mod id {
     use std::collections::HashMap;
     use std::convert::TryInto;
     use std::fmt::Formatter;
-    use std::ops::Deref;
+    use std::ops::{Deref, Range};
     use std::str::FromStr;
     use std::sync::Arc;
 
@@ -14,18 +14,16 @@ pub mod id {
     use serde::de::Visitor;
     use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 
-    use crate::error::MsgErr;
+    use crate::error::{MsgErr, ParseErrs};
     use crate::version::v0_0_1::id::id::PointSegCtx::Working;
-    use crate::version::v0_0_1::parse::{
-        camel_case, consume_point, Ctx, CtxResolver, CtxSubst, kind, point_and_kind,
-        point_route_segment, Res, VarResolver, VarSubst,
-    };
+    use crate::version::v0_0_1::parse::{camel_case, consume_point, consume_point_ctx, Ctx, CtxResolver, CtxSubst, kind, point_and_kind, point_route_segment, Res, VarResolver, VarResolverErr, VarSubst};
 
     use crate::version::v0_0_1::parse::error::result;
     use crate::version::v0_0_1::selector::selector::{
         Pattern, PointSelector, SpecificSelector, VersionReq,
     };
-    use crate::version::v0_0_1::span::{new_span};
+    use crate::version::v0_0_1::span::{new_span, SpanExtra};
+    use crate::version::v0_0_1::wrap::Span;
 
     pub type GenericKindBase = String;
 
@@ -214,7 +212,7 @@ pub mod id {
         Domain(String),
         Tag(String),
         Mesh(String),
-        Var(String)
+        Var(Variable)
     }
 
     impl Into<RouteSegVar> for RouteSeg {
@@ -314,6 +312,14 @@ pub mod id {
             }
         }
 
+        pub fn is_dir(&self) -> bool {
+            match self {
+                Self::Dir => true,
+                _ => false,
+            }
+        }
+
+
         pub fn is_filesystem_seg(&self) -> bool {
             match self {
                 PointSegKind::Root => false,
@@ -346,6 +352,23 @@ pub mod id {
     }
 
     #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
+    pub struct Variable {
+        pub range: Range<usize>,
+        pub name: String,
+        pub extra: SpanExtra
+    }
+
+    impl Variable {
+        pub fn new( name: String, range: Range<usize>, extra: SpanExtra ) -> Self {
+            Self {
+               name,
+               range,
+               extra,
+            }
+        }
+    }
+
+    #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
     pub enum PointSegCtx {
         Root,
         Space(String),
@@ -369,8 +392,26 @@ pub mod id {
         Version(Version),
         Working,
         Pop,
-        Var(String),
+        Var(Variable),
     }
+
+    impl ToString for PointSegVar {
+        fn to_string(&self) -> String {
+            match self {
+                PointSegVar::Root => "".to_string(),
+                PointSegVar::Space(space) => space.clone(),
+                PointSegVar::Base(base) => base.clone(),
+                PointSegVar::FilesystemRootDir => "/".to_string(),
+                PointSegVar::Dir(dir) => dir.clone(),
+                PointSegVar::File(file) => file.clone(),
+                PointSegVar::Version(version) => version.to_string(),
+                PointSegVar::Working => ".".to_string(),
+                PointSegVar::Pop => "..".to_string(),
+                PointSegVar::Var(var) => format!("${{{}}}",var.name )
+            }
+        }
+    }
+
     impl PointSegVar{
         pub fn kind(&self) -> PointSegKind {
             match self {
@@ -431,7 +472,7 @@ pub mod id {
                     Err("cannot convert pop working directory operator '..' into a point segment without context".into())
                 }
                 PointSegVar::Var(var) => {
-                    Err(format!("cannot resolve var '{}'",var).into())
+                    Err(format!("cannot resolve var '{}'",var.name).into())
                 }
             }
         }
@@ -485,6 +526,10 @@ pub mod id {
         }
     }
 
+    pub trait PointSegment {
+
+    }
+
     #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
     pub enum PointSeg {
         Root,
@@ -495,6 +540,19 @@ pub mod id {
         File(String),
         Version(Version),
     }
+
+    impl PointSegment for PointSeg {
+
+    }
+
+    impl PointSegment for PointSegCtx {
+
+    }
+
+    impl PointSegment for PointSegVar {
+
+    }
+
 
     impl Into<PointSegCtx> for PointSeg {
             fn into(self) -> PointSegCtx {
@@ -681,6 +739,55 @@ pub mod id {
     pub type Point = PointDef<RouteSeg, PointSeg>;
     pub type PointCtx = PointDef<RouteSeg, PointSegCtx>;
     pub type PointVar = PointDef<RouteSegVar, PointSegVar>;
+
+    impl VarSubst<PointCtx> for PointVar {
+        fn resolve_vars(self, resolver: &dyn VarResolver) -> Result<PointCtx, MsgErr> {
+            let mut rtn = String::new();
+            let mut after_fs = false;
+            let mut errs = vec![];
+            for (index,segment) in self.segments.iter().enumerate()  {
+                if let PointSegVar::Var(var) = segment {
+                    match resolver.val(var.name.as_str()) {
+                        Ok(val) => {
+                            if index > 0 {
+                                if after_fs {
+                                    rtn.push_str("/");
+                                } else {
+                                    rtn.push_str(":");
+                                }
+                            }
+                            rtn.push_str(val.as_str());
+                        }
+                        Err(err) => {
+                            errs.push(ParseErrs::from_range(format!("variable could not be resolved '{}'",var.name).as_str(), "Not Found", var.range.clone(), var.extra.clone() ));
+                        }
+                    }
+                } else if PointSegVar::FilesystemRootDir == *segment {
+                   after_fs = true;
+                   rtn.push_str(":/");
+                } else {
+                    if index > 0 {
+                        if after_fs {
+                            rtn.push_str("/");
+                        } else {
+                            rtn.push_str(":");
+                        }
+                        rtn.push_str(segment.to_string().as_str() );
+                    }
+                }
+            }
+            if self.is_dir() {
+                rtn.push_str("/");
+            }
+
+            if !errs.is_empty() {
+                let errs = ParseErrs::fold(errs);
+                return Err(errs.into());
+            }
+
+            consume_point_ctx(rtn.as_str())
+        }
+    }
 
     impl CtxSubst<Point> for PointCtx {
         fn resolve_ctx(self, resolver: &dyn CtxResolver) -> Result<Point, MsgErr> {
@@ -1066,6 +1173,19 @@ pub mod id {
             self.segments.is_empty()
         }
     }
+
+    impl PointVar {
+        pub fn is_dir(&self) -> bool {
+            self.segments.last().unwrap_or(&PointSegVar::Root).kind().is_dir()
+        }
+    }
+
+    impl PointCtx {
+        pub fn is_dir(&self) -> bool {
+            self.segments.last().unwrap_or(&PointSegCtx::Root).kind().is_dir()
+        }
+    }
+
 
     /*
     #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]

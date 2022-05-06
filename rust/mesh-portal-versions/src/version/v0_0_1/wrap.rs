@@ -35,6 +35,8 @@ pub trait Span:
     fn extra(&self) -> Arc<String>;
 
     fn len(&self) -> usize;
+
+    fn range(&self) -> Range<usize>;
 }
 
 #[derive(Debug,Clone)]
@@ -116,6 +118,13 @@ impl<'a> Span for Wrap<LocatedSpan<&'a str,Arc<String>>>
 
     fn len(&self) -> usize {
         self.input.len()
+    }
+
+    fn range(&self) -> Range<usize> {
+        Range {
+            start: self.location_offset(),
+            end: self.location_offset()+self.len()
+        }
     }
 }
 
