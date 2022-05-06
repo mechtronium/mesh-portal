@@ -203,7 +203,7 @@ pub fn base_point_segment<I: Span>(input: I) -> Res<I, PointSeg> {
 
 pub fn version_point_segment<I: Span>(input: I) -> Res<I, PointSeg> {
     preceded(
-        peek(digit0),
+        peek(digit1),
         context("point:version_segment", cut(tuple((version, ver_eos)))),
     )(input)
     .map(|(next, (version, _))| (next, PointSeg::Version(version)))
@@ -226,8 +226,8 @@ pub fn filesystem_point_segment<I: Span>(input: I) -> Res<I, PointSeg> {
 }
 
 pub fn dir_point_segment<I: Span>(input: I) -> Res<I, PointSeg> {
-    context("point:dir_segment", terminated(file_chars, tag("/")))(input)
-        .map(|(next, dir)| (next, PointSeg::Dir(format!("{}/", dir.to_string()))))
+    context("point:dir_segment", file_chars )(input)
+        .map(|(next, dir)| (next, PointSeg::Dir(dir.to_string())))
 }
 
 pub fn root_dir_point_segment<I: Span>(input: I) -> Res<I, PointSeg> {
@@ -320,14 +320,14 @@ pub fn var<O,F,P>(mut f: F ) -> impl FnMut(I) -> Res<I,Var<O,P>> where F: Parser
 pub fn var_seg <F,I: Span>(mut f: F ) -> impl FnMut(I) -> Res<I,PointSegVar> where F: Parser<I,PointSegCtx,ErrorTree<I>>{
 
     move | input: I | {
-        let result = recognize(pair(peek(tag("$")),context("var",cut(delimited(tag("${"), skewer_case, tag("}") )))))(input);
+        let result = pair(peek(tag("$")),context("var",cut(delimited(tag("${"), skewer_case, tag("}") ))))(input.clone());
 
         match result {
-            Ok((next,var)) => {
+            Ok((next,(_,var))) => {
                 Ok( (next, PointSegVar::Var(var.to_string())) )
             }
             Err(err) => {
-                Err(err)
+                f.parse(input).map(|(next,seg)|(next,seg.into()))
             }
         }
     }
@@ -335,19 +335,19 @@ pub fn var_seg <F,I: Span>(mut f: F ) -> impl FnMut(I) -> Res<I,PointSegVar> whe
 
 pub fn var_route<'a,F,I: Span>(mut f: F ) -> impl FnMut(I) -> Res<I,RouteSegVar> where F: Parser<I,RouteSeg,ErrorTree<I>>{
     move | input: I | {
-        let result = recognize(pair(peek(tag("$")),context("var",cut(delimited(tag("${"), skewer_case, tag("}") )))))(input.clone());
+        let result = pair(peek(tag("$")),context("var",cut(delimited(tag("${"), skewer_case, tag("}") ))))(input.clone());
         match result {
-            Ok((next,var)) => {
+            Ok((next,(_,var))) => {
                 Ok( (next, RouteSegVar::Var(var.to_string())) )
             }
             Err(err) => {
-                Err(err)
+                f.parse(input).map(|(next,seg)|(next,seg.into()))
             }
         }
     }
 }
 pub fn root_point_var<I: Span>(input: I) -> Res<I, PointVar> {
-    tuple((opt(terminated(var_route(point_route_segment), tag("::"))), tag("ROOT")))(input).map(
+    context("root_point",tuple((opt(terminated(var_route(point_route_segment), tag("::"))), tag("ROOT"))))(input).map(
         |(next, (route, _))| {
             let route = route.unwrap_or(RouteSegVar::Local);
             let point = PointVar {
@@ -386,12 +386,13 @@ pub fn point_non_root_var<I: Span>(input: I) -> Res<I, PointVar> {
             many0(tuple((
                 seg_delim,
                 peek(context("point:bad_leading", cut(alt((tag("$"),tag("."),lowercase1, digit1))))),
-                var_seg(mesh_seg(base_point_segment)),
+                var_seg(pop(base_point_segment)),
             ))),
             opt(var_seg(mesh_seg(version_point_segment))),
             opt(tuple((
                 root_dir_point_segment_var,
-                many0(var_seg(pop(filesystem_point_segment))),
+                many0(terminated(var_seg(pop(dir_point_segment ) ),tag("/"))),
+                opt(var_seg(pop(file_point_segment ) ) ),
                 eop,
             ))),
             eop,
@@ -411,9 +412,12 @@ pub fn point_non_root_var<I: Span>(input: I) -> Res<I, PointVar> {
                     }
                 }
 
-                if let Option::Some((fsroot, mut files, _)) = filesystem {
+                if let Option::Some((fsroot, mut dirs, file,_ )) = filesystem {
                     segments.push(fsroot);
-                    segments.append(&mut files);
+                    segments.append(&mut dirs);
+                    if let Some(file) = file {
+                        segments.push(file);
+                    }
                 }
 
                 let point = PointVar{ route, segments };
@@ -1736,11 +1740,11 @@ where
         + Clone
         + InputTakeAtPosition,
     <I as InputTakeAtPosition>::Item: AsChar + Clone,
-    F: nom::Parser<I, PointSeg, E> + Clone,
+    F: nom::Parser<I, PointSeg, E> + Copy,
     E: nom::error::ContextError<I>,
 {
     move |input: I| {
-        tuple((seg_delim, pop(f.clone())))(input).map(|(next, (delim, seg))| (next, seg))
+        tuple((seg_delim, pop(f)))(input).map(|(next, (delim, seg))| (next, seg))
     }
 }
 
@@ -5744,7 +5748,7 @@ pub mod test {
     use crate::version::v0_0_1::parse::model::{
         BlockKind, DelimitedBlockKind, LexScope, NestedBlockKind, TerminatedBlockKind,
     };
-    use crate::version::v0_0_1::parse::{args, bind_config, comment, config, ctx_seg, expected_block_terminator_or_non_terminator, lex_block, lex_child_scopes, lex_nested_block, lex_scope, lex_scope_pipeline_step_and_block, lex_scope_selector, lex_scope_selector_and_filters, lex_scopes, lowercase1, MapResolver, mesh_eos, nested_block, nested_block_content, next_selector, no_comment, parse_include_blocks, parse_inner_block, path_regex, pipeline, pipeline_segment, pipeline_step_ctx, pipeline_stop_ctx, point, point_ctx, point_var, rec_version, Res, root_scope, root_scope_selector, scope_filter, scope_filters, skewer_case, skewer_dot, space_chars, space_no_dupe_dots, space_point_segment, strip_comments, subst, SubstParser, var_pipeline, variable_name, VarResolver, VarSubst, version, wrapper};
+    use crate::version::v0_0_1::parse::{args, base_point_segment, bind_config, comment, config, ctx_seg, expected_block_terminator_or_non_terminator, lex_block, lex_child_scopes, lex_nested_block, lex_scope, lex_scope_pipeline_step_and_block, lex_scope_selector, lex_scope_selector_and_filters, lex_scopes,  lowercase1, MapResolver, mesh_eos, nested_block, nested_block_content, next_selector, no_comment, parse_include_blocks, parse_inner_block, path_regex, pipeline, pipeline_segment, pipeline_step_ctx, pipeline_stop_ctx, point, point_ctx, point_non_root, point_non_root_var, point_var, rec_version, Res, root_scope, root_scope_selector, scope_filter, scope_filters, skewer_case, skewer_dot, space_chars, space_no_dupe_dots, space_point_segment, strip_comments, subst, SubstParser, var_pipeline, var_seg, variable_name, VarResolver, VarSubst, version, version_point_segment, wrapper};
     use nom::branch::alt;
     use nom::bytes::complete::{escaped, tag};
     use nom::character::complete::{alpha1, alphanumeric1, anychar, multispace0};
@@ -5758,14 +5762,59 @@ pub mod test {
     use nom_supreme::error::ErrorTree;
     use std::rc::Rc;
     use std::sync::Arc;
+    use crate::version::v0_0_1::id::id::{PointSegVar, RouteSegVar};
     use crate::version::v0_0_1::span::{new_span, span_with_extra};
 
     #[test]
     pub fn test_point_var() -> Result<(),MsgErr>{
 
-        let pipeline = log(result(point(new_span("my-domain.com:base") )))?;
+        log(result(point_var(new_span("[hub]::my-domain.com:${name}:base"))))?;
+        log(result(point_var(new_span("[hub]::my-domain.com:1.0.0:/dorko/x/"))))?;
+        log(result(point_var(new_span("[hub]::my-domain.com:1.0.0:/dorko/${x}/"))))?;
+        let point = log(result(point_var(new_span("[hub]::my-domain.com:1.0.0:/dorko/${x}/file.txt"))))?;
+        if let Some(PointSegVar::Var(var)) = point.segments.get(4){
+            assert_eq!("x",var.as_str());
+        } else {
+            assert!(false);
+        }
 
-       Ok(())
+        if let Some(PointSegVar::File(file)) = point.segments.get(5){
+            assert_eq!("file.txt",file.as_str());
+        } else {
+            assert!(false);
+        }
+
+
+        let point = log(result(point_var(new_span("${route}::my-domain.com:${name}:base"))))?;
+
+        if let RouteSegVar::Var(var) = point.route {
+            assert_eq!("route",var.as_str());
+        } else {
+            assert!(false);
+        }
+
+
+        if let Some(PointSegVar::Space(space)) = point.segments.get(0) {
+            assert_eq!("my-domain.com",space.as_str());
+        } else {
+            assert!(false);
+        }
+
+        if let Some(PointSegVar::Var(name)) = point.segments.get(1) {
+            assert_eq!("name",name.as_str());
+        } else {
+            assert!(false);
+        }
+
+
+        if let Some(PointSegVar::Base(base)) = point.segments.get(2) {
+            assert_eq!("base",base.as_str());
+        } else {
+            assert!(false);
+        }
+
+
+        Ok(())
     }
 
 
