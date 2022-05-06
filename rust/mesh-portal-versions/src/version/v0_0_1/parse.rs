@@ -211,7 +211,7 @@ pub fn version_point_segment<I: Span>(input: I) -> Res<I, PointSeg> {
 
 pub fn dir_pop<I: Span>(input: I) -> Res<I, PointSegCtx> {
     context("point:dir_pop", tuple((tag(".."), opt(tag("/")))))(input)
-        .map(|(next, _)| (next, PointSegCtx::Pop))
+        .map(|(next, _)| (next.clone(), PointSegCtx::Pop{ range: next.location_offset()-2..next.location_offset(), extra: next.extra()}))
 }
 
 pub fn filesystem_point_segment<I: Span>(input: I) -> Res<I, PointSeg> {
@@ -1526,7 +1526,6 @@ pub fn publish<I:Span>(input: I) -> Res<I, CreateOp> {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Ctx {
     WorkingPoint,
-    WorkingPointPop,
     PointFromRoot,
 }
 
@@ -1534,7 +1533,6 @@ impl ToString for Ctx {
     fn to_string(&self) -> String {
         match self {
             Ctx::WorkingPoint => ".".to_string(),
-            Ctx::WorkingPointPop => "..".to_string(),
             Ctx::PointFromRoot => "...".to_string(),
         }
     }
@@ -1542,6 +1540,7 @@ impl ToString for Ctx {
 
 pub trait CtxResolver {
     fn ctx(&self, ctx: &Ctx) -> Result<String, MsgErr>;
+    fn working_point(&self) -> &Point;
 }
 
 
@@ -1594,23 +1593,30 @@ impl VarResolver for MapResolver {
 
 }
 
-pub struct MockCtxResolver {
+pub struct PntCtxResolver {
     pub point: Point
 }
 
-impl CtxResolver for MockCtxResolver {
+impl PntCtxResolver {
+    pub fn new( point: Point ) -> Self {
+        Self {
+            point
+        }
+    }
+}
+
+impl CtxResolver for PntCtxResolver {
     fn ctx(&self, ctx: &Ctx) -> Result<String, MsgErr> {
         match ctx {
             Ctx::WorkingPoint => Ok(self.point.to_string()),
-            Ctx::WorkingPointPop => Ok(self
-                .point
-                .parent()
-                .ok_or("already at the root point cannot pop any further.")?
-                .to_string()),
             Ctx::PointFromRoot => {
                 Err("PointFromRoot operator '...' not available in this resolver".into())
             }
         }
+    }
+
+    fn working_point(&self) -> &Point {
+        &self.point
     }
 }
 
@@ -1618,6 +1624,9 @@ pub trait VarSubst<R>
 where
     Self: Sized,
 {
+    fn collapse(self) -> Result<R, MsgErr> {
+        Err(MsgErr::new(500, "VarSubst collapse not supported here."))
+    }
     fn resolve_vars(self, resolver: &dyn VarResolver) -> Result<R, MsgErr>;
 }
 
@@ -1625,6 +1634,10 @@ pub trait CtxSubst<R>
 where
     Self: Sized,
 {
+    fn collapse(self) -> Result<R, MsgErr> {
+        Err(MsgErr::new(500, "CtxSubst collapse not supported here."))
+    }
+
     fn resolve_ctx(self, resolver: &dyn CtxResolver) -> Result<R, MsgErr>;
 }
 
@@ -1691,10 +1704,10 @@ pub fn ctx_seg<I: Span, E: ParseError<I>, F>(mut f: F) -> impl FnMut(I) -> IResu
         E: nom::error::ContextError<I>,
 {
     move |input: I| match pair(tag::<&str, I, E>(".."), eos)(input.clone()) {
-        Ok((next, v)) => Ok((next, PointSegCtx::Pop)),
+        Ok((next, v)) => Ok((next.clone(), PointSegCtx::Pop{ range: next.location_offset()-2..next.location_offset(), extra: next.extra()})),
         Err(err) => {
             match pair(tag::<&str, I, E>("."), eos)(input.clone()) {
-                Ok((next, _)) => Ok((next,PointSegCtx::Working)),
+                Ok((next, _)) => Ok((next.clone(),PointSegCtx::Working{ range: next.location_offset()-1..next.location_offset(), extra: next.extra()})),
                 Err(err) => {
                     match f.parse(input) {
                         Ok((next,seg)) => Ok((next,seg.into())),
@@ -1724,7 +1737,7 @@ where
     E: nom::error::ContextError<I>,
 {
     move |input: I| match pair(tag::<&str, I, E>("."), eos)(input.clone()) {
-        Ok((next, v)) => Ok((next, PointSegCtx::Pop)),
+        Ok((next, v)) => Ok((next.clone(), PointSegCtx::Working{ range: next.location_offset()-1..next.location_offset(), extra: next.extra() })),
         Err(err) => match f.parse(input.clone()) {
             Ok((next, seg)) => Ok((next, seg.into())),
             Err(err) => Err(err),
@@ -1746,7 +1759,7 @@ where
     E: nom::error::ContextError<I>,
 {
     move |input: I| match pair(tag::<&str, I, E>(".."), eos)(input.clone()) {
-        Ok((next, v)) => Ok((next, PointSegCtx::Pop)),
+        Ok((next, v)) => Ok((next.clone(), PointSegCtx::Working{ range: next.location_offset()-2..next.location_offset(), extra: next.extra() })),
         Err(err) => match f.parse(input.clone()) {
             Ok((next, seg)) => Ok((next, seg.into())),
             Err(err) => Err(err),
@@ -3798,7 +3811,7 @@ pub mod error {
             "var" => {
                 let f = |input| {preceded(tag("$"),many0(alt((tag("{"),alphanumeric1,tag("-"),tag("_"),multispace1))))(input)};
                 let len = len(loc.clone(),f)+1;
-                builder.with_message("Variables should be skewer case with a leading alphabet character and surrounded by ${} i.e.:'${var-name}' ").with_label(Label::new(loc.location_offset()..loc.location_offset()+len).with_message("Bad Variable Substitution"))
+                builder.with_message("Variables should be lowercase skewer with a leading alphabet character and surrounded by ${} i.e.:'${var-name}' ").with_label(Label::new(loc.location_offset()..loc.location_offset()+len).with_message("Bad Variable Substitution"))
             },
 
             "capture-path" => {
@@ -5795,7 +5808,7 @@ pub mod test {
     use crate::version::v0_0_1::parse::model::{
         BlockKind, DelimitedBlockKind, LexScope, NestedBlockKind, TerminatedBlockKind,
     };
-    use crate::version::v0_0_1::parse::{args, base_point_segment, bind_config, comment, config, ctx_seg, expected_block_terminator_or_non_terminator, lex_block, lex_child_scopes, lex_nested_block, lex_scope, lex_scope_pipeline_step_and_block, lex_scope_selector, lex_scope_selector_and_filters, lex_scopes, lowercase1, MapResolver, mesh_eos, nested_block, nested_block_content, next_selector, no_comment, parse_include_blocks, parse_inner_block, path_regex, pipeline, pipeline_segment, pipeline_step_ctx, pipeline_stop_ctx, point, point_ctx, point_non_root, point_non_root_var, point_var, pop, rec_version, Res, root_scope, root_scope_selector, scope_filter, scope_filters, skewer_case, skewer_dot, space_chars, space_no_dupe_dots, space_point_segment, strip_comments, subst, SubstParser, var_pipeline, var_seg, variable_name, VarResolver, VarSubst, version, version_point_segment, wrapper};
+    use crate::version::v0_0_1::parse::{args, base_point_segment, bind_config, comment, config, ctx_seg, CtxSubst, expected_block_terminator_or_non_terminator, lex_block, lex_child_scopes, lex_nested_block, lex_scope, lex_scope_pipeline_step_and_block, lex_scope_selector, lex_scope_selector_and_filters, lex_scopes, lowercase1, MapResolver, mesh_eos, PntCtxResolver, nested_block, nested_block_content, next_selector, no_comment, parse_include_blocks, parse_inner_block, path_regex, pipeline, pipeline_segment, pipeline_step_ctx, pipeline_stop_ctx, point, point_ctx, point_non_root, point_non_root_var, point_var, pop, rec_version, Res, root_scope, root_scope_selector, scope_filter, scope_filters, skewer_case, skewer_dot, space_chars, space_no_dupe_dots, space_point_segment, strip_comments, subst, SubstParser, var_pipeline, var_seg, variable_name, VarResolver, VarSubst, version, version_point_segment, wrapper};
     use nom::branch::alt;
     use nom::bytes::complete::{escaped, tag};
     use nom::character::complete::{alpha1, alphanumeric1, anychar, multispace0};
@@ -5808,17 +5821,19 @@ pub mod test {
     use nom_locate::LocatedSpan;
     use nom_supreme::error::ErrorTree;
     use std::rc::Rc;
+    use std::str::FromStr;
     use std::sync::Arc;
-    use crate::version::v0_0_1::id::id::{PointSegVar, RouteSegVar};
+    use crate::version::v0_0_1::id::id::{Point, PointSegVar, RouteSegVar};
     use crate::version::v0_0_1::span::{new_span, span_with_extra};
 
     #[test]
     pub fn test_point_var() -> Result<(),MsgErr>{
 
-        log(result(all_consuming(var_seg(pop(space_point_segment)))(new_span("${BAD}"))));
         log(result(all_consuming(point_var)(new_span("[hub]::my-domain.com:${name}:base"))))?;
         log(result(all_consuming(point_var)(new_span("[hub]::my-domain.com:1.0.0:/dorko/x/"))))?;
         log(result(all_consuming(point_var)(new_span("[hub]::my-domain.com:1.0.0:/dorko/${x}/"))))?;
+        log(result(all_consuming(point_var)(new_span("[hub]::.:1.0.0:/dorko/${x}/"))))?;
+        log(result(all_consuming(point_var)(new_span("[hub]::..:1.0.0:/dorko/${x}/"))))?;
         let point = log(result(point_var(new_span("[hub]::my-domain.com:1.0.0:/dorko/${x}/file.txt"))))?;
         if let Some(PointSegVar::Var(var)) = point.segments.get(4){
             assert_eq!("x",var.name.as_str());
@@ -5837,14 +5852,13 @@ pub mod test {
 
 
         // this one SHOULD fail and an appropriate error should be located at BAD
-        log(result(point_var(new_span("${route}::my-domain.com:${BAD}:base"))));
+        log(result(point_var(new_span("${route of routes}::my-domain.com:${BAD}:base"))));
 
-        if let RouteSegVar::Var(var) = point.route {
+        if let RouteSegVar::Var(ref var) = point.route {
             assert_eq!("route",var.name.as_str());
         } else {
             assert!(false);
         }
-
 
         if let Some(PointSegVar::Space(space)) = point.segments.get(0) {
             assert_eq!("my-domain.com",space.as_str());
@@ -5865,6 +5879,27 @@ pub mod test {
             assert!(false);
         }
 
+        let mut resolver = MapResolver::new();
+        resolver.insert("route", "[hub]");
+        resolver.insert("name", "zophis");
+        let point = log(point.resolve_vars(&resolver))?;
+        let resolver = PntCtxResolver::new( Point::from_str("my-domain.com")?);
+        let point = point.resolve_ctx(&resolver)?;
+        println!("point.to_string(): {}",point.to_string() );
+
+        log(log(result(all_consuming(point_var)(new_span("[hub]::my-domain.com:1.0.0:/dorko/x/"))))?.collapse()?.collapse());
+        log(log(result(all_consuming(point_var)(new_span("[hub]::my-domain.com:1.0.0:/${dorko}/x/"))))?.collapse());
+        log(log(result(all_consuming(point_var)(new_span("${not-supported}::my-domain.com:1.0.0:/${dorko}/x/"))))?.collapse());
+
+
+        let point = log(result(point_var(new_span("${route}::${root}:base1"))))?;
+        let mut resolver = MapResolver::new();
+        resolver.insert("route", "[hub]");
+        resolver.insert("root", "..");
+        let point = log(point.resolve_vars(&resolver))?;
+        let resolver = PntCtxResolver::new( Point::from_str("my-domain.com:under:over")?);
+        let point = log(point.resolve_ctx(&resolver))?;
+        println!("point.to_string(): {}",point.to_string() );
 
         Ok(())
     }
