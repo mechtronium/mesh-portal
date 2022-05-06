@@ -70,8 +70,8 @@ pub mod config {
     }
 
     #[derive(Clone)]
-    pub enum Document {
-        BindConfig(BindConfig),
+    pub enum Document<I> {
+        BindConfig(BindConfig<I>),
     }
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -98,23 +98,35 @@ pub mod config {
         use crate::version::v0_0_1::selector::{PayloadBlock, PayloadBlockDef};
 
         #[derive(Clone)]
-        pub struct BindConfig {
-            pub scopes: Vec<BindScope>
+        pub struct BindConfig<I> {
+            pub scopes: Vec<BindScope<I>>
             /*pub msg: ConfigScope<EntityKind, Selector<MsgPipelineSelector>>,
             pub http: ConfigScope<EntityKind, Selector<HttpPipelineSelector>>,
             pub rc: ConfigScope<EntityKind, Selector<RcPipelineSelector>>,
 
              */
         }
+        impl <I:ToString> BindConfig<I> {
+            pub fn to_string_version(self) -> BindConfig<String>{
+                unimplemented!();
+                /*
+                let scopes : Vec<BindScope<String>> = self.scopes.into_iter().map( | s|s.to_string_version()).collect();
+                Self {
+                    scopes
+                }
 
-        impl BindConfig {
-            pub fn new(scopes: Vec<BindScope>) -> Self {
+                 */
+            }
+        }
+
+        impl <I> BindConfig<I> {
+            pub fn new(scopes: Vec<BindScope<I>>) -> Self {
                 Self {
                     scopes
                 }
             }
 
-            pub fn request_scopes(&self) -> Vec<&RequestScope> {
+            pub fn request_scopes(&self) -> Vec<&RequestScope<I>> {
                 let mut scopes = vec![];
                 for scope in &self.scopes {
                     if let BindScope::RequestScope(request_scope) = &scope {

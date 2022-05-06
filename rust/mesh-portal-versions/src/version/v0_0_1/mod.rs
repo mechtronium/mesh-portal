@@ -24,6 +24,7 @@ mod entity;
 mod particle;
 mod portal;
 pub mod span;
+pub mod wrap;
 
 
 use serde::{Deserialize, Serialize};
