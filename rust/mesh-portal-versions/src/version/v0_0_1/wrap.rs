@@ -7,6 +7,7 @@ use nom_locate::LocatedSpan;
 use regex::internal::Input;
 use std::ops::{Deref, Range, RangeFrom, RangeTo};
 use std::sync::Arc;
+use crate::version::v0_0_1::span::Trace;
 
 pub trait Span:
     Clone
@@ -37,6 +38,13 @@ pub trait Span:
     fn len(&self) -> usize;
 
     fn range(&self) -> Range<usize>;
+
+    fn trace(&self) -> Trace {
+        Trace {
+            range: self.range(),
+            extra: self.extra()
+        }
+    }
 }
 
 #[derive(Debug,Clone)]

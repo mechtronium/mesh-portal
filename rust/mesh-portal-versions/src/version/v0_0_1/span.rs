@@ -8,10 +8,11 @@ use std::ops;
 use std::ops::{Deref, Range, RangeFrom, RangeTo};
 use std::str::{CharIndices, Chars};
 use std::sync::{Arc, Mutex};
-use ariadne::Span;
 use nom_supreme::error::{ErrorTree, StackContext};
 use nom_supreme::ParserExt;
-use crate::version::v0_0_1::wrap::Wrap;
+use crate::version::v0_0_1::parse::model::len;
+use crate::version::v0_0_1::parse::Res;
+use crate::version::v0_0_1::wrap::{Span, Wrap};
 
 //pub type OwnedSpan<'a> = LocatedSpan<&'a str, SpanExtra>;
 pub type SpanExtra = Arc<String>;
@@ -26,6 +27,37 @@ pub fn span_with_extra<'a>(s: &'a str, extra: Arc<String>) -> Wrap<LocatedSpan<&
     Wrap::new(LocatedSpan::new_extra(s, extra))
 }
 
+
+#[derive(Clone)]
+pub struct Trace {
+    pub range: Range<usize>,
+    pub extra: SpanExtra
+}
+
+impl Trace {
+    pub fn new( range: Range<usize>, extra: SpanExtra) -> Self {
+        Self {
+            range,
+            extra
+        }
+    }
+
+    pub fn at_offset( offset: usize, extra: SpanExtra ) -> Self {
+        Self {
+            range: offset..offset,
+            extra
+        }
+    }
+
+    pub fn scan<F,I:Span,O>( f: F, input: I ) -> Self where F: FnMut(I) -> Res<I,O>+Copy {
+        let extra = input.extra();
+        let range = input.location_offset()..len(f)(input);
+        Self {
+            range,
+            extra
+        }
+    }
+}
 
 
 
@@ -89,8 +121,8 @@ println!("AS BYTES: {}",self.string.as_bytes().len());
 impl Slice<Range<usize>> for SliceStr {
     fn slice(&self, range: Range<usize>) -> Self {
         SliceStr{
-            location_offset: self.location_offset+range.start(),
-            len: range.end()-range.start(),
+            location_offset: self.location_offset+range.start,
+            len: range.end-range.start,
             string: self.string.clone()
         }
     }

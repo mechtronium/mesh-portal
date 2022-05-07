@@ -6,14 +6,14 @@ pub mod payload {
     use crate::error::{MsgErr, ParseErrs};
     use crate::version::v0_0_1::bin::Bin;
     use crate::version::v0_0_1::entity::entity::request::{Action, Rc, RcCommandType, RequestCore};
-    use crate::version::v0_0_1::id::id::{GenericKind, GenericKindBase, Meta, Point, PointCtx};
+    use crate::version::v0_0_1::id::id::{GenericKind, GenericKindBase, Meta, Point, PointCtx, PointVar};
     use crate::version::v0_0_1::particle::particle::{Particle, Status, Stub};
     use crate::version::v0_0_1::selector::selector::{KindPattern, PointSelector};
     use crate::version::v0_0_1::util::{ValueMatcher, ValuePattern};
     use http::{Method, Uri};
     use std::str::FromStr;
     use std::sync::Arc;
-    use crate::version::v0_0_1::parse::{CtxResolver, CtxSubst};
+    use crate::version::v0_0_1::parse::{CtxResolver, Env, ToResolved};
 
     #[derive(
         Debug,
@@ -422,6 +422,7 @@ pub mod payload {
         Any,
     }
     pub type PayloadTypePatternCtx = PayloadTypePatternDef<PointCtx>;
+    pub type PayloadTypePatternVar = PayloadTypePatternDef<PointVar>;
 
     #[derive(Debug, Clone, Serialize, Deserialize )]
     pub enum PayloadTypePatternDef<Pnt> {
@@ -432,8 +433,9 @@ pub mod payload {
     }
 
 
-    impl CtxSubst<PayloadTypePatternDef<Point>> for PayloadTypePatternDef<PointCtx>{
-        fn resolve_ctx(self, resolver: &dyn CtxResolver) -> Result<PayloadTypePatternDef<Point>, MsgErr> {
+
+    impl ToResolved<PayloadTypePatternDef<Point>> for PayloadTypePatternDef<PointCtx>{
+        fn to_resolved(self, env: &Env ) -> Result<PayloadTypePatternDef<Point>, MsgErr> {
             match self {
                 PayloadTypePatternDef::Empty => Ok(PayloadTypePatternDef::Empty),
                 PayloadTypePatternDef::Primitive(payload_type) =>Ok(PayloadTypePatternDef::Primitive(payload_type)),
@@ -511,6 +513,7 @@ pub mod payload {
         }
     }
 
+    pub type PayloadPatternVar= PayloadPatternDef<PointVar>;
     pub type PayloadPatternCtx = PayloadPatternDef<PointCtx>;
     pub type PayloadPattern = PayloadPatternDef<Point>;
 
@@ -521,10 +524,10 @@ pub mod payload {
         pub validator: Option<CallWithConfigDef<Pnt>>,
     }
 
-    impl CtxSubst<PayloadPattern> for PayloadPatternCtx{
-        fn resolve_ctx(self, resolver: &dyn CtxResolver) -> Result<PayloadPattern, MsgErr> {
+    impl ToResolved<PayloadPattern> for PayloadPatternCtx{
+        fn to_resolved(self, resolver: &Env) -> Result<PayloadPattern, MsgErr> {
             let mut errs = vec![];
-            let structure = match self.structure.resolve_ctx(resolver) {
+            let structure = match self.structure.to_resolved(resolver) {
               Ok(structure) => Some(structure),
                 Err(err) => {
                     errs.push(err);
@@ -534,7 +537,7 @@ pub mod payload {
             let validator = match self.validator {
                 None => None,
                 Some(validator) => {
-                    match validator.resolve_ctx(resolver) {
+                    match validator.to_resolved(resolver) {
                         Ok(validator) => Some(validator),
                         Err(err) => {
                             errs.push(err);
@@ -575,11 +578,12 @@ pub mod payload {
 
     pub type CallWithConfig = CallWithConfigDef<Point>;
     pub type CallWithConfigCtx = CallWithConfigDef<PointCtx>;
+    pub type CallWithConfigVar = CallWithConfigDef<PointVar>;
 
-    impl CtxSubst<CallWithConfig> for CallWithConfigCtx {
-        fn resolve_ctx(self, resolver: &dyn CtxResolver) -> Result<CallWithConfig, MsgErr> {
+    impl ToResolved<CallWithConfig> for CallWithConfigCtx {
+        fn to_resolved(self, resolver: &Env) -> Result<CallWithConfig, MsgErr> {
             let mut errs = vec![];
-            let call = match self.call.resolve_ctx(resolver) {
+            let call = match self.call.to_resolved(resolver) {
                 Ok(call) => Some(call),
                 Err(err) => {
                     errs.push(err);
@@ -589,7 +593,7 @@ pub mod payload {
             let config = match self.config {
                 None => None,
                 Some(config) => {
-                    match config.resolve_ctx(resolver) {
+                    match config.to_resolved(resolver) {
                         Ok(config) => Some(config),
                         Err(err) => {
                             errs.push(err);
@@ -614,11 +618,12 @@ pub mod payload {
 
     pub type Call = CallDef<Point>;
     pub type CallCtx = CallDef<PointCtx>;
+    pub type CallVar = CallDef<PointVar>;
 
-    impl CtxSubst<Call> for CallCtx{
-        fn resolve_ctx(self, resolver: &dyn CtxResolver) -> Result<Call, MsgErr> {
+    impl ToResolved<Call> for CallCtx{
+        fn to_resolved(self, resolver: &Env ) -> Result<Call, MsgErr> {
             Ok(Call {
-                point: self.point.resolve_ctx(resolver)?,
+                point: self.point.to_resolved(resolver)?,
                 kind: self.kind
             })
         }
@@ -884,6 +889,7 @@ pub mod payload {
 
     pub type MapPattern = MapPatternDef<Point>;
     pub type MapPatternCtx = MapPatternDef<PointCtx>;
+    pub type MapPatternVar = MapPatternDef<PointVar>;
 
 
     #[derive(Debug, Clone, Serialize, Deserialize )]

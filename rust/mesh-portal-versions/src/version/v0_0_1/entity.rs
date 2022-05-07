@@ -2,7 +2,9 @@ pub mod entity {
 
     use serde::{Deserialize, Serialize};
 
-    #[derive(Debug, Clone, Serialize, Deserialize,strum_macros::Display,strum_macros::EnumString)]
+    #[derive(
+        Debug, Clone, Serialize, Deserialize, strum_macros::Display, strum_macros::EnumString,
+    )]
     pub enum EntityKind {
         Rc,
         Msg,
@@ -46,7 +48,7 @@ pub mod entity {
             }
         }
 
-       impl Into<RequestCore> for Action {
+        impl Into<RequestCore> for Action {
             fn into(self) -> RequestCore {
                 RequestCore {
                     headers: Default::default(),
@@ -243,26 +245,88 @@ pub mod entity {
         }
 
         pub mod set {
+            use crate::error::MsgErr;
             use crate::version::v0_0_1::command::command::common::SetProperties;
-            use crate::version::v0_0_1::id::id::Point;
+            use crate::version::v0_0_1::id::id::{Point, PointCtx, PointVar};
+            use crate::version::v0_0_1::parse::{Env, ToResolved};
             use serde::{Deserialize, Serialize};
 
+            pub type Set = SetDef<Point>;
+            pub type SetCtx = SetDef<PointCtx>;
+            pub type SetVar = SetDef<PointVar>;
+
             #[derive(Debug, Clone, Serialize, Deserialize)]
-            pub struct Set {
-                pub point: Point,
+            pub struct SetDef<Pnt> {
+                pub point: Pnt,
                 pub properties: SetProperties,
+            }
+
+            impl ToResolved<Set> for SetVar {
+                fn to_resolved(self, env: &Env) -> Result<Set, MsgErr> {
+                    let set: SetCtx = self.to_resolved(env)?;
+                    set.to_resolved(env)
+                }
+            }
+
+            impl ToResolved<SetCtx> for SetVar {
+                fn to_resolved(self, env: &Env) -> Result<SetCtx, MsgErr> {
+                    Ok(SetCtx {
+                        point: self.point.to_resolved(env)?,
+                        properties: self.properties,
+                    })
+                }
+            }
+
+            impl ToResolved<Set> for SetCtx {
+                fn to_resolved(self, env: &Env) -> Result<Set, MsgErr> {
+                    Ok(Set {
+                        point: self.point.to_resolved(env)?,
+                        properties: self.properties,
+                    })
+                }
             }
         }
 
         pub mod get {
+            use crate::error::MsgErr;
             use crate::version::v0_0_1::command::command::common::SetProperties;
-            use crate::version::v0_0_1::id::id::Point;
+            use crate::version::v0_0_1::id::id::{Point, PointCtx, PointVar};
+            use crate::version::v0_0_1::parse::{Env, ToResolved};
             use serde::{Deserialize, Serialize};
 
+            pub type Get = GetDef<Point>;
+            pub type GetCtx = GetDef<PointCtx>;
+            pub type GetVar = GetDef<PointVar>;
+
             #[derive(Debug, Clone, Serialize, Deserialize)]
-            pub struct Get {
-                pub point: Point,
+            pub struct GetDef<Pnt> {
+                pub point: Pnt,
                 pub op: GetOp,
+            }
+
+            impl ToResolved<Get> for GetVar {
+                fn to_resolved(self, env: &Env) -> Result<Get, MsgErr> {
+                    let set: GetCtx = self.to_resolved(env)?;
+                    set.to_resolved(env)
+                }
+            }
+
+            impl ToResolved<GetCtx> for GetVar {
+                fn to_resolved(self, env: &Env) -> Result<GetCtx, MsgErr> {
+                    Ok(GetCtx {
+                        point: self.point.to_resolved(env)?,
+                        op: self.op,
+                    })
+                }
+            }
+
+            impl ToResolved<Get> for GetCtx {
+                fn to_resolved(self, env: &Env) -> Result<Get, MsgErr> {
+                    Ok(Get {
+                        point: self.point.to_resolved(env)?,
+                        op: self.op,
+                    })
+                }
             }
 
             #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -279,8 +343,13 @@ pub mod entity {
 
             use crate::error::MsgErr;
             use crate::version::v0_0_1::bin::Bin;
-            use crate::version::v0_0_1::command::command::common::{SetProperties, SetRegistry, StateSrc};
-            use crate::version::v0_0_1::id::id::{GenericKind, HostKey, Point, PointCtx, PointSeg};
+            use crate::version::v0_0_1::command::command::common::{
+                SetProperties, SetRegistry, StateSrc,
+            };
+            use crate::version::v0_0_1::id::id::{
+                GenericKind, HostKey, Point, PointCtx, PointSeg, PointVar,
+            };
+            use crate::version::v0_0_1::parse::{Env, ToResolved};
             use crate::version::v0_0_1::payload::payload::{Payload, Primitive};
             use crate::version::v0_0_1::selector::selector::SpecificSelector;
             use crate::version::v0_0_1::util::ConvertFrom;
@@ -299,10 +368,48 @@ pub mod entity {
                 }
             }
 
+            pub type Template = TemplateDef<PointTemplate>;
+            pub type TemplateCtx = TemplateDef<PointCtx>;
+            pub type TemplateVar = TemplateDef<PointVar>;
+
             #[derive(Debug, Clone, Serialize, Deserialize)]
-            pub struct Template {
-                pub point: PointTemplate,
+            pub struct TemplateDef<Pnt> {
+                pub point: Pnt,
                 pub kind: KindTemplate,
+            }
+
+            impl ToResolved<Template> for TemplateCtx {
+                fn to_resolved(self, env: &Env) -> Result<Template, MsgErr> {
+                    let point = self.point.to_resolved(env)?;
+                    let parent = match point.parent() {
+                        None => {
+                            return Err("point must have a parent".into());
+                        }
+                        Some(parent) => parent,
+                    };
+
+                    let last = match point.last_segment() {
+                        None => {
+                            return Err("Point must have a final segment".into());
+                        }
+                        Some(last) => last,
+                    };
+
+                    let point = PointTemplate {
+                        parent,
+                        child_segment_template: PointSegFactory::Exact(last.to_string()),
+                    };
+
+                    let template = Template {
+                        point,
+                        kind: KindTemplate {
+                            resource_type: "ArtifactBundle".to_string(),
+                            kind: None,
+                            specific: None,
+                        },
+                    };
+                    Ok(template)
+                }
             }
 
             impl Template {
@@ -345,8 +452,12 @@ pub mod entity {
                 Complete,
             }
 
-            pub struct CreateOp {
-                pub template: Template,
+            pub type CreateOp = CreateOpDef<PointTemplate>;
+            pub type CreateOpVar = CreateOpDef<PointVar>;
+            pub type CreateOpCtx = CreateOpDef<PointCtx>;
+
+            pub struct CreateOpDef<Pnt> {
+                pub template: TemplateDef<Pnt>,
                 pub properties: SetProperties,
                 pub strategy: Strategy,
                 pub registry: SetRegistry,
@@ -407,9 +518,13 @@ pub mod entity {
                 HostedBy(HostKey),
             }
 
+            pub type PointTemplate = PointTemplateDef<Point>;
+            pub type PointTemplateCtx = PointTemplateDef<PointCtx>;
+            pub type PointTemplateVar = PointTemplateDef<PointVar>;
+
             #[derive(Debug, Clone, Serialize, Deserialize)]
-            pub struct PointTemplate {
-                pub parent: Point,
+            pub struct PointTemplateDef<Pnt> {
+                pub parent: Pnt,
                 pub child_segment_template: PointSegFactory,
             }
 
@@ -434,7 +549,9 @@ pub mod entity {
             use crate::version::v0_0_1::payload::payload::{
                 MapPattern, Payload, PayloadList, Primitive, PrimitiveType,
             };
-            use crate::version::v0_0_1::selector::selector::{Hop, PointKindHierarchy, PointSelector};
+            use crate::version::v0_0_1::selector::selector::{
+                Hop, PointKindHierarchy, PointSelector,
+            };
             use crate::version::v0_0_1::util::ConvertFrom;
 
             #[derive(Debug, Clone, Serialize, Deserialize)]

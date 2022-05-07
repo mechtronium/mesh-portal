@@ -16,10 +16,7 @@ pub mod id {
 
     use crate::error::{MsgErr, ParseErrs};
     use crate::version::v0_0_1::id::id::PointSegCtx::Working;
-    use crate::version::v0_0_1::parse::{
-        camel_case, consume_point, consume_point_ctx, kind, point_and_kind, point_route_segment,
-        Ctx, CtxResolver, CtxSubst, Res, VarResolver, VarResolverErr, VarSubst,
-    };
+    use crate::version::v0_0_1::parse::{camel_case, consume_point, consume_point_ctx, kind, point_and_kind, point_route_segment, Ctx, CtxResolver,  Res, VarResolver, VarResolverErr,  ToResolved, Env};
 
     use crate::version::v0_0_1::parse::error::result;
     use crate::version::v0_0_1::selector::selector::{
@@ -30,12 +27,43 @@ pub mod id {
 
     pub type GenericKindBase = String;
 
+    pub type PointKind = PointKindDef<Point>;
+    pub type PointKindCtx = PointKindDef<PointCtx>;
+    pub type PointKindVar = PointKindDef<PointVar>;
+
     #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
-    pub struct PointKind {
-        pub point: Point,
+    pub struct PointKindDef<Pnt> {
+        pub point: Pnt,
         pub kind: GenericKind,
     }
 
+    impl ToResolved<PointKindCtx> for PointKindVar {
+        fn to_resolved(self, env: &Env) -> Result<PointKindCtx, MsgErr> {
+            Ok(PointKindCtx {
+                point: self.point.to_resolved(env)?,
+                kind: self.kind
+            })
+        }
+    }
+
+    impl ToResolved<PointKind> for PointKindVar {
+        fn to_resolved(self, env: &Env) -> Result<PointKind, MsgErr> {
+            Ok(PointKind{
+                point: self.point.to_resolved(env)?,
+                kind: self.kind
+            })
+        }
+    }
+
+
+    impl ToResolved<PointKind> for PointKindCtx {
+        fn to_resolved(self, env: &Env) -> Result<PointKind, MsgErr> {
+            Ok(PointKind{
+                point: self.point.to_resolved(env)?,
+                kind: self.kind
+            })
+        }
+    }
     impl PointKind {
         pub fn new(point: Point, kind: GenericKind) -> Self {
             Self { point, kind }
@@ -52,7 +80,8 @@ pub mod id {
         type Err = MsgErr;
 
         fn from_str(s: &str) -> Result<Self, Self::Err> {
-            let point_and_kind: PointKind = result(all_consuming(point_and_kind)(new_span(s)))?;
+            let point_and_kind: PointKindVar = result(all_consuming(point_and_kind)(new_span(s)))?;
+            let point_and_kind = point_and_kind.collapse()?;
             Ok(point_and_kind)
         }
     }
@@ -773,7 +802,30 @@ pub mod id {
     pub type PointCtx = PointDef<RouteSeg, PointSegCtx>;
     pub type PointVar = PointDef<RouteSegVar, PointSegVar>;
 
-    impl VarSubst<PointCtx> for PointVar {
+    impl PointVar {
+        pub fn to_point(self) -> Result<Point,MsgErr> {
+            self.collapse()
+        }
+
+        pub fn to_point_ctx(self) -> Result<PointCtx,MsgErr> {
+            self.collapse()
+        }
+    }
+
+    impl ToResolved<Point> for PointVar {
+        fn to_resolved(self, env: &Env) -> Result<Point, MsgErr> {
+            let point_ctx : PointCtx = self.to_resolved(env)?;
+            point_ctx.to_resolved(env)
+        }
+    }
+
+    impl PointCtx{
+        pub fn to_point(self) -> Result<Point,MsgErr> {
+            self.collapse()
+        }
+    }
+
+    impl ToResolved<PointCtx> for PointVar {
         fn collapse(self) -> Result<PointCtx, MsgErr> {
             let route = self.route.try_into()?;
             let mut segments = vec![];
@@ -783,24 +835,38 @@ pub mod id {
             Ok(PointCtx { route, segments })
         }
 
-        fn resolve_vars(self, resolver: &dyn VarResolver) -> Result<PointCtx, MsgErr> {
+        fn to_resolved(self, env: &Env) -> Result<PointCtx, MsgErr> {
             let mut rtn = String::new();
             let mut after_fs = false;
             let mut errs = vec![];
 
             match &self.route {
-                RouteSegVar::Var(var) => match resolver.val(var.name.clone().as_str()) {
+                RouteSegVar::Var(var) => match env.val(var.name.clone().as_str()) {
                     Ok(val) => {
                         rtn.push_str(format!("{}::", val.as_str()).as_str());
                     }
                     Err(err) => {
-                        errs.push(ParseErrs::from_range(
-                            format!("variable could not be resolved '{}'", var.name.clone())
-                                .as_str(),
-                            "Not Found",
-                            var.range.clone(),
-                            var.extra.clone(),
-                        ));
+                        match err {
+                            VarResolverErr::NotAvaiable => {
+                                errs.push(ParseErrs::from_range(
+                                    format!("variables not available in this context '{}'", var.name.clone())
+                                        .as_str(),
+                                    "Not Available",
+                                    var.range.clone(),
+                                    var.extra.clone(),
+                                ));
+                            }
+                            VarResolverErr::NotFound => {
+                                errs.push(ParseErrs::from_range(
+                                    format!("variable could not be resolved '{}'", var.name.clone())
+                                        .as_str(),
+                                    "Not Found",
+                                    var.range.clone(),
+                                    var.extra.clone(),
+                                ));
+                            }
+                        }
+
                     }
                 },
 
@@ -818,7 +884,7 @@ pub mod id {
 
             for (index, segment) in self.segments.iter().enumerate() {
                 if let PointSegVar::Var(ref var) = segment {
-                    match resolver.val(var.name.clone().as_str()) {
+                    match env.val(var.name.clone().as_str()) {
                         Ok(val) => {
                             if index > 1 {
                                 if after_fs {
@@ -830,13 +896,27 @@ pub mod id {
                             rtn.push_str(val.as_str());
                         }
                         Err(err) => {
-                            errs.push(ParseErrs::from_range(
-                                format!("variable could not be resolved '{}'", var.name.clone())
-                                    .as_str(),
-                                "Not Found",
-                                var.range.clone(),
-                                var.extra.clone(),
-                            ));
+
+                            match err {
+                                VarResolverErr::NotAvaiable => {
+                                    errs.push(ParseErrs::from_range(
+                                        format!("variables not available in this context '{}'", var.name.clone())
+                                            .as_str(),
+                                        "Not Available",
+                                        var.range.clone(),
+                                        var.extra.clone(),
+                                    ));
+                                }
+                                VarResolverErr::NotFound => {
+                                    errs.push(ParseErrs::from_range(
+                                        format!("variable could not be resolved '{}'", var.name.clone())
+                                            .as_str(),
+                                        "Not Found",
+                                        var.range.clone(),
+                                        var.extra.clone(),
+                                    ));
+                                }
+                            }
                         }
                     }
                 } else if PointSegVar::FilesystemRootDir == *segment {
@@ -866,7 +946,7 @@ pub mod id {
         }
     }
 
-    impl CtxSubst<Point> for PointCtx {
+    impl ToResolved<Point> for PointCtx {
         fn collapse(self) -> Result<Point, MsgErr> {
             let mut segments = vec![];
             for segment in self.segments {
@@ -878,7 +958,7 @@ pub mod id {
             })
         }
 
-        fn resolve_ctx(self, resolver: &dyn CtxResolver) -> Result<Point, MsgErr> {
+        fn to_resolved(self, env: &Env ) -> Result<Point, MsgErr> {
             if self.segments.is_empty() {
                 return Ok(Point {
                     route: self.route,
@@ -894,23 +974,43 @@ pub mod id {
                     PointSegCtx::Working { range, extra } => {
                         if index > 1 {
                             return Err(ParseErrs::from_range(
-                                "working dir can only be referenced in the first point segment",
+                                "working point can only be referenced in the first point segment",
                                 "first segment only",
                                 range.clone(),
                                 extra.clone(),
                             ));
                         }
-                        point = resolver.working_point().clone();
+                        point = match env.point_or() {
+                            Ok(point) => point.clone(),
+                            Err(_) => {
+                                return Err(ParseErrs::from_range(
+                                    "working point is not available in this context",
+                                    "not available",
+                                    range.clone(),
+                                    extra.clone(),
+                                ));
+                            }
+                        };
                     }
                     PointSegCtx::Pop { range, extra } => {
                         if index <= 1 {
-                            point = resolver.working_point().clone();
+                            point = match env.point_or() {
+                                Ok(point) => point.clone(),
+                                Err(_) => {
+                                    return Err(ParseErrs::from_range(
+                                        "cannot pop because working point is not available in this context",
+                                        "not available",
+                                        range.clone(),
+                                        extra.clone(),
+                                    ));
+                                }
+                            };
                         }
                         if point.segments.pop().is_none() {
                             return Err(ParseErrs::from_range(
                                 format!(
                                     "Too many point pops. working point was: '{}'",
-                                    resolver.working_point().to_string()
+                                    env.point_or().unwrap().to_string()
                                 )
                                 .as_str(),
                                 "too many point pops",

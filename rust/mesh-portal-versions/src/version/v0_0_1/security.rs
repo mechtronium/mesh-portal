@@ -2,7 +2,7 @@ use crate::error::MsgErr;
 use crate::version::v0_0_1::id::id::Point;
 use crate::version::v0_0_1::messaging::messaging::ScopeGrant;
 use crate::version::v0_0_1::parse::error::result;
-use crate::version::v0_0_1::parse::{MapResolver, particle_perms, permissions_mask, privilege, VarResolver, VarSubst};
+use crate::version::v0_0_1::parse::{MapResolver, particle_perms, permissions_mask, privilege };
 use crate::version::v0_0_1::selector::selector::PointSelector;
 use nom::combinator::all_consuming;
 use nom_supreme::parser_ext::MapRes;

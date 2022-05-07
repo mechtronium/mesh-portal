@@ -2,8 +2,8 @@ use crate::version::v0_0_1::payload::payload::{Payload, PayloadPattern, PayloadP
 use crate::version::v0_0_1::util::ValuePattern;
 use serde::{Deserialize, Serialize};
 use crate::error::MsgErr;
-use crate::version::v0_0_1::id::id::{Point, PointCtx};
-use crate::version::v0_0_1::parse::{CtxResolver, CtxSubst};
+use crate::version::v0_0_1::id::id::{Point, PointCtx, PointVar};
+use crate::version::v0_0_1::parse::{CtxResolver};
 
 pub mod selector {
     use std::convert::TryInto;
@@ -18,8 +18,8 @@ pub mod selector {
     use crate::error::MsgErr;
 
     use crate::version::v0_0_1::entity::entity::request::{Action, Rc, RcCommandType, RequestCore};
-    use crate::version::v0_0_1::id::id::{GenericKind, GenericKindBase, Point, PointCtx, PointSeg, RouteSeg, Specific, Tks, Version};
-    use crate::version::v0_0_1::parse::{camel_case, camel_case_to_string_matcher, consume_hierarchy, file_chars, path, path_regex, point, point_segment_selector, point_selector, Res};
+    use crate::version::v0_0_1::id::id::{GenericKind, GenericKindBase, Point, PointCtx, PointSeg, PointVar, RouteSeg, Specific, Tks, Version};
+    use crate::version::v0_0_1::parse::{camel_case, camel_case_to_string_matcher, consume_hierarchy, file_chars, path, path_regex, point_segment_selector, point_selector, Res};
     use crate::version::v0_0_1::payload::payload::{Call, CallKind, CallWithConfig, CallWithConfigDef, HttpCall, HttpMethod, HttpMethodType, ListPattern, MapPattern, MsgCall, NumRange, Payload, PayloadFormat, PayloadPattern, PayloadPatternDef, PayloadType, PayloadTypePatternDef, Primitive, PrimitiveType};
     use crate::version::v0_0_1::selector::selector::specific::{
         ProductSelector, VariantSelector, VendorSelector,
@@ -882,6 +882,7 @@ pub mod selector {
 
      */
 
+    pub type MapEntryPatternVar = MapEntryPatternDef<PointVar>;
     pub type MapEntryPatternCtx = MapEntryPatternDef<PointCtx>;
     pub type MapEntryPattern = MapEntryPatternDef<Point>;
 
@@ -1186,12 +1187,14 @@ pub mod selector {
 
 pub type PayloadBlock = PayloadBlockDef<Point>;
 pub type PayloadBlockCtx = PayloadBlockDef<PointCtx>;
+pub type PayloadBlockVar = PayloadBlockDef<PointVar>;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum PayloadBlockDef<Pnt> {
     RequestPattern(PatternBlockDef<Pnt>),
     ResponsePattern(PatternBlockDef<Pnt>),
 }
+/*
 impl CtxSubst<PayloadBlock> for PayloadBlockCtx{
     fn resolve_ctx(self, resolver: &dyn CtxResolver) -> Result<PayloadBlock, MsgErr> {
         match self {
@@ -1204,6 +1207,7 @@ impl CtxSubst<PayloadBlock> for PayloadBlockCtx{
         }
     }
 }
+ */
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UploadBlock {
@@ -1217,9 +1221,11 @@ pub struct CreateBlock {
 
 pub type PatternBlock = PatternBlockDef<Point>;
 pub type PatternBlockCtx = PatternBlockDef<PointCtx>;
+pub type PatternBlockVar = PatternBlockDef<PointVar>;
 pub type PatternBlockDef<Pnt> = ValuePattern<PayloadPatternDef<Pnt>>;
 
 
+/*
 impl CtxSubst<PatternBlock> for PatternBlockCtx{
     fn resolve_ctx(self, resolver: &dyn CtxResolver) -> Result<PatternBlock, MsgErr> {
         match self {
@@ -1231,3 +1237,5 @@ impl CtxSubst<PatternBlock> for PatternBlockCtx{
         }
     }
 }
+
+ */

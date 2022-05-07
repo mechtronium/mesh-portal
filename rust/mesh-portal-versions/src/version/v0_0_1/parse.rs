@@ -16,21 +16,24 @@ use nom::combinator::{cut, eof, fail, not, peek, recognize, success, value, veri
 use crate::error::{MsgErr, ParseErrs};
 use crate::version::v0_0_1::command::command::common::{PropertyMod, SetProperties, StateSrc};
 use crate::version::v0_0_1::entity::entity::request::create::{
-    Create, CreateOp, KindTemplate, PointSegFactory, PointTemplate, PointTemplateSeg, Require,
-    Strategy, Template,
+    Create, CreateOp, CreateOpVar, KindTemplate, PointSegFactory, PointTemplate, PointTemplateSeg,
+    Require, Strategy, Template, TemplateVar,
 };
-use crate::version::v0_0_1::entity::entity::request::get::{Get, GetOp};
+use crate::version::v0_0_1::entity::entity::request::get::{Get, GetOp, GetVar};
 use crate::version::v0_0_1::entity::entity::request::select::{
     Select, SelectIntoPayload, SelectKind,
 };
-use crate::version::v0_0_1::entity::entity::request::set::Set;
-use crate::version::v0_0_1::id::id::{Point, PointCtx, PointSegCtx, PointSegDelim, PointSegment, PointSegVar, PointVar, RouteSeg, RouteSegVar, Variable, Version};
+use crate::version::v0_0_1::entity::entity::request::set::{Set, SetVar};
+use crate::version::v0_0_1::id::id::{
+    Point, PointCtx, PointKindVar, PointSegCtx, PointSegDelim, PointSegVar, PointSegment, PointVar,
+    RouteSeg, RouteSegVar, Variable, Version,
+};
 use crate::version::v0_0_1::security::{
     AccessGrantKind, AccessGrantKindDef, ChildPerms, ParticlePerms, Permissions, PermissionsMask,
     PermissionsMaskKind, Privilege,
 };
 use crate::version::v0_0_1::selector::selector::{
-    MapEntryPatternCtx, PointKindHierarchy, PointKindSeg,
+    MapEntryPatternCtx, MapEntryPatternVar, PointKindHierarchy, PointKindSeg,
 };
 use crate::version::v0_0_1::util::{MethodPattern, StringMatcher, ValuePattern};
 use nom::bytes::complete::take;
@@ -209,9 +212,16 @@ pub fn version_point_segment<I: Span>(input: I) -> Res<I, PointSeg> {
     .map(|(next, (version, _))| (next, PointSeg::Version(version)))
 }
 
-pub fn dir_pop<I: Span>(input: I) -> Res<I, PointSegCtx> {
-    context("point:dir_pop", tuple((tag(".."), opt(tag("/")))))(input)
-        .map(|(next, _)| (next.clone(), PointSegCtx::Pop{ range: next.location_offset()-2..next.location_offset(), extra: next.extra()}))
+pub fn dir_pop<I: Span>(input: I) -> Res<I, PointSegVar> {
+    context("point:dir_pop", tuple((tag(".."), opt(tag("/")))))(input).map(|(next, _)| {
+        (
+            next.clone(),
+            PointSegVar::Pop {
+                range: next.location_offset() - 2..next.location_offset(),
+                extra: next.extra(),
+            },
+        )
+    })
 }
 
 pub fn filesystem_point_segment<I: Span>(input: I) -> Res<I, PointSeg> {
@@ -226,7 +236,7 @@ pub fn filesystem_point_segment<I: Span>(input: I) -> Res<I, PointSeg> {
 }
 
 pub fn dir_point_segment<I: Span>(input: I) -> Res<I, PointSeg> {
-    context("point:dir_segment", file_chars )(input)
+    context("point:dir_segment", file_chars)(input)
         .map(|(next, dir)| (next, PointSeg::Dir(dir.to_string())))
 }
 
@@ -235,9 +245,9 @@ pub fn root_dir_point_segment<I: Span>(input: I) -> Res<I, PointSeg> {
         .map(|(next, _)| (next, PointSeg::FilesystemRootDir))
 }
 
-pub fn root_dir_point_segment_ctx<I: Span>(input: I) -> Res<I, PointSegCtx> {
+pub fn root_dir_point_segment_ctx<I: Span>(input: I) -> Res<I, PointSegVar> {
     context("point:root_filesystem_segment", tag(":/"))(input)
-        .map(|(next, _)| (next, PointSegCtx::FilesystemRootDir))
+        .map(|(next, _)| (next, PointSegVar::FilesystemRootDir))
 }
 
 pub fn root_dir_point_segment_var<I: Span>(input: I) -> Res<I, PointSegVar> {
@@ -245,32 +255,9 @@ pub fn root_dir_point_segment_var<I: Span>(input: I) -> Res<I, PointSegVar> {
         .map(|(next, _)| (next, PointSegVar::FilesystemRootDir))
 }
 
-
 pub fn file_point_segment<I: Span>(input: I) -> Res<I, PointSeg> {
     context("point:file_segment", file_chars)(input)
         .map(|(next, filename)| (next, PointSeg::File(filename.to_string())))
-}
-
-pub fn point<I: Span>(input: I) -> Res<I, Point> {
-    let (next, point) = point_ctx(input.clone())?;
-
-    match point.try_into() {
-        Ok(point) => Ok((next, point)),
-        Err(err) => {
-            let span = input.slice(0..(input.len() - next.len()));
-            let err = ErrorTree::from_error_kind(span.clone(), ErrorKind::Tag);
-            let err = ErrorTree::add_context(span.clone(), "point", err);
-            Err(nom::Err::Error(err))
-        }
-    }
-}
-
-pub fn point_ctx<I: Span>(input: I) -> Res<I, PointCtx> {
-    context(
-        "point",
-        tuple((alt((root_point, point_non_root)), peek(eop))),
-    )(input.clone())
-    .map(|(next, (point, _))| (next, point))
 }
 
 pub fn point_var<I: Span>(input: I) -> Res<I, PointVar> {
@@ -278,10 +265,8 @@ pub fn point_var<I: Span>(input: I) -> Res<I, PointVar> {
         "point",
         tuple((alt((root_point_var, point_non_root_var)), peek(eop))),
     )(input.clone())
-        .map(|(next, (point, _))| (next, point))
+    .map(|(next, (point, _))| (next, point))
 }
-
-
 
 /*
 pub fn var<O,F,P>(mut f: F ) -> impl FnMut(I) -> Res<I,Var<O,P>> where F: Parser<I,O,ErrorTree<I>>, P: VarParser<O> {
@@ -317,86 +302,77 @@ pub fn var<O,F,P>(mut f: F ) -> impl FnMut(I) -> Res<I,Var<O,P>> where F: Parser
 
  */
 
-pub fn var_seg <F,I: Span>(mut f: F ) -> impl FnMut(I) -> Res<I,PointSegVar>+Copy where F: Parser<I,PointSegCtx,ErrorTree<I>>+Copy{
-
-    move | input: I | {
+pub fn var_seg<F, I: Span>(mut f: F) -> impl FnMut(I) -> Res<I, PointSegVar> + Copy
+where
+    F: Parser<I, PointSegCtx, ErrorTree<I>> + Copy,
+{
+    move |input: I| {
         let offset = input.location_offset();
-        let result = pair(peek(tag("$")),context("var",cut(delimited(tag("${"), skewer_case, tag("}") ))))(input.clone());
+        let result = pair(
+            peek(tag("$")),
+            context("var", cut(delimited(tag("${"), skewer_case, tag("}")))),
+        )(input.clone());
 
         match result {
-            Ok((next,(_,var))) => {
+            Ok((next, (_, var))) => {
                 let range = Range {
                     start: offset,
-                    end: next.location_offset()
+                    end: next.location_offset(),
                 };
-                let var = Variable::new(var.to_string(), range, next.extra() );
-                Ok( (next, PointSegVar::Var(var)) )
+                let var = Variable::new(var.to_string(), range, next.extra());
+                Ok((next, PointSegVar::Var(var)))
             }
-            Err(err) => {
-                match err {
-                    Err::Incomplete(needed) => {
-                        return Err(nom::Err::Incomplete(needed))
-                    }
-                    Err::Failure(err) => {
-                        return Err(nom::Err::Failure(err))
-                    }
-                    Err::Error(_) => {
-                        f.parse(input).map(|(next,seg)|(next,seg.into()))
-                    }
-                }
-            }
+            Err(err) => match err {
+                Err::Incomplete(needed) => return Err(nom::Err::Incomplete(needed)),
+                Err::Failure(err) => return Err(nom::Err::Failure(err)),
+                Err::Error(_) => f.parse(input).map(|(next, seg)| (next, seg.into())),
+            },
         }
     }
 }
 
-pub fn var_route<'a,F,I: Span>(mut f: F ) -> impl FnMut(I) -> Res<I,RouteSegVar> where F: Parser<I,RouteSeg,ErrorTree<I>>{
-    move | input: I | {
+pub fn var_route<'a, F, I: Span>(mut f: F) -> impl FnMut(I) -> Res<I, RouteSegVar>
+where
+    F: Parser<I, RouteSeg, ErrorTree<I>>,
+{
+    move |input: I| {
         let offset = input.location_offset();
-        let result = pair(peek(tag("$")),context("var",cut(delimited(tag("${"), skewer_case, tag("}") ))))(input.clone());
+        let result = pair(
+            peek(tag("$")),
+            context("var", cut(delimited(tag("${"), skewer_case, tag("}")))),
+        )(input.clone());
         match result {
-            Ok((next,(_,var))) => {
+            Ok((next, (_, var))) => {
                 let range = Range {
                     start: offset,
-                    end: next.location_offset()
+                    end: next.location_offset(),
                 };
-                let var = Variable::new(var.to_string(), range, next.extra() );
-                Ok( (next, RouteSegVar::Var(var)) )
+                let var = Variable::new(var.to_string(), range, next.extra());
+                Ok((next, RouteSegVar::Var(var)))
             }
-            Err(err) => {
-                f.parse(input).map(|(next,seg)|(next,seg.into()))
-            }
+            Err(err) => f.parse(input).map(|(next, seg)| (next, seg.into())),
         }
     }
 }
 pub fn root_point_var<I: Span>(input: I) -> Res<I, PointVar> {
-    context("root_point",tuple((opt(terminated(var_route(point_route_segment), tag("::"))), tag("ROOT"))))(input).map(
-        |(next, (route, _))| {
-            let route = route.unwrap_or(RouteSegVar::Local);
-            let point = PointVar {
-                route,
-                segments: vec![],
-            };
-            (next, point)
-        },
-    )
-}
-
-pub fn root_point<I: Span>(input: I) -> Res<I, PointCtx> {
-    tuple((opt(terminated(point_route_segment, tag("::"))), tag("ROOT")))(input).map(
-        |(next, (route, _))| {
-            let route = route.unwrap_or(RouteSeg::Local);
-            let point = PointCtx {
-                route,
-                segments: vec![],
-            };
-            (next, point)
-        },
-    )
+    context(
+        "root_point",
+        tuple((
+            opt(terminated(var_route(point_route_segment), tag("::"))),
+            tag("ROOT"),
+        )),
+    )(input)
+    .map(|(next, (route, _))| {
+        let route = route.unwrap_or(RouteSegVar::Local);
+        let point = PointVar {
+            route,
+            segments: vec![],
+        };
+        (next, point)
+    })
 }
 
 pub fn point_non_root_var<I: Span>(input: I) -> Res<I, PointVar> {
-
-
     context(
         "point_non_root",
         tuple((
@@ -405,67 +381,12 @@ pub fn point_non_root_var<I: Span>(input: I) -> Res<I, PointVar> {
                 opt(terminated(var_route(point_route_segment), tag("::"))),
             ),
             var_seg(ctx_seg(space_point_segment)),
-            many0(
-                mesh_seg(var_seg(pop(base_point_segment)))
-            ),
+            many0(mesh_seg(var_seg(pop(base_point_segment)))),
             opt(mesh_seg(var_seg(pop(version_point_segment)))),
             opt(tuple((
                 root_dir_point_segment_var,
-                many0(terminated(var_seg(pop(dir_point_segment ) ),tag("/"))),
-                opt(var_seg(pop(file_point_segment ) ) ),
-                eop,
-            ))),
-            eop,
-        )),
-    )(input)
-        .map(
-            |(next, (route, space, mut bases, version, filesystem, _))| {
-                let route = route.unwrap_or(RouteSegVar::Local);
-                let mut segments = vec![];
-                let mut bases : Vec<PointSegVar> = bases;
-                segments.push(space);
-                segments.append(&mut bases);
-                match version {
-                    None => {}
-                    Some(version) => {
-                        segments.push(version);
-                    }
-                }
-
-                if let Option::Some((fsroot, mut dirs, file,_ )) = filesystem {
-                    segments.push(fsroot);
-                    segments.append(&mut dirs);
-                    if let Some(file) = file {
-                        segments.push(file);
-                    }
-                }
-
-                let point = PointVar{ route, segments };
-
-                (next, point)
-            },
-        )
-}
-
-
-pub fn point_non_root<I: Span>(input: I) -> Res<I, PointCtx> {
-    context(
-        "point_non_root",
-        tuple((
-            context(
-                "point_route",
-                opt(terminated(point_route_segment, tag("::"))),
-            ),
-            ctx_seg(space_point_segment),
-            many0(tuple((
-                seg_delim,
-                peek(context("point:bad_leading", cut(alt((tag("."),lowercase1, digit1))))),
-                pop(base_point_segment),
-            ))),
-            opt(mesh_seg(version_point_segment)),
-            opt(tuple((
-                root_dir_point_segment_ctx,
-                many0(pop(filesystem_point_segment)),
+                many0(terminated(var_seg(pop(dir_point_segment)), tag("/"))),
+                opt(var_seg(pop(file_point_segment))),
                 eop,
             ))),
             eop,
@@ -473,9 +394,9 @@ pub fn point_non_root<I: Span>(input: I) -> Res<I, PointCtx> {
     )(input)
     .map(
         |(next, (route, space, mut bases, version, filesystem, _))| {
-            let route = route.unwrap_or(RouteSeg::Local);
+            let route = route.unwrap_or(RouteSegVar::Local);
             let mut segments = vec![];
-            let mut bases = bases.into_iter().map(|(_, _, seg)| seg).collect();
+            let mut bases: Vec<PointSegVar> = bases;
             segments.push(space);
             segments.append(&mut bases);
             match version {
@@ -485,12 +406,15 @@ pub fn point_non_root<I: Span>(input: I) -> Res<I, PointCtx> {
                 }
             }
 
-            if let Option::Some((fsroot, mut files, _)) = filesystem {
+            if let Option::Some((fsroot, mut dirs, file, _)) = filesystem {
                 segments.push(fsroot);
-                segments.append(&mut files);
+                segments.append(&mut dirs);
+                if let Some(file) = file {
+                    segments.push(file);
+                }
             }
 
-            let point = PointCtx { route, segments };
+            let point = PointVar { route, segments };
 
             (next, point)
         },
@@ -498,14 +422,16 @@ pub fn point_non_root<I: Span>(input: I) -> Res<I, PointCtx> {
 }
 
 pub fn consume_point(input: &str) -> Result<Point, MsgErr> {
-    let span = new_span(input);
-    let point = result(context("consume", all_consuming(point))(span))?;
-    Ok(point)
+    consume_point_ctx(input)?.collapse()
 }
 
 pub fn consume_point_ctx(input: &str) -> Result<PointCtx, MsgErr> {
+    consume_point_var(input)?.collapse()
+}
+
+pub fn consume_point_var(input: &str) -> Result<PointVar, MsgErr> {
     let span = new_span(input);
-    let point = result(context("consume", all_consuming(point_ctx))(span))?;
+    let point = result(context("consume", all_consuming(point_var))(span))?;
     Ok(point)
 }
 
@@ -859,7 +785,7 @@ where
     )
 }
 
-pub fn rec_skewer<I:Span>(input: I) -> Res<I, I> {
+pub fn rec_skewer<I: Span>(input: I) -> Res<I, I> {
     recognize(tuple((lowercase1, opt(skewer))))(input)
 }
 
@@ -1094,7 +1020,7 @@ pub fn camel_case<I: Span>(input: I) -> Res<I, I> {
     //recognize(alpha1)(input)
 }
 
-pub fn skewer_case<I:Span>(input: I) -> Res<I, I> {
+pub fn skewer_case<I: Span>(input: I) -> Res<I, I> {
     rec_skewer(input)
     //recognize(alpha1)(input)
 }
@@ -1376,15 +1302,15 @@ pub fn property_value_not_space_or_comma<I: Span>(input: I) -> Res<I, I> {
     is_not(" \n\r\t,")(input)
 }
 
-pub fn property_value_single_quotes<I:Span>(input: I) -> Res<I, I> {
+pub fn property_value_single_quotes<I: Span>(input: I) -> Res<I, I> {
     delimited(tag("'"), is_not("'"), tag("'"))(input)
 }
 
-pub fn property_value_double_quotes<I:Span>(input: I) -> Res<I, I> {
+pub fn property_value_double_quotes<I: Span>(input: I) -> Res<I, I> {
     delimited(tag("\""), is_not("\""), tag("\""))(input)
 }
 
-pub fn property_value<I:Span>(input: I) -> Res<I, I> {
+pub fn property_value<I: Span>(input: I) -> Res<I, I> {
     alt((
         property_value_single_quotes,
         property_value_double_quotes,
@@ -1392,16 +1318,16 @@ pub fn property_value<I:Span>(input: I) -> Res<I, I> {
     ))(input)
 }
 
-pub fn unset_property_mod<I:Span>(input: I) -> Res<I, PropertyMod> {
+pub fn unset_property_mod<I: Span>(input: I) -> Res<I, PropertyMod> {
     tuple((tag("!"), skewer_dot))(input)
         .map(|(next, (_, name))| (next, PropertyMod::UnSet(name.to_string())))
 }
 
-pub fn property_mod<I:Span>(input: I) -> Res<I, PropertyMod> {
+pub fn property_mod<I: Span>(input: I) -> Res<I, PropertyMod> {
     alt((set_property_mod, unset_property_mod))(input)
 }
 
-pub fn set_properties<I:Span>(input: I) -> Res<I, SetProperties> {
+pub fn set_properties<I: Span>(input: I) -> Res<I, SetProperties> {
     separated_list0(tag(","), tuple((multispace0, property_mod, multispace0)))(input).map(
         |(next, properties)| {
             let mut set_properties = SetProperties::new();
@@ -1413,7 +1339,7 @@ pub fn set_properties<I:Span>(input: I) -> Res<I, SetProperties> {
     )
 }
 
-pub fn get_properties<I:Span>(input: I) -> Res<I, Vec<String>> {
+pub fn get_properties<I: Span>(input: I) -> Res<I, Vec<String>> {
     separated_list0(tag(","), tuple((multispace0, skewer, multispace0)))(input).map(
         |(next, keys)| {
             let keys: Vec<String> = keys.iter().map(|(_, key, _)| key.to_string()).collect();
@@ -1422,7 +1348,7 @@ pub fn get_properties<I:Span>(input: I) -> Res<I, Vec<String>> {
     )
 }
 
-pub fn create<I:Span>(input: I) -> Res<I, Create> {
+pub fn create<I: Span>(input: I) -> Res<I, Create> {
     tuple((template, opt(delimited(tag("{"), set_properties, tag("}")))))(input).map(
         |(next, (template, properties))| {
             let properties = match properties {
@@ -1441,30 +1367,32 @@ pub fn create<I:Span>(input: I) -> Res<I, Create> {
     )
 }
 
-pub fn set<I:Span>(input: I) -> Res<I, Set> {
-    tuple((point, delimited(tag("{"), set_properties, tag("}"))))(input).map(
+pub fn set<I: Span>(input: I) -> Res<I, SetVar> {
+    tuple((point_var, delimited(tag("{"), set_properties, tag("}"))))(input).map(
         |(next, (point, properties))| {
-            let set = Set { point, properties };
+            let set = SetVar { point, properties };
             (next, set)
         },
     )
 }
 
-pub fn get<I:Span>(input: I) -> Res<I, Get> {
-    tuple((point, opt(delimited(tag("{"), get_properties, tag("}")))))(input).map(
-        |(next, (point, keys))| {
-            let op = match keys {
-                None => GetOp::State,
-                Some(keys) => GetOp::Properties(keys),
-            };
-            let get = Get { point, op };
+pub fn get<I: Span>(input: I) -> Res<I, GetVar> {
+    tuple((
+        point_var,
+        opt(delimited(tag("{"), get_properties, tag("}"))),
+    ))(input)
+    .map(|(next, (point, keys))| {
+        let op = match keys {
+            None => GetOp::State,
+            Some(keys) => GetOp::Properties(keys),
+        };
+        let get = GetVar { point, op };
 
-            (next, get)
-        },
-    )
+        (next, get)
+    })
 }
 
-pub fn select<I:Span>(input: I) -> Res<I, Select> {
+pub fn select<I: Span>(input: I) -> Res<I, Select> {
     point_selector(input).map(|(next, point_kind_pattern)| {
         let select = Select {
             pattern: point_kind_pattern,
@@ -1476,9 +1404,10 @@ pub fn select<I:Span>(input: I) -> Res<I, Select> {
     })
 }
 
-pub fn publish<I:Span>(input: I) -> Res<I, CreateOp> {
-    let (next, (upload, _, point)) = tuple((upload_step, space1, point))(input.clone())?;
+pub fn publish<I: Span>(input: I) -> Res<I, CreateOpVar> {
+    let (next, (upload, _, point)) = tuple((upload_step, space1, point_var))(input.clone())?;
 
+    /*
     let parent = match point.parent() {
         None => {
             return Err(nom::Err::Error(ErrorTree::from_error_kind(
@@ -1499,11 +1428,10 @@ pub fn publish<I:Span>(input: I) -> Res<I, CreateOp> {
         Some(last) => last,
     };
 
-    let template = Template {
-        point: PointTemplate {
-            parent,
-            child_segment_template: PointSegFactory::Exact(last.to_string()),
-        },
+     */
+
+    let template = TemplateVar {
+        point,
         kind: KindTemplate {
             resource_type: "ArtifactBundle".to_string(),
             kind: None,
@@ -1511,7 +1439,7 @@ pub fn publish<I:Span>(input: I) -> Res<I, CreateOp> {
         },
     };
 
-    let create = CreateOp {
+    let create = CreateOpVar {
         template,
         state: StateSrc::Stateless,
         properties: Default::default(),
@@ -1538,14 +1466,59 @@ impl ToString for Ctx {
     }
 }
 
-pub trait CtxResolver {
-    fn ctx(&self, ctx: &Ctx) -> Result<String, MsgErr>;
-    fn working_point(&self) -> &Point;
+pub struct Env {
+    pub point: Option<Point>,
+    pub var_resolver: Option<MapResolver>,
 }
 
+impl Env {
+    pub fn empty() -> Self {
+        Self {
+            point: None,
+            var_resolver: None,
+        }
+    }
+
+    pub fn new(point: Point) -> Self {
+        Self {
+            point: Some(point),
+            var_resolver: Some(MapResolver::new()),
+        }
+    }
+
+    pub fn point_or(&self) -> Result<&Point, MsgErr> {
+        self.point
+            .as_ref()
+            .ok_or("cannot reference working point in this context".into())
+    }
+
+    pub fn val(&self, var: &str) -> Result<String, VarResolverErr> {
+        if let None = self.var_resolver {
+            Err(VarResolverErr::NotAvaiable)
+        } else {
+            self.var_resolver.as_ref().unwrap().val(var)
+        }
+    }
+}
+
+impl Env {
+    pub fn insert(&mut self, key: &str, value: &str) -> Result<(), MsgErr> {
+        if let Some(resolver) = &mut self.var_resolver {
+            resolver.insert(key, value);
+            Ok(())
+        } else {
+            Err("Not an instance of a MapResolver for Env".into())
+        }
+    }
+}
+
+pub trait CtxResolver {
+    fn working_point(&self) -> Result<&Point, MsgErr>;
+}
 
 pub enum VarResolverErr {
-    NotFound
+    NotAvaiable,
+    NotFound,
 }
 
 pub trait VarResolver {
@@ -1562,8 +1535,7 @@ impl NoResolver {
     }
 }
 
-impl VarResolver for NoResolver {
-}
+impl VarResolver for NoResolver {}
 
 #[derive(Clone)]
 pub struct MapResolver {
@@ -1584,61 +1556,19 @@ impl MapResolver {
 
 impl VarResolver for MapResolver {
     fn val(&self, id: &str) -> Result<String, VarResolverErr> {
-        self.map
-            .get(id)
-            .cloned()
-            .ok_or(VarResolverErr::NotFound )
-    }
-
-
-}
-
-pub struct PntCtxResolver {
-    pub point: Point
-}
-
-impl PntCtxResolver {
-    pub fn new( point: Point ) -> Self {
-        Self {
-            point
-        }
+        self.map.get(id).cloned().ok_or(VarResolverErr::NotFound)
     }
 }
 
-impl CtxResolver for PntCtxResolver {
-    fn ctx(&self, ctx: &Ctx) -> Result<String, MsgErr> {
-        match ctx {
-            Ctx::WorkingPoint => Ok(self.point.to_string()),
-            Ctx::PointFromRoot => {
-                Err("PointFromRoot operator '...' not available in this resolver".into())
-            }
-        }
-    }
-
-    fn working_point(&self) -> &Point {
-        &self.point
-    }
-}
-
-pub trait VarSubst<R>
+pub trait ToResolved<R>
 where
     Self: Sized,
 {
     fn collapse(self) -> Result<R, MsgErr> {
-        Err(MsgErr::new(500, "VarSubst collapse not supported here."))
-    }
-    fn resolve_vars(self, resolver: &dyn VarResolver) -> Result<R, MsgErr>;
-}
-
-pub trait CtxSubst<R>
-where
-    Self: Sized,
-{
-    fn collapse(self) -> Result<R, MsgErr> {
-        Err(MsgErr::new(500, "CtxSubst collapse not supported here."))
+        self.to_resolved(&Env::empty())
     }
 
-    fn resolve_ctx(self, resolver: &dyn CtxResolver) -> Result<R, MsgErr>;
+    fn to_resolved(self, env: &Env) -> Result<R, MsgErr>;
 }
 
 /*
@@ -1685,38 +1615,44 @@ pub trait SubstParser<T: Sized> {
         Ok(output)
     }
 
-    fn parse_span<I:Span>(&self, input: I) -> Res<I, T>;
+    fn parse_span<I: Span>(&self, input: I) -> Res<I, T>;
 }
 
-
-
-pub fn ctx_seg<I: Span, E: ParseError<I>, F>(mut f: F) -> impl FnMut(I) -> IResult<I, PointSegCtx, E>+Copy
-    where
-        I: ToString
+pub fn ctx_seg<I: Span, E: ParseError<I>, F>(
+    mut f: F,
+) -> impl FnMut(I) -> IResult<I, PointSegCtx, E> + Copy
+where
+    I: ToString
         + InputLength
         + InputTake
         + Compare<&'static str>
         + InputIter
         + Clone
         + InputTakeAtPosition,
-        <I as InputTakeAtPosition>::Item: AsChar + Clone,
-        F: nom::Parser<I, PointSeg, E>+Copy,
-        E: nom::error::ContextError<I>,
+    <I as InputTakeAtPosition>::Item: AsChar + Clone,
+    F: nom::Parser<I, PointSeg, E> + Copy,
+    E: nom::error::ContextError<I>,
 {
     move |input: I| match pair(tag::<&str, I, E>(".."), eos)(input.clone()) {
-        Ok((next, v)) => Ok((next.clone(), PointSegCtx::Pop{ range: next.location_offset()-2..next.location_offset(), extra: next.extra()})),
-        Err(err) => {
-            match pair(tag::<&str, I, E>("."), eos)(input.clone()) {
-                Ok((next, _)) => Ok((next.clone(),PointSegCtx::Working{ range: next.location_offset()-1..next.location_offset(), extra: next.extra()})),
-                Err(err) => {
-                    match f.parse(input) {
-                        Ok((next,seg)) => Ok((next,seg.into())),
-                        Err(err) => {
-                            Err(err)
-                        }
-                    }
-                }
-            }
+        Ok((next, v)) => Ok((
+            next.clone(),
+            PointSegCtx::Pop {
+                range: next.location_offset() - 2..next.location_offset(),
+                extra: next.extra(),
+            },
+        )),
+        Err(err) => match pair(tag::<&str, I, E>("."), eos)(input.clone()) {
+            Ok((next, _)) => Ok((
+                next.clone(),
+                PointSegCtx::Working {
+                    range: next.location_offset() - 1..next.location_offset(),
+                    extra: next.extra(),
+                },
+            )),
+            Err(err) => match f.parse(input) {
+                Ok((next, seg)) => Ok((next, seg.into())),
+                Err(err) => Err(err),
+            },
         },
     }
 }
@@ -1737,7 +1673,13 @@ where
     E: nom::error::ContextError<I>,
 {
     move |input: I| match pair(tag::<&str, I, E>("."), eos)(input.clone()) {
-        Ok((next, v)) => Ok((next.clone(), PointSegCtx::Working{ range: next.location_offset()-1..next.location_offset(), extra: next.extra() })),
+        Ok((next, v)) => Ok((
+            next.clone(),
+            PointSegCtx::Working {
+                range: next.location_offset() - 1..next.location_offset(),
+                extra: next.extra(),
+            },
+        )),
         Err(err) => match f.parse(input.clone()) {
             Ok((next, seg)) => Ok((next, seg.into())),
             Err(err) => Err(err),
@@ -1745,7 +1687,9 @@ where
     }
 }
 
-pub fn pop<I: Span, E: ParseError<I>, F>(mut f: F) -> impl FnMut(I) -> IResult<I, PointSegCtx, E>+Copy
+pub fn pop<I: Span, E: ParseError<I>, F>(
+    mut f: F,
+) -> impl FnMut(I) -> IResult<I, PointSegCtx, E> + Copy
 where
     I: ToString
         + InputLength
@@ -1755,11 +1699,17 @@ where
         + Clone
         + InputTakeAtPosition,
     <I as InputTakeAtPosition>::Item: AsChar + Clone,
-    F: nom::Parser<I, PointSeg, E>+Copy,
+    F: nom::Parser<I, PointSeg, E> + Copy,
     E: nom::error::ContextError<I>,
 {
     move |input: I| match pair(tag::<&str, I, E>(".."), eos)(input.clone()) {
-        Ok((next, v)) => Ok((next.clone(), PointSegCtx::Working{ range: next.location_offset()-2..next.location_offset(), extra: next.extra() })),
+        Ok((next, v)) => Ok((
+            next.clone(),
+            PointSegCtx::Working {
+                range: next.location_offset() - 2..next.location_offset(),
+                extra: next.extra(),
+            },
+        )),
         Err(err) => match f.parse(input.clone()) {
             Ok((next, seg)) => Ok((next, seg.into())),
             Err(err) => Err(err),
@@ -1767,22 +1717,22 @@ where
     }
 }
 
-pub fn mesh_seg<I: Span, E: ParseError<I>, F,S1,S2>(
+pub fn mesh_seg<I: Span, E: ParseError<I>, F, S1, S2>(
     mut f: F,
 ) -> impl FnMut(I) -> IResult<I, S2, E>
 where
     F: nom::Parser<I, S1, E> + Copy,
     E: nom::error::ContextError<I>,
-    S1: PointSegment+Into<S2>,
-    S2: PointSegment
+    S1: PointSegment + Into<S2>,
+    S2: PointSegment,
 {
-move |input: I| {
-        tuple((seg_delim, f, peek(eos)))(input).map(|(next, (delim, seg,_))| (next, seg.into()))
+    move |input: I| {
+        tuple((seg_delim, f, peek(eos)))(input).map(|(next, (delim, seg, _))| (next, seg.into()))
     }
 }
 
 // end of segment
-pub fn seg_delim<I:Span, E>(input: I) -> IResult<I, PointSegDelim, E>
+pub fn seg_delim<I: Span, E>(input: I) -> IResult<I, PointSegDelim, E>
 where
     I: ToString
         + Clone
@@ -1802,7 +1752,7 @@ where
 }
 
 // end of segment
-pub fn eos<I:Span, E>(input: I) -> IResult<I, (), E>
+pub fn eos<I: Span, E>(input: I) -> IResult<I, (), E>
 where
     I: ToString
         + Clone
@@ -1814,7 +1764,7 @@ where
     <I as InputTakeAtPosition>::Item: AsChar + Clone,
     E: nom::error::ContextError<I> + nom::error::ParseError<I>,
 {
-    peek(alt((tag("/"), tag(":"), space1,eof)))(input).map(|(next, _)| (next, ()))
+    peek(alt((tag("/"), tag(":"), space1, eof)))(input).map(|(next, _)| (next, ()))
 }
 
 /*
@@ -1883,7 +1833,7 @@ where
 
  */
 
-pub fn variable_name<I:Span>(input: I) -> Res<I, I> {
+pub fn variable_name<I: Span>(input: I) -> Res<I, I> {
     recognize(pair(lowercase1, opt(skewer_dot)))(input).map(|(next, name)| (next, name))
 }
 
@@ -1909,8 +1859,7 @@ where
     }
 }
 
-
-pub fn sub<I:Span, O, F>(mut f: F) -> impl FnMut(I) -> Res<I, Spanned<I, O>>
+pub fn sub<I: Span, O, F>(mut f: F) -> impl FnMut(I) -> Res<I, Spanned<I, O>>
 where
     F: nom::Parser<I, O, ErrorTree<I>>,
     O: Clone,
@@ -1924,7 +1873,7 @@ where
     }
 }
 
-pub fn access_grant_kind<I:Span>(input: I) -> Res<I, AccessGrantKind> {
+pub fn access_grant_kind<I: Span>(input: I) -> Res<I, AccessGrantKind> {
     tuple((
         context(
             "access_grant_kind",
@@ -1938,7 +1887,7 @@ pub fn access_grant_kind<I:Span>(input: I) -> Res<I, AccessGrantKind> {
     .map(|(next, (_, kind))| (next, kind))
 }
 
-pub fn access_grant_kind_priv<I:Span>(input: I) -> Res<I, AccessGrantKind> {
+pub fn access_grant_kind_priv<I: Span>(input: I) -> Res<I, AccessGrantKind> {
     tuple((
         tag("priv"),
         context("access_grant:priv", tuple((space1, privilege))),
@@ -1946,7 +1895,7 @@ pub fn access_grant_kind_priv<I:Span>(input: I) -> Res<I, AccessGrantKind> {
     .map(|(next, (_, (_, privilege)))| (next, AccessGrantKindDef::Privilege(privilege)))
 }
 
-pub fn access_grant_kind_perm<I:Span>(input: I) -> Res<I, AccessGrantKind> {
+pub fn access_grant_kind_perm<I: Span>(input: I) -> Res<I, AccessGrantKind> {
     tuple((
         tag("perm"),
         context("access_grant:perm", tuple((space1, permissions_mask))),
@@ -1954,7 +1903,7 @@ pub fn access_grant_kind_perm<I:Span>(input: I) -> Res<I, AccessGrantKind> {
     .map(|(next, (_, (_, perms)))| (next, AccessGrantKindDef::PermissionsMask(perms)))
 }
 
-pub fn privilege<I:Span>(input: I) -> Res<I, Privilege> {
+pub fn privilege<I: Span>(input: I) -> Res<I, Privilege> {
     context("privilege", alt((tag("*"), skewer_colon)))(input).map(|(next, prv)| {
         let prv = match prv.to_string().as_str() {
             "*" => Privilege::Full,
@@ -1964,7 +1913,7 @@ pub fn privilege<I:Span>(input: I) -> Res<I, Privilege> {
     })
 }
 
-pub fn permissions_mask<I:Span>(input: I) -> Res<I, PermissionsMask> {
+pub fn permissions_mask<I: Span>(input: I) -> Res<I, PermissionsMask> {
     context(
         "permissions_mask",
         tuple((
@@ -1982,7 +1931,7 @@ pub fn permissions_mask<I:Span>(input: I) -> Res<I, PermissionsMask> {
     })
 }
 
-pub fn permissions<I:Span>(input: I) -> Res<I, Permissions> {
+pub fn permissions<I: Span>(input: I) -> Res<I, Permissions> {
     context(
         "permissions",
         tuple((child_perms, tag("-"), particle_perms)),
@@ -1993,7 +1942,7 @@ pub fn permissions<I:Span>(input: I) -> Res<I, Permissions> {
     })
 }
 
-pub fn child_perms<I:Span>(input: I) -> Res<I, ChildPerms> {
+pub fn child_perms<I: Span>(input: I) -> Res<I, ChildPerms> {
     context(
         "child_perms",
         alt((
@@ -2015,7 +1964,7 @@ pub fn child_perms<I:Span>(input: I) -> Res<I, ChildPerms> {
     })
 }
 
-pub fn particle_perms<I:Span>(input: I) -> Res<I, ParticlePerms> {
+pub fn particle_perms<I: Span>(input: I) -> Res<I, ParticlePerms> {
     context(
         "particle_perms",
         tuple((
@@ -2041,11 +1990,11 @@ pub fn grant<I><I:Span>(input: I) -> Res<I,AccessGrant> where I:Clone+InputIter+
 
  */
 
-pub fn none<I:Span, O, E>(input: I) -> IResult<I, Option<O>, E> {
+pub fn none<I: Span, O, E>(input: I) -> IResult<I, Option<O>, E> {
     Ok((input, None))
 }
 
-pub fn some<I:Span, O, E, F>(mut f: F) -> impl FnMut(I) -> IResult<I, Option<O>, E>
+pub fn some<I: Span, O, E, F>(mut f: F) -> impl FnMut(I) -> IResult<I, Option<O>, E>
 where
     I: ToString
         + InputLength
@@ -2069,7 +2018,9 @@ where
     }
 }
 
-pub fn lex_block_alt<I:Span, E>(kinds: Vec<BlockKind>) -> impl FnMut(I) -> IResult<I, LexBlock<I>, E>
+pub fn lex_block_alt<I: Span, E>(
+    kinds: Vec<BlockKind>,
+) -> impl FnMut(I) -> IResult<I, LexBlock<I>, E>
 where
     I: ToString
         + InputLength
@@ -2109,7 +2060,7 @@ where
     }
 }
 
-pub fn lex_block<I:Span, E>(kind: BlockKind) -> impl FnMut(I) -> IResult<I, LexBlock<I>, E>
+pub fn lex_block<I: Span, E>(kind: BlockKind) -> impl FnMut(I) -> IResult<I, LexBlock<I>, E>
 where
     I: ToString
         + InputLength
@@ -2139,7 +2090,7 @@ where
     }
 }
 
-pub fn lex_terminated_block<I:Span, E>(
+pub fn lex_terminated_block<I: Span, E>(
     kind: TerminatedBlockKind,
 ) -> impl FnMut(I) -> IResult<I, LexBlock<I>, E>
 where
@@ -2176,7 +2127,7 @@ where
 
 /// rough block simply makes sure that the opening and closing symbols match
 /// it accounts for multiple embedded blocks of the same kind but NOT of differing kinds
-pub fn lex_nested_block<I:Span, E>(
+pub fn lex_nested_block<I: Span, E>(
     kind: NestedBlockKind,
 ) -> impl FnMut(I) -> IResult<I, LexBlock<I>, E>
 where
@@ -2214,11 +2165,11 @@ where
     }
 }
 
-pub fn nested_block_content<I:Span>(kind: NestedBlockKind) -> impl FnMut(I) -> Res<I, I> {
+pub fn nested_block_content<I: Span>(kind: NestedBlockKind) -> impl FnMut(I) -> Res<I, I> {
     move |input: I| nested_block(kind)(input).map(|(next, block)| (next, block.content))
 }
 
-pub fn nested_block<I:Span>(kind: NestedBlockKind) -> impl FnMut(I) -> Res<I, Block<I, ()>> {
+pub fn nested_block<I: Span>(kind: NestedBlockKind) -> impl FnMut(I) -> Res<I, Block<I, ()>> {
     move |input: I| {
         let (next, content) = context(
             kind.context(),
@@ -2245,7 +2196,7 @@ pub fn nested_block<I:Span>(kind: NestedBlockKind) -> impl FnMut(I) -> Res<I, Bl
     }
 }
 
-pub fn lex_delimited_block<I:Span, E>(
+pub fn lex_delimited_block<I: Span, E>(
     kind: DelimitedBlockKind,
 ) -> impl FnMut(I) -> IResult<I, LexBlock<I>, E>
 where
@@ -2280,7 +2231,7 @@ where
     }
 }
 
-fn block_open<I:Span>(input: I) -> Res<I, NestedBlockKind> {
+fn block_open<I: Span>(input: I) -> Res<I, NestedBlockKind> {
     alt((
         value(NestedBlockKind::Curly, tag(NestedBlockKind::Curly.open())),
         value(NestedBlockKind::Angle, tag(NestedBlockKind::Angle.open())),
@@ -2289,7 +2240,7 @@ fn block_open<I:Span>(input: I) -> Res<I, NestedBlockKind> {
     ))(input)
 }
 
-fn any_soround_lex_block<I:Span, E>(input: I) -> IResult<I, LexBlock<I>, E>
+fn any_soround_lex_block<I: Span, E>(input: I) -> IResult<I, LexBlock<I>, E>
 where
     I: ToString
         + InputLength
@@ -2315,7 +2266,7 @@ where
     ))(input)
 }
 
-fn any_block<I:Span>(input: I) -> Res<I, LexBlock<I>> {
+fn any_block<I: Span>(input: I) -> Res<I, LexBlock<I>> {
     alt((
         nested_block(NestedBlockKind::Curly),
         nested_block(NestedBlockKind::Angle),
@@ -2326,7 +2277,7 @@ fn any_block<I:Span>(input: I) -> Res<I, LexBlock<I>> {
     ))(input)
 }
 
-pub fn expected_block_terminator_or_non_terminator<I:Span>(
+pub fn expected_block_terminator_or_non_terminator<I: Span>(
     expect: NestedBlockKind,
 ) -> impl FnMut(I) -> Res<I, ()>
 where
@@ -2417,7 +2368,7 @@ pub fn lex_child_scopes<I: Span>(parent: LexScope<I>) -> Result<LexParentScope<I
     }
 }
 
-pub fn lex_scope<I:Span>(input: I) -> Res<I, LexScope<I>> {
+pub fn lex_scope<I: Span>(input: I) -> Res<I, LexScope<I>> {
     context(
         "scope",
         tuple((
@@ -2437,7 +2388,7 @@ pub fn lex_scope<I:Span>(input: I) -> Res<I, LexScope<I>> {
     })
 }
 
-pub fn lex_scoped_block_kind<I:Span>(input: I) -> Res<I, BlockKind> {
+pub fn lex_scoped_block_kind<I: Span>(input: I) -> Res<I, BlockKind> {
     alt((
         value(
             BlockKind::Nested(NestedBlockKind::Curly),
@@ -2458,7 +2409,7 @@ pub fn lex_scoped_block_kind<I:Span>(input: I) -> Res<I, BlockKind> {
     ))(input)
 }
 
-pub fn lex_scope_pipeline_step_and_block<I:Span>(input: I) -> Res<I, (Option<I>, LexBlock<I>)> {
+pub fn lex_scope_pipeline_step_and_block<I: Span>(input: I) -> Res<I, (Option<I>, LexBlock<I>)> {
     let (_, block_kind) = peek(lex_scoped_block_kind)(input.clone())?;
     match block_kind {
         BlockKind::Nested(_) => tuple((
@@ -2475,7 +2426,7 @@ pub fn lex_scope_pipeline_step_and_block<I:Span>(input: I) -> Res<I, (Option<I>,
     }
 }
 
-pub fn lex_sub_scope_selectors_and_filters_and_block<I:Span>(input: I) -> Res<I, LexBlock<I>> {
+pub fn lex_sub_scope_selectors_and_filters_and_block<I: Span>(input: I) -> Res<I, LexBlock<I>> {
     recognize(pair(
         nested_block_content(NestedBlockKind::Angle),
         tuple((
@@ -2501,7 +2452,7 @@ pub fn lex_sub_scope_selectors_and_filters_and_block<I:Span>(input: I) -> Res<I,
     })
 }
 
-pub fn root_scope<I:Span>(input: I) -> Res<I, LexRootScope<I>> {
+pub fn root_scope<I: Span>(input: I) -> Res<I, LexRootScope<I>> {
     context(
         "root-scope",
         tuple((
@@ -2520,7 +2471,7 @@ pub fn root_scope<I:Span>(input: I) -> Res<I, LexRootScope<I>> {
     })
 }
 
-pub fn lex_scopes<I:Span>(input: I) -> Result<Vec<LexScope<I>>, MsgErr> {
+pub fn lex_scopes<I: Span>(input: I) -> Result<Vec<LexScope<I>>, MsgErr> {
     if input.len() == 0 {
         return Ok(vec![]);
     }
@@ -2565,7 +2516,7 @@ pub fn lex_scope_selector_no_filters(
 
  */
 
-pub fn next_selector<I:Span>(input: I) -> Res<I, (I, Option<I>)> {
+pub fn next_selector<I: Span>(input: I) -> Res<I, (I, Option<I>)> {
     match wrapper(
         input.clone(),
         pair(
@@ -2591,7 +2542,7 @@ pub fn next_selector<I:Span>(input: I) -> Res<I, (I, Option<I>)> {
     )(input)
 }
 
-pub fn lex_scope_selector_and_filters<I:Span>(
+pub fn lex_scope_selector_and_filters<I: Span>(
     input: I,
 ) -> Res<I, ScopeSelectorAndFiltersDef<LexScopeSelector<I>, I>> {
     context(
@@ -2601,12 +2552,12 @@ pub fn lex_scope_selector_and_filters<I:Span>(
     .map(|(next, (selector, filters))| (next, ScopeSelectorAndFiltersDef::new(selector, filters)))
 }
 
-pub fn lex_scope_selector<I:Span>(input: I) -> Res<I, LexScopeSelector<I>> {
+pub fn lex_scope_selector<I: Span>(input: I) -> Res<I, LexScopeSelector<I>> {
     context("parsed-scope-selector", next_selector)(input)
         .map(|(next, (name, children))| (next, LexScopeSelector::new(name, children)))
 }
 
-pub fn wrapper<I:Span, O, F>(input: I, mut f: F) -> Res<I, O>
+pub fn wrapper<I: Span, O, F>(input: I, mut f: F) -> Res<I, O>
 where
     F: FnMut(I) -> Res<I, O>,
 {
@@ -2690,7 +2641,7 @@ where
     }
 }
 
-pub fn scope_filters<I:Span>(input: I) -> Res<I, ScopeFiltersDef<I>> {
+pub fn scope_filters<I: Span>(input: I) -> Res<I, ScopeFiltersDef<I>> {
     tuple((
         pair(opt(scope_filter), many0(preceded(tag("-"), scope_filter))),
         opt(recognize(pair(
@@ -2712,7 +2663,7 @@ pub fn scope_filters<I:Span>(input: I) -> Res<I, ScopeFiltersDef<I>> {
     })
 }
 
-pub fn scope_filter<I:Span>(input: I) -> Res<I, ScopeFilterDef<I>> {
+pub fn scope_filter<I: Span>(input: I) -> Res<I, ScopeFilterDef<I>> {
     delimited(
         tag("("),
         context(
@@ -2736,13 +2687,14 @@ pub fn scope_filter<I:Span>(input: I) -> Res<I, ScopeFilterDef<I>> {
     })
 }
 
-pub fn scope_name<I>(input: I) -> Res<I, I> where I: Span {
+pub fn scope_name<I>(input: I) -> Res<I, I>
+where
+    I: Span,
+{
     recognize(pair(skewer_case, peek(alt((eof, multispace1, tag(")"))))))(input)
 }
 
-pub fn root_scope_selector<I:Span>(
-    input: I,
-) -> Res<I, RootScopeSelector<I, Spanned<I, Version>>> {
+pub fn root_scope_selector<I: Span>(input: I) -> Res<I, RootScopeSelector<I, Spanned<I, Version>>> {
     context(
         "root-scope-selector",
         cut(preceded(
@@ -2756,7 +2708,7 @@ pub fn root_scope_selector<I:Span>(
     .map(|(next, (name, version))| (next, RootScopeSelector { version, name }))
 }
 
-pub fn scope_version<I:Span>(input: I) -> Res<I, Spanned<I, Version>> {
+pub fn scope_version<I: Span>(input: I) -> Res<I, Spanned<I, Version>> {
     context(
         "scope-selector-version",
         tuple((
@@ -2787,7 +2739,7 @@ pub fn mytag<O>( tag: &str ) -> impl Fn(Span) -> Res<Span,O>
 
  */
 
-pub fn scope_selector_name<I:Span>(input: I) -> Res<I, I> {
+pub fn scope_selector_name<I: Span>(input: I) -> Res<I, I> {
     context(
         "scope-selector-name",
         delimited(
@@ -2811,7 +2763,7 @@ pub fn scope_selector_name<I:Span>(input: I) -> Res<I, I> {
     .map(|(next, name)| (next, name))
 }
 
-pub fn root_scope_selector_name<I:Span>(input: I) -> Res<I, I> {
+pub fn root_scope_selector_name<I: Span>(input: I) -> Res<I, I> {
     context(
         "root-scope-selector-name",
         pair((peek(alpha1)), alphanumeric1),
@@ -2819,7 +2771,7 @@ pub fn root_scope_selector_name<I:Span>(input: I) -> Res<I, I> {
     .map(|(next, (_, name))| (next, name))
 }
 
-pub fn lex_root_scope<I:Span>(span: I) -> Result<LexRootScope<I>, MsgErr> {
+pub fn lex_root_scope<I: Span>(span: I) -> Result<LexRootScope<I>, MsgErr> {
     let root_scope = result(delimited(multispace0, root_scope, multispace0)(span))?;
     Ok(root_scope)
 }
@@ -2827,14 +2779,19 @@ pub fn lex_root_scope<I:Span>(span: I) -> Result<LexRootScope<I>, MsgErr> {
 pub mod model {
     use crate::error::{MsgErr, ParseErrs};
     use crate::version::v0_0_1::config::config::bind::{
-        BindConfig, MessageKind, PipelineStepCtx, PipelineStepDef, PipelineStopCtx,
-        PipelineStopDef, Selector,
+        BindConfig, MessageKind, PipelineStepCtx, PipelineStepDef, PipelineStepVar,
+        PipelineStopCtx, PipelineStopDef, PipelineStopVar, Selector,
     };
     use crate::version::v0_0_1::entity::entity::EntityKind;
-    use crate::version::v0_0_1::id::id::{Point, PointCtx, Version};
+    use crate::version::v0_0_1::id::id::{Point, PointCtx, PointVar, Version};
     use crate::version::v0_0_1::parse::error::result;
-    use crate::version::v0_0_1::parse::{camel_case, CtxResolver, CtxSubst, lex_child_scopes, pipeline, PipelineStepCtxParser, PipelineStopCtxParser, Res, SubstParser, value_pattern, var_pipeline, VarResolver, VarSubst};
+    use crate::version::v0_0_1::parse::{
+        camel_case, lex_child_scopes, pipeline, value_pattern, var_pipeline, CtxResolver, Res,
+        SubstParser,
+    };
+    use crate::version::v0_0_1::span::new_span;
     use crate::version::v0_0_1::util::{MethodPattern, StringMatcher, ValuePattern};
+    use crate::version::v0_0_1::wrap::Span;
     use bincode::Options;
     use nom::bytes::complete::tag;
     use nom::character::complete::{alphanumeric1, multispace0, multispace1, satisfy};
@@ -2848,8 +2805,6 @@ pub mod model {
     use std::ops::{Deref, DerefMut};
     use std::rc::Rc;
     use std::str::FromStr;
-    use crate::version::v0_0_1::span::{new_span};
-    use crate::version::v0_0_1::wrap::Span;
 
     #[derive(Clone)]
     pub struct ScopeSelectorAndFiltersDef<S, I> {
@@ -3057,17 +3012,16 @@ pub mod model {
     pub type LexRootScope<I> = Scope<RootScopeSelector<I, Spanned<I, Version>>, Block<I, ()>, I>;
     pub type LexScope<I> =
         Scope<ScopeSelectorAndFiltersDef<LexScopeSelector<I>, I>, Block<I, ()>, I>;
-    pub type LexParentScope<I> =
-        Scope<LexScopeSelectorAndFilters<I>, Vec<LexScope<I>>, I>;
+    pub type LexParentScope<I> = Scope<LexScopeSelectorAndFilters<I>, Vec<LexScope<I>>, I>;
 
-    pub type VarPipelineSegment<I> = VarPipelineSegmentDef<
-        Subst<PipelineStepCtx,I, PipelineStepCtxParser>,
-        Option<Subst<PipelineStopCtx,I, PipelineStopCtxParser>>,
-    >;
-    pub type VarPipeline<I> = PipelineDef<VarPipelineSegment<I>>;
-    pub type LexPipelineScope<I> = PipelineScopeDef<I, VarPipeline<I>>;
+    pub type VarPipelineSegment = VarPipelineSegmentDef<PipelineStepVar, Option<PipelineStopVar>>;
+
+    pub type VarPipeline = PipelineDef<VarPipelineSegment>;
+    pub type LexPipelineScope<I> = PipelineScopeDef<I, VarPipeline>;
     pub type PipelineSegmentCtx = PipelineSegmentDef<PointCtx>;
+    pub type PipelineSegmentVar = PipelineSegmentDef<PointVar>;
 
+    /*
     impl CtxSubst<PipelineSegment> for PipelineSegmentCtx{
         fn resolve_ctx(self, resolver: &dyn CtxResolver) -> Result<PipelineSegment, MsgErr> {
             let mut errs = vec![];
@@ -3096,25 +3050,13 @@ pub mod model {
         }
     }
 
+     */
 
     pub type PipelineSegment = PipelineSegmentDef<Point>;
-    pub type RequestScope<I> = PipelineScopeDef<String, Vec<MessageScope<I>>>;
+    pub type RequestScope = PipelineScopeDef<String, Vec<MessageScope>>;
 
-    impl <I:ToString> RequestScope<I> {
-        pub fn to_string_version(self) -> RequestScope<String>{
-            unimplemented!();
-            /*RequestScope {
-                selector: self.selector.to_string_version(),
-                block: self.block.to_string_version()
-            }
-
-             */
-        }
-
-    }
-
-    pub type MessageScope<I> = ScopeDef<ValuePatternScopeSelectorAndFilters, Vec<MethodScope<I>>>;
-    pub type MethodScope<I> = ScopeDef<ValuePatternScopeSelectorAndFilters, VarPipeline<I>>;
+    pub type MessageScope = ScopeDef<ValuePatternScopeSelectorAndFilters, Vec<MethodScope>>;
+    pub type MethodScope = ScopeDef<ValuePatternScopeSelectorAndFilters, VarPipeline>;
     pub type ScopeSelector = ScopeSelectorDef<String, String>;
     pub type ValuePatternScopeSelector = ScopeSelectorDef<ValuePattern<String>, String>;
     pub type ScopeSelectorAndFilters = ScopeSelectorAndFiltersDef<ScopeSelector, String>;
@@ -3123,7 +3065,7 @@ pub mod model {
     pub type LexScopeSelectorAndFilters<I> = ScopeSelectorAndFiltersDef<LexScopeSelector<I>, I>;
     //    pub type Pipeline = Vec<PipelineSegment>;
 
-    impl <I:Span> TryFrom<LexParentScope<I>> for RequestScope<I> {
+    impl<I: Span> TryFrom<LexParentScope<I>> for RequestScope {
         type Error = MsgErr;
 
         fn try_from(scope: LexParentScope<I>) -> Result<Self, Self::Error> {
@@ -3183,7 +3125,7 @@ pub mod model {
         }
     }
 
-    impl<I:Span> LexScopeSelectorAndFilters<I> {
+    impl<I: Span> LexScopeSelectorAndFilters<I> {
         pub fn to_value_pattern_scope_selector(
             self,
         ) -> Result<ValuePatternScopeSelectorAndFilters, MsgErr> {
@@ -3194,26 +3136,30 @@ pub mod model {
         }
     }
 
-    pub fn wrap<I,F,O>( mut f: F) -> impl FnMut(I) -> Res<I,O>
-        where I:Span, F: FnMut(I) -> Res<I,O>+Copy{
-        move | input: I | {
-            f(input)
+    pub fn wrap<I, F, O>(mut f: F) -> impl FnMut(I) -> Res<I, O>
+    where
+        I: Span,
+        F: FnMut(I) -> Res<I, O> + Copy,
+    {
+        move |input: I| f(input)
+    }
+
+    pub fn len<I, F, O>(f: F) -> impl FnMut(I) -> usize
+    where
+        I: Span,
+        F: FnMut(I) -> Res<I, O> + Copy,
+    {
+        move |input: I| match recognize(wrap(f))(input) {
+            Ok((_, span)) => span.len(),
+            Err(_) => 0,
         }
     }
 
-    pub fn len<I,F,O>( span: I, f: F ) -> usize where I:Span, F: FnMut(I) -> Res<I,O>+Copy{
-        match recognize(wrap(f))(span) {
-            Ok((_,span)) => span.len(),
-            Err(_) => 0
-        }
-    }
-
-    #[derive(Debug,Clone,Serialize,Deserialize)]
+    #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct VarPipelineSegmentDef<Step, Stop> {
         pub step: Step,
         pub stop: Stop,
     }
-
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct PipelineSegmentDef<Pnt> {
@@ -3223,8 +3169,9 @@ pub mod model {
 
     pub type Pipeline = PipelineDef<PipelineSegment>;
     pub type PipelineCtx = PipelineDef<PipelineSegmentCtx>;
+    pub type PipelineVar = PipelineDef<PipelineSegmentVar>;
 
-
+    /*
     impl CtxSubst<Pipeline> for PipelineCtx {
         fn resolve_ctx(self, resolver: &dyn CtxResolver) -> Result<Pipeline, MsgErr> {
             let mut errs = vec![];
@@ -3243,16 +3190,16 @@ pub mod model {
         }
     }
 
-    #[derive(Debug,Clone,Serialize,Deserialize)]
+     */
+
+    #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct PipelineDef<S> {
         pub segments: Vec<S>,
     }
 
-    impl <S> PipelineDef<S> {
+    impl<S> PipelineDef<S> {
         pub fn new() -> Self {
-            Self {
-                segments: vec![]
-            }
+            Self { segments: vec![] }
         }
     }
 
@@ -3270,6 +3217,7 @@ pub mod model {
         }
     }
 
+    /*
     impl <I:Span> VarSubst<PipelineCtx> for VarPipeline<I> {
         fn resolve_vars(self, resolver: &dyn VarResolver) -> Result<PipelineCtx, MsgErr> {
             let mut pipeline = PipelineCtx::new();
@@ -3293,6 +3241,9 @@ pub mod model {
         }
     }
 
+     */
+
+    /*
     impl <I:Span> VarSubst<PipelineSegmentCtx> for VarPipelineSegment<I> {
         fn resolve_vars(self, resolver: &dyn VarResolver) -> Result<PipelineSegmentCtx, MsgErr> {
             unimplemented!()
@@ -3338,19 +3289,11 @@ pub mod model {
         }
     }
 
-    #[derive(Clone)]
-    pub enum BindScope<I> {
-        RequestScope(RequestScope<I>),
-    }
+     */
 
-    impl <I:ToString> BindScope<I> {
-        pub fn to_string_version(self) -> BindScope<String>{
-            match self {
-                BindScope::RequestScope(request) => {
-                    BindScope::RequestScope(request.to_string_version())
-                }
-            }
-        }
+    #[derive(Clone)]
+    pub enum BindScope {
+        RequestScope(RequestScope),
     }
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -3374,7 +3317,7 @@ pub mod model {
         }
     }
 
-    impl<I:Span> LexScopeSelector<I> {
+    impl<I: Span> LexScopeSelector<I> {
         pub fn to_value_pattern_scope_selector(self) -> Result<ValuePatternScopeSelector, MsgErr> {
             Ok(ValuePatternScopeSelector {
                 name: result(value_pattern(camel_case)(self.name))?.stringify(),
@@ -3658,23 +3601,22 @@ pub mod model {
         }
     }
 
-    #[derive(Debug,Clone,Serialize,Deserialize)]
+    #[derive(Debug, Clone, Serialize, Deserialize)]
     pub enum Chunk<I> {
         Var(I),
         Text(I),
     }
 
-    impl <I> Chunk<I> {
+    impl<I> Chunk<I> {
         pub fn span(&self) -> &I {
             match self {
                 Chunk::Var(var) => var,
-                Chunk::Text(text) => text
+                Chunk::Text(text) => text,
             }
         }
     }
 
-
-    impl<I:ToString> Chunk<I> {
+    impl<I: ToString> Chunk<I> {
         pub fn len(&self) -> usize {
             match self {
                 Chunk::Var(var) => {
@@ -3687,18 +3629,20 @@ pub mod model {
     }
 
     #[derive(Clone)]
-    pub enum Var<O,P> where P:VarParser<O>{
+    pub enum Var<O, P>
+    where
+        P: VarParser<O>,
+    {
         Val(O),
-        Var{ name: String, parser: P }
+        Var { name: String, parser: P },
     }
 
     pub trait VarParser<O> {
-        fn parse<I:Span>( input: I ) -> Result<O,MsgErr>;
+        fn parse<I: Span>(input: I) -> Result<O, MsgErr>;
     }
 
-
     #[derive(Clone)]
-    pub struct Subst<R,I,P>
+    pub struct Subst<R, I, P>
     where
         P: SubstParser<R> + Clone,
     {
@@ -3708,11 +3652,10 @@ pub mod model {
         pub phantom: PhantomData<R>,
     }
 
-
-
-    impl<R,I,P> ToString for Subst<R,I,P>
+    impl<R, I, P> ToString for Subst<R, I, P>
     where
-        P: SubstParser<R> + Clone, I: ToString
+        P: SubstParser<R> + Clone,
+        I: ToString,
     {
         fn to_string(&self) -> String {
             let mut rtn = String::new();
@@ -3730,7 +3673,7 @@ pub mod model {
         }
     }
 
-    impl<R,I: Clone, P> Subst<R,I,P>
+    impl<R, I: Clone, P> Subst<R, I, P>
     where
         P: SubstParser<R> + Clone,
     {
@@ -3751,28 +3694,26 @@ pub mod model {
     }
 
      */
-
-
 }
 
 pub mod error {
     use crate::error::{MsgErr, ParseErrs};
     use crate::version::v0_0_1::parse::model::{len, NestedBlockKind};
     use crate::version::v0_0_1::parse::{nospace1, skewer};
+    use crate::version::v0_0_1::wrap::Span;
     use ariadne::Report;
     use ariadne::{Label, ReportKind, Source};
-    use nom::{Err, Slice};
     use nom::branch::alt;
     use nom::bytes::complete::tag;
     use nom::character::complete::{alphanumeric0, alphanumeric1, multispace1};
     use nom::combinator::not;
     use nom::multi::many0;
     use nom::sequence::{preceded, tuple};
+    use nom::{Err, Slice};
     use nom_supreme::error::{BaseErrorKind, ErrorTree, StackContext};
     use regex::{Error, Regex};
-    use crate::version::v0_0_1::wrap::Span;
 
-    pub fn result<I:Span,R>(result: Result<(I, R), Err<ErrorTree<I>>>) -> Result<R, MsgErr> {
+    pub fn result<I: Span, R>(result: Result<(I, R), Err<ErrorTree<I>>>) -> Result<R, MsgErr> {
         match result {
             Ok((_, e)) => Ok(e),
             Err(err) => Err(find_parse_err(&err)),
@@ -3794,7 +3735,7 @@ pub mod error {
 
      */
 
-    fn create_err_report<I:Span>(context: &str, loc: I) -> MsgErr {
+    fn create_err_report<I: Span>(context: &str, loc: I) -> MsgErr {
         let mut builder = Report::build(ReportKind::Error, (), 23);
 
         match NestedBlockKind::error_message(&loc, context) {
@@ -3810,7 +3751,7 @@ pub mod error {
         let builder = match context {
             "var" => {
                 let f = |input| {preceded(tag("$"),many0(alt((tag("{"),alphanumeric1,tag("-"),tag("_"),multispace1))))(input)};
-                let len = len(loc.clone(),f)+1;
+                let len = len(f)(loc.clone())+1;
                 builder.with_message("Variables should be lowercase skewer with a leading alphabet character and surrounded by ${} i.e.:'${var-name}' ").with_label(Label::new(loc.location_offset()..loc.location_offset()+len).with_message("Bad Variable Substitution"))
             },
 
@@ -3932,7 +3873,7 @@ pub mod error {
         ParseErrs::from_report(builder.finish(), loc.extra()).into()
     }
 
-    pub fn find_parse_err<I:Span>(err: &Err<ErrorTree<I>>) -> MsgErr {
+    pub fn find_parse_err<I: Span>(err: &Err<ErrorTree<I>>) -> MsgErr {
         match err {
             Err::Incomplete(_) => "internal parser error: Incomplete".into(),
             Err::Error(err) => find_tree(err),
@@ -3945,7 +3886,7 @@ pub mod error {
         Message(String),
     }
 
-    pub fn find_tree<I:Span>(err: &ErrorTree<I>) -> MsgErr {
+    pub fn find_tree<I: Span>(err: &ErrorTree<I>) -> MsgErr {
         match err {
             ErrorTree::Stack { base, contexts } => {
                 let (span, context) = contexts.first().unwrap();
@@ -3967,7 +3908,9 @@ pub mod error {
         }
     }
 
-    pub fn first_context<I:Span>(orig: Err<ErrorTree<I>>) -> Result<(String, Err<ErrorTree<I>>), ()> {
+    pub fn first_context<I: Span>(
+        orig: Err<ErrorTree<I>>,
+    ) -> Result<(String, Err<ErrorTree<I>>), ()> {
         match &orig {
             Err::Error(err) => match err {
                 ErrorTree::Stack { base, contexts } => {
@@ -4003,15 +3946,27 @@ use nom::{Err, IResult};
 use nom_locate::LocatedSpan;
 
 use crate::version::v0_0_1::config::config::bind::{
-    BindConfig, MessageKind, Pipeline, PipelineStep, PipelineStepCtx, PipelineStop,
-    PipelineStopCtx, Selector,
+    BindConfig, MessageKind, Pipeline, PipelineStep, PipelineStepCtx, PipelineStepVar,
+    PipelineStop, PipelineStopCtx, PipelineStopVar, Selector,
 };
 use crate::version::v0_0_1::config::config::Document;
 use crate::version::v0_0_1::entity::entity::request::RcCommandType;
 use crate::version::v0_0_1::id::id::{GenericKind, GenericKindBase, PointKind, PointSeg, Specific};
 use crate::version::v0_0_1::parse::error::result;
-use crate::version::v0_0_1::parse::model::{BindScope, BindScopeKind, Block, BlockKind, Chunk, DelimitedBlockKind, LexBlock, LexParentScope, LexRootScope, LexScope, LexScopeSelector, LexScopeSelectorAndFilters, NestedBlockKind, PipelineCtx, PipelineSegment, PipelineSegmentCtx, RequestScope, RootScopeSelector, ScopeFilterDef, ScopeFiltersDef, ScopeSelectorAndFiltersDef, Spanned, Subst, TerminatedBlockKind, TextType, Var, VarParser, VarPipeline, VarPipelineSegment};
-use crate::version::v0_0_1::payload::payload::{Call, CallCtx, CallKind, CallWithConfig, CallWithConfigCtx, HttpCall, HttpMethod, HttpMethodType, ListPattern, MapPattern, MapPatternCtx, MsgCall, NumRange, PayloadFormat, PayloadPattern, PayloadPatternCtx, PayloadType, PayloadTypePatternCtx, PayloadTypePatternDef};
+use crate::version::v0_0_1::parse::model::{
+    BindScope, BindScopeKind, Block, BlockKind, Chunk, DelimitedBlockKind, LexBlock,
+    LexParentScope, LexRootScope, LexScope, LexScopeSelector, LexScopeSelectorAndFilters,
+    NestedBlockKind, PipelineCtx, PipelineSegment, PipelineSegmentCtx, PipelineSegmentVar,
+    PipelineVar, RequestScope, RootScopeSelector, ScopeFilterDef, ScopeFiltersDef,
+    ScopeSelectorAndFiltersDef, Spanned, Subst, TerminatedBlockKind, TextType, Var, VarParser,
+    VarPipeline, VarPipelineSegment,
+};
+use crate::version::v0_0_1::payload::payload::{
+    Call, CallCtx, CallKind, CallVar, CallWithConfig, CallWithConfigCtx, CallWithConfigVar,
+    HttpCall, HttpMethod, HttpMethodType, ListPattern, MapPattern, MapPatternCtx, MapPatternVar,
+    MsgCall, NumRange, PayloadFormat, PayloadPattern, PayloadPatternCtx, PayloadPatternVar,
+    PayloadType, PayloadTypePatternCtx, PayloadTypePatternDef, PayloadTypePatternVar,
+};
 use crate::version::v0_0_1::selector::selector::specific::{
     ProductSelector, VariantSelector, VendorSelector,
 };
@@ -4022,31 +3977,32 @@ use crate::version::v0_0_1::selector::selector::{
     SpecificSelector, VersionReq,
 };
 use crate::version::v0_0_1::selector::{
-    PatternBlock, PatternBlockCtx, PayloadBlock, PayloadBlockCtx, UploadBlock,
+    PatternBlock, PatternBlockCtx, PatternBlockVar, PayloadBlock, PayloadBlockCtx, PayloadBlockVar,
+    UploadBlock,
 };
-use nom_supreme::error::ErrorTree;
-use nom_supreme::{parse_from_str, ParserExt};
 use crate::version::v0_0_1::span::{new_span, span_with_extra};
 use crate::version::v0_0_1::wrap::{Span, Wrap};
+use nom_supreme::error::ErrorTree;
+use nom_supreme::{parse_from_str, ParserExt};
 
-fn inclusive_any_segment<I:Span>(input: I) -> Res<I, PointSegSelector> {
+fn inclusive_any_segment<I: Span>(input: I) -> Res<I, PointSegSelector> {
     alt((tag("+*"), tag("ROOT+*")))(input).map(|(next, _)| (next, PointSegSelector::InclusiveAny))
 }
 
-fn inclusive_recursive_segment<I:Span>(input: I) -> Res<I, PointSegSelector> {
+fn inclusive_recursive_segment<I: Span>(input: I) -> Res<I, PointSegSelector> {
     alt((tag("+**"), tag("ROOT+**")))(input)
         .map(|(next, _)| (next, PointSegSelector::InclusiveRecursive))
 }
 
-fn any_segment<I:Span>(input: I) -> Res<I, PointSegSelector> {
+fn any_segment<I: Span>(input: I) -> Res<I, PointSegSelector> {
     tag("*")(input).map(|(next, _)| (next, PointSegSelector::Any))
 }
 
-fn recursive_segment<I:Span>(input: I) -> Res<I, PointSegSelector> {
+fn recursive_segment<I: Span>(input: I) -> Res<I, PointSegSelector> {
     tag("**")(input).map(|(next, _)| (next, PointSegSelector::Recursive))
 }
 
-fn exact_space_segment<I:Span>(input: I) -> Res<I, PointSegSelector> {
+fn exact_space_segment<I: Span>(input: I) -> Res<I, PointSegSelector> {
     point_segment_chars(input).map(|(next, segment)| {
         (
             next,
@@ -4057,7 +4013,7 @@ fn exact_space_segment<I:Span>(input: I) -> Res<I, PointSegSelector> {
     })
 }
 
-fn exact_base_segment<I:Span>(input: I) -> Res<I, PointSegSelector> {
+fn exact_base_segment<I: Span>(input: I) -> Res<I, PointSegSelector> {
     point_segment_chars(input).map(|(next, segment)| {
         (
             next,
@@ -4066,7 +4022,7 @@ fn exact_base_segment<I:Span>(input: I) -> Res<I, PointSegSelector> {
     })
 }
 
-fn exact_file_segment<I:Span>(input: I) -> Res<I, PointSegSelector> {
+fn exact_file_segment<I: Span>(input: I) -> Res<I, PointSegSelector> {
     file_chars(input).map(|(next, segment)| {
         (
             next,
@@ -4075,7 +4031,7 @@ fn exact_file_segment<I:Span>(input: I) -> Res<I, PointSegSelector> {
     })
 }
 
-fn exact_dir_segment<I:Span>(input: I) -> Res<I, PointSegSelector> {
+fn exact_dir_segment<I: Span>(input: I) -> Res<I, PointSegSelector> {
     file_chars(input).map(|(next, segment)| {
         (
             next,
@@ -4084,7 +4040,7 @@ fn exact_dir_segment<I:Span>(input: I) -> Res<I, PointSegSelector> {
     })
 }
 
-pub fn parse_version_chars_str<I:Span, O: FromStr>(input: I) -> Res<I, O> {
+pub fn parse_version_chars_str<I: Span, O: FromStr>(input: I) -> Res<I, O> {
     let (next, rtn) = recognize(version_chars)(input)?;
     match O::from_str(rtn.to_string().as_str()) {
         Ok(rtn) => Ok((next, rtn)),
@@ -4095,16 +4051,16 @@ pub fn parse_version_chars_str<I:Span, O: FromStr>(input: I) -> Res<I, O> {
     }
 }
 
-fn exact_version_segment<I:Span>(input: I) -> Res<I, PointSegSelector> {
+fn exact_version_segment<I: Span>(input: I) -> Res<I, PointSegSelector> {
     version_req(input).map(|(next, version_req)| (next, PointSegSelector::Version(version_req)))
 }
 
-fn version_req_segment<I:Span>(input: I) -> Res<I, PointSegSelector> {
+fn version_req_segment<I: Span>(input: I) -> Res<I, PointSegSelector> {
     delimited(tag("("), version_req, tag(")"))(input)
         .map(|(next, version_req)| (next, PointSegSelector::Version(version_req)))
 }
 
-pub fn point_segment_selector<I:Span>(input: I) -> Res<I, PointSegSelector> {
+pub fn point_segment_selector<I: Span>(input: I) -> Res<I, PointSegSelector> {
     alt((
         inclusive_recursive_segment,
         inclusive_any_segment,
@@ -4114,26 +4070,26 @@ pub fn point_segment_selector<I:Span>(input: I) -> Res<I, PointSegSelector> {
     ))(input)
 }
 
-fn base_segment<I:Span>(input: I) -> Res<I, PointSegSelector> {
+fn base_segment<I: Span>(input: I) -> Res<I, PointSegSelector> {
     alt((recursive_segment, any_segment, exact_base_segment))(input)
 }
 
-fn file_segment<I:Span>(input: I) -> Res<I, PointSegSelector> {
+fn file_segment<I: Span>(input: I) -> Res<I, PointSegSelector> {
     alt((recursive_segment, any_segment, exact_file_segment))(input)
 }
 
-fn dir_segment<I:Span>(input: I) -> Res<I, PointSegSelector> {
+fn dir_segment<I: Span>(input: I) -> Res<I, PointSegSelector> {
     terminated(
         alt((recursive_segment, any_segment, exact_dir_segment)),
         tag("/"),
     )(input)
 }
 
-fn dir_segment_meat<I:Span>(input: I) -> Res<I, PointSegSelector> {
+fn dir_segment_meat<I: Span>(input: I) -> Res<I, PointSegSelector> {
     alt((recursive_segment, any_segment, exact_dir_segment))(input)
 }
 
-fn version_segment<I:Span>(input: I) -> Res<I, PointSegSelector> {
+fn version_segment<I: Span>(input: I) -> Res<I, PointSegSelector> {
     alt((
         recursive_segment,
         any_segment,
@@ -4164,7 +4120,7 @@ where
 
  */
 
-pub fn pattern<I:Span,O, E: ParseError<I>, V>(
+pub fn pattern<I: Span, O, E: ParseError<I>, V>(
     mut value: V,
 ) -> impl FnMut(I) -> IResult<I, Pattern<O>, E>
 where
@@ -4250,7 +4206,7 @@ pub fn value_pattern<P>(
 }
  */
 
-pub fn version_req<I:Span>(input: I) -> Res<I, VersionReq> {
+pub fn version_req<I: Span>(input: I) -> Res<I, VersionReq> {
     let (next, version) = version_req_chars(input.clone())?;
     let version = version.to_string();
     let str_input = version.as_str();
@@ -4265,7 +4221,7 @@ pub fn version_req<I:Span>(input: I) -> Res<I, VersionReq> {
     }
 }
 
-fn rec_domain<I:Span>(input: I) -> Res<I, I> {
+fn rec_domain<I: Span>(input: I) -> Res<I, I> {
     recognize(tuple((
         many1(terminated(skewer_chars, tag("."))),
         skewer_chars,
@@ -4273,11 +4229,11 @@ fn rec_domain<I:Span>(input: I) -> Res<I, I> {
 }
 
 // can be a hostname or domain name
-fn space<I:Span>(input: I) -> Res<I, I> {
+fn space<I: Span>(input: I) -> Res<I, I> {
     recognize(alt((skewer_chars, rec_domain)))(input)
 }
 
-pub fn specific_selector<I:Span>(input: I) -> Res<I, SpecificSelector> {
+pub fn specific_selector<I: Span>(input: I) -> Res<I, SpecificSelector> {
     tuple((
         pattern(rec_domain),
         tag(":"),
@@ -4306,21 +4262,21 @@ pub fn specific_selector<I:Span>(input: I) -> Res<I, SpecificSelector> {
     })
 }
 
-pub fn rec_domain_pattern<I:Span>(input: I) -> Res<I, Pattern<I>> {
+pub fn rec_domain_pattern<I: Span>(input: I) -> Res<I, Pattern<I>> {
     pattern(rec_domain)(input)
 }
-pub fn rec_skewer_pattern<I:Span>(input: I) -> Res<I, Pattern<I>> {
+pub fn rec_skewer_pattern<I: Span>(input: I) -> Res<I, Pattern<I>> {
     pattern(skewer_chars)(input)
 }
 
-pub fn specific_version_req<I:Span>(input: I) -> Res<I, VersionReq> {
+pub fn specific_version_req<I: Span>(input: I) -> Res<I, VersionReq> {
     delimited(tag("("), version_req, tag(")"))(input)
 }
 
 #[derive(Clone)]
 pub struct SkewerPatternParser();
 impl SubstParser<Pattern<String>> for SkewerPatternParser {
-    fn parse_span<I:Span>(&self, span: I) -> Res<I, Pattern<String>> {
+    fn parse_span<I: Span>(&self, span: I) -> Res<I, Pattern<String>> {
         let (next, pattern) = rec_skewer_pattern(span)?;
         let pattern = pattern.to_string_version();
         Ok((next, pattern))
@@ -4330,14 +4286,14 @@ impl SubstParser<Pattern<String>> for SkewerPatternParser {
 #[derive(Clone)]
 pub struct DomainPatternParser();
 impl SubstParser<Pattern<String>> for DomainPatternParser {
-    fn parse_span<I:Span>(&self, span: I) -> Res<I, Pattern<String>> {
+    fn parse_span<I: Span>(&self, span: I) -> Res<I, Pattern<String>> {
         let (next, pattern) = rec_domain_pattern(span)?;
         let pattern = pattern.to_string_version();
         Ok((next, pattern))
     }
 }
 
-fn kind_parts<I:Span>(input: I) -> Res<I, GenericKind> {
+fn kind_parts<I: Span>(input: I) -> Res<I, GenericKind> {
     tuple((
         generic_kind_base,
         opt(delimited(
@@ -4365,11 +4321,11 @@ fn kind_parts<I:Span>(input: I) -> Res<I, GenericKind> {
     })
 }
 
-fn rec_kind<I:Span>(input: I) -> Res<I, I> {
+fn rec_kind<I: Span>(input: I) -> Res<I, I> {
     recognize(kind_parts)(input)
 }
 
-pub fn kind<I:Span>(input: I) -> Res<I, GenericKind> {
+pub fn kind<I: Span>(input: I) -> Res<I, GenericKind> {
     tuple((
         generic_kind_base,
         opt(delimited(
@@ -4402,29 +4358,29 @@ pub fn kind<I:Span>(input: I) -> Res<I, GenericKind> {
     })
 }
 
-pub fn delim_kind<I:Span>(input: I) -> Res<I, GenericKind> {
+pub fn delim_kind<I: Span>(input: I) -> Res<I, GenericKind> {
     delimited(tag("<"), kind, tag(">"))(input)
 }
 
-pub fn consume_kind<I:Span>(input: I) -> Result<GenericKind, MsgErr> {
+pub fn consume_kind<I: Span>(input: I) -> Result<GenericKind, MsgErr> {
     let (_, kind_parts) = all_consuming(kind_parts)(input)?;
 
     Ok(kind_parts.try_into()?)
 }
 
-pub fn generic_kind_selector<I:Span>(input: I) -> Res<I, GenericSubKindSelector> {
+pub fn generic_kind_selector<I: Span>(input: I) -> Res<I, GenericSubKindSelector> {
     pattern(kind)(input).map(|(next, kind)| (next, kind))
 }
 
-pub fn generic_kind_base<I:Span>(input: I) -> Res<I, GenericKindBase> {
+pub fn generic_kind_base<I: Span>(input: I) -> Res<I, GenericKindBase> {
     camel_case(input).map(|(next, resource_type)| (next, resource_type.to_string()))
 }
 
-pub fn generic_kind_base_selector<I:Span>(input: I) -> Res<I, GenericKindSelector> {
+pub fn generic_kind_base_selector<I: Span>(input: I) -> Res<I, GenericKindSelector> {
     pattern(generic_kind_base)(input)
 }
 
-pub fn kind_pattern<I:Span>(input: I) -> Res<I, KindPattern> {
+pub fn kind_pattern<I: Span>(input: I) -> Res<I, KindPattern> {
     delimited(
         tag("<"),
         tuple((
@@ -4466,7 +4422,7 @@ pub fn kind_pattern<I:Span>(input: I) -> Res<I, KindPattern> {
     })
 }
 
-fn space_hop<I:Span>(input: I) -> Res<I, Hop> {
+fn space_hop<I: Span>(input: I) -> Res<I, Hop> {
     tuple((point_segment_selector, opt(kind_pattern), opt(tag("+"))))(input).map(
         |(next, (segment, kind, inclusive))| {
             let kind = match kind {
@@ -4486,7 +4442,7 @@ fn space_hop<I:Span>(input: I) -> Res<I, Hop> {
     )
 }
 
-fn base_hop<I:Span>(input: I) -> Res<I, Hop> {
+fn base_hop<I: Span>(input: I) -> Res<I, Hop> {
     tuple((base_segment, opt(kind_pattern), opt(tag("+"))))(input).map(
         |(next, (segment, tks, inclusive))| {
             let tks = match tks {
@@ -4506,7 +4462,7 @@ fn base_hop<I:Span>(input: I) -> Res<I, Hop> {
     )
 }
 
-fn file_hop<I:Span>(input: I) -> Res<I, Hop> {
+fn file_hop<I: Span>(input: I) -> Res<I, Hop> {
     tuple((file_segment, opt(tag("+"))))(input).map(|(next, (segment, inclusive))| {
         let tks = KindPattern {
             kind: Pattern::Exact("File".to_string()),
@@ -4525,7 +4481,7 @@ fn file_hop<I:Span>(input: I) -> Res<I, Hop> {
     })
 }
 
-fn dir_hop<I:Span>(input: I) -> Res<I, Hop> {
+fn dir_hop<I: Span>(input: I) -> Res<I, Hop> {
     tuple((dir_segment, opt(tag("+"))))(input).map(|(next, (segment, inclusive))| {
         let tks = KindPattern::any();
         let inclusive = inclusive.is_some();
@@ -4540,7 +4496,7 @@ fn dir_hop<I:Span>(input: I) -> Res<I, Hop> {
     })
 }
 
-fn version_hop<I:Span>(input: I) -> Res<I, Hop> {
+fn version_hop<I: Span>(input: I) -> Res<I, Hop> {
     tuple((version_segment, opt(kind_pattern), opt(tag("+"))))(input).map(
         |(next, (segment, tks, inclusive))| {
             let tks = match tks {
@@ -4560,7 +4516,7 @@ fn version_hop<I:Span>(input: I) -> Res<I, Hop> {
     )
 }
 
-pub fn point_selector<I:Span>(input: I) -> Res<I, PointSelector> {
+pub fn point_selector<I: Span>(input: I) -> Res<I, PointSelector> {
     context(
         "point_kind_pattern",
         tuple((
@@ -4608,8 +4564,9 @@ pub fn point_selector<I:Span>(input: I) -> Res<I, PointSelector> {
     )
 }
 
-pub fn point_and_kind<I:Span>(input: I) -> Res<I, PointKind> {
-    tuple((point, kind))(input).map(|(next, (point, kind))| (next, PointKind { point, kind }))
+pub fn point_and_kind<I: Span>(input: I) -> Res<I, PointKindVar> {
+    tuple((point_var, kind))(input)
+        .map(|(next, (point, kind))| (next, PointKindVar { point, kind }))
 }
 
 /*
@@ -4630,7 +4587,7 @@ fn version_req<I:Span>(input: Span) -> Res<Span, VersionReq> {
 
  */
 
-pub fn version<I:Span>(input: I) -> Res<I, Version> {
+pub fn version<I: Span>(input: I) -> Res<I, Version> {
     let (next, version) = rec_version(input.clone())?;
     let version = version.to_string();
     let str_input = version.as_str();
@@ -4645,7 +4602,7 @@ pub fn version<I:Span>(input: I) -> Res<I, Version> {
     }
 }
 
-pub fn specific<I:Span>(input: I) -> Res<I, Specific> {
+pub fn specific<I: Span>(input: I) -> Res<I, Specific> {
     tuple((
         domain_chars,
         tag(":"),
@@ -4754,7 +4711,7 @@ where
     )
 }
 
-pub fn primitive_def<I:Span>(input: I) -> Res<I, PayloadTypeDef<PointCtx>> {
+pub fn primitive_def<I: Span>(input: I) -> Res<I, PayloadTypeDef<PointVar>> {
     tuple((
         payload,
         opt(preceded(tag("~"), opt(format))),
@@ -4775,20 +4732,20 @@ pub fn primitive_def<I:Span>(input: I) -> Res<I, PayloadTypeDef<PointCtx>> {
     })
 }
 
-pub fn payload<I:Span>(input: I) -> Res<I, PayloadType> {
+pub fn payload<I: Span>(input: I) -> Res<I, PayloadType> {
     parse_camel_case_str(input)
 }
 
-pub fn consume_primitive_def<I:Span>(input: I) -> Res<I, PayloadTypeDef<PointCtx>> {
+pub fn consume_primitive_def<I: Span>(input: I) -> Res<I, PayloadTypeDef<PointVar>> {
     all_consuming(primitive_def)(input)
 }
 
-pub fn call_with_config<I:Span>(input: I) -> Res<I, CallWithConfigCtx> {
-    tuple((call, opt(preceded(tag("+"), point_ctx))))(input)
-        .map(|(next, (call, config))| (next, CallWithConfigCtx { call, config }))
+pub fn call_with_config<I: Span>(input: I) -> Res<I, CallWithConfigVar> {
+    tuple((call, opt(preceded(tag("+"), point_var))))(input)
+        .map(|(next, (call, config))| (next, CallWithConfigVar { call, config }))
 }
 
-pub fn parse_alpha1_str<I:Span,O: FromStr>(input: I) -> Res<I, O> {
+pub fn parse_alpha1_str<I: Span, O: FromStr>(input: I) -> Res<I, O> {
     let (next, rtn) = recognize(alpha1)(input)?;
     match O::from_str(rtn.to_string().as_str()) {
         Ok(rtn) => Ok((next, rtn)),
@@ -4799,11 +4756,11 @@ pub fn parse_alpha1_str<I:Span,O: FromStr>(input: I) -> Res<I, O> {
     }
 }
 
-pub fn rc_command<I:Span>(input: I) -> Res<I, RcCommandType> {
+pub fn rc_command<I: Span>(input: I) -> Res<I, RcCommandType> {
     parse_alpha1_str(input)
 }
 
-pub fn msg_call<I:Span>(input: I) -> Res<I, CallKind> {
+pub fn msg_call<I: Span>(input: I) -> Res<I, CallKind> {
     tuple((
         delimited(tag("Msg<"), alphanumeric1, tag(">")),
         opt(recognize(capture_path)),
@@ -4813,14 +4770,11 @@ pub fn msg_call<I:Span>(input: I) -> Res<I, CallKind> {
             None => "/".to_string(),
             Some(path) => path.to_string(),
         };
-        (
-            next,
-            CallKind::Msg(MsgCall::new(action.to_string(), path)),
-        )
+        (next, CallKind::Msg(MsgCall::new(action.to_string(), path)))
     })
 }
 
-pub fn http_call<I:Span>(input: I) -> Res<I, CallKind> {
+pub fn http_call<I: Span>(input: I) -> Res<I, CallKind> {
     tuple((delimited(tag("Http<"), http_method, tag(">")), capture_path))(input).map(
         |(next, (method, path))| {
             (
@@ -4831,20 +4785,20 @@ pub fn http_call<I:Span>(input: I) -> Res<I, CallKind> {
     )
 }
 
-pub fn call_kind<I:Span>(input: I) -> Res<I, CallKind> {
+pub fn call_kind<I: Span>(input: I) -> Res<I, CallKind> {
     alt((msg_call, http_call))(input)
 }
 
-pub fn call<I:Span>(input: I) -> Res<I, CallCtx> {
-    tuple((point_ctx, preceded(tag("^"), call_kind)))(input)
-        .map(|(next, (point, kind))| (next, CallCtx { point, kind }))
+pub fn call<I: Span>(input: I) -> Res<I, CallVar> {
+    tuple((point_var, preceded(tag("^"), call_kind)))(input)
+        .map(|(next, (point, kind))| (next, CallVar { point, kind }))
 }
 
-pub fn consume_call<I:Span>(input: I) -> Res<I, CallCtx> {
+pub fn consume_call<I: Span>(input: I) -> Res<I, CallVar> {
     all_consuming(call)(input)
 }
 
-pub fn labeled_primitive_def<I:Span>(input: I) -> Res<I, LabeledPrimitiveTypeDef<PointCtx>> {
+pub fn labeled_primitive_def<I: Span>(input: I) -> Res<I, LabeledPrimitiveTypeDef<PointVar>> {
     tuple((skewer, delimited(tag("<"), primitive_def, tag(">"))))(input).map(
         |(next, (label, primitive_def))| {
             let labeled_def = LabeledPrimitiveTypeDef {
@@ -4856,7 +4810,7 @@ pub fn labeled_primitive_def<I:Span>(input: I) -> Res<I, LabeledPrimitiveTypeDef
     )
 }
 
-pub fn digit_range<I:Span>(input: I) -> Res<I, NumRange> {
+pub fn digit_range<I: Span>(input: I) -> Res<I, NumRange> {
     tuple((digit1, tag("-"), digit1))(input).map(|(next, (min, _, max))| {
         let min: usize = usize::from_str(min.to_string().as_str()).expect("usize");
         let max: usize = usize::from_str(max.to_string().as_str()).expect("usize");
@@ -4866,7 +4820,7 @@ pub fn digit_range<I:Span>(input: I) -> Res<I, NumRange> {
     })
 }
 
-pub fn exact_range<I:Span>(input: I) -> Res<I, NumRange> {
+pub fn exact_range<I: Span>(input: I) -> Res<I, NumRange> {
     digit1(input).map(|(next, exact)| {
         (
             next,
@@ -4878,7 +4832,7 @@ pub fn exact_range<I:Span>(input: I) -> Res<I, NumRange> {
     })
 }
 
-pub fn range<I:Span>(input: I) -> Res<I, NumRange> {
+pub fn range<I: Span>(input: I) -> Res<I, NumRange> {
     delimited(
         multispace0,
         opt(alt((digit_range, exact_range))),
@@ -4893,12 +4847,12 @@ pub fn range<I:Span>(input: I) -> Res<I, NumRange> {
     })
 }
 
-pub fn primitive_data_struct<I:Span>(input: I) -> Res<I, PayloadTypePatternDef<PointCtx>> {
+pub fn primitive_data_struct<I: Span>(input: I) -> Res<I, PayloadTypePatternDef<PointVar>> {
     context("selector", payload)(input)
         .map(|(next, primitive)| (next, PayloadTypePatternDef::Primitive(primitive)))
 }
 
-pub fn array_data_struct<I:Span>(input: I) -> Res<I, PayloadTypePatternDef<PointCtx>> {
+pub fn array_data_struct<I: Span>(input: I) -> Res<I, PayloadTypePatternDef<PointVar>> {
     context(
         "selector",
         tuple((
@@ -4914,11 +4868,11 @@ pub fn array_data_struct<I:Span>(input: I) -> Res<I, PayloadTypePatternDef<Point
     })
 }
 
-pub fn map_entry_pattern_any<I:Span>(input: I) -> Res<I, ValuePattern<MapEntryPatternCtx>> {
+pub fn map_entry_pattern_any<I: Span>(input: I) -> Res<I, ValuePattern<MapEntryPatternVar>> {
     delimited(multispace0, tag("*"), multispace0)(input).map(|(next, _)| (next, ValuePattern::Any))
 }
 
-pub fn map_entry_pattern<I:Span>(input: I) -> Res<I, MapEntryPatternCtx> {
+pub fn map_entry_pattern<I: Span>(input: I) -> Res<I, MapEntryPatternVar> {
     tuple((skewer, opt(delimited(tag("<"), payload_pattern, tag(">")))))(input).map(
         |(next, (key_con, payload_con))| {
             let payload_con = match payload_con {
@@ -4926,7 +4880,7 @@ pub fn map_entry_pattern<I:Span>(input: I) -> Res<I, MapEntryPatternCtx> {
                 Some(payload_con) => payload_con,
             };
 
-            let map_entry_con = MapEntryPatternCtx {
+            let map_entry_con = MapEntryPatternVar {
                 key: key_con.to_string(),
                 payload: payload_con,
             };
@@ -4935,27 +4889,27 @@ pub fn map_entry_pattern<I:Span>(input: I) -> Res<I, MapEntryPatternCtx> {
     )
 }
 
-pub fn map_entry_patterns<I:Span>(input: I) -> Res<I, Vec<MapEntryPatternCtx>> {
+pub fn map_entry_patterns<I: Span>(input: I) -> Res<I, Vec<MapEntryPatternVar>> {
     separated_list0(
         delimited(multispace0, tag(","), multispace0),
         map_entry_pattern,
     )(input)
 }
 
-pub fn consume_map_entry_pattern<I:Span>(input: I) -> Res<I, MapEntryPatternCtx> {
+pub fn consume_map_entry_pattern<I: Span>(input: I) -> Res<I, MapEntryPatternVar> {
     all_consuming(map_entry_pattern)(input)
 }
 
-pub fn required_map_entry_pattern<I:Span>(input: I) -> Res<I, Vec<MapEntryPatternCtx>> {
+pub fn required_map_entry_pattern<I: Span>(input: I) -> Res<I, Vec<MapEntryPatternVar>> {
     delimited(tag("["), map_entry_patterns, tag("]"))(input).map(|(next, params)| (next, params))
 }
 
-pub fn allowed_map_entry_pattern<I:Span>(input: I) -> Res<I, ValuePattern<PayloadPatternCtx>> {
+pub fn allowed_map_entry_pattern<I: Span>(input: I) -> Res<I, ValuePattern<PayloadPatternVar>> {
     payload_pattern(input).map(|(next, con)| (next, con))
 }
 
 //  [ required1<Bin>, required2<Text> ] *<Bin>
-pub fn map_pattern_params<I:Span>(input: I) -> Res<I, MapPatternCtx> {
+pub fn map_pattern_params<I: Span>(input: I) -> Res<I, MapPatternVar> {
     tuple((
         opt(map_entry_patterns),
         multispace0,
@@ -4977,13 +4931,13 @@ pub fn map_pattern_params<I:Span>(input: I) -> Res<I, MapPatternCtx> {
             None => ValuePattern::None,
         };
 
-        let con = MapPatternCtx::new(required_map, allowed);
+        let con = MapPatternVar::new(required_map, allowed);
 
         (next, con)
     })
 }
 
-pub fn format<I:Span>(input: I) -> Res<I, PayloadFormat> {
+pub fn format<I: Span>(input: I) -> Res<I, PayloadFormat> {
     let (next, format) = recognize(alpha1)(input)?;
     match PayloadFormat::from_str(format.to_string().as_str()) {
         Ok(format) => Ok((next, format)),
@@ -5001,7 +4955,7 @@ enum MapConParam {
 
 // EXAMPLE:
 //  Map { [ required1<Bin>, required2<Text> ] *<Bin> }
-pub fn map_pattern<I:Span>(input: I) -> Res<I, MapPatternCtx> {
+pub fn map_pattern<I: Span>(input: I) -> Res<I, MapPatternVar> {
     tuple((
         delimited(multispace0, tag("Map"), multispace0),
         opt(delimited(
@@ -5013,7 +4967,7 @@ pub fn map_pattern<I:Span>(input: I) -> Res<I, MapPatternCtx> {
     .map(|(next, (_, entries))| {
         let mut entries = entries;
         let con = match entries {
-            None => MapPatternCtx::any(),
+            None => MapPatternVar::any(),
             Some(con) => con,
         };
 
@@ -5021,15 +4975,15 @@ pub fn map_pattern<I:Span>(input: I) -> Res<I, MapPatternCtx> {
     })
 }
 
-pub fn value_constrained_map_pattern<I:Span>(input: I) -> Res<I, ValuePattern<MapPatternCtx>> {
+pub fn value_constrained_map_pattern<I: Span>(input: I) -> Res<I, ValuePattern<MapPatternVar>> {
     value_pattern(map_pattern)(input)
 }
 
-pub fn msg_action<I:Span>(input: I) -> Res<I, ValuePattern<StringMatcher>> {
+pub fn msg_action<I: Span>(input: I) -> Res<I, ValuePattern<StringMatcher>> {
     value_pattern(camel_case_to_string_matcher)(input)
 }
 
-pub fn msg_pattern_scoped<I:Span>(input: I) -> Res<I, MsgPipelineSelector> {
+pub fn msg_pattern_scoped<I: Span>(input: I) -> Res<I, MsgPipelineSelector> {
     tuple((delimited(tag("<"), msg_action, tag(">")), opt(path_regex)))(input).map(
         |(next, (action, path_regex))| {
             let path_regex = match path_regex {
@@ -5045,7 +4999,7 @@ pub fn msg_pattern_scoped<I:Span>(input: I) -> Res<I, MsgPipelineSelector> {
     )
 }
 
-pub fn msg_pattern<I:Span>(input: I) -> Res<I, MsgPipelineSelector> {
+pub fn msg_pattern<I: Span>(input: I) -> Res<I, MsgPipelineSelector> {
     tuple((
         tag("Msg"),
         delimited(tag("<"), msg_action, tag(">")),
@@ -5064,7 +5018,7 @@ pub fn msg_pattern<I:Span>(input: I) -> Res<I, MsgPipelineSelector> {
     })
 }
 
-pub fn parse_camel_case_str<I:Span, O: FromStr>(input: I) -> Res<I, O> {
+pub fn parse_camel_case_str<I: Span, O: FromStr>(input: I) -> Res<I, O> {
     let (next, rtn) = recognize(camel_case)(input)?;
     match O::from_str(rtn.to_string().as_str()) {
         Ok(rtn) => Ok((next, rtn)),
@@ -5075,13 +5029,13 @@ pub fn parse_camel_case_str<I:Span, O: FromStr>(input: I) -> Res<I, O> {
     }
 }
 
-pub fn http_method<I:Span>(input: I) -> Res<I, HttpMethod> {
+pub fn http_method<I: Span>(input: I) -> Res<I, HttpMethod> {
     context("http_method", parse_camel_case_str)
         .parse(input)
         .map(|(next, method): (I, HttpMethodType)| (next, method.to_method()))
 }
 
-pub fn http_method_pattern<I:Span>(input: I) -> Res<I, MethodPattern> {
+pub fn http_method_pattern<I: Span>(input: I) -> Res<I, MethodPattern> {
     context("@http_method_pattern", method_pattern(http_method))(input)
 }
 
@@ -5101,7 +5055,7 @@ where
     }
 }
 
-pub fn http_pattern_scoped<I:Span>(input: I) -> Res<I, HttpPipelineSelector> {
+pub fn http_pattern_scoped<I: Span>(input: I) -> Res<I, HttpPipelineSelector> {
     tuple((
         delimited(
             context("angle_bracket_open", tag("<")),
@@ -5123,7 +5077,7 @@ pub fn http_pattern_scoped<I:Span>(input: I) -> Res<I, HttpPipelineSelector> {
     })
 }
 
-pub fn http_pattern<I:Span>(input: I) -> Res<I, HttpPipelineSelector> {
+pub fn http_pattern<I: Span>(input: I) -> Res<I, HttpPipelineSelector> {
     tuple((
         tag("Http"),
         delimited(tag("<"), http_method_pattern, tag(">")),
@@ -5142,25 +5096,25 @@ pub fn http_pattern<I:Span>(input: I) -> Res<I, HttpPipelineSelector> {
     })
 }
 
-pub fn rc_command_type<I:Span>(input: I) -> Res<I, RcCommandType> {
+pub fn rc_command_type<I: Span>(input: I) -> Res<I, RcCommandType> {
     parse_alpha1_str(input)
 }
 
-pub fn rc_pattern_scoped<I:Span>(input: I) -> Res<I, RcPipelineSelector> {
+pub fn rc_pattern_scoped<I: Span>(input: I) -> Res<I, RcPipelineSelector> {
     pattern(delimited(tag("<"), rc_command_type, tag(">")))(input)
         .map(|(next, command)| (next, RcPipelineSelector { command }))
 }
 
-pub fn rc_pattern<I:Span>(input: I) -> Res<I, RcPipelineSelector> {
+pub fn rc_pattern<I: Span>(input: I) -> Res<I, RcPipelineSelector> {
     tuple((tag("Rc"), delimited(tag("<"), rc_pattern_scoped, tag(">"))))(input)
         .map(|(next, (_, pattern))| (next, pattern))
 }
 
-pub fn map_pattern_payload_structure<I:Span>(input: I) -> Res<I, PayloadTypePatternDef<PointCtx>> {
+pub fn map_pattern_payload_structure<I: Span>(input: I) -> Res<I, PayloadTypePatternDef<PointVar>> {
     map_pattern(input).map(|(next, con)| (next, PayloadTypePatternDef::Map(Box::new(con))))
 }
 
-pub fn payload_structure<I:Span>(input: I) -> Res<I, PayloadTypePatternDef<PointCtx>> {
+pub fn payload_structure<I: Span>(input: I) -> Res<I, PayloadTypePatternDef<PointVar>> {
     alt((
         array_data_struct,
         primitive_data_struct,
@@ -5168,23 +5122,23 @@ pub fn payload_structure<I:Span>(input: I) -> Res<I, PayloadTypePatternDef<Point
     ))(input)
 }
 
-pub fn msg_entity_pattern<I:Span>(input: I) -> Res<I, PipelineSelector> {
+pub fn msg_entity_pattern<I: Span>(input: I) -> Res<I, PipelineSelector> {
     msg_pattern(input).map(|(next, pattern)| (next, PipelineSelector::Msg(pattern)))
 }
 
-pub fn http_entity_pattern<I:Span>(input: I) -> Res<I, PipelineSelector> {
+pub fn http_entity_pattern<I: Span>(input: I) -> Res<I, PipelineSelector> {
     http_pattern(input).map(|(next, pattern)| (next, PipelineSelector::Http(pattern)))
 }
 
-pub fn rc_entity_pattern<I:Span>(input: I) -> Res<I, PipelineSelector> {
+pub fn rc_entity_pattern<I: Span>(input: I) -> Res<I, PipelineSelector> {
     rc_pattern(input).map(|(next, pattern)| (next, PipelineSelector::Rc(pattern)))
 }
 
-pub fn entity_pattern<I:Span>(input: I) -> Res<I, PipelineSelector> {
+pub fn entity_pattern<I: Span>(input: I) -> Res<I, PipelineSelector> {
     alt((msg_entity_pattern, http_entity_pattern, rc_entity_pattern))(input)
 }
 
-pub fn payload_structure_with_validation<I:Span>(input: I) -> Res<I, PayloadPatternCtx> {
+pub fn payload_structure_with_validation<I: Span>(input: I) -> Res<I, PayloadPatternVar> {
     tuple((
         context("selector", payload_structure),
         opt(preceded(tag("~"), opt(format))),
@@ -5193,7 +5147,7 @@ pub fn payload_structure_with_validation<I:Span>(input: I) -> Res<I, PayloadPatt
     .map(|(next, (data, format, verifier))| {
         (
             next,
-            PayloadPatternCtx {
+            PayloadPatternVar {
                 structure: data,
                 format: match format {
                     Some(Some(format)) => Some(format),
@@ -5205,19 +5159,19 @@ pub fn payload_structure_with_validation<I:Span>(input: I) -> Res<I, PayloadPatt
     })
 }
 
-pub fn consume_payload_structure<I:Span>(input: I) -> Res<I, PayloadTypePatternCtx> {
+pub fn consume_payload_structure<I: Span>(input: I) -> Res<I, PayloadTypePatternVar> {
     all_consuming(payload_structure)(input)
 }
 
-pub fn consume_data_struct_def<I:Span>(input: I) -> Res<I, PayloadPatternCtx> {
+pub fn consume_data_struct_def<I: Span>(input: I) -> Res<I, PayloadPatternVar> {
     all_consuming(payload_structure_with_validation)(input)
 }
 
-pub fn payload_pattern_any<I:Span>(input: I) -> Res<I, ValuePattern<PayloadPatternCtx>> {
+pub fn payload_pattern_any<I: Span>(input: I) -> Res<I, ValuePattern<PayloadPatternVar>> {
     tag("*")(input).map(|(next, _)| (next, ValuePattern::Any))
 }
 
-pub fn payload_pattern<I:Span>(input: I) -> Res<I, ValuePattern<PayloadPatternCtx>> {
+pub fn payload_pattern<I: Span>(input: I) -> Res<I, ValuePattern<PayloadPatternVar>> {
     context(
         "@payload-pattern",
         value_pattern(payload_structure_with_validation),
@@ -5225,22 +5179,22 @@ pub fn payload_pattern<I:Span>(input: I) -> Res<I, ValuePattern<PayloadPatternCt
     .map(|(next, payload_pattern)| (next, payload_pattern))
 }
 
-pub fn payload_filter_block_empty<I:Span>(input: I) -> Res<I, PatternBlockCtx> {
-    multispace0(input.clone()).map(|(next, _)| (input, PatternBlockCtx::None))
+pub fn payload_filter_block_empty<I: Span>(input: I) -> Res<I, PatternBlockVar> {
+    multispace0(input.clone()).map(|(next, _)| (input, PatternBlockVar::None))
 }
 
-pub fn payload_filter_block_any<I:Span>(input: I) -> Res<I, PatternBlockCtx> {
+pub fn payload_filter_block_any<I: Span>(input: I) -> Res<I, PatternBlockVar> {
     let (next, _) = delimited(multispace0, context("selector", tag("*")), multispace0)(input)?;
 
-    Ok((next, PatternBlockCtx::Any))
+    Ok((next, PatternBlockVar::Any))
 }
 
-pub fn payload_filter_block_def<I:Span>(input: I) -> Res<I, PatternBlockCtx> {
+pub fn payload_filter_block_def<I: Span>(input: I) -> Res<I, PatternBlockVar> {
     payload_structure_with_validation(input)
-        .map(|(next, pattern)| (next, PatternBlockCtx::Pattern(pattern)))
+        .map(|(next, pattern)| (next, PatternBlockVar::Pattern(pattern)))
 }
 
-fn insert_block_pattern<I:Span>(input: I) -> Res<I, UploadBlock> {
+fn insert_block_pattern<I: Span>(input: I) -> Res<I, UploadBlock> {
     delimited(multispace0, filename, multispace0)(input).map(|(next, filename)| {
         (
             next,
@@ -5270,7 +5224,7 @@ pub fn text_payload_block<I:Span>(input: Span) -> Res<Span, PayloadBlock> {
     })
 }*/
 
-pub fn upload_payload_block<I:Span>(input: I) -> Res<I, UploadBlock> {
+pub fn upload_payload_block<I: Span>(input: I) -> Res<I, UploadBlock> {
     delimited(multispace0, file_chars, multispace0)(input).map(|(next, filename)| {
         (
             next,
@@ -5281,11 +5235,11 @@ pub fn upload_payload_block<I:Span>(input: I) -> Res<I, UploadBlock> {
     })
 }
 
-pub fn upload_step<I:Span>(input: I) -> Res<I, UploadBlock> {
+pub fn upload_step<I: Span>(input: I) -> Res<I, UploadBlock> {
     delimited(tag("^["), upload_payload_block, tag("->"))(input)
 }
 
-pub fn request_payload_filter_block<I:Span>(input: I) -> Res<I, PayloadBlockCtx> {
+pub fn request_payload_filter_block<I: Span>(input: I) -> Res<I, PayloadBlockVar> {
     tuple((
         multispace0,
         alt((
@@ -5295,10 +5249,10 @@ pub fn request_payload_filter_block<I:Span>(input: I) -> Res<I, PayloadBlockCtx>
         )),
         multispace0,
     ))(input)
-    .map(|(next, (_, block, _))| (next, PayloadBlockCtx::RequestPattern(block)))
+    .map(|(next, (_, block, _))| (next, PayloadBlockVar::RequestPattern(block)))
 }
 
-pub fn response_payload_filter_block<I:Span>(input: I) -> Res<I, PayloadBlockCtx> {
+pub fn response_payload_filter_block<I: Span>(input: I) -> Res<I, PayloadBlockVar> {
     context(
         "response-payload-filter-block",
         terminated(
@@ -5315,10 +5269,10 @@ pub fn response_payload_filter_block<I:Span>(input: I) -> Res<I, PayloadBlockCtx
             tag("]"),
         ),
     )(input)
-    .map(|(next, (_, block, _))| (next, PayloadBlockCtx::ResponsePattern(block)))
+    .map(|(next, (_, block, _))| (next, PayloadBlockVar::ResponsePattern(block)))
 }
 
-pub fn rough_pipeline_step<I:Span>(input: I) -> Res<I, I> {
+pub fn rough_pipeline_step<I: Span>(input: I) -> Res<I, I> {
     recognize(tuple((
         many0(preceded(
             alt((tag("-"), tag("="), tag("+"))),
@@ -5328,7 +5282,7 @@ pub fn rough_pipeline_step<I:Span>(input: I) -> Res<I, I> {
     )))(input)
 }
 
-pub fn consume_pipeline_block<I:Span>(input: I) -> Res<I, PayloadBlockCtx> {
+pub fn consume_pipeline_block<I: Span>(input: I) -> Res<I, PayloadBlockVar> {
     all_consuming(request_payload_filter_block)(input)
 }
 
@@ -5340,7 +5294,7 @@ pub fn remove_comments_from_span( span: Span )-> Res<Span,Span> {
 }
  */
 
-pub fn strip_comments<I:Span>(input: I) -> Res<I, String>
+pub fn strip_comments<I: Span>(input: I) -> Res<I, String>
 where
     I: InputTakeAtPosition + nom::InputLength + Clone + ToString,
     <I as InputTakeAtPosition>::Item: AsChar,
@@ -5377,7 +5331,7 @@ pub fn strip<I:Span>(input: Span) -> Result<Span, MsgErr>
 
  */
 
-pub fn no_comment<T:Span>(i: T) -> Res<T, TextType<T>>
+pub fn no_comment<T: Span>(i: T) -> Res<T, TextType<T>>
 where
     T: InputTakeAtPosition + nom::InputLength,
     <T as InputTakeAtPosition>::Item: AsChar,
@@ -5392,7 +5346,7 @@ where
     .map(|(next, comment)| (next, TextType::NoComment(comment)))
 }
 
-pub fn comment<T:Span>(i: T) -> Res<T, TextType<T>>
+pub fn comment<T: Span>(i: T) -> Res<T, TextType<T>>
 where
     T: InputTakeAtPosition + nom::InputLength,
     <T as InputTakeAtPosition>::Item: AsChar,
@@ -5407,7 +5361,7 @@ where
     .map(|(next, comment)| (next, TextType::Comment(comment)))
 }
 
-pub fn config(src: &str) -> Result<Document<String>, MsgErr> {
+pub fn config(src: &str) -> Result<Document, MsgErr> {
     let src = src.to_string();
     let (next, stripped) = strip_comments(new_span(src.as_str()))?;
     let span = span_with_extra(stripped.as_str(), Arc::new(src.to_string()));
@@ -5417,7 +5371,7 @@ pub fn config(src: &str) -> Result<Document<String>, MsgErr> {
         if root_scope_selector.version == Version::from_str("1.0.0")? {
             let bind = bind_config(lex_root_scope.block.content.clone())?;
 
-            return Ok(Document::BindConfig(bind.to_string_version()));
+            return Ok(Document::BindConfig(bind));
         } else {
             let message = format!(
                 "ConfigParser does not know how to process a Bind at version '{}'",
@@ -5458,13 +5412,13 @@ pub fn config(src: &str) -> Result<Document<String>, MsgErr> {
     }
 }
 
-fn bind_config<I:Span>(input: I) -> Result<BindConfig<I>, MsgErr> {
+fn bind_config<I: Span>(input: I) -> Result<BindConfig, MsgErr> {
     let lex_scopes = lex_scopes(input)?;
     let mut scopes = vec![];
     let mut errors = vec![];
 
     for lex_scope in lex_scopes {
-        match sematic_bind_scope(lex_scope) {
+        match semantic_bind_scope(lex_scope) {
             Ok(scope) => {
                 scopes.push(scope);
             }
@@ -5481,7 +5435,7 @@ fn bind_config<I:Span>(input: I) -> Result<BindConfig<I>, MsgErr> {
     Ok(config)
 }
 
-fn sematic_bind_scope<I:Span>(scope: LexScope<I>) -> Result<BindScope<I>, MsgErr> {
+fn semantic_bind_scope<I: Span>(scope: LexScope<I>) -> Result<BindScope, MsgErr> {
     let selector_name = scope.selector.selector.name.to_string();
     match selector_name.as_str() {
         "Pipeline" => {
@@ -5510,7 +5464,7 @@ fn sematic_bind_scope<I:Span>(scope: LexScope<I>) -> Result<BindScope<I>, MsgErr
     }
 }
 
-fn parse_bind_pipelines_scope<I:Span>(input: I) -> Result<Spanned<I, BindScopeKind>, ParseErrs> {
+fn parse_bind_pipelines_scope<I: Span>(input: I) -> Result<Spanned<I, BindScopeKind>, ParseErrs> {
     unimplemented!()
     /*
     let (next, lex_scopes) = lex_scopes(input.clone())?;
@@ -5543,40 +5497,40 @@ fn parse_bind_pipelines_scope<I:Span>(input: I) -> Result<Spanned<I, BindScopeKi
      */
 }
 
-pub fn nospace0<I:Span>(input: I) -> Res<I, I> {
+pub fn nospace0<I: Span>(input: I) -> Res<I, I> {
     recognize(many0(satisfy(|c| !c.is_whitespace())))(input)
 }
 
-pub fn nospace1<I:Span>(input: I) -> Res<I, I> {
+pub fn nospace1<I: Span>(input: I) -> Res<I, I> {
     recognize(pair(
         satisfy(|c| !c.is_whitespace()),
         many0(satisfy(|c| !c.is_whitespace())),
     ))(input)
 }
 
-pub fn no_space_with_blocks<I:Span>(input: I) -> Res<I, I> {
+pub fn no_space_with_blocks<I: Span>(input: I) -> Res<I, I> {
     recognize(many1(alt((recognize(any_block), nospace1))))(input)
 }
 
-pub fn var_pipeline<I:Span>(input: I) -> Res<I, VarPipeline<I>> {
+pub fn var_pipeline<I: Span>(input: I) -> Res<I, VarPipeline> {
     many1(var_pipeline_segment)(input).map(|(next, segments)| {
         let pipeline = VarPipeline { segments };
         (next, pipeline)
     })
 }
 
-pub fn var_pipeline_segment<I:Span>(input: I) -> Res<I, VarPipelineSegment<I>> {
+pub fn var_pipeline_segment<I: Span>(input: I) -> Res<I, VarPipelineSegment> {
     tuple((
         multispace0,
-        subst(PipelineStepCtxParser()),
+        pipeline_step_var,
         multispace1,
-        opt(subst(PipelineStopCtxParser())),
+        opt(pipeline_stop_var),
     ))(input)
     .map(|(next, (_, step, _, stop))| {
         let step = step.into();
         let stop = match stop {
             None => None,
-            Some(stop) => {Some(stop.into())}
+            Some(stop) => Some(stop.into()),
         };
         let segment = VarPipelineSegment { step, stop };
 
@@ -5584,15 +5538,7 @@ pub fn var_pipeline_segment<I:Span>(input: I) -> Res<I, VarPipelineSegment<I>> {
     })
 }
 
-#[derive(Debug,Clone,Serialize,Deserialize)]
-pub struct PipelineStepCtxParser();
-impl SubstParser<PipelineStepCtx> for PipelineStepCtxParser {
-    fn parse_span<I:Span>(&self, input: I) -> Res<I, PipelineStepCtx> {
-        pipeline_step_ctx(input)
-    }
-}
-
-pub fn pipeline_step_ctx<I:Span>(input: I) -> Res<I, PipelineStepCtx> {
+pub fn pipeline_step_var<I: Span>(input: I) -> Res<I, PipelineStepVar> {
     context(
         "pipeline:step",
         tuple((
@@ -5629,7 +5575,7 @@ pub fn pipeline_step_ctx<I:Span>(input: I) -> Res<I, PipelineStepCtx> {
 
         (
             next,
-            PipelineStepCtx {
+            PipelineStepVar {
                 entry,
                 exit,
                 blocks,
@@ -5638,7 +5584,7 @@ pub fn pipeline_step_ctx<I:Span>(input: I) -> Res<I, PipelineStepCtx> {
     })
 }
 
-pub fn core_pipeline_stop<I:Span>(input: I) -> Res<I, PipelineStopCtx> {
+pub fn core_pipeline_stop<I: Span>(input: I) -> Res<I, PipelineStopVar> {
     context(
         "Core",
         delimited(
@@ -5647,38 +5593,29 @@ pub fn core_pipeline_stop<I:Span>(input: I) -> Res<I, PipelineStopCtx> {
             tag("}}"),
         ),
     )(input)
-    .map(|(next, _)| (next, PipelineStopCtx::Internal))
+    .map(|(next, _)| (next, PipelineStopVar::Internal))
 }
 
-pub fn return_pipeline_stop<I:Span>(input: I) -> Res<I, PipelineStopCtx> {
-    tag("&")(input).map(|(next, _)| (next, PipelineStopCtx::Respond))
+pub fn return_pipeline_stop<I: Span>(input: I) -> Res<I, PipelineStopVar> {
+    tag("&")(input).map(|(next, _)| (next, PipelineStopVar::Respond))
 }
 
-pub fn call_pipeline_stop<I:Span>(input: I) -> Res<I, PipelineStopCtx> {
-    context("Call", call)(input).map(|(next, call)| (next, PipelineStopCtx::Call(call)))
+pub fn call_pipeline_stop<I: Span>(input: I) -> Res<I, PipelineStopVar> {
+    context("Call", call)(input).map(|(next, call)| (next, PipelineStopVar::Call(call)))
 }
 
-pub fn point_pipeline_stop<I:Span>(input: I) -> Res<I, PipelineStopCtx> {
-    context("pipeline:stop:point", point_ctx)(input)
-        .map(|(next, point)| (next, PipelineStopCtx::Point(point)))
+pub fn point_pipeline_stop<I: Span>(input: I) -> Res<I, PipelineStopVar> {
+    context("pipeline:stop:point", point_var)(input)
+        .map(|(next, point)| (next, PipelineStopVar::Point(point)))
 }
 
-#[derive(Debug,Clone,Serialize,Deserialize)]
-pub struct PipelineStopCtxParser();
-impl SubstParser<PipelineStopCtx> for PipelineStopCtxParser {
-    fn parse_span<I:Span>(&self, input: I) -> Res<I, PipelineStopCtx> {
-println!("parsing: {}",input.to_string());
-        pipeline_stop_ctx(input)
-    }
-}
-
-pub fn pipeline_stop_ctx<I:Span>(input: I) -> Res<I, PipelineStopCtx> {
+pub fn pipeline_stop_var<I: Span>(input: I) -> Res<I, PipelineStopVar> {
     context(
         "Stop",
         pair(
             context(
                 "pipeline:stop:expecting",
-                cut(peek(alt(( tag("."), alpha1, tag("&"))))),
+                cut(peek(alt((tag("."), alpha1, tag("&"))))),
             ),
             alt((
                 core_pipeline_stop,
@@ -5691,34 +5628,34 @@ pub fn pipeline_stop_ctx<I:Span>(input: I) -> Res<I, PipelineStopCtx> {
     .map(|(next, (_, pipeline_stop))| (next, pipeline_stop))
 }
 
-pub fn consume_pipeline_step<I:Span>(input: I) -> Res<I, PipelineStepCtx> {
-    all_consuming(pipeline_step_ctx)(input)
+pub fn consume_pipeline_step<I: Span>(input: I) -> Res<I, PipelineStepVar> {
+    all_consuming(pipeline_step_var)(input)
 }
 
-pub fn consume_pipeline_stop<I:Span>(input: I) -> Res<I, PipelineStopCtx> {
-    all_consuming(pipeline_stop_ctx)(input)
+pub fn consume_pipeline_stop<I: Span>(input: I) -> Res<I, PipelineStopVar> {
+    all_consuming(pipeline_stop_var)(input)
 }
 
-pub fn pipeline_segment<I:Span>(input: I) -> Res<I, PipelineSegmentCtx> {
+pub fn pipeline_segment<I: Span>(input: I) -> Res<I, PipelineSegmentVar> {
     tuple((
         multispace0,
-        pipeline_step_ctx,
+        pipeline_step_var,
         multispace0,
-        pipeline_stop_ctx,
+        pipeline_stop_var,
         multispace0,
     ))(input)
-    .map(|(next, (_, step, _, stop, _))| (next, PipelineSegmentCtx { step, stop }))
+    .map(|(next, (_, step, _, stop, _))| (next, PipelineSegmentVar { step, stop }))
 }
 
-pub fn pipeline<I:Span>(input: I) -> Res<I, PipelineCtx> {
+pub fn pipeline<I: Span>(input: I) -> Res<I, PipelineVar> {
     context(
         "pipeline",
         many0(delimited(multispace0, pipeline_segment, multispace0)),
     )(input)
-    .map(|(next, segments)| (next, PipelineCtx { segments }))
+    .map(|(next, segments)| (next, PipelineVar { segments }))
 }
 
-pub fn consume_pipeline<I:Span>(input: I) -> Res<I, PipelineCtx> {
+pub fn consume_pipeline<I: Span>(input: I) -> Res<I, PipelineVar> {
     all_consuming(pipeline)(input)
 }
 
@@ -5753,14 +5690,14 @@ pub fn consume_selector<I:Span>(input: Span) -> Res<Span, Selector<PipelineSelec
 
  */
 
-pub fn subst<I:Span,T,P>(parser: P) -> impl FnMut(I) -> Res<I, Subst<T,I,P>>
+pub fn subst<I: Span, T, P>(parser: P) -> impl FnMut(I) -> Res<I, Subst<T, I, P>>
 where
     P: SubstParser<T> + 'static + Clone,
 {
     move |input: I| {
         many1(chunk)(input.clone()).map(|(next, chunks)| {
             let len: usize = chunks.iter().map(|c| c.len()).sum();
-            let span = input.slice(..input.len() - next.len());
+            let span = input.slice(0..input.len() - next.len());
             let chunks = Subst {
                 chunks,
                 parser: parser.clone(),
@@ -5772,11 +5709,11 @@ where
     }
 }
 
-pub fn chunk<I:Span>(input: I) -> Res<I, Chunk<I>> {
+pub fn chunk<I: Span>(input: I) -> Res<I, Chunk<I>> {
     alt((text_chunk, var_chunk))(input)
 }
 
-pub fn text_chunk<I:Span>(input: I) -> Res<I, Chunk<I>> {
+pub fn text_chunk<I: Span>(input: I) -> Res<I, Chunk<I>> {
     recognize(many1(alt((
         recognize(any_soround_lex_block),
         tag("\\$"),
@@ -5785,7 +5722,7 @@ pub fn text_chunk<I:Span>(input: I) -> Res<I, Chunk<I>> {
     .map(|(next, text)| (next, Chunk::Text(text)))
 }
 
-pub fn var_chunk<I:Span>(input: I) -> Res<I, Chunk<I>> {
+pub fn var_chunk<I: Span>(input: I) -> Res<I, Chunk<I>> {
     preceded(
         tag("$"),
         context(
@@ -5804,11 +5741,13 @@ pub fn var_chunk<I:Span>(input: I) -> Res<I, Chunk<I>> {
 pub mod test {
     use crate::error::{MsgErr, ParseErrs};
     use crate::version::v0_0_1::config::config::Document;
+    use crate::version::v0_0_1::id::id::{Point, PointCtx, PointSegVar, RouteSegVar};
     use crate::version::v0_0_1::parse::error::result;
     use crate::version::v0_0_1::parse::model::{
         BlockKind, DelimitedBlockKind, LexScope, NestedBlockKind, TerminatedBlockKind,
     };
-    use crate::version::v0_0_1::parse::{args, base_point_segment, bind_config, comment, config, ctx_seg, CtxSubst, expected_block_terminator_or_non_terminator, lex_block, lex_child_scopes, lex_nested_block, lex_scope, lex_scope_pipeline_step_and_block, lex_scope_selector, lex_scope_selector_and_filters, lex_scopes, lowercase1, MapResolver, mesh_eos, PntCtxResolver, nested_block, nested_block_content, next_selector, no_comment, parse_include_blocks, parse_inner_block, path_regex, pipeline, pipeline_segment, pipeline_step_ctx, pipeline_stop_ctx, point, point_ctx, point_non_root, point_non_root_var, point_var, pop, rec_version, Res, root_scope, root_scope_selector, scope_filter, scope_filters, skewer_case, skewer_dot, space_chars, space_no_dupe_dots, space_point_segment, strip_comments, subst, SubstParser, var_pipeline, var_seg, variable_name, VarResolver, VarSubst, version, version_point_segment, wrapper};
+    use crate::version::v0_0_1::parse::{args, base_point_segment, bind_config, comment, config, ctx_seg, expected_block_terminator_or_non_terminator, lex_block, lex_child_scopes, lex_nested_block, lex_scope, lex_scope_pipeline_step_and_block, lex_scope_selector, lex_scope_selector_and_filters, lex_scopes, lowercase1, mesh_eos, nested_block, nested_block_content, next_selector, no_comment, parse_include_blocks, parse_inner_block, path_regex, pipeline, pipeline_segment, pipeline_step_var, pipeline_stop_var, point_non_root_var, point_var, pop, rec_version, root_scope, root_scope_selector, scope_filter, scope_filters, skewer_case, skewer_dot, space_chars, space_no_dupe_dots, space_point_segment, strip_comments, subst, var_pipeline, var_seg, variable_name, version, version_point_segment, wrapper, Env, MapResolver, Res, SubstParser, ToResolved, VarResolver, consume_point_var};
+    use crate::version::v0_0_1::span::{new_span, span_with_extra};
     use nom::branch::alt;
     use nom::bytes::complete::{escaped, tag};
     use nom::character::complete::{alpha1, alphanumeric1, anychar, multispace0};
@@ -5823,116 +5762,131 @@ pub mod test {
     use std::rc::Rc;
     use std::str::FromStr;
     use std::sync::Arc;
-    use crate::version::v0_0_1::id::id::{Point, PointSegVar, RouteSegVar};
-    use crate::version::v0_0_1::span::{new_span, span_with_extra};
 
     #[test]
-    pub fn test_point_var() -> Result<(),MsgErr>{
-
-        log(result(all_consuming(point_var)(new_span("[hub]::my-domain.com:${name}:base"))))?;
-        log(result(all_consuming(point_var)(new_span("[hub]::my-domain.com:1.0.0:/dorko/x/"))))?;
-        log(result(all_consuming(point_var)(new_span("[hub]::my-domain.com:1.0.0:/dorko/${x}/"))))?;
-        log(result(all_consuming(point_var)(new_span("[hub]::.:1.0.0:/dorko/${x}/"))))?;
-        log(result(all_consuming(point_var)(new_span("[hub]::..:1.0.0:/dorko/${x}/"))))?;
-        let point = log(result(point_var(new_span("[hub]::my-domain.com:1.0.0:/dorko/${x}/file.txt"))))?;
-        if let Some(PointSegVar::Var(var)) = point.segments.get(4){
-            assert_eq!("x",var.name.as_str());
+    pub fn test_point_var() -> Result<(), MsgErr> {
+        log(result(all_consuming(point_var)(new_span(
+            "[hub]::my-domain.com:${name}:base",
+        ))))?;
+        log(result(all_consuming(point_var)(new_span(
+            "[hub]::my-domain.com:1.0.0:/dorko/x/",
+        ))))?;
+        log(result(all_consuming(point_var)(new_span(
+            "[hub]::my-domain.com:1.0.0:/dorko/${x}/",
+        ))))?;
+        log(result(all_consuming(point_var)(new_span(
+            "[hub]::.:1.0.0:/dorko/${x}/",
+        ))))?;
+        log(result(all_consuming(point_var)(new_span(
+            "[hub]::..:1.0.0:/dorko/${x}/",
+        ))))?;
+        let point = log(result(point_var(new_span(
+            "[hub]::my-domain.com:1.0.0:/dorko/${x}/file.txt",
+        ))))?;
+        if let Some(PointSegVar::Var(var)) = point.segments.get(4) {
+            assert_eq!("x", var.name.as_str());
         } else {
             assert!(false);
         }
 
-        if let Some(PointSegVar::File(file)) = point.segments.get(5){
-            assert_eq!("file.txt",file.as_str());
+        if let Some(PointSegVar::File(file)) = point.segments.get(5) {
+            assert_eq!("file.txt", file.as_str());
         } else {
             assert!(false);
         }
 
-
-        let point = log(result(point_var(new_span("${route}::my-domain.com:${name}:base"))))?;
-
+        let point = log(result(point_var(new_span(
+            "${route}::my-domain.com:${name}:base",
+        ))))?;
 
         // this one SHOULD fail and an appropriate error should be located at BAD
-        log(result(point_var(new_span("${route of routes}::my-domain.com:${BAD}:base"))));
+        log(result(point_var(new_span(
+            "${route of routes}::my-domain.com:${BAD}:base",
+        ))));
 
         if let RouteSegVar::Var(ref var) = point.route {
-            assert_eq!("route",var.name.as_str());
+            assert_eq!("route", var.name.as_str());
         } else {
             assert!(false);
         }
 
         if let Some(PointSegVar::Space(space)) = point.segments.get(0) {
-            assert_eq!("my-domain.com",space.as_str());
+            assert_eq!("my-domain.com", space.as_str());
         } else {
             assert!(false);
         }
 
         if let Some(PointSegVar::Var(var)) = point.segments.get(1) {
-            assert_eq!("name",var.name.as_str());
+            assert_eq!("name", var.name.as_str());
         } else {
             assert!(false);
         }
-
 
         if let Some(PointSegVar::Base(base)) = point.segments.get(2) {
-            assert_eq!("base",base.as_str());
+            assert_eq!("base", base.as_str());
         } else {
             assert!(false);
         }
 
-        let mut resolver = MapResolver::new();
-        resolver.insert("route", "[hub]");
-        resolver.insert("name", "zophis");
-        let point = log(point.resolve_vars(&resolver))?;
-        let resolver = PntCtxResolver::new( Point::from_str("my-domain.com")?);
-        let point = point.resolve_ctx(&resolver)?;
-        println!("point.to_string(): {}",point.to_string() );
+        let mut env = Env::new(Point::from_str("my-domain.com")?);
+        env.insert("route", "[hub]").unwrap();
+        env.insert("name", "zophis").unwrap();
+        let point: Point = point.to_resolved(&env)?;
+        println!("point.to_string(): {}", point.to_string());
 
-        log(log(result(all_consuming(point_var)(new_span("[hub]::my-domain.com:1.0.0:/dorko/x/"))))?.collapse()?.collapse());
-        log(log(result(all_consuming(point_var)(new_span("[hub]::my-domain.com:1.0.0:/${dorko}/x/"))))?.collapse());
-        log(log(result(all_consuming(point_var)(new_span("${not-supported}::my-domain.com:1.0.0:/${dorko}/x/"))))?.collapse());
-
+        log(log(result(all_consuming(point_var)(new_span(
+            "[hub]::my-domain.com:1.0.0:/dorko/x/",
+        ))))?
+        .to_point());
+        log(log(result(all_consuming(point_var)(new_span(
+            "[hub]::my-domain.com:1.0.0:/${dorko}/x/",
+        ))))?
+        .to_point());
+        log(log(result(all_consuming(point_var)(new_span(
+            "${not-supported}::my-domain.com:1.0.0:/${dorko}/x/",
+        ))))?
+        .to_point());
 
         let point = log(result(point_var(new_span("${route}::${root}:base1"))))?;
-        let mut resolver = MapResolver::new();
-        resolver.insert("route", "[hub]");
-        resolver.insert("root", "..");
-        log(log(result(all_consuming(point_var)(new_span("${not-supported}::my-domain.com:1.0.0:/${dorko}/x/")))?.resolve_vars(&resolver)));
-        let point = log(point.resolve_vars(&resolver))?;
-        let resolver = PntCtxResolver::new( Point::from_str("my-domain.com:under:over")?);
-        let point = log(point.resolve_ctx(&resolver))?;
-        println!("point.to_string(): {}",point.to_string() );
+        let mut env = Env::new(Point::from_str("my-domain.com:blah")?);
+        env.insert("route", "[hub]");
+        env.insert("root", "..");
 
+        let point: PointCtx = log(point.to_resolved(&env))?;
 
+        /*
+        let resolver = Env::new(Point::from_str("my-domain.com:under:over")?);
+        let point = log(consume_point_var("../../hello") )?;
+//        let point: Point = log(point.to_resolved(&resolver))?;
+  //      println!("point.to_string(): {}", point.to_string());
+        let _: Result<Point, MsgErr> = log(log(result(all_consuming(point_var)(new_span(
+            "${not-supported}::my-domain.com:1.0.0:/${dorko}/x/",
+        )))?
+            .to_resolved(&env)));
 
+         */
         Ok(())
     }
 
     #[test]
-    pub fn test_point() -> Result<(),MsgErr>{
-
-        log(result(all_consuming(point)(new_span("[hub]::my-domain.com:name:base"))))?;
-        log(result(all_consuming(point)(new_span("[hub]::my-domain.com:1.0.0:/dorko/x/"))))?;
-        log(result(all_consuming(point)(new_span("[hub]::my-domain.com:1.0.0:/dorko/xyz/"))))?;
-
-        Ok(())
-    }
-
-
-    #[test]
-    pub fn test_var_subst() -> Result<(),MsgErr>{
-
-        let pipeline_var_cfg_str = r#"-> mr:${user}:iv => &"#;
-        let pipeline = log(result(var_pipeline(new_span(pipeline_var_cfg_str) )))?;
-
-        let mut resolver = MapResolver::new();
-        //resolver.insert("user","paul:scott:williams");
-
-        let pipeline = log(pipeline.resolve_vars(&resolver))?;
+    pub fn test_point() -> Result<(), MsgErr> {
+        log(result(all_consuming(point_var)(new_span(
+            "[hub]::my-domain.com:name:base",
+        )))?
+        .to_point())?;
+        log(result(all_consuming(point_var)(new_span(
+            "[hub]::my-domain.com:1.0.0:/dorko/x/",
+        )))?
+        .to_point())?;
+        log(result(all_consuming(point_var)(new_span(
+            "[hub]::my-domain.com:1.0.0:/dorko/xyz/",
+        )))?
+        .to_point())?;
 
         Ok(())
     }
 
-    #[test]
+   #[test]
     pub fn test_lex_block() -> Result<(), MsgErr> {
         let esc = result(escaped(anychar, '\\', anychar)(new_span("\\}")))?;
         //println!("esc: {}", esc);
@@ -6076,10 +6030,8 @@ pub mod test {
         )))(new_span("localhost"))))?;
         log(result(space_point_segment(new_span("localhost.com"))))?;
 
-        log(result(point(new_span("mechtron.io:app:hello"))))?;
-        log(result(pipeline_stop_ctx(new_span(
-            "localhost:app:hello",
-        ))))?;
+        log(result(point_var(new_span("mechtron.io:app:hello")))?.to_point())?;
+        log(result(pipeline_stop_var(new_span("localhost:app:hello"))))?;
         Ok(())
     }
 
@@ -6091,14 +6043,14 @@ pub mod test {
 
     #[test]
     pub fn test_pipeline_step() -> Result<(), MsgErr> {
-        log(result(pipeline_step_ctx(new_span("->"))))?;
-        log(result(pipeline_step_ctx(new_span("-[ Text ]->"))))?;
-        log(result(pipeline_step_ctx(new_span("-[ Text ]=>"))))?;
-        log(result(pipeline_step_ctx(new_span("=[ Text ]=>"))))?;
+        log(result(pipeline_step_var(new_span("->"))))?;
+        log(result(pipeline_step_var(new_span("-[ Text ]->"))))?;
+        log(result(pipeline_step_var(new_span("-[ Text ]=>"))))?;
+        log(result(pipeline_step_var(new_span("=[ Text ]=>"))))?;
 
-        assert!(log(result(pipeline_step_ctx(new_span("=")))).is_err());
-        assert!(log(result(pipeline_step_ctx(new_span("-[ Bin ]=")))).is_err());
-        assert!(log(result(pipeline_step_ctx(new_span("[ Bin ]=>")))).is_err());
+        assert!(log(result(pipeline_step_var(new_span("=")))).is_err());
+        assert!(log(result(pipeline_step_var(new_span("-[ Bin ]=")))).is_err());
+        assert!(log(result(pipeline_step_var(new_span("[ Bin ]=>")))).is_err());
         Ok(())
     }
 
@@ -6236,9 +6188,9 @@ Hello my friend
 
     #[test]
     pub fn test_block() -> Result<(), MsgErr> {
-        log(result(lex_nested_block(NestedBlockKind::Curly)(
-            new_span("{ <Get> -> localhost; }    "),
-        )))?;
+        log(result(lex_nested_block(NestedBlockKind::Curly)(new_span(
+            "{ <Get> -> localhost; }    ",
+        ))))?;
         if true {
             return Ok(());
         }
@@ -6621,15 +6573,15 @@ Hello my friend
             "-[Text ]->"
         );
 
-        let (next, stripped) = strip_comments(
-            new_span(r#"Pipeline<Http>/users/$(auth)(blah xyz) -[Text]-> {
+        let (next, stripped) = strip_comments(new_span(
+            r#"Pipeline<Http>/users/$(auth)(blah xyz) -[Text]-> {
 
             Get -> {}
             <Put>(superuser) -> localhost:app => &;
             Post/users/scott -> localhost:app^Msg<SuperScott> => &;
 
-        }"#),
-        )?;
+        }"#,
+        ))?;
         let span = span_with_extra(stripped.as_str(), Arc::new(stripped.to_string()));
         let pipes = log(result(lex_scope(span)))?;
 

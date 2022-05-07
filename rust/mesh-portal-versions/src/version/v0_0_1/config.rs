@@ -70,8 +70,8 @@ pub mod config {
     }
 
     #[derive(Clone)]
-    pub enum Document<I> {
-        BindConfig(BindConfig<I>),
+    pub enum Document {
+        BindConfig(BindConfig),
     }
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -84,7 +84,7 @@ pub mod config {
         use crate::error::{MsgErr, ParseErrs};
         use crate::version::v0_0_1::entity::entity::request::{Rc, RequestCore};
         use crate::version::v0_0_1::entity::entity::EntityKind;
-        use crate::version::v0_0_1::id::id::{Point, PointCtx};
+        use crate::version::v0_0_1::id::id::{Point, PointCtx, PointVar};
         use crate::version::v0_0_1::payload::payload::{Call, CallDef};
         use crate::version::v0_0_1::payload::payload::{Payload, PayloadPattern};
         use crate::version::v0_0_1::selector::selector::{
@@ -93,40 +93,27 @@ pub mod config {
         use crate::version::v0_0_1::util::{ValueMatcher, ValuePattern};
         use serde::{Deserialize, Serialize};
         use std::convert::TryInto;
-        use crate::version::v0_0_1::parse::{CtxResolver, CtxSubst};
         use crate::version::v0_0_1::parse::model::{BindScope, RequestScope, PipelineSegment, PipelineSegmentDef};
         use crate::version::v0_0_1::selector::{PayloadBlock, PayloadBlockDef};
 
         #[derive(Clone)]
-        pub struct BindConfig<I> {
-            pub scopes: Vec<BindScope<I>>
+        pub struct BindConfig {
+            pub scopes: Vec<BindScope>
             /*pub msg: ConfigScope<EntityKind, Selector<MsgPipelineSelector>>,
             pub http: ConfigScope<EntityKind, Selector<HttpPipelineSelector>>,
             pub rc: ConfigScope<EntityKind, Selector<RcPipelineSelector>>,
 
              */
         }
-        impl <I:ToString> BindConfig<I> {
-            pub fn to_string_version(self) -> BindConfig<String>{
-                unimplemented!();
-                /*
-                let scopes : Vec<BindScope<String>> = self.scopes.into_iter().map( | s|s.to_string_version()).collect();
-                Self {
-                    scopes
-                }
 
-                 */
-            }
-        }
-
-        impl <I> BindConfig<I> {
-            pub fn new(scopes: Vec<BindScope<I>>) -> Self {
+        impl BindConfig {
+            pub fn new(scopes: Vec<BindScope>) -> Self {
                 Self {
                     scopes
                 }
             }
 
-            pub fn request_scopes(&self) -> Vec<&RequestScope<I>> {
+            pub fn request_scopes(&self) -> Vec<&RequestScope> {
                 let mut scopes = vec![];
                 for scope in &self.scopes {
                     if let BindScope::RequestScope(request_scope) = &scope {
@@ -198,6 +185,7 @@ pub mod config {
             }
         }
 
+        pub type PipelineStepVar = PipelineStepDef<PointVar>;
         pub type PipelineStepCtx = PipelineStepDef<PointCtx>;
         pub type PipelineStep = PipelineStepDef<Point>;
 
@@ -209,6 +197,7 @@ pub mod config {
             pub blocks: Vec<PayloadBlockDef<Pnt>>,
         }
 
+        /*
         impl CtxSubst<PipelineStep> for PipelineStepCtx{
             fn resolve_ctx(self, resolver: &dyn CtxResolver) -> Result<PipelineStep, MsgErr> {
                 let mut errs = vec![];
@@ -231,6 +220,8 @@ pub mod config {
             }
         }
 
+         */
+
         impl PipelineStep {
             pub fn new(entry: MessageKind, exit: MessageKind) -> Self {
                 Self {
@@ -252,6 +243,7 @@ pub mod config {
         pub type PatternBlock = ValuePattern<PayloadPattern>;
 
         pub type PipelineStopCtx = PipelineStopDef<PointCtx>;
+        pub type PipelineStopVar = PipelineStopDef<PointVar>;
         pub type PipelineStop = PipelineStopDef<Point>;
 
         #[derive(Debug, Clone, Serialize, Deserialize )]
@@ -262,6 +254,7 @@ pub mod config {
             Point(Pnt),
         }
 
+        /*
         impl CtxSubst<PipelineStop> for PipelineStopCtx {
             fn resolve_ctx(self, resolver: &dyn CtxResolver) -> Result<PipelineStop, MsgErr> {
                 match self {
@@ -272,6 +265,8 @@ pub mod config {
                 }
             }
         }
+
+         */
 
         #[derive(Debug, Clone, Serialize, Deserialize)]
         pub struct Selector<P> {
