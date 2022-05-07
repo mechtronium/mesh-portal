@@ -30,7 +30,6 @@ pub mod id {
     pub type AddressAndKind = id::id::PointKind;
     pub type AddressAndType = id::id::AddressAndType;
     pub type Meta = id::id::Meta;
-    pub type PayloadClaim = id::id::PayloadClaim;
     pub type HostKey = id::id::HostKey;
     pub type Version = id::id::Version;
     pub type Tks = dyn id::id::Tks;
@@ -50,16 +49,16 @@ pub mod selector {
     use mesh_portal_versions::version::{v0_0_1 as current, v0_0_1};
     use mesh_portal_versions::version::v0_0_1::selector;
 
-    pub type TksPattern = selector::selector::KindSelector;
-    pub type KindSelector = selector::selector::SubKindSelector;
+    pub type GenericKindSelector = selector::selector::GenericKindSelector;
+    pub type GenericSubKindSelector = selector::selector::GenericSubKindSelector;
     pub type PointSelector = selector::selector::PointSelector;
     pub type VersionReq = selector::selector::VersionReq;
     pub type PointSegSelector = selector::selector::PointSegSelector;
     pub type KeySegment = selector::selector::KeySegment;
     pub type ExactSegment = selector::selector::ExactPointSeg;
     pub type SpecificPattern = selector::selector::SpecificSelector;
-    pub type LabeledPrimitiveTypeDef = selector::selector::LabeledPrimitiveTypeDef;
-    pub type PrimitiveTypeDef = selector::selector::PayloadTypeDef;
+    pub type LabeledPrimitiveType = selector::selector::LabeledPrimitiveType;
+    pub type PrimitiveType = selector::selector::PayloadType2;
     pub type Format = selector::selector::Format;
     pub type EntityPattern = selector::selector::PipelineSelector;
     pub type RcPattern = selector::selector::RcPipelineSelector;
@@ -70,10 +69,9 @@ pub mod selector {
     pub type CreateBlock = v0_0_1::selector::CreateBlock;
     pub type PatternBlock = v0_0_1::selector::PatternBlock;
     pub type MapEntryPattern= selector::selector::MapEntryPattern;
-    pub type Hop = selector::selector::SelectorHop;
+    pub type Hop = selector::selector::Hop;
     pub type Pattern<P> = selector::selector::Pattern<P>;
     pub type EmptyPattern<P> = selector::selector::EmptyPattern<P>;
-    pub type BaseKindSelector = selector::selector::KindBaseSelector;
     pub type PointKindHierarchy = selector::selector::PointKindHierarchy;
     pub type PointKindSeg = selector::selector::PointKindSeg;
 
@@ -141,7 +139,6 @@ pub mod payload {
     pub type Errors = payload::payload::Errors;
     pub type ListPattern = payload::payload::ListPattern;
     pub type Range = payload::payload::NumRange;
-    pub type PayloadTypePattern = payload::payload::PayloadTypePatternDef;
     pub type PayloadPattern = payload::payload::PayloadPattern;
     pub type CallWithConfig = payload::payload::CallWithConfig;
     pub type Call = payload::payload::Call;
@@ -186,7 +183,7 @@ pub mod security {
     pub type ChildPerms = current::security::ChildPerms;
     pub type ParticlePerms = current::security::ParticlePerms;
     pub type AccessGrant = current::security::AccessGrant;
-    pub type AccessGrantKind = current::security::AccessGrantKindDef;
+    pub type AccessGrantKind = current::security::AccessGrantKind;
 }
 
 
@@ -214,7 +211,6 @@ pub mod config {
         use mesh_portal_versions::version::v0_0_1 as current;
         use mesh_portal_versions::version::v0_0_1::config;
 
-        pub type ProtoBind = config::config::bind::ProtoBind;
         pub type BindConfig = config::config::bind::BindConfig;
         pub type ConfigScope<T,E>= config::config::bind::ConfigScope<T,E>;
         pub type Pipeline= config::config::bind::Pipeline;
@@ -224,7 +220,6 @@ pub mod config {
         pub type Selector<P> = config::config::bind::Selector<P>;
         pub type Whitelist = config::config::bind::Whitelist;
         pub type CallPattern = config::config::bind::CallPattern;
-        pub type PipelineSegment = config::config::bind::PipelineSegment;
         pub type StepKind = config::config::bind::MessageKind;
         pub type PipelineSubScope = config::config::bind::PipelinesSubScope;
         pub type ScopeType = config::config::bind::ScopeType;
@@ -338,7 +333,6 @@ pub mod portal {
         use mesh_portal_versions::version::v0_0_1 as current;
         use mesh_portal_versions::version::v0_0_1::portal;
 
-        pub type Log = portal::portal::inlet::Log;
         pub type Frame = portal::portal::inlet::Frame;
         pub type AssignRequest = portal::portal::inlet::AssignRequest;
     }
@@ -348,6 +342,7 @@ pub mod portal {
         use mesh_portal_versions::version::v0_0_1::portal;
 
         pub type Frame = portal::portal::outlet::Frame;
+        pub type RequestFrame = portal::portal::outlet::RequestFrame;
     }
 
     pub mod initin {
@@ -429,6 +424,19 @@ pub mod fail {
     pub type Wrong = current::fail::Wrong;
     pub type Messaging= current::fail::Messaging;
     pub type Fail = current::fail::Fail;
+}
+
+pub mod log {
+    use mesh_portal_versions::version::v0_0_1 as current;
+    pub type Log = current::log::Log;
+    pub type LogSpan = current::log::LogSpanEvent;
+    pub type LogSpanKind = current::log::LogSpanEventKind;
+    pub type LogPayload = current::log::LogPayload;
+    pub type RootLogBuilder = current::log::RootLogBuilder;
+    pub type SpanLogBuilder = current::log::SpanLogBuilder;
+    pub type PointlessLog = current::log::PointlessLog;
+    pub type PointLogger = current::log::PointLogger;
+    pub type Logger = current::log::Logger;
 }
 
 

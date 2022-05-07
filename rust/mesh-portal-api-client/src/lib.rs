@@ -20,7 +20,7 @@ use std::ops::Deref;
 use std::collections::HashMap;
 use tokio::sync::watch::Receiver;
 use mesh_portal::version::latest::portal::{Exchanger, inlet, outlet};
-use mesh_portal::version::latest::resource::{ResourceStub, Status};
+use mesh_portal::version::latest::resource::{Status};
 use mesh_portal::version::latest::{portal, entity};
 use std::convert::TryInto;
 use dashmap::mapref::one::Ref;
@@ -28,9 +28,8 @@ use tokio::sync::oneshot::Sender;
 use tokio::task::yield_now;
 use mesh_portal::version::latest::config::{Assign, Config, PortalConfig, ResourceConfigBody};
 use mesh_portal::version::latest::entity::response::ResponseCore;
-use mesh_portal::version::latest::id::Address;
 use mesh_portal::version::latest::messaging::{Request, Response};
-use mesh_portal::version::latest::portal::inlet::{AssignRequest, Log};
+use mesh_portal::version::latest::portal::inlet::{AssignRequest};
 use mesh_portal::version::latest::portal::outlet::Frame;
 use mesh_portal::version::latest::util::unique_id;
 
@@ -309,7 +308,6 @@ pub mod client {
     use std::ops::Deref;
     use anyhow::Error;
     use mesh_portal::version::latest::portal::outlet;
-    use mesh_portal::version::latest::id::{Address};
 
     /*
     #[derive(Clone)]

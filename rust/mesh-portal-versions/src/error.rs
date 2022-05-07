@@ -1,5 +1,6 @@
 use std::convert::Infallible;
 use std::fmt::{Debug, Display, Formatter};
+use std::io;
 use std::string::FromUtf8Error;
 
 use http::header::ToStrError;
@@ -369,6 +370,11 @@ impl Into<String> for MsgErr {
 
 
 
+impl From<io::Error> for MsgErr {
+    fn from(e: io::Error) -> Self {
+        MsgErr::new(500,e.to_string().as_str())
+    }
+}
 
 
 impl From<ParseErrs> for MsgErr {

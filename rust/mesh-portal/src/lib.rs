@@ -14,7 +14,6 @@ use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 
 pub mod version;
-pub mod mesh;
 pub mod error;
 
 

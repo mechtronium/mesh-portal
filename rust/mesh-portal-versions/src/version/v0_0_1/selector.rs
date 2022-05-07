@@ -537,12 +537,20 @@ pub mod selector {
         pub type VersionPattern = Pattern<VersionReq>;
     }
 
+    pub type LabeledPrimitiveType = LabeledPrimitiveTypeDef<Point>;
+    pub type LabeledPrimitiveTypeCtx = LabeledPrimitiveTypeDef<PointCtx>;
+    pub type LabeledPrimitiveTypeVar= LabeledPrimitiveTypeDef<PointVar>;
+
     pub struct LabeledPrimitiveTypeDef<Pnt> {
         pub label: String,
-        pub def: PayloadTypeDef<Pnt>,
+        pub def: PayloadType2Def<Pnt>,
     }
 
-    pub struct PayloadTypeDef<Pnt> {
+    pub type PayloadType2 = PayloadType2Def<Point>;
+    pub type PayloadType2Ctx = PayloadType2Def<PointCtx>;
+    pub type PayloadType2Var = PayloadType2Def<PointVar>;
+
+    pub struct PayloadType2Def<Pnt> {
         pub primitive: PayloadType,
         pub format: Option<PayloadFormat>,
         pub verifier: Option<CallWithConfigDef<Pnt>>,

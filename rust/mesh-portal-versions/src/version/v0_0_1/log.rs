@@ -50,15 +50,15 @@ pub enum LogSource {
    Core
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum LogSpanKind {
+pub enum LogSpanEventKind {
     Entry,
     Exit
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct LogSpan {
+pub struct LogSpanEvent {
     pub point: Point,
-    pub kind: LogSpanKind,
+    pub kind: LogSpanEventKind,
     pub id: String,
     pub parent: Option<String>,
     pub attributes: HashMap<String,String>,
@@ -243,7 +243,7 @@ impl RootLogBuilder
     }
 }
 
-pub trait RootLogger{
+pub trait RootLogger: Send+Sync  {
     fn source(&self) -> LogSource {
         // default to core, override in Shell
         LogSource::Core
@@ -253,7 +253,7 @@ pub trait RootLogger{
 
     fn audit(&self, log: AuditLog);
 
-    fn span(&self, log: LogSpan );
+    fn span(&self, log: LogSpanEvent);
 
     /// PointlessLog is used for error diagnosis of the logging system itself, particularly
     /// where there is parsing error due to a bad point
@@ -289,6 +289,7 @@ impl SpanLogBuilder {
     }
 }
 
+#[derive(Clone)]
 pub struct Logger  {
     root_logger: Arc<dyn RootLogger>,
     point: Point,
@@ -311,6 +312,17 @@ impl Logger {
             entry_timestamp: timestamp(),
             attributes: Default::default(),
             parent: Some(self.span.clone())
+        }
+    }
+
+    pub fn current_span(&self) -> LogSpanEvent {
+        LogSpanEvent {
+            kind: LogSpanEventKind::Entry,
+            point: self.point.clone(),
+            id: self.span.clone(),
+            parent: self.parent.clone(),
+            attributes: self.attributes.clone(),
+            timestamp: self.entry_timestamp.clone()
         }
     }
 
@@ -382,8 +394,8 @@ impl Logger {
 
 impl Drop for Logger {
     fn drop(&mut self) {
-        let log = LogSpan {
-            kind: LogSpanKind::Exit,
+        let log = LogSpanEvent {
+            kind: LogSpanEventKind::Exit,
             point: self.point.clone(),
             id: self.span.clone(),
             parent: self.parent.clone(),

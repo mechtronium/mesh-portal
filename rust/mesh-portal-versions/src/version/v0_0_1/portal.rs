@@ -46,12 +46,12 @@ pub mod portal {
         use crate::version::v0_0_1::selector::selector::KindPattern;
         use crate::version::v0_0_1::util::unique_id;
         use serde::{Deserialize, Serialize};
-        use crate::version::v0_0_1::log::{AuditLog, Log, LogSpan, PointlessLog };
+        use crate::version::v0_0_1::log::{AuditLog, Log, LogSpanEvent, PointlessLog};
 
         #[derive(Debug, Clone, Serialize, Deserialize, strum_macros::Display)]
         pub enum Frame {
             Log(Log),
-            LogSpan(LogSpan),
+            LogSpan(LogSpanEvent),
             Audit(AuditLog),
             PointlessLog(PointlessLog),
             AssignRequest(Exchanger<AssignRequest>),
@@ -121,7 +121,7 @@ pub mod portal {
         use crate::version::v0_0_1::payload::payload::Payload;
         use crate::version::v0_0_1::portal::portal::Exchanger;
         use serde::{Deserialize, Serialize};
-        use crate::version::v0_0_1::log::LogSpan;
+        use crate::version::v0_0_1::log::LogSpanEvent;
 
         #[derive(Debug, Clone, Serialize, Deserialize, strum_macros::Display)]
         pub enum Frame {
@@ -168,7 +168,7 @@ pub mod portal {
         pub struct RequestFrame {
             pub request: Request,
             pub session: Option<Session>,
-            pub log_span: LogSpan
+            pub log_span: LogSpanEvent
         }
 
     }

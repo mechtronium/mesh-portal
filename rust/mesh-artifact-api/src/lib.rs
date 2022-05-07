@@ -1,4 +1,4 @@
-#![no_std]
+//#![no_std]
 
 #[cfg(feature = "std")]
 extern crate std;
@@ -33,11 +33,22 @@ impl <T> Deref for Artifact<T> {
   }
 }
 
+/*
 impl <From,To> TryInto<Artifact<To>> for Artifact<From> where To: TryFrom<From,Error=anyhow::Error>{
   type Error = anyhow::Error;
 
   fn try_into(self) -> Result<Artifact<From>, Self::Error> {
      let from = self.item;
-     Ok(Artifact::new(To:try_from(item)?))
+     Ok(Artifact::new(To::try_from(self.item)?))
   }
+}
+
+ */
+
+#[cfg(test)]
+pub mod test {
+    #[test]
+   pub fn test() {
+
+   }
 }

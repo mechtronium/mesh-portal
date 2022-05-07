@@ -3973,7 +3973,7 @@ use crate::version::v0_0_1::selector::selector::specific::{
 use crate::version::v0_0_1::selector::selector::{
     ExactPointSeg, GenericKindSelector, GenericSubKindSelector, Hop, HttpPipelineSelector,
     KindPattern, LabeledPrimitiveTypeDef, MapEntryPattern, MsgPipelineSelector, Pattern,
-    PayloadTypeDef, PipelineSelector, PointSegSelector, PointSelector, RcPipelineSelector,
+    PayloadType2Def, PipelineSelector, PointSegSelector, PointSelector, RcPipelineSelector,
     SpecificSelector, VersionReq,
 };
 use crate::version::v0_0_1::selector::{
@@ -4711,7 +4711,7 @@ where
     )
 }
 
-pub fn primitive_def<I: Span>(input: I) -> Res<I, PayloadTypeDef<PointVar>> {
+pub fn primitive_def<I: Span>(input: I) -> Res<I, PayloadType2Def<PointVar>> {
     tuple((
         payload,
         opt(preceded(tag("~"), opt(format))),
@@ -4720,7 +4720,7 @@ pub fn primitive_def<I: Span>(input: I) -> Res<I, PayloadTypeDef<PointVar>> {
     .map(|(next, (primitive, format, verifier))| {
         (
             next,
-            PayloadTypeDef {
+            PayloadType2Def {
                 primitive,
                 format: match format {
                     Some(Some(format)) => Some(format),
@@ -4736,7 +4736,7 @@ pub fn payload<I: Span>(input: I) -> Res<I, PayloadType> {
     parse_camel_case_str(input)
 }
 
-pub fn consume_primitive_def<I: Span>(input: I) -> Res<I, PayloadTypeDef<PointVar>> {
+pub fn consume_primitive_def<I: Span>(input: I) -> Res<I, PayloadType2Def<PointVar>> {
     all_consuming(primitive_def)(input)
 }
 
