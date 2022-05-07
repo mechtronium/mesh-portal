@@ -5896,10 +5896,13 @@ pub mod test {
         let mut resolver = MapResolver::new();
         resolver.insert("route", "[hub]");
         resolver.insert("root", "..");
+        log(log(result(all_consuming(point_var)(new_span("${not-supported}::my-domain.com:1.0.0:/${dorko}/x/")))?.resolve_vars(&resolver)));
         let point = log(point.resolve_vars(&resolver))?;
         let resolver = PntCtxResolver::new( Point::from_str("my-domain.com:under:over")?);
         let point = log(point.resolve_ctx(&resolver))?;
         println!("point.to_string(): {}",point.to_string() );
+
+
 
         Ok(())
     }
