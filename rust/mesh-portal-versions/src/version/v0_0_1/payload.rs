@@ -5,14 +5,16 @@ pub mod payload {
 
     use crate::error::{MsgErr, ParseErrs};
     use crate::version::v0_0_1::bin::Bin;
-    use crate::version::v0_0_1::entity::entity::request::{Action, Rc, RcCommandType, RequestCore};
+    use crate::version::v0_0_1::entity::entity::request::{Method, Rc, RcCommandType, RequestCore};
     use crate::version::v0_0_1::id::id::{GenericKind, GenericKindBase, Meta, Point, PointCtx, PointVar};
     use crate::version::v0_0_1::particle::particle::{Particle, Status, Stub};
     use crate::version::v0_0_1::selector::selector::{KindPattern, PointSelector};
     use crate::version::v0_0_1::util::{ValueMatcher, ValuePattern};
-    use http::{Method, Uri};
+    use http::{Uri};
     use std::str::FromStr;
     use std::sync::Arc;
+    use crate::version::v0_0_1::http::HttpMethod;
+    use crate::version::v0_0_1::msg::MsgMethod;
     use crate::version::v0_0_1::parse::{CtxResolver, Env, ToResolved};
 
     #[derive(
@@ -647,13 +649,13 @@ pub mod payload {
             Ok(match self {
                 CallKind::Msg(msg) => RequestCore {
                     headers: Default::default(),
-                    action: Action::Msg(msg.action),
+                    action: Method::Msg(MsgMethod::new(msg.method)?),
                     uri: Uri::from_str(msg.path.as_str())?,
                     body,
                 },
                 CallKind::Http(http) => RequestCore {
                     headers: Default::default(),
-                    action: Action::Http(http.method),
+                    action: Method::Http(http.method),
                     uri: Uri::from_str(http.path.as_str())?,
                     body,
                 },
@@ -670,18 +672,18 @@ pub mod payload {
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct MsgCall {
         pub path: String,
-        pub action: String,
+        pub method: String,
     }
 
     impl MsgCall {
         pub fn new(action: String, path: String) -> Self {
-            Self { action, path }
+            Self { method: action, path }
         }
     }
 
     impl ToString for MsgCall {
         fn to_string(&self) -> String {
-            format!("Msg<{}>{}", self.action, self.path)
+            format!("Msg<{}>{}", self.method, self.path)
         }
     }
 
@@ -744,7 +746,6 @@ pub mod payload {
         }
     }
 
-    pub type HttpMethod = Method;
 
     /*
     impl FromStr for HttpMethod {

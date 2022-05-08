@@ -1,13 +1,8 @@
+use alloc::string::String;
 use nom_locate::LocatedSpan;
-use std::collections::HashMap;
-use std::convert::From;
-use std::convert::TryInto;
-use std::fmt::Debug;
-use std::hash::Hash;
-use std::ops::{Range, RangeTo};
-use std::rc::Rc;
-use std::sync::Arc;
+
 use nom::{Offset, Slice};
+use nom::lib::std::collections::HashMap;
 
 pub mod log;
 pub mod messaging;
@@ -25,6 +20,7 @@ pub mod particle;
 pub mod portal;
 pub mod span;
 pub mod wrap;
+pub mod http;
 
 
 use serde::{Deserialize, Serialize};
@@ -66,6 +62,9 @@ pub mod artifact {
 pub type Port = String;
 
 pub mod path {
+    use alloc::format;
+    use alloc::string::{String, ToString};
+    use alloc::vec::Vec;
     use crate::error::MsgErr;
     use crate::version::v0_0_1::parse::consume_path;
     use serde::{Deserialize, Serialize};
@@ -172,11 +171,13 @@ pub mod bin {
 }
 
 pub mod util {
+    use alloc::format;
+    use alloc::string::{String, ToString};
     use serde::{Deserialize, Serialize};
 
     use crate::error::MsgErr;
     use crate::version::v0_0_1::{mesh_portal_timestamp, mesh_portal_unique_id, Timestamp};
-    use crate::version::v0_0_1::payload::payload::HttpMethod;
+    use crate::version::v0_0_1::http::HttpMethod;
 
     #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
     pub enum MethodPattern {
@@ -361,12 +362,14 @@ pub mod util {
 }
 
 pub mod fail {
+    use alloc::string::String;
     use serde::{Deserialize, Serialize};
 
     use crate::error::MsgErr;
     use crate::version::v0_0_1::id::id::Specific;
 
     pub mod mesh {
+        use alloc::string::String;
         use serde::{Deserialize, Serialize};
 
         #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -376,6 +379,7 @@ pub mod fail {
     }
 
     pub mod portal {
+        use alloc::string::String;
         use serde::{Deserialize, Serialize};
 
         use crate::version::v0_0_1::fail::{http, msg, resource};
@@ -390,6 +394,7 @@ pub mod fail {
     }
 
     pub mod http {
+        use alloc::string::String;
         use serde::{Deserialize, Serialize};
 
         #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -399,6 +404,7 @@ pub mod fail {
     }
 
     pub mod resource {
+        use alloc::string::String;
         use serde::{Deserialize, Serialize};
 
         use crate::version::v0_0_1::fail::{
@@ -438,6 +444,7 @@ pub mod fail {
     }
 
     pub mod msg {
+        use alloc::string::String;
         use serde::{Deserialize, Serialize};
 
         use crate::version::v0_0_1::fail::{BadRequest, Conditional};

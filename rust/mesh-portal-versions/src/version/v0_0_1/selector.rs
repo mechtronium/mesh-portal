@@ -1,3 +1,4 @@
+use alloc::string::String;
 use crate::version::v0_0_1::payload::payload::{Payload, PayloadPattern, PayloadPatternDef};
 use crate::version::v0_0_1::util::ValuePattern;
 use serde::{Deserialize, Serialize};
@@ -6,10 +7,13 @@ use crate::version::v0_0_1::id::id::{Point, PointCtx, PointVar};
 use crate::version::v0_0_1::parse::{CtxResolver};
 
 pub mod selector {
-    use std::convert::TryInto;
-    use std::fmt::Formatter;
-    use std::ops::Deref;
-    use std::str::FromStr;
+    use alloc::format;
+    use alloc::string::{String, ToString};
+    use alloc::vec::Vec;
+    use core::fmt::Formatter;
+    use core::ops::Deref;
+    use core::str::FromStr;
+
 
     use semver::ReqParseError;
     use serde::de::Visitor;
@@ -17,10 +21,10 @@ pub mod selector {
 
     use crate::error::MsgErr;
 
-    use crate::version::v0_0_1::entity::entity::request::{Action, Rc, RcCommandType, RequestCore};
+    use crate::version::v0_0_1::entity::entity::request::{Method, Rc, RcCommandType, RequestCore};
     use crate::version::v0_0_1::id::id::{GenericKind, GenericKindBase, Point, PointCtx, PointSeg, PointVar, RouteSeg, Specific, Tks, Version};
     use crate::version::v0_0_1::parse::{camel_case, camel_case_to_string_matcher, consume_hierarchy, file_chars, path, path_regex, point_segment_selector, point_selector, Res};
-    use crate::version::v0_0_1::payload::payload::{Call, CallKind, CallWithConfig, CallWithConfigDef, HttpCall, HttpMethod, HttpMethodType, ListPattern, MapPattern, MsgCall, NumRange, Payload, PayloadFormat, PayloadPattern, PayloadPatternDef, PayloadType, PayloadTypePatternDef, Primitive, PrimitiveType};
+    use crate::version::v0_0_1::payload::payload::{Call, CallKind, CallWithConfig, CallWithConfigDef, HttpCall, HttpMethodType, ListPattern, MapPattern, MsgCall, NumRange, Payload, PayloadFormat, PayloadPattern, PayloadPatternDef, PayloadType, PayloadTypePatternDef, Primitive, PrimitiveType};
     use crate::version::v0_0_1::selector::selector::specific::{
         ProductSelector, VariantSelector, VendorSelector,
     };
@@ -503,9 +507,9 @@ pub mod selector {
         }
     }
     pub mod specific {
-        use std::ops::Deref;
-        use std::str::FromStr;
-
+        use alloc::string::String;
+        use core::ops::Deref;
+        use core::str::FromStr;
         use crate::error::MsgErr;
         use crate::version::v0_0_1::selector::selector::Pattern;
 
@@ -586,7 +590,7 @@ pub mod selector {
     impl ValueMatcher<RequestCore> for PipelineSelector {
         fn is_match(&self, core: &RequestCore) -> Result<(), MsgErr> {
             match &core.action {
-                Action::Rc(found) => {
+                Method::Rc(found) => {
                     if let PipelineSelector::Rc(pattern) = self {
                         pattern.is_match(core)
                     } else {
@@ -598,7 +602,7 @@ pub mod selector {
                         .into())
                     }
                 }
-                Action::Msg(found) => {
+                Method::Msg(found) => {
                     if let PipelineSelector::Msg(pattern) = self {
                         pattern.is_match(core)
                     } else {
@@ -610,7 +614,7 @@ pub mod selector {
                         .into())
                     }
                 }
-                Action::Http(found) => {
+                Method::Http(found) => {
                     if let PipelineSelector::Http(pattern) = self {
                         pattern.is_match(core)
                     } else {
@@ -643,7 +647,7 @@ pub mod selector {
 
     impl ValueMatcher<RequestCore> for RcPipelineSelector {
         fn is_match(&self, core: &RequestCore) -> Result<(), MsgErr> {
-            if let Action::Rc(rc) = &core.action {
+            if let Method::Rc(rc) = &core.action {
                 if self.command.matches(&rc.get_type()) {
                     Ok(())
                 } else {
@@ -677,7 +681,7 @@ pub mod selector {
 
     impl ValueMatcher<RequestCore> for MsgPipelineSelector {
         fn is_match(&self, core: &RequestCore) -> Result<(), MsgErr> {
-            if let Action::Msg(action) = &core.action {
+            if let Method::Msg(action) = &core.action {
                 self.action.is_match(action)?;
                 let matches = core.uri.path().matches(&self.path_regex);
                 if matches.count() > 0 {
@@ -709,7 +713,7 @@ pub mod selector {
 
     impl ValueMatcher<RequestCore> for HttpPipelineSelector {
         fn is_match(&self, found: &RequestCore) -> Result<(), MsgErr> {
-            if let Action::Http(method) = &found.action {
+            if let Method::Http(method) = &found.action {
                 self.method.is_match(&method)?;
 
                 let regex = Regex::new(self.path_regex.as_str())?;

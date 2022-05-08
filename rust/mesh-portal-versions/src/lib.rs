@@ -8,10 +8,8 @@ extern crate lazy_static;
 #[macro_use]
 extern crate strum_macros;
 extern crate core;
+extern crate alloc;
 
-
-use std::collections::HashMap;
-use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 

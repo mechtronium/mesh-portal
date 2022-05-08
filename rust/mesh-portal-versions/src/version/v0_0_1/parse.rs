@@ -3963,7 +3963,7 @@ use crate::version::v0_0_1::parse::model::{
 };
 use crate::version::v0_0_1::payload::payload::{
     Call, CallCtx, CallKind, CallVar, CallWithConfig, CallWithConfigCtx, CallWithConfigVar,
-    HttpCall, HttpMethod, HttpMethodType, ListPattern, MapPattern, MapPatternCtx, MapPatternVar,
+    HttpCall, HttpMethodType, ListPattern, MapPattern, MapPatternCtx, MapPatternVar,
     MsgCall, NumRange, PayloadFormat, PayloadPattern, PayloadPatternCtx, PayloadPatternVar,
     PayloadType, PayloadTypePatternCtx, PayloadTypePatternDef, PayloadTypePatternVar,
 };
@@ -3984,6 +3984,7 @@ use crate::version::v0_0_1::span::{new_span, span_with_extra};
 use crate::version::v0_0_1::wrap::{Span, Wrap};
 use nom_supreme::error::ErrorTree;
 use nom_supreme::{parse_from_str, ParserExt};
+use crate::version::v0_0_1::http::HttpMethod;
 
 fn inclusive_any_segment<I: Span>(input: I) -> Res<I, PointSegSelector> {
     alt((tag("+*"), tag("ROOT+*")))(input).map(|(next, _)| (next, PointSegSelector::InclusiveAny))

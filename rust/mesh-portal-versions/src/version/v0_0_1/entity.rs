@@ -24,31 +24,33 @@ pub mod entity {
         use crate::version::v0_0_1::fail;
         use crate::version::v0_0_1::fail::{BadRequest, Fail, NotFound};
         use crate::version::v0_0_1::id::id::{GenericKind, GenericKindBase, Meta, Point};
-        use crate::version::v0_0_1::payload::payload::{Errors, HttpMethod, Payload, Primitive};
+        use crate::version::v0_0_1::payload::payload::{Errors, Payload, Primitive};
         use crate::version::v0_0_1::selector::selector::KindPattern;
         use crate::version::v0_0_1::util::ValueMatcher;
         use http::status::InvalidStatusCode;
         use http::{HeaderMap, Request, StatusCode, Uri};
         use serde::{Deserialize, Serialize};
+        use crate::version::v0_0_1::http::HttpMethod;
+        use crate::version::v0_0_1::msg::MsgMethod;
 
         #[derive(Debug, Clone, Serialize, Deserialize)]
-        pub enum Action {
+        pub enum Method {
             Rc(Rc),
             Http(#[serde(with = "http_serde::method")] HttpMethod),
-            Msg(String),
+            Msg(MsgMethod),
         }
 
-        impl ToString for Action {
+        impl ToString for Method {
             fn to_string(&self) -> String {
                 match self {
-                    Action::Rc(_) => "Rc".to_string(),
-                    Action::Http(method) => method.to_string(),
-                    Action::Msg(msg) => msg.to_string(),
+                    Method::Rc(_) => "Rc".to_string(),
+                    Method::Http(method) => method.to_string(),
+                    Method::Msg(msg) => msg.to_string(),
                 }
             }
         }
 
-        impl Into<RequestCore> for Action {
+        impl Into<RequestCore> for Method {
             fn into(self) -> RequestCore {
                 RequestCore {
                     headers: Default::default(),
@@ -63,7 +65,7 @@ pub mod entity {
         pub struct RequestCore {
             #[serde(with = "http_serde::header_map")]
             pub headers: HeaderMap,
-            pub action: Action,
+            pub action: Method,
             #[serde(with = "http_serde::uri")]
             pub uri: Uri,
             pub body: Payload,
@@ -73,7 +75,7 @@ pub mod entity {
             fn from(request: Request<Bin>) -> Self {
                 Self {
                     headers: request.headers().clone(),
-                    action: Action::Http(request.method().clone()),
+                    action: Method::Http(request.method().clone()),
                     uri: request.uri().clone(),
                     body: Payload::Bin(request.body().clone()),
                 }
@@ -95,7 +97,7 @@ pub mod entity {
                     }
                 }
                 match self.action {
-                    Action::Http(method) => {
+                    Method::Http(method) => {
                         builder = builder.method(method).uri(self.uri);
                         Ok(builder.body(self.body.to_bin()?)?)
                     }
@@ -108,7 +110,7 @@ pub mod entity {
             fn default() -> Self {
                 Self {
                     headers: Default::default(),
-                    action: Action::Msg("Default".to_string()),
+                    action: Method::Msg(Default::default()),
                     uri: Uri::from_static("/"),
                     body: Payload::Empty,
                 }

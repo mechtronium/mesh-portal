@@ -101,7 +101,7 @@ pub mod messaging {
         pub fn to_call(&self) -> MsgCall {
             MsgCall {
                 path: self.core.uri.to_string(),
-                action: self.core.action.to_string(),
+                method: self.core.action.to_string(),
             }
         }
     }

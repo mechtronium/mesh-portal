@@ -145,7 +145,6 @@ pub mod payload {
     pub type CallKind = payload::payload::CallKind;
     pub type MsgCall = payload::payload::MsgCall;
     pub type HttpCall = payload::payload::HttpCall;
-    pub type HttpMethod = payload::payload::HttpMethod;
     pub type PayloadFormat = payload::payload::PayloadFormat;
     pub type MapPattern = payload::payload::MapPattern;
 }
@@ -191,7 +190,16 @@ pub mod msg {
     use mesh_portal_versions::version::v0_0_1 as current;
     use mesh_portal_versions::version::v0_0_1::msg;
 
-    pub type MsgRequest = msg::msg::MsgRequest;
+    pub type MsgRequest = msg::MsgRequest;
+    pub type MsgMethod = msg::MsgMethod;
+}
+
+pub mod http {
+    use mesh_portal_versions::version::v0_0_1 as current;
+    use mesh_portal_versions::version::v0_0_1::http;
+
+    pub type HttpRequest = http::HttpRequest;
+    pub type HttpMethod = http::HttpMethod;
 }
 
 pub mod config {
@@ -236,7 +244,7 @@ pub mod entity {
         use mesh_portal_versions::version::v0_0_1 as current;
         use mesh_portal_versions::version::v0_0_1::entity;
 
-        pub type Action = entity::entity::request::Action;
+        pub type Action = entity::entity::request::Method;
         pub type RequestCore= entity::entity::request::RequestCore;
         pub type Rc = entity::entity::request::Rc;
         pub type RcCommandType = entity::entity::request::RcCommandType;
@@ -308,7 +316,7 @@ pub mod entity {
     }
 }
 
-pub mod resource {
+pub mod particle {
     use mesh_portal_versions::version::v0_0_1 as current;
     use mesh_portal_versions::version::v0_0_1::particle;
 
