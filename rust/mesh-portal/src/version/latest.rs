@@ -212,7 +212,7 @@ pub mod config {
     pub type Assign = config::config::Assign;
     pub type Config<BODY> = config::config::PointConfig<BODY>;
     pub type ConfigBody = config::config::Document;
-    pub type ResourceConfigBody = config::config::ParticleConfigBody;
+    pub type ParticleConfigBody = config::config::ParticleConfigBody;
 
 
     pub mod bind {
@@ -440,11 +440,14 @@ pub mod log {
     pub type LogSpan = current::log::LogSpanEvent;
     pub type LogSpanKind = current::log::LogSpanEventKind;
     pub type LogPayload = current::log::LogPayload;
+    pub type LogAppender = dyn current::log::LogAppender;
+    pub type RootLogger = current::log::RootLogger;
     pub type RootLogBuilder = current::log::RootLogBuilder;
+    pub type LogSource = current::log::LogSource;
     pub type SpanLogBuilder = current::log::SpanLogBuilder;
     pub type PointlessLog = current::log::PointlessLog;
     pub type PointLogger = current::log::PointLogger;
-    pub type Logger = current::log::Logger;
+    pub type SpanLogger = current::log::SpanLogger;
 }
 
 

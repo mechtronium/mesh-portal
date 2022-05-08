@@ -27,11 +27,11 @@ use tokio::task::yield_now;
 use mesh_portal::version::latest::artifact::{Artifact, ArtifactRequest, ArtifactResponse};
 use mesh_portal::version::latest::config::{Assign, Config, ConfigBody, PortalConfig};
 use mesh_portal::version::latest::id::Point;
-use mesh_portal::version::latest::log::Logger;
+use mesh_portal::version::latest::log::{SpanLogger, RootLogger};
 use mesh_portal::version::latest::messaging::{Request, Response};
 use mesh_portal::version::latest::portal::inlet::AssignRequest;
 use mesh_portal::version::latest::portal::outlet::{Frame, RequestFrame};
-use mesh_portal::version::latest::resource::Stub;
+use mesh_portal::version::latest::particle::Stub;
 
 #[derive(Debug,Clone)]
 pub struct PortalApi {
@@ -92,9 +92,10 @@ pub struct Portal {
     pub config: PortalConfig,
     outlet_tx: mpsc::Sender<outlet::Frame>,
     exchanges: Arc<DashMap<String,oneshot::Sender<Response>>>,
-    pub logger: Logger,
+    pub logger: RootLogger,
     tx: mpsc::Sender<PortalCall>,
-    broadcast_tx: broadcast::Sender<PortalEvent>
+    broadcast_tx: broadcast::Sender<PortalEvent>,
+    point: Point
 }
 
 impl Portal {
@@ -104,7 +105,8 @@ impl Portal {
         outlet_tx: mpsc::Sender<outlet::Frame>,
         request_handler: Arc<dyn PortalRequestHandler>,
         broadcast_tx: broadcast::Sender<PortalEvent>,
-        logger: Logger,
+        logger: RootLogger,
+        point: Point
     ) -> (Self,mpsc::Sender<inlet::Frame>) {
         let (inlet_tx,mut inlet_rx) = mpsc::channel(1024);
         let exchanges: Arc<DashMap<String,oneshot::Sender<Response>>> = Arc::new( DashMap::new() );
@@ -119,7 +121,8 @@ impl Portal {
             let outlet_tx = outlet_tx.clone();
             let portal_api = portal_api.clone();
             let broadcast_tx = broadcast_tx.clone();
-            let logger = logger.span();
+            let logger = logger.point(point.clone());
+
             tokio::spawn(async move {
                while let Some(call) = rx.recv().await {
                    let logger = logger.clone();
@@ -127,6 +130,7 @@ impl Portal {
                        PortalCall::Request { request, tx } => {
                            let exchanges = exchanges.clone();
                            let outlet_tx = outlet_tx.clone();
+                           let logger = logger.span();
                            tokio::spawn( async move {
                                exchanges.insert( request.id.clone(), tx );
                                let request_frame = RequestFrame {
@@ -159,10 +163,10 @@ impl Portal {
             let portal_config = config.clone();
             let outlet_tx = outlet_tx.clone();
             let exchanges = exchanges.clone();
-            let logger = logger.clone();
+            let logger = logger.point(point.clone());
             tokio::spawn(async move {
                 loop {
-                    let logger = logger.clone();
+                    let logger = logger.span();
                     match inlet_rx.recv().await {
                         Some(frame) => {
                             let frame:inlet::Frame = frame;
@@ -253,7 +257,8 @@ impl Portal {
             exchanges,
             outlet_tx,
             broadcast_tx,
-            tx
+            tx,
+            point
         },inlet_tx)
     }
 
@@ -268,10 +273,14 @@ impl Portal {
     pub async fn handle_request(&self, request: Request ) -> Response {
         let (tx,rx) = oneshot::channel();
         self.exchanges.insert( request.id.clone(), tx );
+
+        let logger = self.logger.point(request.to.clone());
+        let logger = logger.span();
+
         let request_frame = RequestFrame {
             request: request.clone(),
             session: None,
-            log_span: self.logger.current_span()
+            log_span: logger.current_span()
         };
         self.outlet_tx.send( outlet::Frame::Request(request_frame) ).await;
         match tokio::time::timeout(Duration::from_secs(self.config.response_timeout ), rx ).await {

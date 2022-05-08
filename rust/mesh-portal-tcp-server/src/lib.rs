@@ -25,10 +25,8 @@ use mesh_portal::version::latest::frame::CloseReason;
 use mesh_portal::version::latest::messaging::Request;
 use mesh_portal::version::latest::messaging::{Message, Response};
 use mesh_portal::version::latest::portal::initin::PortalAuth;
-use mesh_portal::version::latest::portal::inlet::{Frame, Log};
+use mesh_portal::version::latest::portal::inlet::{Frame};
 use mesh_portal::version::latest::portal::{initin, initout, inlet, outlet, Exchanger};
-use mesh_portal::version::latest::resource::Code;
-use mesh_portal::version::latest::resource::{ResourceStub, Status};
 use mesh_portal_tcp_common::{
     FrameReader, FrameWriter, PrimitiveFrameReader, PrimitiveFrameWriter,
 };
@@ -38,6 +36,9 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use tokio::sync::broadcast::Receiver;
 use tokio::sync::oneshot::error::RecvError;
 use tokio::task::yield_now;
+use mesh_portal::version::latest::id::Point;
+use mesh_portal::version::latest::log::{Log, LogSource, PointlessLog, RootLogBuilder, RootLogger, LogAppender};
+use mesh_portal::version::latest::particle::Status;
 
 #[derive(Clone, strum_macros::Display)]
 pub enum PortalServerEvent {
@@ -70,7 +71,11 @@ impl Alive {
     }
 }
 
-pub struct PortalTcpServer {
+pub trait PointFactory: Send+Sync{
+    fn point(&self) -> Point;
+}
+
+pub struct PortalTcpServer  {
     portal_config: PortalConfig,
     port: usize,
     server: Arc<dyn PortalServer>,
@@ -79,13 +84,16 @@ pub struct PortalTcpServer {
     call_tx: mpsc::Sender<TcpServerCall>,
     alive: Arc<Mutex<Alive>>,
     request_handler: Arc<dyn PortalRequestHandler>,
+    logger: RootLogger,
+    point_factory: Arc<dyn PointFactory>
 }
 
 impl PortalTcpServer {
-    pub fn new(port: usize, server: Box<dyn PortalServer>) -> mpsc::Sender<TcpServerCall> {
+    pub fn new(port: usize, server: Box<dyn PortalServer>, point_factory: Arc<dyn PointFactory> ) -> mpsc::Sender<TcpServerCall> {
         let (call_tx, mut call_rx) = mpsc::channel(1024);
         {
             let call_tx = call_tx.clone();
+            let point_factory = point_factory.clone();
             tokio::task::spawn_blocking(move || {
                 let server: Arc<dyn PortalServer> = server.into();
                 let (server_event_broadcaster_tx, _) = broadcast::channel(32);
@@ -100,6 +108,8 @@ impl PortalTcpServer {
                     portal_broadcast_tx,
                     call_tx: call_tx.clone(),
                     alive: Arc::new(Mutex::new(Alive::new())),
+                    logger: Default::default(),
+                    point_factory
                 };
 
                 tokio::spawn(async move {
@@ -263,10 +273,6 @@ println!("portal server: wrote initout::Frame::Artifact");
 
             let (outlet_tx, mut outlet_rx) = mpsc::channel(1024);
 
-            fn logger(log: Log) {
-                println!("{}", log.to_string());
-            }
-
             let portal_key = match portal_auth.portal_key {
                 None => uuid::Uuid::new_v4().to_string(),
                 Some(portal_key) => portal_key,
@@ -274,13 +280,16 @@ println!("portal server: wrote initout::Frame::Artifact");
 
             let info = PortalInfo { portal_key };
 
+            let point_factory = self.point_factory.clone();
+
             let (portal, inlet_tx) = Portal::new(
                 info,
                 self.portal_config.clone(),
                 outlet_tx,
                 self.request_handler.clone(),
                 self.portal_broadcast_tx.clone(),
-                logger,
+                self.logger.clone(),
+                point_factory.point(),
             );
 
 
@@ -354,4 +363,14 @@ pub trait PortalServer: Sync + Send {
     fn logger(&self) -> fn(message: &str);
     fn portal_request_handler(&self) -> Arc<dyn PortalRequestHandler>;
     fn add_portal(&self, portal: Portal);
+}
+
+
+
+#[cfg(test)]
+pub mod test {
+    #[test]
+    pub fn test() {
+
+    }
 }

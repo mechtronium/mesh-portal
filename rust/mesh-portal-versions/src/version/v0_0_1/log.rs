@@ -7,6 +7,7 @@ use std::collections::HashMap;
 use std::ops::Deref;
 use std::sync::Arc;
 use serde::{Serialize,Deserialize};
+use crate::version::v0_0_1::command::command::common::StateSrc::StatefulDirect;
 
 #[derive(Debug, Clone, Serialize, Deserialize, strum_macros::Display)]
 pub enum Level {
@@ -96,7 +97,7 @@ pub struct RootLogBuilder
 {
     pub point: Option<Point>,
     pub span: Option<String>,
-    pub logger: Arc<dyn RootLogger>,
+    pub logger: RootLogger,
     pub level: Level,
     pub message: Option<String>,
     pub json: Option<Value>,
@@ -105,7 +106,7 @@ pub struct RootLogBuilder
 
 impl RootLogBuilder
 {
-    pub fn new(logger: Arc<dyn RootLogger>, span: Option<String>) -> Self {
+    pub fn new(logger: RootLogger, span: Option<String>) -> Self {
         RootLogBuilder {
             logger,
             span,
@@ -243,12 +244,7 @@ impl RootLogBuilder
     }
 }
 
-pub trait RootLogger: Send+Sync  {
-    fn source(&self) -> LogSource {
-        // default to core, override in Shell
-        LogSource::Core
-    }
-
+pub trait LogAppender: Send+Sync{
     fn log(&self, log: Log);
 
     fn audit(&self, log: AuditLog);
@@ -261,8 +257,75 @@ pub trait RootLogger: Send+Sync  {
 }
 
 #[derive(Clone)]
+pub struct RootLogger {
+   source: LogSource,
+   appender: Arc<dyn LogAppender>
+}
+
+impl RootLogger {
+    fn source(&self) -> LogSource {
+        self.source.clone()
+    }
+
+    fn log(&self, log: Log) {
+        self.appender.log(log);
+    }
+
+    fn audit(&self, log: AuditLog) {
+        self.appender.audit(log);
+    }
+
+
+    fn span(&self, log: LogSpanEvent) {
+        self.appender.span(log);
+    }
+
+    /// PointlessLog is used for error diagnosis of the logging system itself, particularly
+    /// where there is parsing error due to a bad point
+    fn pointless(&self, log: PointlessLog) {
+        self.appender.pointless(log);
+    }
+
+    pub fn point(&self, point: Point) -> PointLogger {
+        PointLogger {
+            logger: self.clone(),
+            point
+        }
+    }
+}
+
+pub struct StdOutAppender();
+
+impl LogAppender for StdOutAppender {
+    fn log(&self, log: Log) {
+        println!("{}",log.payload.to_string() )
+    }
+
+    fn audit(&self, log: AuditLog) {
+        println!("audit log..." )
+    }
+
+    fn span(&self, log: LogSpanEvent) {
+        println!("span..." )
+    }
+
+    fn pointless(&self, log: PointlessLog) {
+        println!("{}",log.message  );
+    }
+}
+
+impl Default for RootLogger {
+    fn default() -> Self {
+        Self {
+            appender: Arc::new(StdOutAppender()),
+            source: LogSource::Core
+        }
+    }
+}
+
+#[derive(Clone)]
 pub struct PointLogger {
-    pub logger: Arc<dyn RootLogger>,
+    pub logger: RootLogger,
     pub point: Point,
 }
 
@@ -270,6 +333,24 @@ impl PointLogger {
 
     pub fn source(&self) -> LogSource {
         self.logger.source()
+    }
+
+    pub fn span(&self) -> SpanLogger {
+        SpanLogger {
+            root_logger: self.logger.clone(),
+            point: self.point.clone(),
+            span: unique_id(),
+            entry_timestamp: timestamp(),
+            attributes: Default::default(),
+            parent: None
+        }
+    }
+
+    fn point(&self, point: Point) -> PointLogger {
+        PointLogger {
+            logger: self.logger.clone(),
+            point
+        }
     }
 }
 
@@ -290,8 +371,8 @@ impl SpanLogBuilder {
 }
 
 #[derive(Clone)]
-pub struct Logger  {
-    root_logger: Arc<dyn RootLogger>,
+pub struct SpanLogger {
+    root_logger: RootLogger,
     point: Point,
     span: String,
     entry_timestamp: Timestamp,
@@ -299,13 +380,13 @@ pub struct Logger  {
     parent: Option<String>
 }
 
-impl Logger {
+impl SpanLogger {
     pub fn span_id(&self) -> String {
         self.span.clone()
     }
 
-    pub fn span(&self) -> Logger {
-        Logger {
+    pub fn span(&self) -> SpanLogger {
+        SpanLogger {
             root_logger: self.root_logger.clone(),
             point: self.point.clone(),
             span: unique_id(),
@@ -392,7 +473,7 @@ impl Logger {
     }
 }
 
-impl Drop for Logger {
+impl Drop for SpanLogger {
     fn drop(&mut self) {
         let log = LogSpanEvent {
             kind: LogSpanEventKind::Exit,
@@ -410,13 +491,13 @@ impl Drop for Logger {
 
 pub struct LogBuilder
 {
-    logger: Arc<dyn RootLogger>,
+    logger: RootLogger,
     builder: RootLogBuilder,
 }
 
 impl LogBuilder
 {
-    pub fn new(logger: Arc<dyn RootLogger>, builder: RootLogBuilder) -> Self {
+    pub fn new(logger: RootLogger, builder: RootLogBuilder) -> Self {
         LogBuilder { logger, builder }
     }
 
@@ -468,14 +549,14 @@ impl LogBuilder
 }
 
 pub struct AuditLogBuilder {
-    logger: Arc<dyn RootLogger>,
+    logger: RootLogger,
     point: Point,
     span: String,
     attributes: HashMap<String, String>,
 }
 
 impl AuditLogBuilder {
-    pub fn new(logger: Arc<dyn RootLogger>, point: Point, span: String) -> Self {
+    pub fn new(logger: RootLogger, point: Point, span: String) -> Self {
         AuditLogBuilder {
             logger,
             point,

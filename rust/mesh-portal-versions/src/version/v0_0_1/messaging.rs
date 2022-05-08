@@ -10,7 +10,7 @@ pub mod messaging {
     use crate::version::v0_0_1::entity::entity::request::RequestCore;
     use crate::version::v0_0_1::entity::entity::response::ResponseCore;
     use crate::version::v0_0_1::id::id::Point;
-    use crate::version::v0_0_1::log::{Logger, PointLogger};
+    use crate::version::v0_0_1::log::{SpanLogger, PointLogger};
     use crate::version::v0_0_1::payload::payload::{Errors, MsgCall, Payload, Primitive};
     use crate::version::v0_0_1::security::{
         Access, AccessGrant, EnumeratedAccess, EnumeratedPrivileges, Permissions, Privilege,
@@ -23,7 +23,7 @@ pub mod messaging {
     pub struct RequestCtx {
         pub request: Request,
         pub session: Option<Session>,
-        pub logger: Logger
+        pub logger: SpanLogger
     }
 
     impl Deref for RequestCtx {
