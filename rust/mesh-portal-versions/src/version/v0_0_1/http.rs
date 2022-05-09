@@ -45,7 +45,7 @@ impl TryFrom<RequestCore> for HttpRequest {
     type Error = MsgErr;
 
     fn try_from(core: RequestCore) -> Result<Self, Self::Error> {
-        if let Method::Http(method) = core.action {
+        if let Method::Http(method) = core.method {
             Ok(Self {
                 method,
                 headers: core.headers,

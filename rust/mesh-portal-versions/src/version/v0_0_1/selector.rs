@@ -482,7 +482,7 @@ pub mod selector {
     }
 
     impl ValueMatcher<Specific> for SpecificSelector {
-        fn is_match(&self, specific: &Specific) -> Result<(), MsgErr> {
+        fn is_match(&self, specific: &Specific) -> Result<(), ()> {
             if self.vendor.matches(&specific.vendor)
                 && self.product.matches(&specific.product)
                 && self.variant.matches(&specific.variant)
@@ -490,7 +490,7 @@ pub mod selector {
             {
                 Ok(())
             } else {
-                Err("Specific does not match pattern".into())
+                Err(())
             }
         }
     }
@@ -588,42 +588,27 @@ pub mod selector {
     }
 
     impl ValueMatcher<RequestCore> for PipelineSelector {
-        fn is_match(&self, core: &RequestCore) -> Result<(), MsgErr> {
-            match &core.action {
-                Method::Rc(found) => {
+        fn is_match(&self, core: &RequestCore) -> Result<(), ()> {
+            match &core.method {
+                Method::Cmd(found) => {
                     if let PipelineSelector::Rc(pattern) = self {
                         pattern.is_match(core)
                     } else {
-                        Err(format!(
-                            "Entity pattern mismatch. expected: '{}' found: '{}'",
-                            self.to_string(),
-                            found.to_string()
-                        )
-                        .into())
+                        Err(())
                     }
                 }
                 Method::Msg(found) => {
                     if let PipelineSelector::Msg(pattern) = self {
                         pattern.is_match(core)
                     } else {
-                        Err(format!(
-                            "Entity pattern mismatch. expected: '{}' found: '{}'",
-                            self.to_string(),
-                            found.to_string()
-                        )
-                        .into())
+                        Err(())
                     }
                 }
                 Method::Http(found) => {
                     if let PipelineSelector::Http(pattern) = self {
                         pattern.is_match(core)
                     } else {
-                        Err(format!(
-                            "Entity pattern mismatch. expected: '{}' found: '{}'",
-                            self.to_string(),
-                            found.to_string()
-                        )
-                        .into())
+                        Err(())
                     }
                 }
             }
@@ -646,15 +631,15 @@ pub mod selector {
     }
 
     impl ValueMatcher<RequestCore> for RcPipelineSelector {
-        fn is_match(&self, core: &RequestCore) -> Result<(), MsgErr> {
-            if let Method::Rc(rc) = &core.action {
+        fn is_match(&self, core: &RequestCore) -> Result<(), ()> {
+            if let Method::Cmd(rc) = &core.method {
                 if self.command.matches(&rc.get_type()) {
                     Ok(())
                 } else {
-                    Err("no match".into())
+                    Err(())
                 }
             } else {
-                Err("no match".into())
+                Err(())
             }
         }
     }
@@ -680,21 +665,17 @@ pub mod selector {
     }
 
     impl ValueMatcher<RequestCore> for MsgPipelineSelector {
-        fn is_match(&self, core: &RequestCore) -> Result<(), MsgErr> {
-            if let Method::Msg(action) = &core.action {
+        fn is_match(&self, core: &RequestCore) -> Result<(), ()> {
+            if let Method::Msg(action) = &core.method {
                 self.action.is_match(action)?;
                 let matches = core.uri.path().matches(&self.path_regex);
                 if matches.count() > 0 {
                     Ok(())
                 } else {
-                    Err(format!(
-                        "Could not match Msg path: '{}' with: '{}'",
-                        core.uri, self.path_regex
-                    )
-                    .into())
+                    Err(())
                 }
             } else {
-                Err("not a Msg Action".into())
+                Err(())
             }
         }
     }
@@ -712,23 +693,19 @@ pub mod selector {
     }
 
     impl ValueMatcher<RequestCore> for HttpPipelineSelector {
-        fn is_match(&self, found: &RequestCore) -> Result<(), MsgErr> {
-            if let Method::Http(method) = &found.action {
+        fn is_match(&self, found: &RequestCore) -> Result<(), ()> {
+            if let Method::Http(method) = &found.method {
                 self.method.is_match(&method)?;
 
-                let regex = Regex::new(self.path_regex.as_str())?;
+                let regex = Regex::new(self.path_regex.as_str()).map_err(|e|())?;
 
                 if regex.is_match(found.uri.to_string().as_str()) {
                     Ok(())
                 } else {
-                    Err(format!(
-                        "Could not match Msg path: '{}' with: '{}'",
-                        found.uri, self.path_regex
-                    )
-                    .into())
+                    Err(())
                 }
             } else {
-                Err("action does not match".into())
+                Err(())
             }
         }
     }

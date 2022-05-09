@@ -624,7 +624,7 @@ where
     input.split_at_position_complete(|item| item.as_char() != '*')
 }
 
-pub fn upper<T: Span, E: nom::error::ParseError<T>>(input: T) -> IResult<T, T, E>
+pub fn upper<T, E: nom::error::ParseError<T>>(input: T) -> IResult<T, T, E>
 where
     T: InputTakeAtPosition + nom::InputLength,
     <T as InputTakeAtPosition>::Item: AsChar,
@@ -791,6 +791,14 @@ pub fn rec_skewer<I: Span>(input: I) -> Res<I, I> {
 
 pub fn rec_skewer_capture<I: Span>(input: I) -> Res<I, I> {
     recognize(tuple((lowercase1, opt(skewer_chars_plus_capture))))(input)
+}
+
+pub fn camel_chars<T>(i: T) -> Res<T, T>
+where
+    T: InputTakeAtPosition + nom::InputLength + Clone + Offset + Slice<RangeTo<usize>>,
+    <T as InputTakeAtPosition>::Item: AsChar,
+{
+    recognize(pair(upper, alphanumeric0))(i)
 }
 
 pub fn skewer_chars<T: Span>(i: T) -> Res<T, T>
@@ -2553,8 +2561,15 @@ pub fn lex_scope_selector_and_filters<I: Span>(
 }
 
 pub fn lex_scope_selector<I: Span>(input: I) -> Res<I, LexScopeSelector<I>> {
-    context("parsed-scope-selector", next_selector)(input)
-        .map(|(next, (name, children))| (next, LexScopeSelector::new(name, children)))
+    let (next, (name, children)) = context("parsed-scope-selector", next_selector)(input)?;
+
+    let (next, path) = if children.is_none() {
+        opt(path_regex)(next)?
+    } else {
+        (next, None)
+    };
+
+    Ok((next, LexScopeSelector::new(name, path, children)))
 }
 
 pub fn wrapper<I: Span, O, F>(input: I, mut f: F) -> Res<I, O>
@@ -2642,25 +2657,20 @@ where
 }
 
 pub fn scope_filters<I: Span>(input: I) -> Res<I, ScopeFiltersDef<I>> {
-    tuple((
-        pair(opt(scope_filter), many0(preceded(tag("-"), scope_filter))),
-        opt(recognize(pair(
-            peek(tag("/")),
-            context("regex", cut(path_regex)),
-        ))),
-    ))(input)
-    .map(|(next, ((first, mut many_filters), path))| {
-        let mut filters = vec![];
-        match first {
-            None => {}
-            Some(first) => {
-                filters.push(first);
+    pair(opt(scope_filter), many0(preceded(tag("-"), scope_filter)))(input).map(
+        |(next, (first, mut many_filters))| {
+            let mut filters = vec![];
+            match first {
+                None => {}
+                Some(first) => {
+                    filters.push(first);
+                }
             }
-        }
-        filters.append(&mut many_filters);
-        let filters = ScopeFiltersDef { path, filters };
-        (next, filters)
-    })
+            filters.append(&mut many_filters);
+            let filters = ScopeFiltersDef { filters };
+            (next, filters)
+        },
+    )
 }
 
 pub fn scope_filter<I: Span>(input: I) -> Res<I, ScopeFilterDef<I>> {
@@ -2776,21 +2786,30 @@ pub fn lex_root_scope<I: Span>(span: I) -> Result<LexRootScope<I>, MsgErr> {
     Ok(root_scope)
 }
 
+pub fn message_kind<I: Span>(input: I) -> Res<I, MethodKind> {
+    let (next, v) = recognize(alt((tag("Cmd"), tag("Msg"), tag("Http"))))(input)?;
+    Ok((next, MethodKind::from_str(v.to_string().as_str()).unwrap()))
+}
+
 pub mod model {
     use crate::error::{MsgErr, ParseErrs};
     use crate::version::v0_0_1::config::config::bind::{
         BindConfig, MessageKind, PipelineStepCtx, PipelineStepDef, PipelineStepVar,
         PipelineStopCtx, PipelineStopDef, PipelineStopVar, Selector,
     };
-    use crate::version::v0_0_1::entity::entity::EntityKind;
+    use crate::version::v0_0_1::entity::entity::request::{Method, RcCommandType, RequestCore};
+    use crate::version::v0_0_1::entity::entity::MethodKind;
+    use crate::version::v0_0_1::http::HttpMethod;
     use crate::version::v0_0_1::id::id::{Point, PointCtx, PointVar, Version};
+    use crate::version::v0_0_1::messaging::messaging::{Agent, Request};
     use crate::version::v0_0_1::parse::error::result;
     use crate::version::v0_0_1::parse::{
-        camel_case, lex_child_scopes, pipeline, value_pattern, var_pipeline, CtxResolver, Res,
-        SubstParser,
+        camel_case, entity_pattern, http_method, lex_child_scopes, message_kind, pipeline,
+        rc_command_type, value_pattern, var_pipeline, wrapped_http_method, wrapped_msg_method,
+        CtxResolver, Res, SubstParser,
     };
     use crate::version::v0_0_1::span::new_span;
-    use crate::version::v0_0_1::util::{MethodPattern, StringMatcher, ValuePattern};
+    use crate::version::v0_0_1::util::{MethodPattern, StringMatcher, ValueMatcher, ValuePattern};
     use crate::version::v0_0_1::wrap::Span;
     use bincode::Options;
     use nom::bytes::complete::tag;
@@ -2810,6 +2829,14 @@ pub mod model {
     pub struct ScopeSelectorAndFiltersDef<S, I> {
         pub selector: S,
         pub filters: ScopeFiltersDef<I>,
+    }
+
+    impl<S, I> Deref for ScopeSelectorAndFiltersDef<S, I> {
+        type Target = S;
+
+        fn deref(&self) -> &Self::Target {
+            &self.selector
+        }
     }
 
     impl<S, I> ScopeSelectorAndFiltersDef<S, I> {
@@ -2906,30 +2933,258 @@ pub mod model {
         }
     }
 
-    #[derive(Clone)]
-    pub struct ScopeSelectorDef<N, I> {
-        pub name: N,
-        pub filters: ScopeFiltersDef<I>,
+    impl RouteScope {
+        pub fn select(&self, request: &Request) -> Vec<&MessageScope> {
+            let mut scopes = vec![];
+            for scope in &self.block {
+                if scope.selector.is_match(request).is_ok() {
+                    scopes.push(scope );
+                }
+            }
+            scopes
+        }
     }
 
-    impl<N, I> ScopeSelectorDef<N, I> {
-        pub fn new(name: N, filters: ScopeFiltersDef<I>) -> Self {
-            Self { name, filters }
+    #[derive(Clone)]
+    pub struct RouteScopeSelector {
+        pub selector: ScopeSelectorDef<String, Regex>,
+    }
+
+    impl RouteScopeSelector {
+        pub fn new<I: ToString>(path: Option<I>) -> Result<Self, MsgErr> {
+            let path = match path {
+                None => Regex::new(".*")?,
+                Some(path) => Regex::new(path.to_string().as_str())?,
+            };
+            Ok(Self {
+                selector: ScopeSelectorDef {
+                    path,
+                    name: "Route".to_string(),
+                },
+            })
+        }
+
+        pub fn from<I: ToString>(selector: LexScopeSelector<I>) -> Result<Self, MsgErr> {
+            if selector.name.to_string().as_str() != "Route" {
+                return Err(MsgErr::from_500("expected Route"));
+            }
+            let path = match selector.path {
+                None => None,
+                Some(path) => Some(path.to_string()),
+            };
+
+            Ok(RouteScopeSelector::new(path)?)
+        }
+    }
+
+    impl Deref for RouteScopeSelector {
+        type Target = ScopeSelectorDef<String, Regex>;
+
+        fn deref(&self) -> &Self::Target {
+            &self.selector
+        }
+    }
+
+    #[derive(Clone)]
+    pub struct ScopeSelectorDef<N, P> {
+        pub name: N,
+        pub path: P,
+    }
+
+    impl ValueMatcher<Request> for RouteScopeSelector {
+        fn is_match(&self, request: &Request) -> Result<(), ()> {
+            if self.name.as_str() != "Route" {
+                return Err(());
+            }
+            match self.selector.path.is_match(&request.core.uri.path()) {
+                true => Ok(()),
+                false => Err(()),
+            }
+        }
+    }
+
+    impl ValueMatcher<Request> for MessageScopeSelector {
+        fn is_match(&self, request: &Request) -> Result<(), ()> {
+            self.name.is_match(&request.core.method.kind())?;
+            match self.path.is_match(&request.core.uri.path()) {
+                true => Ok(()),
+                false => Err(()),
+            }
+        }
+    }
+
+    fn default_path<I: ToString>(path: Option<I>) -> Result<Regex, MsgErr> {
+        match path {
+            None => Ok(Regex::new(".*")?),
+            Some(path) => Ok(Regex::new(path.to_string().as_str())?),
+        }
+    }
+    impl MessageScope {
+        pub fn from_scope<I: Span>(scope: LexParentScope<I>) -> Result<Self, MsgErr> {
+            let selector = MessageScopeSelectorAndFilters::from_selector(scope.selector)?;
+            let mut block = vec![];
+
+            for scope in scope.block.into_iter() {
+                block.push(MethodScope::from_scope(&selector.selector.name, scope)?)
+            }
+
+            Ok(Self { selector, block })
+        }
+
+        pub fn select(&self, request: &Request) -> Vec<&MethodScope> {
+            let mut scopes = vec![];
+            for scope in &self.block {
+                if scope.selector.is_match(request).is_ok() {
+                    scopes.push(scope );
+                }
+            }
+            scopes
+        }
+    }
+
+    impl MessageScopeSelectorAndFilters {
+        pub fn from_selector<I: Span>(
+            selector: ScopeSelectorAndFiltersDef<LexScopeSelector<I>, I>,
+        ) -> Result<Self, MsgErr> {
+            let filters = selector.filters.to_scope_filters();
+            let selector = MessageScopeSelector::from_selector(selector.selector)?;
+            Ok(Self { selector, filters })
+        }
+    }
+
+    impl RouteScopeSelectorAndFilters {
+        pub fn from_selector<I: Span>(
+            selector: LexScopeSelectorAndFilters<I>,
+        ) -> Result<Self, MsgErr> {
+            let filters = selector.filters.clone().to_scope_filters();
+            let selector = RouteScopeSelector::new(selector.path.clone())?;
+            Ok(Self { selector, filters })
+        }
+    }
+
+    impl MethodScope {
+        pub fn from_scope<I: Span>(
+            parent: &ValuePattern<MethodKind>,
+            scope: LexScope<I>,
+        ) -> Result<Self, MsgErr> {
+            let selector = MethodScopeSelectorAndFilters::from_selector(parent, scope.selector)?;
+            let block = result(var_pipeline(scope.block.content))?;
+            Ok(Self { selector, block })
+        }
+    }
+
+    impl MessageScopeSelector {
+        pub fn from_selector<I: Span>(selector: LexScopeSelector<I>) -> Result<Self, MsgErr> {
+            let kind = match result(value_pattern(message_kind)(selector.name.clone())) {
+                Ok(kind) => kind,
+                Err(_) => {
+                    return Err(ParseErrs::from_loc_span(
+                        format!(
+                            "unknown MessageKind: {} valid message kinds: Msg, Http, Cmd or *",
+                            selector.name.to_string()
+                        )
+                        .as_str(),
+                        "unknown message kind",
+                        selector.name,
+                    ));
+                }
+            };
+
+            Ok(Self {
+                name: kind,
+                path: default_path(selector.path)?,
+            })
+        }
+    }
+
+    impl ValueMatcher<Request> for MethodScopeSelector {
+        fn is_match(&self, request: &Request) -> Result<(), ()> {
+            self.name.is_match(&request.core.method)?;
+            match self.path.is_match(&request.core.uri.path()) {
+                true => Ok(()),
+                false => Err(()),
+            }
+        }
+    }
+    impl MethodScopeSelectorAndFilters {
+        pub fn from_selector<I: Span>(
+            parent: &ValuePattern<MethodKind>,
+            selector: ScopeSelectorAndFiltersDef<LexScopeSelector<I>, I>,
+        ) -> Result<Self, MsgErr> {
+            let filters = selector.filters.to_scope_filters();
+            let selector = MethodScopeSelector::from_selector(parent, selector.selector)?;
+            Ok(Self { selector, filters })
+        }
+    }
+
+    impl MethodScopeSelector {
+        pub fn from_selector<I: Span>(
+            parent: &ValuePattern<MethodKind>,
+            selector: LexScopeSelector<I>,
+        ) -> Result<Self, MsgErr> {
+            let name = match parent {
+                ValuePattern::Any => ValuePattern::Any,
+                ValuePattern::None => ValuePattern::None,
+                ValuePattern::Pattern(message_kind) => match message_kind {
+                    MethodKind::Cmd => {
+                        return Err(ParseErrs::from_loc_span(
+                            format!("Cmd not implemented '{}'", selector.name.to_string()).as_str(),
+                            "Cmd not implemented",
+                            selector.name,
+                        ))
+                    }
+                    MethodKind::Msg => {
+                        match result(value_pattern(wrapped_msg_method)(selector.name.clone())) {
+                            Ok(r) => r,
+                            Err(_) => {
+                                return Err(ParseErrs::from_loc_span(
+                                    format!(
+                                        "invalid Msg method '{}'.  Msg should be CamelCase",
+                                        selector.name.to_string()
+                                    )
+                                    .as_str(),
+                                    "invalid Msg",
+                                    selector.name,
+                                ))
+                            }
+                        }
+                    }
+                    MethodKind::Http => {
+                        match result(value_pattern( wrapped_http_method)(selector.name.clone())) {
+                                Ok(r) => r,
+                                Err(_) => {
+                                    return Err(ParseErrs::from_loc_span(format!("invalid Http Pattern '{}'.  Http should be camel case 'Get' and a valid Http method", selector.name.to_string()).as_str(), "invalid Http method", selector.name ))
+                                }
+                            }
+                    }
+                },
+            };
+
+            Ok(Self {
+                name,
+                path: default_path(selector.path)?,
+            })
+        }
+    }
+
+    impl<N, P> ScopeSelectorDef<N, P> {
+        pub fn new(name: N, path: P) -> Self {
+            Self { name, path }
         }
     }
 
     #[derive(Clone)]
     pub struct LexScopeSelector<I> {
         pub name: I,
-        pub filters: ScopeFiltersDef<I>,
+        pub path: Option<I>,
         pub children: Option<I>,
     }
 
     impl<I: ToString> LexScopeSelector<I> {
-        pub fn new(name: I, children: Option<I>) -> Self {
+        pub fn new(name: I, path: Option<I>, children: Option<I>) -> Self {
             Self {
                 name,
-                filters: ScopeFiltersDef::empty(),
+                path,
                 children,
             }
         }
@@ -2941,28 +3196,14 @@ pub mod model {
         }
     }
 
-    impl<N: ToString, I: ToString> ScopeSelectorDef<N, I> {
-        fn to_scope_selector(self) -> ScopeSelector {
-            ScopeSelector {
-                name: self.name.to_string(),
-                filters: self.filters.to_scope_filters(),
-            }
-        }
-    }
-
     #[derive(Clone)]
     pub struct ScopeFiltersDef<I> {
-        pub path: Option<I>,
         pub filters: Vec<ScopeFilterDef<I>>,
     }
 
     impl<I: ToString> ScopeFiltersDef<I> {
         pub fn to_scope_filters(self) -> ScopeFilters {
             ScopeFilters {
-                path: match self.path {
-                    None => None,
-                    Some(path) => Some(path.to_string()),
-                },
                 filters: self
                     .filters
                     .into_iter()
@@ -2971,19 +3212,12 @@ pub mod model {
             }
         }
 
-        pub fn is_empty(&self) -> bool {
-            self.path.is_none() && self.filters.is_empty()
-        }
-
         pub fn len(&self) -> usize {
             self.filters.len()
         }
 
         pub fn empty() -> Self {
-            Self {
-                path: None,
-                filters: vec![],
-            }
+            Self { filters: vec![] }
         }
     }
 
@@ -3017,7 +3251,7 @@ pub mod model {
     pub type VarPipelineSegment = VarPipelineSegmentDef<PipelineStepVar, Option<PipelineStopVar>>;
 
     pub type VarPipeline = PipelineDef<VarPipelineSegment>;
-    pub type LexPipelineScope<I> = PipelineScopeDef<I, VarPipeline>;
+    //pub type LexPipelineScope<I> = PipelineScopeDef<I, VarPipeline>;
     pub type PipelineSegmentCtx = PipelineSegmentDef<PointCtx>;
     pub type PipelineSegmentVar = PipelineSegmentDef<PointVar>;
 
@@ -3053,61 +3287,46 @@ pub mod model {
      */
 
     pub type PipelineSegment = PipelineSegmentDef<Point>;
-    pub type RequestScope = PipelineScopeDef<String, Vec<MessageScope>>;
+    pub type RouteScope = ScopeDef<RouteScopeSelectorAndFilters, Vec<MessageScope>>;
+    pub type MessageScope = ScopeDef<MessageScopeSelectorAndFilters, Vec<MethodScope>>;
+    pub type MethodScope = ScopeDef<MethodScopeSelectorAndFilters, VarPipeline>;
+    //    pub type ValuePatternScopeSelector = ScopeSelectorDef<ValuePattern<String>, String,Regex>;
+    pub type MessageScopeSelector = ScopeSelectorDef<ValuePattern<MethodKind>, Regex>;
+    pub type MethodScopeSelector = ScopeSelectorDef<ValuePattern<Method>, Regex>;
+    pub type RouteScopeSelectorAndFilters = ScopeSelectorAndFiltersDef<RouteScopeSelector, String>;
+    pub type MessageScopeSelectorAndFilters =
+        ScopeSelectorAndFiltersDef<MessageScopeSelector, String>;
+    pub type MethodScopeSelectorAndFilters =
+        ScopeSelectorAndFiltersDef<MethodScopeSelector, String>;
 
-    pub type MessageScope = ScopeDef<ValuePatternScopeSelectorAndFilters, Vec<MethodScope>>;
-    pub type MethodScope = ScopeDef<ValuePatternScopeSelectorAndFilters, VarPipeline>;
-    pub type ScopeSelector = ScopeSelectorDef<String, String>;
-    pub type ValuePatternScopeSelector = ScopeSelectorDef<ValuePattern<String>, String>;
-    pub type ScopeSelectorAndFilters = ScopeSelectorAndFiltersDef<ScopeSelector, String>;
-    pub type ValuePatternScopeSelectorAndFilters =
-        ScopeSelectorAndFiltersDef<ValuePatternScopeSelector, String>;
+    /*    pub type ValuePatternScopeSelectorAndFilters =
+           ScopeSelectorAndFiltersDef<ValuePatternScopeSelector, String>;
+
+    */
     pub type LexScopeSelectorAndFilters<I> = ScopeSelectorAndFiltersDef<LexScopeSelector<I>, I>;
     //    pub type Pipeline = Vec<PipelineSegment>;
 
-    impl<I: Span> TryFrom<LexParentScope<I>> for RequestScope {
+    impl<I: Span> TryFrom<LexParentScope<I>> for RouteScope {
         type Error = MsgErr;
 
         fn try_from(scope: LexParentScope<I>) -> Result<Self, Self::Error> {
             let mut errs = vec![];
             let mut message_scopes = vec![];
+            let route_selector = RouteScopeSelectorAndFilters::from_selector(scope.selector)?;
             for message_scope in scope.block {
                 match lex_child_scopes(message_scope) {
-                    Ok(message_scope) => {
-                        let mut block = vec![];
-                        for method_scope in message_scope.block {
-                            match method_scope.selector.to_value_pattern_scope_selector() {
-                                Ok(selector) => {
-                                    match result(var_pipeline(method_scope.block.content)) {
-                                        Ok(pipeline) => block.push(MethodScope {
-                                            selector,
-                                            block: pipeline,
-                                        }),
-                                        Err(err) => {
-                                            errs.push(err);
-                                        }
-                                    }
-                                }
-                                Err(err) => {
-                                    errs.push(err);
-                                }
-                            }
-                        }
-                        match message_scope.selector.to_value_pattern_scope_selector() {
-                            Ok(selector) => message_scopes.push(MessageScope { selector, block }),
-                            Err(err) => {
-                                errs.push(err);
-                            }
-                        };
-                    }
+                    Ok(message_scope) => match MessageScope::from_scope(message_scope) {
+                        Ok(message_scope) => message_scopes.push(message_scope),
+                        Err(err) => errs.push(err),
+                    },
                     Err(err) => {
                         errs.push(err);
                     }
                 }
             }
             if errs.is_empty() {
-                Ok(RequestScope {
-                    selector: scope.selector.to_scope_selector(),
+                Ok(RouteScope {
+                    selector: route_selector,
                     block: message_scopes,
                 })
             } else {
@@ -3116,15 +3335,7 @@ pub mod model {
         }
     }
 
-    impl<I: ToString> LexScopeSelectorAndFilters<I> {
-        pub fn to_scope_selector(self) -> ScopeSelectorAndFilters {
-            ScopeSelectorAndFilters {
-                selector: self.selector.to_scope_selector(),
-                filters: self.filters.to_scope_filters(),
-            }
-        }
-    }
-
+    /*
     impl<I: Span> LexScopeSelectorAndFilters<I> {
         pub fn to_value_pattern_scope_selector(
             self,
@@ -3135,6 +3346,8 @@ pub mod model {
             })
         }
     }
+
+     */
 
     pub fn wrap<I, F, O>(mut f: F) -> impl FnMut(I) -> Res<I, O>
     where
@@ -3293,37 +3506,13 @@ pub mod model {
 
     #[derive(Clone)]
     pub enum BindScope {
-        RequestScope(RequestScope),
+        RequestScope(RouteScope),
     }
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct ScopeDef<S, B> {
         pub selector: S,
         pub block: B,
-    }
-
-    #[derive(Clone)]
-    pub struct PipelineScopeDef<I, P> {
-        pub selector: ScopeSelectorAndFiltersDef<ScopeSelectorDef<I, I>, I>,
-        pub block: P,
-    }
-
-    impl<I: ToString> LexScopeSelector<I> {
-        pub fn to_scope_selector(self) -> ScopeSelector {
-            ScopeSelector {
-                name: self.name.to_string(),
-                filters: self.filters.to_scope_filters(),
-            }
-        }
-    }
-
-    impl<I: Span> LexScopeSelector<I> {
-        pub fn to_value_pattern_scope_selector(self) -> Result<ValuePatternScopeSelector, MsgErr> {
-            Ok(ValuePatternScopeSelector {
-                name: result(value_pattern(camel_case)(self.name))?.stringify(),
-                filters: self.filters.to_scope_filters(),
-            })
-        }
     }
 
     #[derive(Clone)]
@@ -3950,22 +4139,25 @@ use crate::version::v0_0_1::config::config::bind::{
     PipelineStop, PipelineStopCtx, PipelineStopVar, Selector,
 };
 use crate::version::v0_0_1::config::config::Document;
-use crate::version::v0_0_1::entity::entity::request::RcCommandType;
+use crate::version::v0_0_1::entity::entity::request::{Method, RcCommandType};
+use crate::version::v0_0_1::entity::entity::MethodKind;
+use crate::version::v0_0_1::http::HttpMethod;
 use crate::version::v0_0_1::id::id::{GenericKind, GenericKindBase, PointKind, PointSeg, Specific};
+use crate::version::v0_0_1::msg::MsgMethod;
 use crate::version::v0_0_1::parse::error::result;
 use crate::version::v0_0_1::parse::model::{
     BindScope, BindScopeKind, Block, BlockKind, Chunk, DelimitedBlockKind, LexBlock,
     LexParentScope, LexRootScope, LexScope, LexScopeSelector, LexScopeSelectorAndFilters,
     NestedBlockKind, PipelineCtx, PipelineSegment, PipelineSegmentCtx, PipelineSegmentVar,
-    PipelineVar, RequestScope, RootScopeSelector, ScopeFilterDef, ScopeFiltersDef,
+    PipelineVar, RootScopeSelector, RouteScope, ScopeFilterDef, ScopeFiltersDef,
     ScopeSelectorAndFiltersDef, Spanned, Subst, TerminatedBlockKind, TextType, Var, VarParser,
     VarPipeline, VarPipelineSegment,
 };
 use crate::version::v0_0_1::payload::payload::{
     Call, CallCtx, CallKind, CallVar, CallWithConfig, CallWithConfigCtx, CallWithConfigVar,
-    HttpCall, HttpMethodType, ListPattern, MapPattern, MapPatternCtx, MapPatternVar,
-    MsgCall, NumRange, PayloadFormat, PayloadPattern, PayloadPatternCtx, PayloadPatternVar,
-    PayloadType, PayloadTypePatternCtx, PayloadTypePatternDef, PayloadTypePatternVar,
+    HttpCall, HttpMethodType, ListPattern, MapPattern, MapPatternCtx, MapPatternVar, MsgCall,
+    NumRange, PayloadFormat, PayloadPattern, PayloadPatternCtx, PayloadPatternVar, PayloadType,
+    PayloadTypePatternCtx, PayloadTypePatternDef, PayloadTypePatternVar,
 };
 use crate::version::v0_0_1::selector::selector::specific::{
     ProductSelector, VariantSelector, VendorSelector,
@@ -3984,7 +4176,6 @@ use crate::version::v0_0_1::span::{new_span, span_with_extra};
 use crate::version::v0_0_1::wrap::{Span, Wrap};
 use nom_supreme::error::ErrorTree;
 use nom_supreme::{parse_from_str, ParserExt};
-use crate::version::v0_0_1::http::HttpMethod;
 
 fn inclusive_any_segment<I: Span>(input: I) -> Res<I, PointSegSelector> {
     alt((tag("+*"), tag("ROOT+*")))(input).map(|(next, _)| (next, PointSegSelector::InclusiveAny))
@@ -5097,6 +5288,22 @@ pub fn http_pattern<I: Span>(input: I) -> Res<I, HttpPipelineSelector> {
     })
 }
 
+pub fn wrapped_msg_method<I: Span>(input: I) -> Res<I, Method> {
+    let (next, msg_method) = camel_case(input.clone())?;
+
+    match MsgMethod::new(msg_method.to_string()) {
+        Ok(method) => Ok((next, Method::Msg(method))),
+        Err(err) => Err(nom::Err::Error(ErrorTree::from_error_kind(
+            input,
+            ErrorKind::Fail,
+        ))),
+    }
+}
+
+pub fn wrapped_http_method<I: Span>(input: I) -> Res<I, Method> {
+    http_method(input).map(|(next, method)| (next, Method::Http(method)))
+}
+
 pub fn rc_command_type<I: Span>(input: I) -> Res<I, RcCommandType> {
     parse_alpha1_str(input)
 }
@@ -5441,7 +5648,7 @@ fn semantic_bind_scope<I: Span>(scope: LexScope<I>) -> Result<BindScope, MsgErr>
     match selector_name.as_str() {
         "Pipeline" => {
             let scope = lex_child_scopes(scope)?;
-            let scope = RequestScope::try_from(scope)?;
+            let scope = RouteScope::try_from(scope)?;
             Ok(BindScope::RequestScope(scope))
         }
         what => {
@@ -5747,7 +5954,19 @@ pub mod test {
     use crate::version::v0_0_1::parse::model::{
         BlockKind, DelimitedBlockKind, LexScope, NestedBlockKind, TerminatedBlockKind,
     };
-    use crate::version::v0_0_1::parse::{args, base_point_segment, bind_config, comment, config, ctx_seg, expected_block_terminator_or_non_terminator, lex_block, lex_child_scopes, lex_nested_block, lex_scope, lex_scope_pipeline_step_and_block, lex_scope_selector, lex_scope_selector_and_filters, lex_scopes, lowercase1, mesh_eos, nested_block, nested_block_content, next_selector, no_comment, parse_include_blocks, parse_inner_block, path_regex, pipeline, pipeline_segment, pipeline_step_var, pipeline_stop_var, point_non_root_var, point_var, pop, rec_version, root_scope, root_scope_selector, scope_filter, scope_filters, skewer_case, skewer_dot, space_chars, space_no_dupe_dots, space_point_segment, strip_comments, subst, var_pipeline, var_seg, variable_name, version, version_point_segment, wrapper, Env, MapResolver, Res, SubstParser, ToResolved, VarResolver, consume_point_var};
+    use crate::version::v0_0_1::parse::{
+        args, base_point_segment, bind_config, comment, config, consume_point_var, ctx_seg,
+        expected_block_terminator_or_non_terminator, lex_block, lex_child_scopes, lex_nested_block,
+        lex_scope, lex_scope_pipeline_step_and_block, lex_scope_selector,
+        lex_scope_selector_and_filters, lex_scopes, lowercase1, mesh_eos, nested_block,
+        nested_block_content, next_selector, no_comment, parse_include_blocks, parse_inner_block,
+        path_regex, pipeline, pipeline_segment, pipeline_step_var, pipeline_stop_var,
+        point_non_root_var, point_var, pop, rec_version, root_scope, root_scope_selector,
+        scope_filter, scope_filters, skewer_case, skewer_dot, space_chars, space_no_dupe_dots,
+        space_point_segment, strip_comments, subst, var_pipeline, var_seg, variable_name, version,
+        version_point_segment, wrapper, Env, MapResolver, Res, SubstParser, ToResolved,
+        VarResolver,
+    };
     use crate::version::v0_0_1::span::{new_span, span_with_extra};
     use nom::branch::alt;
     use nom::bytes::complete::{escaped, tag};
@@ -5856,16 +6075,16 @@ pub mod test {
         let point: PointCtx = log(point.to_resolved(&env))?;
 
         /*
-        let resolver = Env::new(Point::from_str("my-domain.com:under:over")?);
-        let point = log(consume_point_var("../../hello") )?;
-//        let point: Point = log(point.to_resolved(&resolver))?;
-  //      println!("point.to_string(): {}", point.to_string());
-        let _: Result<Point, MsgErr> = log(log(result(all_consuming(point_var)(new_span(
-            "${not-supported}::my-domain.com:1.0.0:/${dorko}/x/",
-        )))?
-            .to_resolved(&env)));
+                let resolver = Env::new(Point::from_str("my-domain.com:under:over")?);
+                let point = log(consume_point_var("../../hello") )?;
+        //        let point: Point = log(point.to_resolved(&resolver))?;
+          //      println!("point.to_string(): {}", point.to_string());
+                let _: Result<Point, MsgErr> = log(log(result(all_consuming(point_var)(new_span(
+                    "${not-supported}::my-domain.com:1.0.0:/${dorko}/x/",
+                )))?
+                    .to_resolved(&env)));
 
-         */
+                 */
         Ok(())
     }
 
@@ -5887,7 +6106,7 @@ pub mod test {
         Ok(())
     }
 
-   #[test]
+    #[test]
     pub fn test_lex_block() -> Result<(), MsgErr> {
         let esc = result(escaped(anychar, '\\', anychar)(new_span("\\}")))?;
         //println!("esc: {}", esc);

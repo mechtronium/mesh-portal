@@ -83,7 +83,7 @@ pub mod config {
     pub mod bind {
         use crate::error::{MsgErr, ParseErrs};
         use crate::version::v0_0_1::entity::entity::request::{Rc, RequestCore};
-        use crate::version::v0_0_1::entity::entity::EntityKind;
+        use crate::version::v0_0_1::entity::entity::MethodKind;
         use crate::version::v0_0_1::id::id::{Point, PointCtx, PointVar};
         use crate::version::v0_0_1::payload::payload::{Call, CallDef};
         use crate::version::v0_0_1::payload::payload::{Payload, PayloadPattern};
@@ -93,7 +93,8 @@ pub mod config {
         use crate::version::v0_0_1::util::{ValueMatcher, ValuePattern};
         use serde::{Deserialize, Serialize};
         use std::convert::TryInto;
-        use crate::version::v0_0_1::parse::model::{BindScope, RequestScope, PipelineSegment, PipelineSegmentDef};
+        use crate::version::v0_0_1::messaging::messaging::Request;
+        use crate::version::v0_0_1::parse::model::{BindScope, RouteScope, PipelineSegment, PipelineSegmentDef, PipelineVar, MessageScope, MethodScope};
         use crate::version::v0_0_1::selector::{PayloadBlock, PayloadBlockDef};
 
         #[derive(Clone)]
@@ -113,11 +114,23 @@ pub mod config {
                 }
             }
 
-            pub fn request_scopes(&self) -> Vec<&RequestScope> {
+            pub fn request_scopes(&self) -> Vec<&RouteScope> {
                 let mut scopes = vec![];
                 for scope in &self.scopes {
                     if let BindScope::RequestScope(request_scope) = &scope {
-                       scopes.push(request_scope);
+                        scopes.push(request_scope);
+                    }
+                }
+                scopes
+            }
+
+            pub fn select(&self, request: &Request) -> Vec<&RouteScope>{
+                let mut scopes = vec![];
+                for scope in &self.scopes {
+                    if let BindScope::RequestScope(route_scope) = &scope {
+                        if route_scope.selector.is_match(request).is_ok() {
+                            scopes.push( route_scope );
+                       }
                     }
                 }
                 scopes
@@ -281,25 +294,25 @@ pub mod config {
         }
 
         impl Selector<PipelineSelector> {
-            pub fn is_match(&self, m: &RequestCore) -> Result<(), MsgErr> {
+            pub fn is_match(&self, m: &RequestCore) -> Result<(), ()> {
                 self.pattern.is_match(m)
             }
         }
 
         impl Selector<MsgPipelineSelector> {
-            pub fn is_match(&self, m: &RequestCore) -> Result<(), MsgErr> {
+            pub fn is_match(&self, m: &RequestCore) -> Result<(), ()> {
                 self.pattern.is_match(m)
             }
         }
 
         impl Selector<RcPipelineSelector> {
-            pub fn is_match(&self, m: &RequestCore) -> Result<(), MsgErr> {
+            pub fn is_match(&self, m: &RequestCore) -> Result<(), ()> {
                 self.pattern.is_match(m)
             }
         }
 
         impl Selector<HttpPipelineSelector> {
-            pub fn is_match(&self, m: &RequestCore) -> Result<(), MsgErr> {
+            pub fn is_match(&self, m: &RequestCore) -> Result<(), ()> {
                 self.pattern.is_match(m)
             }
         }
@@ -323,9 +336,9 @@ pub mod config {
         }
 
         pub enum PipelinesSubScope {
-            Msg(ConfigScope<EntityKind, Selector<MsgPipelineSelector>>),
-            Http(ConfigScope<EntityKind, Selector<HttpPipelineSelector>>),
-            Rc(ConfigScope<EntityKind, Selector<RcPipelineSelector>>),
+            Msg(ConfigScope<MethodKind, Selector<MsgPipelineSelector>>),
+            Http(ConfigScope<MethodKind, Selector<HttpPipelineSelector>>),
+            Rc(ConfigScope<MethodKind, Selector<RcPipelineSelector>>),
         }
 
         pub enum ScopeType {

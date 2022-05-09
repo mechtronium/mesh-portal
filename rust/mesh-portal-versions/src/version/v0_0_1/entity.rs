@@ -1,14 +1,25 @@
 pub mod entity {
 
     use serde::{Deserialize, Serialize};
+    use crate::version::v0_0_1::util::ValueMatcher;
 
     #[derive(
-        Debug, Clone, Serialize, Deserialize, strum_macros::Display, strum_macros::EnumString,
+        Debug, Clone, Serialize, Deserialize, strum_macros::Display, strum_macros::EnumString,Eq,PartialEq
     )]
-    pub enum EntityKind {
-        Rc,
+    pub enum MethodKind {
+        Cmd,
         Msg,
         Http,
+    }
+
+    impl ValueMatcher<MethodKind> for MethodKind {
+        fn is_match(&self, x: &MethodKind) -> Result<(), ()> {
+            if self == x {
+                Ok(())
+            } else {
+                Err(())
+            }
+        }
     }
 
     pub mod request {
@@ -30,20 +41,43 @@ pub mod entity {
         use http::status::InvalidStatusCode;
         use http::{HeaderMap, Request, StatusCode, Uri};
         use serde::{Deserialize, Serialize};
+        use crate::version::v0_0_1::entity::entity::MethodKind;
         use crate::version::v0_0_1::http::HttpMethod;
         use crate::version::v0_0_1::msg::MsgMethod;
 
-        #[derive(Debug, Clone, Serialize, Deserialize)]
+        #[derive(Debug, Clone, Serialize, Deserialize,Eq,PartialEq)]
         pub enum Method {
-            Rc(Rc),
+            Cmd(Rc),
             Http(#[serde(with = "http_serde::method")] HttpMethod),
             Msg(MsgMethod),
+        }
+
+        impl ValueMatcher<Method> for Method {
+            fn is_match(&self, x: &Method) -> Result<(), ()> {
+                if x == self {
+                    Ok(())
+                } else {
+                    Err(())
+                }
+            }
+        }
+
+
+        impl Method {
+
+            pub fn kind(&self) -> MethodKind {
+                match self {
+                    Method::Cmd(_) => MethodKind::Cmd,
+                    Method::Http(_) => MethodKind::Http,
+                    Method::Msg(_) => MethodKind::Msg
+                }
+            }
         }
 
         impl ToString for Method {
             fn to_string(&self) -> String {
                 match self {
-                    Method::Rc(_) => "Rc".to_string(),
+                    Method::Cmd(_) => "Rc".to_string(),
                     Method::Http(method) => method.to_string(),
                     Method::Msg(msg) => msg.to_string(),
                 }
@@ -54,7 +88,7 @@ pub mod entity {
             fn into(self) -> RequestCore {
                 RequestCore {
                     headers: Default::default(),
-                    action: self,
+                    method: self,
                     uri: Uri::from_static("/"),
                     body: Payload::Empty,
                 }
@@ -65,17 +99,23 @@ pub mod entity {
         pub struct RequestCore {
             #[serde(with = "http_serde::header_map")]
             pub headers: HeaderMap,
-            pub action: Method,
+            pub method: Method,
             #[serde(with = "http_serde::uri")]
             pub uri: Uri,
             pub body: Payload,
+        }
+
+        impl RequestCore {
+            pub fn kind(&self) -> MethodKind {
+                self.method.kind()
+            }
         }
 
         impl From<http::Request<Bin>> for RequestCore {
             fn from(request: Request<Bin>) -> Self {
                 Self {
                     headers: request.headers().clone(),
-                    action: Method::Http(request.method().clone()),
+                    method: Method::Http(request.method().clone()),
                     uri: request.uri().clone(),
                     body: Payload::Bin(request.body().clone()),
                 }
@@ -96,7 +136,7 @@ pub mod entity {
                         None => {}
                     }
                 }
-                match self.action {
+                match self.method {
                     Method::Http(method) => {
                         builder = builder.method(method).uri(self.uri);
                         Ok(builder.body(self.body.to_bin()?)?)
@@ -110,7 +150,7 @@ pub mod entity {
             fn default() -> Self {
                 Self {
                     headers: Default::default(),
-                    action: Method::Msg(Default::default()),
+                    method: Method::Msg(Default::default()),
                     uri: Uri::from_static("/"),
                     body: Payload::Empty,
                 }
@@ -122,7 +162,7 @@ pub mod entity {
                 Self {
                     headers: self.headers,
                     uri: self.uri,
-                    action: self.action,
+                    method: self.method,
                     body: payload,
                 }
             }
@@ -177,6 +217,16 @@ pub mod entity {
             Set(Set),
         }
 
+        impl PartialEq<Self> for Rc {
+            fn eq(&self, other: &Self) -> bool {
+                self.get_type() == other.get_type()
+            }
+        }
+
+        impl Eq for Rc {
+
+        }
+
         impl Rc {
             pub fn get_type(&self) -> RcCommandType {
                 match self {
@@ -226,16 +276,11 @@ pub mod entity {
         }
 
         impl ValueMatcher<Rc> for Rc {
-            fn is_match(&self, x: &Rc) -> Result<(), crate::error::MsgErr> {
+            fn is_match(&self, x: &Rc) -> Result<(), ()> {
                 if self.get_type() == x.get_type() {
                     Ok(())
                 } else {
-                    Err(format!(
-                        "Rc command expected: '{}' found: '{}'",
-                        self.to_string(),
-                        x.to_string()
-                    )
-                    .into())
+                    Err(())
                 }
             }
         }

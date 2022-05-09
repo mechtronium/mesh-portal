@@ -450,7 +450,7 @@ pub mod payload {
     }
 
     impl <Pnt> PayloadTypePatternDef<Pnt> {
-        pub fn is_match(&self, payload: &Payload) -> Result<(), MsgErr> {
+        pub fn is_match(&self, payload: &Payload) -> Result<(), ()> {
             unimplemented!();
             /*
             match self {
@@ -564,7 +564,7 @@ pub mod payload {
 
 
         impl <Pnt> ValueMatcher<Payload> for PayloadPatternDef<Pnt> {
-        fn is_match(&self, payload: &Payload) -> Result<(), MsgErr> {
+        fn is_match(&self, payload: &Payload) -> Result<(), ()> {
             self.structure.is_match(&payload)?;
 
             // more matching to come... not sure exactly how to match Format and Validation...
@@ -649,13 +649,13 @@ pub mod payload {
             Ok(match self {
                 CallKind::Msg(msg) => RequestCore {
                     headers: Default::default(),
-                    action: Method::Msg(MsgMethod::new(msg.method)?),
+                    method: Method::Msg(MsgMethod::new(msg.method)?),
                     uri: Uri::from_str(msg.path.as_str())?,
                     body,
                 },
                 CallKind::Http(http) => RequestCore {
                     headers: Default::default(),
-                    action: Method::Http(http.method),
+                    method: Method::Http(http.method),
                     uri: Uri::from_str(http.path.as_str())?,
                     body,
                 },
@@ -771,16 +771,11 @@ pub mod payload {
      */
 
     impl ValueMatcher<HttpMethod> for HttpMethod {
-        fn is_match(&self, found: &HttpMethod) -> Result<(), crate::error::MsgErr> {
+        fn is_match(&self, found: &HttpMethod) -> Result<(), ()> {
             if *self == *found {
                 Ok(())
             } else {
-                Err(format!(
-                    "Http Method mismatch. expected: '{}', found: '{}'",
-                    self.to_string(),
-                    found.to_string()
-                )
-                .into())
+                Err(())
             }
         }
     }
@@ -936,18 +931,14 @@ pub mod payload {
             }
         }
 
-        pub fn is_match(&self, map: &PayloadMap) -> Result<(), MsgErr> {
+        pub fn is_match(&self, map: &PayloadMap) -> Result<(), ()> {
             // if Any keys are allowed then skip
             for (key, payload) in &map.map {
                 if !self.required.contains_key(key) {
                     match &self.allowed {
                         ValuePattern::Any => {}
                         ValuePattern::None => {
-                            return Err(format!(
-                                "key: '{}' not required or allowed by Map constraints",
-                                key
-                            )
-                            .into());
+                            return Err(());
                         }
                         ValuePattern::Pattern(pattern) => {
                             pattern.is_match(payload)?;
@@ -959,11 +950,7 @@ pub mod payload {
             // now make sure all required are present and meet constraints
             for (key, constraint) in &self.required {
                 if !map.contains_key(key) {
-                    return Err(format!(
-                        "missing required key : '{}' defined in Map constraints",
-                        key
-                    )
-                    .into());
+                    return Err(());
                 }
                 constraint.is_match(
                     &map.get(key)

@@ -11,7 +11,7 @@ use crate::version::v0_0_1::parse::camel_case;
 use crate::version::v0_0_1::parse::error::result;
 use crate::version::v0_0_1::span::new_span;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize,Eq,PartialEq,Hash)]
 pub struct MsgMethod {
     string: String
 }
@@ -76,7 +76,7 @@ impl TryFrom<RequestCore> for MsgRequest {
     type Error = MsgErr;
 
     fn try_from(core: RequestCore) -> Result<Self, Self::Error> {
-        if let Method::Msg(action) = core.action {
+        if let Method::Msg(action) = core.method {
             Ok(Self {
                 method: action,
                 headers: core.headers,

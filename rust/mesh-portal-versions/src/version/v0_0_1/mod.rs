@@ -187,22 +187,22 @@ pub mod util {
     }
 
     impl MethodPattern {
-        pub fn is_match(&self, x: &HttpMethod) -> Result<(), MsgErr> {
+        pub fn is_match(&self, x: &HttpMethod) -> Result<(), ()> {
             match self {
                 Self::Any => Ok(()),
                 Self::Pattern(exact) => exact.is_match(x),
-                Self::None => Err("None pattern".into()),
+                Self::None => Err(()),
             }
         }
 
-        pub fn is_match_opt(&self, x: Option<&HttpMethod>) -> Result<(), MsgErr> {
+        pub fn is_match_opt(&self, x: Option<&HttpMethod>) -> Result<(), ()> {
             match self {
                 Self::Any => Ok(()),
                 Self::Pattern(exact) => match x {
-                    None => Err("option none".into()),
+                    None => Err(()),
                     Some(x) => self.is_match(x),
                 },
-                Self::None => Err("None pattern".into()),
+                Self::None => Err(()),
             }
         }
     }
@@ -239,28 +239,28 @@ pub mod util {
 
     impl<T> ValuePattern<T> {
 
-        pub fn is_match<X>(&self, x: &X) -> Result<(), MsgErr>
+        pub fn is_match<X>(&self, x: &X) -> Result<(), ()>
         where
             T: ValueMatcher<X>,
         {
             match self {
                 ValuePattern::Any => Ok(()),
                 ValuePattern::Pattern(exact) => exact.is_match(x),
-                ValuePattern::None => Err("None pattern".into()),
+                ValuePattern::None => Err(()),
             }
         }
 
-        pub fn is_match_opt<X>(&self, x: Option<&X>) -> Result<(), MsgErr>
+        pub fn is_match_opt<X>(&self, x: Option<&X>) -> Result<(), ()>
         where
             T: ValueMatcher<X>,
         {
             match self {
                 ValuePattern::Any => Ok(()),
                 ValuePattern::Pattern(exact) => match x {
-                    None => Err("option none".into()),
+                    None => Err(()),
                     Some(x) => self.is_match(x),
                 },
-                ValuePattern::None => Err("None pattern".into()),
+                ValuePattern::None => Err(()),
             }
         }
     }
@@ -276,7 +276,7 @@ pub mod util {
     }
 
     pub trait ValueMatcher<X> {
-        fn is_match(&self, x: &X) -> Result<(), MsgErr>;
+        fn is_match(&self, x: &X) -> Result<(), ()>;
     }
 
     pub struct RegexMatcher {
@@ -296,12 +296,12 @@ pub mod util {
     }
 
     impl ValueMatcher<String> for RegexMatcher {
-        fn is_match(&self, x: &String) -> Result<(), MsgErr> {
+        fn is_match(&self, x: &String) -> Result<(), ()> {
             let matches = x.matches(x);
             if matches.count() > 0 {
                 Ok(())
             } else {
-                Err(format!("could not match pattern '{}' in '{}'", self.pattern, x).into())
+                Err(())
             }
         }
     }
@@ -324,11 +324,11 @@ pub mod util {
     }
 
     impl ValueMatcher<String> for StringMatcher {
-        fn is_match(&self, x: &String) -> Result<(), MsgErr> {
+        fn is_match(&self, x: &String) -> Result<(), ()> {
             if self.pattern == *x {
                 Ok(())
             } else {
-                Err(format!("expecting pattern: '{}' found: '{}'", self.pattern, x).into())
+                Err(())
             }
         }
     }
