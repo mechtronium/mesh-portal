@@ -174,8 +174,8 @@ pub mod id {
 
     /// Stands for "Type, Kind, Specific"
     pub trait Tks {
-        fn resource_type(&self) -> GenericKindBase;
-        fn kind_to_string(&self) -> Option<String>;
+        fn kind(&self) -> GenericKindBase;
+        fn sub_kind(&self) -> Option<String>;
         fn specific(&self) -> Option<Specific>;
         fn matches(&self, tks: &dyn Tks) -> bool;
     }
@@ -1484,11 +1484,11 @@ pub mod id {
     }
 
     impl Tks for GenericKind {
-        fn resource_type(&self) -> GenericKindBase {
+        fn kind(&self) -> GenericKindBase {
             self.kind.clone()
         }
 
-        fn kind_to_string(&self) -> Option<String> {
+        fn sub_kind(&self) -> Option<String> {
             self.sub_kind.clone()
         }
 
@@ -1497,8 +1497,8 @@ pub mod id {
         }
 
         fn matches(&self, tks: &dyn Tks) -> bool {
-            self.kind == tks.resource_type()
-                && self.sub_kind == tks.kind_to_string()
+            self.kind == tks.kind()
+                && self.sub_kind == tks.sub_kind()
                 && self.specific == tks.specific()
         }
     }

@@ -7,8 +7,8 @@ pub mod messaging {
     use serde::{Deserialize, Serialize};
 
     use crate::error::{MsgErr, StatusErr};
-    use crate::version::v0_0_1::entity::entity::request::RequestCore;
-    use crate::version::v0_0_1::entity::entity::response::ResponseCore;
+    use crate::version::v0_0_1::entity::request::RequestCore;
+    use crate::version::v0_0_1::entity::response::ResponseCore;
     use crate::version::v0_0_1::id::id::Point;
     use crate::version::v0_0_1::log::{SpanLogger, PointLogger};
     use crate::version::v0_0_1::payload::payload::{Errors, MsgCall, Payload, Primitive};

@@ -339,7 +339,7 @@ pub trait PortalRequestHandler: Send + Sync {
 
 
 #[derive(Debug,Clone)]
-pub struct PortalResourceApi {
+pub struct PortalParticleApi {
    portal_api: PortalApi,
    pub stub: Stub
 }

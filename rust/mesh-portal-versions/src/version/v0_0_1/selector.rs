@@ -21,7 +21,7 @@ pub mod selector {
 
     use crate::error::MsgErr;
 
-    use crate::version::v0_0_1::entity::entity::request::{Method, Rc, RcCommandType, RequestCore};
+    use crate::version::v0_0_1::entity::request::{Method, Rc, RcCommandType, RequestCore};
     use crate::version::v0_0_1::id::id::{GenericKind, GenericKindBase, Point, PointCtx, PointSeg, PointVar, RouteSeg, Specific, Tks, Version};
     use crate::version::v0_0_1::parse::{camel_case, camel_case_to_string_matcher, consume_hierarchy, file_chars, path, path_regex, point_segment_selector, point_selector, Res};
     use crate::version::v0_0_1::payload::payload::{Call, CallKind, CallWithConfig, CallWithConfigDef, HttpCall, HttpMethodType, ListPattern, MapPattern, MsgCall, NumRange, Payload, PayloadFormat, PayloadPattern, PayloadPatternDef, PayloadType, PayloadTypePatternDef, Primitive, PrimitiveType};
@@ -49,23 +49,23 @@ pub mod selector {
     use crate::version::v0_0_1::span::{new_span};
     use crate::version::v0_0_1::wrap::Span;
 
-    pub type KindPattern=KindPatternDef<GenericKindSelector,GenericSubKindSelector,SpecificSelector>;
+    pub type KindSelector =KindSelectorDef<GenericKindSelector,GenericSubKindSelector,SpecificSelector>;
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
-    pub struct KindPatternDef<GenericKindSelector,GenericSubKindSelector,SpecificSelector> {
+    pub struct KindSelectorDef<GenericKindSelector,GenericSubKindSelector,SpecificSelector> {
         pub kind: GenericKindSelector,
         pub sub_kind: GenericSubKindSelector,
         pub specific: ValuePattern<SpecificSelector>,
     }
 
-    impl KindPattern {
+    impl KindSelector {
         pub fn new(
-            resource_type: GenericKindSelector,
-            kind: GenericSubKindSelector,
+            kind: GenericKindSelector,
+            sub_kind: GenericSubKindSelector,
             specific: ValuePattern<SpecificSelector>,
         ) -> Self {
             Self {
-                kind: resource_type,
+                kind: sub_kind,
                 sub_kind: kind,
                 specific,
             }
@@ -75,13 +75,13 @@ pub mod selector {
         where
             GenericKind: Eq + PartialEq,
         {
-            self.kind.matches(&kind.resource_type())
-                && self.sub_kind.matches(kind)
+            self.kind.matches(&kind.kind())
+                && (kind.sub_kind.is_some() && self.sub_kind.matches(kind.sub_kind.as_ref().unwrap()))
                 && self.specific.is_match_opt(kind.specific().as_ref()).is_ok()
         }
     }
 
-    impl ToString for KindPattern {
+    impl ToString for KindSelector {
         fn to_string(&self) -> String {
             format!(
                 "{}<{}<{}>>",
@@ -92,7 +92,7 @@ pub mod selector {
         }
     }
 
-    impl KindPattern {
+    impl KindSelector {
         pub fn any() -> Self {
             Self {
                 kind: GenericKindSelector::Any,
@@ -103,7 +103,7 @@ pub mod selector {
     }
 
 
-    pub type GenericSubKindSelector = Pattern<GenericKind>;
+    pub type GenericSubKindSelector = Pattern<String>;
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct PointSelectorDef<Hop> {
@@ -137,11 +137,11 @@ pub mod selector {
                 true
             } else if self.hops.len() == 1 {
                 let hop = self.hops.first().unwrap();
-                if PointSegSelector::InclusiveAny == hop.segment
-                    || PointSegSelector::InclusiveRecursive == hop.segment
+                if PointSegSelector::InclusiveAny == hop.segment_selector
+                    || PointSegSelector::InclusiveRecursive == hop.segment_selector
                 {
                     let resource_kind = GenericKind::new("Root".to_string(), None, None);
-                    hop.kind.matches(&resource_kind)
+                    hop.kind_selector.matches(&resource_kind)
                 } else {
                     false
                 }
@@ -161,7 +161,7 @@ pub mod selector {
         pub fn query_root(&self) -> Point {
             let mut segments = vec![];
             for hop in &self.hops {
-                if let PointSegSelector::Exact(exact) = &hop.segment {
+                if let PointSegSelector::Exact(exact) = &hop.segment_selector {
                     if hop.inclusive {
                         break;
                     }
@@ -242,7 +242,7 @@ pub mod selector {
                 }
             }
             // special logic is applied to recursives **
-            else if hop.segment.is_recursive() && self.hops.len() >= 2 {
+            else if hop.segment_selector.is_recursive() && self.hops.len() >= 2 {
                 // a Recursive is similar to an Any in that it will match anything, however,
                 // it is not consumed until the NEXT segment matches...
                 let next_hop = self.hops.get(1).expect("next<Hop>");
@@ -257,9 +257,9 @@ pub mod selector {
                     // the NEXT hop does not match, therefore we do NOT consume() the current hop
                     self.matches(&hierarchy.consume().expect("AddressKindPath"))
                 }
-            } else if hop.segment.is_recursive() && hierarchy.is_final() {
+            } else if hop.segment_selector.is_recursive() && hierarchy.is_final() {
                 hop.matches(hierarchy.segments.last().expect("segment"))
-            } else if hop.segment.is_recursive() {
+            } else if hop.segment_selector.is_recursive() {
                 hop.matches(hierarchy.segments.last().expect("segment"))
                     && self.matches(&hierarchy.consume().expect("hierarchy"))
             } else if hop.matches(seg) {
@@ -891,33 +891,33 @@ pub mod selector {
 
      */
 
-    pub type Hop = HopDef<PointSegSelector, KindPattern>;
+    pub type Hop = HopDef<PointSegSelector, KindSelector>;
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
-    pub struct HopDef<Segment, KindPattern> {
+    pub struct HopDef<Segment, KindSelector> {
         pub inclusive: bool,
-        pub segment: Segment,
-        pub kind: KindPattern,
+        pub segment_selector: Segment,
+        pub kind_selector: KindSelector,
     }
 
 
     impl Hop {
         pub fn matches(&self, point_kind_segment: &PointKindSeg) -> bool {
-            self.segment.matches(&point_kind_segment.segment)
-                && self.kind.matches(&point_kind_segment.kind)
+            self.segment_selector.matches(&point_kind_segment.segment)
+                && self.kind_selector.matches(&point_kind_segment.kind)
         }
     }
 
     impl ToString for Hop {
         fn to_string(&self) -> String {
             let mut rtn = String::new();
-            rtn.push_str(self.segment.to_string().as_str());
+            rtn.push_str(self.segment_selector.to_string().as_str());
 
-            if let Pattern::Exact(resource_type) = &self.kind.kind {
+            if let Pattern::Exact(resource_type) = &self.kind_selector.kind {
                 rtn.push_str(format!("<{}", resource_type.to_string()).as_str());
-                if let Pattern::Exact(kind) = &self.kind.sub_kind {
-                    rtn.push_str(format!("<{}", kind.to_string()).as_str());
-                    if let ValuePattern::Pattern(specific) = &self.kind.specific {
+                if let Pattern::Exact(sub_kind) = &self.kind_selector.sub_kind {
+                    rtn.push_str(format!("<{}", sub_kind.to_string()).as_str());
+                    if let ValuePattern::Pattern(specific) = &self.kind_selector.specific {
                         rtn.push_str(format!("<{}", specific.to_string()).as_str());
                         rtn.push_str(">");
                     }

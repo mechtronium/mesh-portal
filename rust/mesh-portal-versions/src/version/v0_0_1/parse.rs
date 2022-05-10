@@ -15,15 +15,15 @@ use nom::combinator::{cut, eof, fail, not, peek, recognize, success, value, veri
 
 use crate::error::{MsgErr, ParseErrs};
 use crate::version::v0_0_1::command::command::common::{PropertyMod, SetProperties, StateSrc};
-use crate::version::v0_0_1::entity::entity::request::create::{
+use crate::version::v0_0_1::entity::request::create::{
     Create, CreateOp, CreateOpVar, KindTemplate, PointSegFactory, PointTemplate, PointTemplateSeg,
     Require, Strategy, Template, TemplateVar,
 };
-use crate::version::v0_0_1::entity::entity::request::get::{Get, GetOp, GetVar};
-use crate::version::v0_0_1::entity::entity::request::select::{
+use crate::version::v0_0_1::entity::request::get::{Get, GetOp, GetVar};
+use crate::version::v0_0_1::entity::request::select::{
     Select, SelectIntoPayload, SelectKind,
 };
-use crate::version::v0_0_1::entity::entity::request::set::{Set, SetVar};
+use crate::version::v0_0_1::entity::request::set::{Set, SetVar};
 use crate::version::v0_0_1::id::id::{
     Point, PointCtx, PointKindVar, PointSegCtx, PointSegDelim, PointSegVar, PointSegment, PointVar,
     RouteSeg, RouteSegVar, Variable, Version,
@@ -1252,16 +1252,16 @@ pub fn kind_template<I: Span>(input: I) -> Res<I, KindTemplate> {
             tag(">"),
         )),
     ))(input)
-    .map(|(next, (resource_type, more))| {
+    .map(|(next, (kind, more))| {
         let mut parts = KindTemplate {
-            resource_type,
-            kind: None,
+            kind,
+            sub_kind: None,
             specific: None,
         };
 
         match more {
-            Some((kind, specific)) => {
-                parts.kind = Option::Some(kind.to_string());
+            Some((sub_kind, specific)) => {
+                parts.sub_kind = Option::Some(sub_kind.to_string());
                 parts.specific = specific;
             }
             None => {}
@@ -1441,8 +1441,8 @@ pub fn publish<I: Span>(input: I) -> Res<I, CreateOpVar> {
     let template = TemplateVar {
         point,
         kind: KindTemplate {
-            resource_type: "ArtifactBundle".to_string(),
-            kind: None,
+            kind: "ArtifactBundle".to_string(),
+            sub_kind: None,
             specific: None,
         },
     };
@@ -2797,8 +2797,8 @@ pub mod model {
         BindConfig, MessageKind, PipelineStepCtx, PipelineStepDef, PipelineStepVar,
         PipelineStopCtx, PipelineStopDef, PipelineStopVar, Selector,
     };
-    use crate::version::v0_0_1::entity::entity::request::{Method, RcCommandType, RequestCore};
-    use crate::version::v0_0_1::entity::entity::MethodKind;
+    use crate::version::v0_0_1::entity::request::{Method, RcCommandType, RequestCore};
+    use crate::version::v0_0_1::entity::MethodKind;
     use crate::version::v0_0_1::http::HttpMethod;
     use crate::version::v0_0_1::id::id::{Point, PointCtx, PointVar, Version};
     use crate::version::v0_0_1::messaging::messaging::{Agent, Request};
@@ -4139,8 +4139,8 @@ use crate::version::v0_0_1::config::config::bind::{
     PipelineStop, PipelineStopCtx, PipelineStopVar, Selector,
 };
 use crate::version::v0_0_1::config::config::Document;
-use crate::version::v0_0_1::entity::entity::request::{Method, RcCommandType};
-use crate::version::v0_0_1::entity::entity::MethodKind;
+use crate::version::v0_0_1::entity::request::{Method, RcCommandType};
+use crate::version::v0_0_1::entity::MethodKind;
 use crate::version::v0_0_1::http::HttpMethod;
 use crate::version::v0_0_1::id::id::{GenericKind, GenericKindBase, PointKind, PointSeg, Specific};
 use crate::version::v0_0_1::msg::MsgMethod;
@@ -4164,7 +4164,7 @@ use crate::version::v0_0_1::selector::selector::specific::{
 };
 use crate::version::v0_0_1::selector::selector::{
     ExactPointSeg, GenericKindSelector, GenericSubKindSelector, Hop, HttpPipelineSelector,
-    KindPattern, LabeledPrimitiveTypeDef, MapEntryPattern, MsgPipelineSelector, Pattern,
+    KindSelector, LabeledPrimitiveTypeDef, MapEntryPattern, MsgPipelineSelector, Pattern,
     PayloadType2Def, PipelineSelector, PointSegSelector, PointSelector, RcPipelineSelector,
     SpecificSelector, VersionReq,
 };
@@ -4494,9 +4494,9 @@ fn kind_parts<I: Span>(input: I) -> Res<I, GenericKind> {
             tag(">"),
         )),
     ))(input)
-    .map(|(next, (resource_type, more))| {
+    .map(|(next, (kind, more))| {
         let mut parts = GenericKind {
-            kind: resource_type,
+            kind: kind,
             sub_kind: None,
             specific: None,
         };
@@ -4526,9 +4526,9 @@ pub fn kind<I: Span>(input: I) -> Res<I, GenericKind> {
             tag(">"),
         )),
     ))(input)
-    .map(|(next, (resource_type, rest))| {
+    .map(|(next, (kind, rest))| {
         let mut rtn = GenericKind {
-            kind: resource_type,
+            kind: kind,
             sub_kind: Option::None,
             specific: Option::None,
         };
@@ -4560,19 +4560,25 @@ pub fn consume_kind<I: Span>(input: I) -> Result<GenericKind, MsgErr> {
     Ok(kind_parts.try_into()?)
 }
 
+pub fn to_string<I:Span,F>(mut f: F) -> impl FnMut(I) -> Res<I,String> where F: FnMut(I)->Res<I,I>+Copy{
+    move |input:I| {
+        f.parse(input).map(|(next,output)|(next,output.to_string()))
+    }
+}
+
 pub fn generic_kind_selector<I: Span>(input: I) -> Res<I, GenericSubKindSelector> {
-    pattern(kind)(input).map(|(next, kind)| (next, kind))
+    pattern(to_string(camel_case))(input).map(|(next, kind)| (next, kind))
 }
 
 pub fn generic_kind_base<I: Span>(input: I) -> Res<I, GenericKindBase> {
-    camel_case(input).map(|(next, resource_type)| (next, resource_type.to_string()))
+    camel_case(input).map(|(next, kind)| (next, kind.to_string()))
 }
 
 pub fn generic_kind_base_selector<I: Span>(input: I) -> Res<I, GenericKindSelector> {
     pattern(generic_kind_base)(input)
 }
 
-pub fn kind_pattern<I: Span>(input: I) -> Res<I, KindPattern> {
+pub fn kind_pattern<I: Span>(input: I) -> Res<I, KindSelector> {
     delimited(
         tag("<"),
         tuple((
@@ -4592,8 +4598,8 @@ pub fn kind_pattern<I: Span>(input: I) -> Res<I, KindPattern> {
         )),
         tag(">"),
     )(input)
-    .map(|(next, (resource_type, kind_and_specific))| {
-        let (kind, specific) = match kind_and_specific {
+    .map(|(next, (kind, sub_kind_and_specific))| {
+        let (sub_kind, specific) = match sub_kind_and_specific {
             None => (Pattern::Any, ValuePattern::Any),
             Some((kind, specific)) => (
                 kind,
@@ -4604,9 +4610,9 @@ pub fn kind_pattern<I: Span>(input: I) -> Res<I, KindPattern> {
             ),
         };
 
-        let tks = KindPattern {
-            kind: resource_type,
-            sub_kind: kind,
+        let tks = KindSelector {
+            kind,
+            sub_kind,
             specific,
         };
 
@@ -4616,9 +4622,9 @@ pub fn kind_pattern<I: Span>(input: I) -> Res<I, KindPattern> {
 
 fn space_hop<I: Span>(input: I) -> Res<I, Hop> {
     tuple((point_segment_selector, opt(kind_pattern), opt(tag("+"))))(input).map(
-        |(next, (segment, kind, inclusive))| {
-            let kind = match kind {
-                None => KindPattern::any(),
+        |(next, (segment_selector, kind_selector, inclusive))| {
+            let kind_selector = match kind_selector {
+                None => KindSelector::any(),
                 Some(tks) => tks,
             };
             let inclusive = inclusive.is_some();
@@ -4626,8 +4632,8 @@ fn space_hop<I: Span>(input: I) -> Res<I, Hop> {
                 next,
                 Hop {
                     inclusive,
-                    segment,
-                    kind,
+                    segment_selector,
+                    kind_selector,
                 },
             )
         },
@@ -4638,7 +4644,7 @@ fn base_hop<I: Span>(input: I) -> Res<I, Hop> {
     tuple((base_segment, opt(kind_pattern), opt(tag("+"))))(input).map(
         |(next, (segment, tks, inclusive))| {
             let tks = match tks {
-                None => KindPattern::any(),
+                None => KindSelector::any(),
                 Some(tks) => tks,
             };
             let inclusive = inclusive.is_some();
@@ -4646,8 +4652,8 @@ fn base_hop<I: Span>(input: I) -> Res<I, Hop> {
                 next,
                 Hop {
                     inclusive,
-                    segment,
-                    kind: tks,
+                    segment_selector:segment,
+                    kind_selector: tks,
                 },
             )
         },
@@ -4656,7 +4662,7 @@ fn base_hop<I: Span>(input: I) -> Res<I, Hop> {
 
 fn file_hop<I: Span>(input: I) -> Res<I, Hop> {
     tuple((file_segment, opt(tag("+"))))(input).map(|(next, (segment, inclusive))| {
-        let tks = KindPattern {
+        let tks = KindSelector {
             kind: Pattern::Exact("File".to_string()),
             sub_kind: Pattern::Any,
             specific: ValuePattern::Any,
@@ -4666,8 +4672,8 @@ fn file_hop<I: Span>(input: I) -> Res<I, Hop> {
             next,
             Hop {
                 inclusive,
-                segment,
-                kind: tks,
+                segment_selector:segment,
+                kind_selector: tks,
             },
         )
     })
@@ -4675,14 +4681,14 @@ fn file_hop<I: Span>(input: I) -> Res<I, Hop> {
 
 fn dir_hop<I: Span>(input: I) -> Res<I, Hop> {
     tuple((dir_segment, opt(tag("+"))))(input).map(|(next, (segment, inclusive))| {
-        let tks = KindPattern::any();
+        let tks = KindSelector::any();
         let inclusive = inclusive.is_some();
         (
             next,
             Hop {
                 inclusive,
-                segment,
-                kind: tks,
+                segment_selector:segment,
+                kind_selector: tks,
             },
         )
     })
@@ -4692,7 +4698,7 @@ fn version_hop<I: Span>(input: I) -> Res<I, Hop> {
     tuple((version_segment, opt(kind_pattern), opt(tag("+"))))(input).map(
         |(next, (segment, tks, inclusive))| {
             let tks = match tks {
-                None => KindPattern::any(),
+                None => KindSelector::any(),
                 Some(tks) => tks,
             };
             let inclusive = inclusive.is_some();
@@ -4700,8 +4706,8 @@ fn version_hop<I: Span>(input: I) -> Res<I, Hop> {
                 next,
                 Hop {
                     inclusive,
-                    segment,
-                    kind: tks,
+                    segment_selector:segment,
+                    kind_selector: tks,
                 },
             )
         },
@@ -4732,10 +4738,10 @@ pub fn point_selector<I: Span>(input: I) -> Res<I, PointSelector> {
                 // first push the filesystem root
                 hops.push(Hop {
                     inclusive: false,
-                    segment: PointSegSelector::Exact(ExactPointSeg::PointSeg(
+                    segment_selector: PointSegSelector::Exact(ExactPointSeg::PointSeg(
                         PointSeg::FilesystemRootDir,
                     )),
-                    kind: KindPattern {
+                    kind_selector: KindSelector {
                         kind: Pattern::Exact("Dir".to_string()),
                         sub_kind: Pattern::Any,
                         specific: ValuePattern::Any,
@@ -5569,7 +5575,15 @@ where
     .map(|(next, comment)| (next, TextType::Comment(comment)))
 }
 
-pub fn config(src: &str) -> Result<Document, MsgErr> {
+
+pub fn bind_config(src: &str) -> Result<BindConfig,MsgErr> {
+    let document = doc(src)?;
+    match document {
+        Document::BindConfig(bind_config) => Ok(bind_config)
+    }
+}
+
+pub fn doc(src: &str) -> Result<Document, MsgErr> {
     let src = src.to_string();
     let (next, stripped) = strip_comments(new_span(src.as_str()))?;
     let span = span_with_extra(stripped.as_str(), Arc::new(src.to_string()));
@@ -5577,7 +5591,7 @@ pub fn config(src: &str) -> Result<Document, MsgErr> {
     let root_scope_selector = lex_root_scope.selector.clone().to_concrete()?;
     if root_scope_selector.name.as_str() == "Bind" {
         if root_scope_selector.version == Version::from_str("1.0.0")? {
-            let bind = bind_config(lex_root_scope.block.content.clone())?;
+            let bind = parse_bind_config(lex_root_scope.block.content.clone())?;
 
             return Ok(Document::BindConfig(bind));
         } else {
@@ -5620,7 +5634,7 @@ pub fn config(src: &str) -> Result<Document, MsgErr> {
     }
 }
 
-fn bind_config<I: Span>(input: I) -> Result<BindConfig, MsgErr> {
+fn parse_bind_config<I: Span>(input: I) -> Result<BindConfig, MsgErr> {
     let lex_scopes = lex_scopes(input)?;
     let mut scopes = vec![];
     let mut errors = vec![];
@@ -5954,19 +5968,7 @@ pub mod test {
     use crate::version::v0_0_1::parse::model::{
         BlockKind, DelimitedBlockKind, LexScope, NestedBlockKind, TerminatedBlockKind,
     };
-    use crate::version::v0_0_1::parse::{
-        args, base_point_segment, bind_config, comment, config, consume_point_var, ctx_seg,
-        expected_block_terminator_or_non_terminator, lex_block, lex_child_scopes, lex_nested_block,
-        lex_scope, lex_scope_pipeline_step_and_block, lex_scope_selector,
-        lex_scope_selector_and_filters, lex_scopes, lowercase1, mesh_eos, nested_block,
-        nested_block_content, next_selector, no_comment, parse_include_blocks, parse_inner_block,
-        path_regex, pipeline, pipeline_segment, pipeline_step_var, pipeline_stop_var,
-        point_non_root_var, point_var, pop, rec_version, root_scope, root_scope_selector,
-        scope_filter, scope_filters, skewer_case, skewer_dot, space_chars, space_no_dupe_dots,
-        space_point_segment, strip_comments, subst, var_pipeline, var_seg, variable_name, version,
-        version_point_segment, wrapper, Env, MapResolver, Res, SubstParser, ToResolved,
-        VarResolver,
-    };
+    use crate::version::v0_0_1::parse::{args, base_point_segment, parse_bind_config, comment, config, consume_point_var, ctx_seg, expected_block_terminator_or_non_terminator, lex_block, lex_child_scopes, lex_nested_block, lex_scope, lex_scope_pipeline_step_and_block, lex_scope_selector, lex_scope_selector_and_filters, lex_scopes, lowercase1, mesh_eos, nested_block, nested_block_content, next_selector, no_comment, parse_include_blocks, parse_inner_block, path_regex, pipeline, pipeline_segment, pipeline_step_var, pipeline_stop_var, point_non_root_var, point_var, pop, rec_version, root_scope, root_scope_selector, scope_filter, scope_filters, skewer_case, skewer_dot, space_chars, space_no_dupe_dots, space_point_segment, strip_comments, subst, var_pipeline, var_seg, variable_name, version, version_point_segment, wrapper, Env, MapResolver, Res, SubstParser, ToResolved, VarResolver, doc};
     use crate::version::v0_0_1::span::{new_span, span_with_extra};
     use nom::branch::alt;
     use nom::bytes::complete::{escaped, tag};
@@ -5982,6 +5984,7 @@ pub mod test {
     use std::rc::Rc;
     use std::str::FromStr;
     use std::sync::Arc;
+    use bincode::config;
 
     #[test]
     pub fn test_point_var() -> Result<(), MsgErr> {
@@ -6315,10 +6318,10 @@ Bind(version=1.0.0)->
 
 
 }"#;
-        log(config(unknown_config_kind));
-        log(config(unsupported_bind_version));
-        log(config(multiple_unknown_sub_selectors));
-        log(config(now_we_got_rows_to_parse));
+        log(doc(unknown_config_kind));
+        log(doc(unsupported_bind_version));
+        log(doc(multiple_unknown_sub_selectors));
+        log(doc(now_we_got_rows_to_parse));
 
         Ok(())
     }

@@ -111,7 +111,7 @@ impl RootLogBuilder
             logger,
             span,
             point: None,
-            level: Default::default(),
+            level: Level::default(),
             message: None,
             json: None,
             msg_overrides: vec![],
@@ -263,6 +263,22 @@ pub struct RootLogger {
 }
 
 impl RootLogger {
+
+    pub fn new( source: LogSource, appender: Arc<dyn LogAppender>) -> Self {
+        Self {
+            source,
+            appender
+        }
+    }
+
+    pub fn stdout(source: LogSource) -> Self {
+        Self{
+            source,
+            ..RootLogger::default()
+        }
+    }
+
+
     fn source(&self) -> LogSource {
         self.source.clone()
     }
@@ -274,7 +290,6 @@ impl RootLogger {
     fn audit(&self, log: AuditLog) {
         self.appender.audit(log);
     }
-
 
     fn span(&self, log: LogSpanEvent) {
         self.appender.span(log);

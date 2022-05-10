@@ -2,7 +2,7 @@ use crate::error::MsgErr;
 use crate::version::v0_0_1::id::id::Point;
 use crate::version::v0_0_1::messaging::messaging::ScopeGrant;
 use crate::version::v0_0_1::parse::error::result;
-use crate::version::v0_0_1::parse::{MapResolver, particle_perms, permissions_mask, privilege };
+use crate::version::v0_0_1::parse::{MapResolver, particle_perms, permissions, permissions_mask, privilege};
 use crate::version::v0_0_1::selector::selector::PointSelector;
 use nom::combinator::all_consuming;
 use nom_supreme::parser_ext::MapRes;
@@ -269,6 +269,14 @@ impl ToString for PermissionsMask {
 pub struct Permissions {
     pub child: ChildPerms,
     pub particle: ParticlePerms,
+}
+
+impl FromStr for Permissions {
+    type Err = MsgErr;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        result(permissions(new_span(s)))
+    }
 }
 
 impl Permissions {

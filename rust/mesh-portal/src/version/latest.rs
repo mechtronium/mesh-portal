@@ -52,6 +52,7 @@ pub mod selector {
     pub type GenericKindSelector = selector::selector::GenericKindSelector;
     pub type GenericSubKindSelector = selector::selector::GenericSubKindSelector;
     pub type PointSelector = selector::selector::PointSelector;
+    pub type KindSelector = selector::selector::KindSelector;
     pub type VersionReq = selector::selector::VersionReq;
     pub type PointSegSelector = selector::selector::PointSegSelector;
     pub type KeySegment = selector::selector::KeySegment;
@@ -238,73 +239,73 @@ pub mod entity {
     use mesh_portal_versions::version::v0_0_1 as current;
     use mesh_portal_versions::version::v0_0_1::entity;
 
-    pub type EntityType = entity::entity::MethodKind;
+    pub type EntityType = entity::MethodKind;
 
     pub mod request {
         use mesh_portal_versions::version::v0_0_1 as current;
         use mesh_portal_versions::version::v0_0_1::entity;
 
-        pub type Action = entity::entity::request::Method;
-        pub type RequestCore= entity::entity::request::RequestCore;
-        pub type Rc = entity::entity::request::Rc;
-        pub type RcCommandType = entity::entity::request::RcCommandType;
+        pub type Method = entity::request::Method;
+        pub type RequestCore= entity::request::RequestCore;
+        pub type Rc = entity::request::Rc;
+        pub type RcCommandType = entity::request::RcCommandType;
 
         pub mod create {
             use mesh_portal_versions::version::v0_0_1 as current;
             use mesh_portal_versions::version::v0_0_1::entity;
 
-            pub type Create= entity::entity::request::create::Create;
-            pub type Template = entity::entity::request::create::Template;
-            pub type KindTemplate = entity::entity::request::create::KindTemplate;
-            pub type Fulfillment = entity::entity::request::create::Fulfillment;
-            pub type Strategy = entity::entity::request::create::Strategy;
-            pub type AddressTemplate = entity::entity::request::create::PointTemplate;
-            pub type AddressSegmentTemplate = entity::entity::request::create::PointSegFactory;
-            pub type CreateOp = entity::entity::request::create::CreateOp;
-            pub type Require = entity::entity::request::create::Require;
-            pub type Fulfilemment = entity::entity::request::create::Fulfillment;
-            pub type Set = entity::entity::request::set::Set;
+            pub type Create= entity::request::create::Create;
+            pub type Template = entity::request::create::Template;
+            pub type KindTemplate = entity::request::create::KindTemplate;
+            pub type Fulfillment = entity::request::create::Fulfillment;
+            pub type Strategy = entity::request::create::Strategy;
+            pub type PointTemplate = entity::request::create::PointTemplate;
+            pub type PointSegFactory = entity::request::create::PointSegFactory;
+            pub type CreateOp = entity::request::create::CreateOp;
+            pub type Require = entity::request::create::Require;
+            pub type Fulfilemment = entity::request::create::Fulfillment;
+            pub type Set = entity::request::set::Set;
         }
 
         pub mod select {
             use mesh_portal_versions::version::v0_0_1 as current;
             use mesh_portal_versions::version::v0_0_1::entity;
 
-            pub type SelectIntoPayload = entity::entity::request::select::SelectIntoPayload;
-            pub type Select = entity::entity::request::select::Select;
-            pub type SelectionKind = entity::entity::request::select::SelectKind;
-            pub type SubSelector = entity::entity::request::select::SubSelect;
-            pub type PropertiesPattern = entity::entity::request::select::PropertiesPattern;
+            pub type SelectIntoPayload = entity::request::select::SelectIntoPayload;
+            pub type Select = entity::request::select::Select;
+            pub type SelectionKind = entity::request::select::SelectKind;
+            pub type SubSelector = entity::request::select::SubSelect;
+            pub type PropertiesPattern = entity::request::select::PropertiesPattern;
         }
 
         pub mod update {
             use mesh_portal_versions::version::v0_0_1 as current;
             use mesh_portal_versions::version::v0_0_1::entity;
 
-            pub type Update = entity::entity::request::update::Update;
+            pub type Update = entity::request::update::Update;
         }
 
         pub mod query {
             use mesh_portal_versions::version::v0_0_1 as current;
             use mesh_portal_versions::version::v0_0_1::entity;
 
-            pub type Query= entity::entity::request::query::Query;
-            pub type QueryResult = entity::entity::request::query::QueryResult;
+            pub type Query= entity::request::query::Query;
+            pub type QueryResult = entity::request::query::QueryResult;
         }
 
         pub mod get {
             use mesh_portal_versions::version::v0_0_1 as current;
             use mesh_portal_versions::version::v0_0_1::entity;
 
-            pub type Get = entity::entity::request::get::Get;
-            pub type GetOp = entity::entity::request::get::GetOp;
+            pub type Get = entity::request::get::Get;
+            pub type GetOp = entity::request::get::GetOp;
         }
 
         pub mod set {
             use mesh_portal_versions::version::v0_0_1 as current;
             use mesh_portal_versions::version::v0_0_1::entity;
 
-            pub type Set = entity::entity::request::set::Set;
+            pub type Set = entity::request::set::Set;
         }
     }
 
@@ -312,7 +313,7 @@ pub mod entity {
         use mesh_portal_versions::version::v0_0_1 as current;
         use mesh_portal_versions::version::v0_0_1::entity;
 
-        pub type ResponseCore = entity::entity::response::ResponseCore;
+        pub type ResponseCore = entity::response::ResponseCore;
     }
 }
 

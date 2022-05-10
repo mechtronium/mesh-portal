@@ -1,4 +1,3 @@
-pub mod entity {
 
     use serde::{Deserialize, Serialize};
     use crate::version::v0_0_1::util::ValueMatcher;
@@ -25,23 +24,23 @@ pub mod entity {
     pub mod request {
         use crate::error::{MsgErr, StatusErr};
         use crate::version::v0_0_1::bin::Bin;
-        use crate::version::v0_0_1::entity::entity::request::create::Create;
-        use crate::version::v0_0_1::entity::entity::request::get::Get;
-        use crate::version::v0_0_1::entity::entity::request::query::Query;
-        use crate::version::v0_0_1::entity::entity::request::select::Select;
-        use crate::version::v0_0_1::entity::entity::request::set::Set;
-        use crate::version::v0_0_1::entity::entity::request::update::Update;
-        use crate::version::v0_0_1::entity::entity::response::ResponseCore;
+        use crate::version::v0_0_1::entity::request::create::Create;
+        use crate::version::v0_0_1::entity::request::get::Get;
+        use crate::version::v0_0_1::entity::request::query::Query;
+        use crate::version::v0_0_1::entity::request::select::Select;
+        use crate::version::v0_0_1::entity::request::set::Set;
+        use crate::version::v0_0_1::entity::request::update::Update;
+        use crate::version::v0_0_1::entity::response::ResponseCore;
         use crate::version::v0_0_1::fail;
         use crate::version::v0_0_1::fail::{BadRequest, Fail, NotFound};
         use crate::version::v0_0_1::id::id::{GenericKind, GenericKindBase, Meta, Point};
         use crate::version::v0_0_1::payload::payload::{Errors, Payload, Primitive};
-        use crate::version::v0_0_1::selector::selector::KindPattern;
+        use crate::version::v0_0_1::selector::selector::KindSelector;
         use crate::version::v0_0_1::util::ValueMatcher;
         use http::status::InvalidStatusCode;
         use http::{HeaderMap, Request, StatusCode, Uri};
         use serde::{Deserialize, Serialize};
-        use crate::version::v0_0_1::entity::entity::MethodKind;
+        use crate::version::v0_0_1::entity::MethodKind;
         use crate::version::v0_0_1::http::HttpMethod;
         use crate::version::v0_0_1::msg::MsgMethod;
 
@@ -450,8 +449,8 @@ pub mod entity {
                     let template = Template {
                         point,
                         kind: KindTemplate {
-                            resource_type: "ArtifactBundle".to_string(),
-                            kind: None,
+                            kind: "ArtifactBundle".to_string(),
+                            sub_kind: None,
                             specific: None,
                         },
                     };
@@ -467,8 +466,8 @@ pub mod entity {
 
             #[derive(Debug, Clone, Serialize, Deserialize)]
             pub struct KindTemplate {
-                pub resource_type: String,
-                pub kind: Option<String>,
+                pub kind: String,
+                pub sub_kind: Option<String>,
                 pub specific: Option<SpecificSelector>,
             }
 
@@ -480,8 +479,8 @@ pub mod entity {
                         return Err("cannot create a ResourceKind from a specific pattern when using KindTemplate".into());
                     }
                     Ok(GenericKind {
-                        kind: self.resource_type,
-                        sub_kind: self.kind,
+                        kind: self.kind,
+                        sub_kind: self.sub_kind,
                         specific: None,
                     })
                 }
@@ -604,7 +603,7 @@ pub mod entity {
             #[derive(Debug, Clone, Serialize, Deserialize)]
             pub enum SelectIntoPayload {
                 Stubs,
-                Addresses,
+                Points,
             }
 
             impl SelectIntoPayload {
@@ -618,7 +617,7 @@ pub mod entity {
                             let stubs = PayloadList { list: stubs };
                             Ok(stubs)
                         }
-                        SelectIntoPayload::Addresses => {
+                        SelectIntoPayload::Points => {
                             let pointes: Vec<Box<Payload>> = stubs
                                 .into_iter()
                                 .map(|stub| Box::new(Payload::Point(stub.point)))
@@ -769,7 +768,7 @@ pub mod entity {
             use serde::{Deserialize, Serialize};
 
             use crate::error::MsgErr;
-            use crate::version::v0_0_1::entity::entity::request::Rc;
+            use crate::version::v0_0_1::entity::request::Rc;
             use crate::version::v0_0_1::selector::selector::PointKindHierarchy;
 
             #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -811,7 +810,7 @@ pub mod entity {
     pub mod response {
         use crate::error::MsgErr;
         use crate::version::v0_0_1::bin::Bin;
-        use crate::version::v0_0_1::entity::entity::request::RequestCore;
+        use crate::version::v0_0_1::entity::request::RequestCore;
         use crate::version::v0_0_1::fail;
         use crate::version::v0_0_1::fail::Fail;
         use crate::version::v0_0_1::id::id::{GenericKind, Meta, Point};
@@ -937,4 +936,4 @@ pub mod entity {
             }
         }
     }
-}
+
