@@ -65,7 +65,7 @@ impl PortalApi {
 pub enum PortalEvent {
     PortalAdded(PortalApi),
     PortalRemoved(String),
-    ParticleAddded(PortalResourceApi),
+    ParticleAdded(PortalParticleApi),
     ParticleRemoved(Point)
 }
 
@@ -146,11 +146,11 @@ impl Portal {
                            let assign = Exchanger::new(assign);
                            let stub = assign.stub.clone();
                            outlet_tx.send(outlet::Frame::Assign(assign)).await;
-                           let resource_api = PortalResourceApi {
+                           let resource_api = PortalParticleApi {
                                stub,
                                portal_api: portal_api
                            };
-                           broadcast_tx.send( PortalEvent::ParticleAddded(resource_api));
+                           broadcast_tx.send( PortalEvent::ParticleAdded(resource_api));
                        }
                    }
                }
@@ -344,7 +344,7 @@ pub struct PortalParticleApi {
    pub stub: Stub
 }
 
-impl PortalResourceApi {
+impl PortalParticleApi {
    pub async fn handle_request( &self, request: Request ) -> Response {
        self.portal_api.handle_request(request).await
    }

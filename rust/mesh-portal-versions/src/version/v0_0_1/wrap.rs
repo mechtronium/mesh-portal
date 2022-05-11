@@ -1,3 +1,5 @@
+use crate::version::v0_0_1::span::Trace;
+use core::fmt::Formatter;
 use nom::error::{ErrorKind, ParseError};
 use nom::{
     AsBytes, AsChar, Compare, CompareResult, FindSubstring, IResult, InputIter, InputLength,
@@ -7,7 +9,6 @@ use nom_locate::LocatedSpan;
 use regex::internal::Input;
 use std::ops::{Deref, Range, RangeFrom, RangeTo};
 use std::sync::Arc;
-use crate::version::v0_0_1::span::Trace;
 
 pub trait Span:
     Clone
@@ -20,10 +21,11 @@ pub trait Span:
     + Offset
     + InputTake
     + InputIter<Item = char>
-    + InputTakeAtPosition<Item=char>
+    + InputTakeAtPosition<Item = char>
     + Compare<&'static str>
     + FindSubstring<&'static str>
-    where
+    + core::fmt::Debug
+where
     Self: Sized,
     <Self as InputTakeAtPosition>::Item: AsChar,
 {
@@ -42,7 +44,7 @@ pub trait Span:
     fn trace(&self) -> Trace {
         Trace {
             range: self.range(),
-            extra: self.extra()
+            extra: self.extra(),
         }
     }
 }
@@ -60,9 +62,10 @@ where
         + Offset
         + InputTake
         + InputIter<Item = char>
+        + core::fmt::Debug
         + InputTakeAtPosition<Item = char>,
 {
-    input: I
+    input: I,
 }
 
 impl<I> Wrap<I>
@@ -77,6 +80,7 @@ where
         + Offset
         + InputTake
         + InputIter<Item = char>
+        + core::fmt::Debug
         + InputTakeAtPosition<Item = char>,
 {
     pub fn new(input: I) -> Self {
@@ -96,6 +100,7 @@ where
         + Offset
         + InputTake
         + InputIter<Item = char>
+        + core::fmt::Debug
         + InputTakeAtPosition<Item = char>,
 {
     type Target = I;
@@ -105,9 +110,7 @@ where
     }
 }
 
-
-impl<'a> Span for Wrap<LocatedSpan<&'a str,Arc<String>>>
-{
+impl<'a> Span for Wrap<LocatedSpan<&'a str, Arc<String>>> {
     fn location_offset(&self) -> usize {
         self.input.location_offset()
     }
@@ -131,7 +134,7 @@ impl<'a> Span for Wrap<LocatedSpan<&'a str,Arc<String>>>
     fn range(&self) -> Range<usize> {
         Range {
             start: self.location_offset(),
-            end: self.location_offset()+self.len()
+            end: self.location_offset() + self.len(),
         }
     }
 }
@@ -148,6 +151,7 @@ where
         + Offset
         + InputTake
         + InputIter<Item = char>
+        + core::fmt::Debug
         + InputTakeAtPosition<Item = char>,
 {
     fn as_bytes(&self) -> &[u8] {
@@ -167,6 +171,7 @@ where
         + Offset
         + InputTake
         + InputIter<Item = char>
+        + core::fmt::Debug
         + InputTakeAtPosition<Item = char>,
 {
     fn slice(&self, range: Range<usize>) -> Self {
@@ -186,6 +191,7 @@ where
         + Offset
         + InputTake
         + InputIter<Item = char>
+        + core::fmt::Debug
         + InputTakeAtPosition<Item = char>,
 {
     fn slice(&self, range: RangeFrom<usize>) -> Self {
@@ -205,6 +211,7 @@ where
         + Offset
         + InputTake
         + InputIter<Item = char>
+        + core::fmt::Debug
         + InputTakeAtPosition<Item = char>,
 {
     fn slice(&self, range: RangeTo<usize>) -> Self {
@@ -226,8 +233,7 @@ impl <'a> Compare<&str> for Wrap<LocatedSpan<&'a str,Arc<String>>>
 
  */
 
-impl <'a> Compare<&'static str> for Wrap<LocatedSpan<&'a str,Arc<String>>>
-{
+impl<'a> Compare<&'static str> for Wrap<LocatedSpan<&'a str, Arc<String>>> {
     fn compare(&self, t: &str) -> CompareResult {
         self.input.compare(t)
     }
@@ -249,6 +255,7 @@ where
         + Offset
         + InputTake
         + InputIter<Item = char>
+        + core::fmt::Debug
         + InputTakeAtPosition<Item = char>,
 {
     fn input_len(&self) -> usize {
@@ -268,6 +275,7 @@ where
         + Offset
         + InputTake
         + InputIter<Item = char>
+        + core::fmt::Debug
         + InputTakeAtPosition<Item = char>,
 {
     fn offset(&self, second: &Self) -> usize {
@@ -287,6 +295,7 @@ where
         + Offset
         + InputTake
         + InputIter<Item = char>
+        + core::fmt::Debug
         + InputTakeAtPosition<Item = char>,
 {
     type Item = <I as InputIter>::Item;
@@ -325,6 +334,7 @@ where
         + Offset
         + InputTake
         + InputIter<Item = char>
+        + core::fmt::Debug
         + InputTakeAtPosition<Item = char>,
 {
     fn take(&self, count: usize) -> Self {
@@ -349,6 +359,7 @@ where
         + Offset
         + InputTake
         + InputIter<Item = char>
+        + core::fmt::Debug
         + InputTakeAtPosition<Item = char>,
 {
     fn to_string(&self) -> String {
@@ -356,18 +367,15 @@ where
     }
 }
 
-impl<'a> FindSubstring<&str> for Wrap<LocatedSpan<&'a str, Arc<String>>>
-{
+impl<'a> FindSubstring<&str> for Wrap<LocatedSpan<&'a str, Arc<String>>> {
     fn find_substring(&self, substr: &str) -> Option<usize> {
         self.input.find_substring(substr)
     }
 }
 
-
-impl<I> InputTakeAtPosition
-for Wrap<I>
-    where
-        I: Clone
+impl<I> InputTakeAtPosition for Wrap<I>
+where
+    I: Clone
         + ToString
         + AsBytes
         + Slice<Range<usize>>
@@ -377,13 +385,14 @@ for Wrap<I>
         + Offset
         + InputTake
         + InputIter<Item = char>
+        + core::fmt::Debug
         + InputTakeAtPosition<Item = char>,
 {
     type Item = <I as InputIter>::Item;
 
     fn split_at_position<P, E: ParseError<Self>>(&self, predicate: P) -> IResult<Self, Self, E>
-        where
-            P: Fn(Self::Item) -> bool,
+    where
+        P: Fn(Self::Item) -> bool,
     {
         match self.position(predicate) {
             Some(n) => Ok(self.take_split(n)),
@@ -396,8 +405,8 @@ for Wrap<I>
         predicate: P,
         e: ErrorKind,
     ) -> IResult<Self, Self, E>
-        where
-            P: Fn(Self::Item) -> bool,
+    where
+        P: Fn(Self::Item) -> bool,
     {
         match self.position(predicate) {
             Some(0) => Err(nom::Err::Error(E::from_error_kind(self.clone(), e))),
@@ -410,8 +419,8 @@ for Wrap<I>
         &self,
         predicate: P,
     ) -> IResult<Self, Self, E>
-        where
-            P: Fn(Self::Item) -> bool,
+    where
+        P: Fn(Self::Item) -> bool,
     {
         match self.split_at_position(predicate) {
             Err(nom::Err::Incomplete(_)) => Ok(self.take_split(self.input_len())),
@@ -424,8 +433,8 @@ for Wrap<I>
         predicate: P,
         e: ErrorKind,
     ) -> IResult<Self, Self, E>
-        where
-            P: Fn(Self::Item) -> bool,
+    where
+        P: Fn(Self::Item) -> bool,
     {
         match self.split_at_position1(predicate, e) {
             Err(nom::Err::Incomplete(_)) => {

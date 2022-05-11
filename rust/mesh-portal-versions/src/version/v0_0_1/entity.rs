@@ -424,6 +424,20 @@
                 pub kind: KindTemplate,
             }
 
+            impl ToResolved<TemplateCtx> for TemplateVar {
+                fn to_resolved(self, env: &Env) -> Result<TemplateCtx, MsgErr> {
+                    let point : PointCtx= self.point.to_resolved(env)?;
+                    let template = TemplateCtx {
+                        point,
+                        kind: KindTemplate {
+                            kind: "ArtifactBundle".to_string(),
+                            sub_kind: None,
+                            specific: None,
+                        },
+                    };
+                    Ok(template)
+                }
+            }
             impl ToResolved<Template> for TemplateCtx {
                 fn to_resolved(self, env: &Env) -> Result<Template, MsgErr> {
                     let point = self.point.to_resolved(env)?;
@@ -501,6 +515,36 @@
             pub type CreateOp = CreateOpDef<PointTemplate>;
             pub type CreateOpVar = CreateOpDef<PointVar>;
             pub type CreateOpCtx = CreateOpDef<PointCtx>;
+
+            impl ToResolved<CreateOpCtx> for CreateOpVar {
+                fn to_resolved(self, env: &Env) -> Result<CreateOpCtx, MsgErr> {
+                    let template = self.template.to_resolved(env)?;
+                    Ok(CreateOpCtx{
+                        template,
+                        properties: self.properties,
+                        strategy: self.strategy,
+                        registry: self.registry,
+                        state: self.state,
+                        requirements: self.requirements
+                    })
+                }
+            }
+
+            impl ToResolved<CreateOp> for CreateOpCtx{
+                fn to_resolved(self, env: &Env) -> Result<CreateOp, MsgErr> {
+                    let template = self.template.to_resolved(env)?;
+                    Ok(CreateOp{
+                        template,
+                        properties: self.properties,
+                        strategy: self.strategy,
+                        registry: self.registry,
+                        state: self.state,
+                        requirements: self.requirements
+                    })
+                }
+            }
+
+
 
             pub struct CreateOpDef<Pnt> {
                 pub template: TemplateDef<Pnt>,
