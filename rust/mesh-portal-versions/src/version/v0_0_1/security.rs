@@ -8,8 +8,10 @@ use nom::combinator::all_consuming;
 use nom_supreme::parser_ext::MapRes;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
+use std::ops;
 use std::ops::{Deref, DerefMut};
 use std::str::FromStr;
+use crate::version::v0_0_1::messaging::messaging::ScopeGrantAspect::Priv;
 use crate::version::v0_0_1::span::{new_span};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -110,10 +112,45 @@ impl Privileges {
         }
     }
 
-    pub fn add(&mut self, privilege: &str) {
-        match self {
-            Self::Full => {}
-            Self::Enumerated(privileges) => privileges.add(privilege),
+
+}
+
+impl ops::BitOr<&Privilege> for &Privileges {
+    type Output = Privileges;
+
+    fn bitor(self, rhs: &Privilege) -> Self::Output {
+        match rhs {
+            Privilege::Full => Privileges::Full,
+            Privilege::Single(p) => {
+                match self {
+                    Privileges::Full => Privileges::Full,
+                    Privileges::Enumerated(enumerated) => {
+                        let mut enumerated = enumerated.clone();
+                        enumerated.set.insert( p.to_string() );
+                        Privileges::Enumerated(enumerated)
+                    }
+                }
+            }
+        }
+    }
+}
+
+impl ops::BitOr<&Privilege> for Privileges {
+    type Output = Privileges;
+
+    fn bitor(self, rhs: &Privilege) -> Self::Output {
+        match rhs {
+            Privilege::Full => Privileges::Full,
+            Privilege::Single(p) => {
+                match self {
+                    Privileges::Full => Privileges::Full,
+                    Privileges::Enumerated(enumerated) => {
+                        let mut enumerated = enumerated.clone();
+                        enumerated.set.insert( p.to_string() );
+                        Privileges::Enumerated(enumerated)
+                    }
+                }
+            }
         }
     }
 }
@@ -225,13 +262,8 @@ impl EnumeratedAccess {
             AccessGrantKindDef::Super => {
                 // we can't mask Super with Enumerated... it does nothing
             }
-            AccessGrantKindDef::Privilege(prv) => match prv {
-                Privilege::Full => {
-                    self.privileges = Privileges::Full;
-                }
-                Privilege::Single(prv) => {
-                    self.privileges.add(prv.as_str());
-                }
+            AccessGrantKindDef::Privilege(prv) => {
+                self.privileges = self.privileges.clone() | prv;
             },
             AccessGrantKindDef::PermissionsMask(mask) => match mask.kind {
                 PermissionsMaskKind::Or => self.permissions.or(&mask.permissions),
@@ -304,6 +336,7 @@ impl Permissions {
         self.particle.and(&permissions.particle);
     }
 }
+
 
 impl ToString for Permissions {
     fn to_string(&self) -> String {
