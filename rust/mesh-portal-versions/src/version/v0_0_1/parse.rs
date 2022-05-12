@@ -2803,11 +2803,7 @@ pub mod model {
     use crate::version::v0_0_1::id::id::{Point, PointCtx, PointVar, Version};
     use crate::version::v0_0_1::messaging::messaging::{Agent, Request};
     use crate::version::v0_0_1::parse::error::result;
-    use crate::version::v0_0_1::parse::{
-        camel_case, entity_pattern, http_method, lex_child_scopes, message_kind, pipeline,
-        rc_command_type, value_pattern, var_pipeline, wrapped_http_method, wrapped_msg_method,
-        CtxResolver, Res, SubstParser,
-    };
+    use crate::version::v0_0_1::parse::{camel_case, entity_pattern, http_method, lex_child_scopes, message_kind, pipeline, rc_command_type, value_pattern, wrapped_http_method, wrapped_msg_method, CtxResolver, Res, SubstParser, ToResolved, Env};
     use crate::version::v0_0_1::span::new_span;
     use crate::version::v0_0_1::util::{MethodPattern, StringMatcher, ValueMatcher, ValuePattern};
     use crate::version::v0_0_1::wrap::Span;
@@ -3060,7 +3056,31 @@ pub mod model {
             let selector = RouteScopeSelector::new(selector.path.clone())?;
             Ok(Self { selector, filters })
         }
+
     }
+
+    impl ValueMatcher<Request> for RouteScopeSelectorAndFilters {
+        fn is_match(&self, request: &Request) -> Result<(), ()> {
+            // nothing for filters at this time...
+            self.selector.is_match( request )
+        }
+    }
+
+    impl ValueMatcher<Request> for MessageScopeSelectorAndFilters{
+        fn is_match(&self, request: &Request) -> Result<(), ()> {
+            // nothing for filters at this time...
+            self.selector.is_match( request )
+        }
+    }
+
+    impl ValueMatcher<Request> for MethodScopeSelectorAndFilters{
+        fn is_match(&self, request: &Request) -> Result<(), ()> {
+            // nothing for filters at this time...
+            self.selector.is_match( request )
+        }
+    }
+
+
 
     impl MethodScope {
         pub fn from_scope<I: Span>(
@@ -3068,7 +3088,7 @@ pub mod model {
             scope: LexScope<I>,
         ) -> Result<Self, MsgErr> {
             let selector = MethodScopeSelectorAndFilters::from_selector(parent, scope.selector)?;
-            let block = result(var_pipeline(scope.block.content))?;
+            let block = result(pipeline(scope.block.content))?;
             Ok(Self { selector, block })
         }
     }
@@ -3248,12 +3268,42 @@ pub mod model {
         Scope<ScopeSelectorAndFiltersDef<LexScopeSelector<I>, I>, Block<I, ()>, I>;
     pub type LexParentScope<I> = Scope<LexScopeSelectorAndFilters<I>, Vec<LexScope<I>>, I>;
 
-    pub type VarPipelineSegment = VarPipelineSegmentDef<PipelineStepVar, Option<PipelineStopVar>>;
-
-    pub type VarPipeline = PipelineDef<VarPipelineSegment>;
     //pub type LexPipelineScope<I> = PipelineScopeDef<I, VarPipeline>;
     pub type PipelineSegmentCtx = PipelineSegmentDef<PointCtx>;
     pub type PipelineSegmentVar = PipelineSegmentDef<PointVar>;
+
+    #[derive(Debug,Clone)]
+    pub struct PipelineSegmentDef<Pnt> {
+        pub step: PipelineStepDef<Pnt>,
+        pub stop: PipelineStopDef<Pnt>
+    }
+
+    impl ToResolved<PipelineSegment> for PipelineSegmentVar{
+        fn to_resolved(self, env: &Env) -> Result<PipelineSegment, MsgErr> {
+            let rtn: PipelineSegmentCtx = self.to_resolved(env)?;
+            rtn.to_resolved(env)
+        }
+    }
+
+
+    impl ToResolved<PipelineSegment> for PipelineSegmentCtx {
+        fn to_resolved(self, env: &Env) -> Result<PipelineSegment, MsgErr> {
+            Ok(PipelineSegment {
+                step: self.step.to_resolved(env)?,
+                stop: self.stop.to_resolved(env)?
+            })
+        }
+    }
+
+    impl ToResolved<PipelineSegmentCtx> for PipelineSegmentVar{
+        fn to_resolved(self, env: &Env) -> Result<PipelineSegmentCtx, MsgErr> {
+            Ok(PipelineSegmentCtx {
+                step: self.step.to_resolved(env)?,
+                stop: self.stop.to_resolved(env)?
+            })
+        }
+    }
+
 
     /*
     impl CtxSubst<PipelineSegment> for PipelineSegmentCtx{
@@ -3289,7 +3339,7 @@ pub mod model {
     pub type PipelineSegment = PipelineSegmentDef<Point>;
     pub type RouteScope = ScopeDef<RouteScopeSelectorAndFilters, Vec<MessageScope>>;
     pub type MessageScope = ScopeDef<MessageScopeSelectorAndFilters, Vec<MethodScope>>;
-    pub type MethodScope = ScopeDef<MethodScopeSelectorAndFilters, VarPipeline>;
+    pub type MethodScope = ScopeDef<MethodScopeSelectorAndFilters, PipelineVar>;
     //    pub type ValuePatternScopeSelector = ScopeSelectorDef<ValuePattern<String>, String,Regex>;
     pub type MessageScopeSelector = ScopeSelectorDef<ValuePattern<MethodKind>, Regex>;
     pub type MethodScopeSelector = ScopeSelectorDef<ValuePattern<Method>, Regex>;
@@ -3368,6 +3418,7 @@ pub mod model {
         }
     }
 
+    /*
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct VarPipelineSegmentDef<Step, Stop> {
         pub step: Step,
@@ -3380,9 +3431,38 @@ pub mod model {
         pub stop: PipelineStopDef<Pnt>,
     }
 
+     */
+
     pub type Pipeline = PipelineDef<PipelineSegment>;
     pub type PipelineCtx = PipelineDef<PipelineSegmentCtx>;
     pub type PipelineVar = PipelineDef<PipelineSegmentVar>;
+
+    impl ToResolved<Pipeline> for PipelineCtx {
+        fn to_resolved(self, env: &Env) -> Result<Pipeline, MsgErr> {
+            let mut segments = vec![];
+            for segment in self.segments.into_iter() {
+                segments.push(segment.to_resolved(env)?);
+            }
+
+            Ok(Pipeline{
+                segments
+            })
+        }
+    }
+
+    impl ToResolved<PipelineCtx> for PipelineVar {
+        fn to_resolved(self, env: &Env) -> Result<PipelineCtx, MsgErr> {
+            let mut segments = vec![];
+            for segment in self.segments.into_iter() {
+                segments.push(segment.to_resolved(env)?);
+            }
+
+            Ok(PipelineCtx {
+                segments
+            })
+        }
+    }
+
 
     /*
     impl CtxSubst<Pipeline> for PipelineCtx {
@@ -3429,6 +3509,7 @@ pub mod model {
             &mut self.segments
         }
     }
+
 
     /*
     impl <I:Span> VarSubst<PipelineCtx> for VarPipeline<I> {
@@ -3509,7 +3590,7 @@ pub mod model {
         RequestScope(RouteScope),
     }
 
-    #[derive(Debug, Clone, Serialize, Deserialize)]
+    #[derive(Debug, Clone)]
     pub struct ScopeDef<S, B> {
         pub selector: S,
         pub block: B,
@@ -4151,7 +4232,7 @@ use crate::version::v0_0_1::parse::model::{
     NestedBlockKind, PipelineCtx, PipelineSegment, PipelineSegmentCtx, PipelineSegmentVar,
     PipelineVar, RootScopeSelector, RouteScope, ScopeFilterDef, ScopeFiltersDef,
     ScopeSelectorAndFiltersDef, Spanned, Subst, TerminatedBlockKind, TextType, Var, VarParser,
-    VarPipeline, VarPipelineSegment,
+
 };
 use crate::version::v0_0_1::payload::payload::{
     Call, CallCtx, CallKind, CallVar, CallWithConfig, CallWithConfigCtx, CallWithConfigVar,
@@ -5734,32 +5815,6 @@ pub fn no_space_with_blocks<I: Span>(input: I) -> Res<I, I> {
     recognize(many1(alt((recognize(any_block), nospace1))))(input)
 }
 
-pub fn var_pipeline<I: Span>(input: I) -> Res<I, VarPipeline> {
-    many1(var_pipeline_segment)(input).map(|(next, segments)| {
-        let pipeline = VarPipeline { segments };
-        (next, pipeline)
-    })
-}
-
-pub fn var_pipeline_segment<I: Span>(input: I) -> Res<I, VarPipelineSegment> {
-    tuple((
-        multispace0,
-        pipeline_step_var,
-        multispace1,
-        opt(pipeline_stop_var),
-    ))(input)
-    .map(|(next, (_, step, _, stop))| {
-        let step = step.into();
-        let stop = match stop {
-            None => None,
-            Some(stop) => Some(stop.into()),
-        };
-        let segment = VarPipelineSegment { step, stop };
-
-        (next, segment)
-    })
-}
-
 pub fn pipeline_step_var<I: Span>(input: I) -> Res<I, PipelineStepVar> {
     context(
         "pipeline:step",
@@ -6144,8 +6199,8 @@ pub mod test {
 
         log(config(bind_config_str))?;
         if let Document::BindConfig(bind) = log(config(bind_config_str))? {
-            assert_eq!(bind.request_scopes().len(), 1);
-            let mut pipelines = bind.request_scopes();
+            assert_eq!(bind.route_scopes().len(), 1);
+            let mut pipelines = bind.route_scopes();
             let pipeline_scope = pipelines.pop().unwrap();
             assert_eq!(pipeline_scope.selector.selector.name.as_str(), "Pipeline");
             let message_scope = pipeline_scope.block.first().unwrap();
@@ -6167,8 +6222,8 @@ pub mod test {
            }"#;
 
         if let Document::BindConfig(bind) = log(config(bind_config_str))? {
-            assert_eq!(bind.request_scopes().len(), 1);
-            let mut pipelines = bind.request_scopes();
+            assert_eq!(bind.route_scopes().len(), 1);
+            let mut pipelines = bind.route_scopes();
             let pipeline_scope = pipelines.pop().unwrap();
             assert_eq!(pipeline_scope.selector.selector.name.as_str(), "Pipeline");
             let message_scope = pipeline_scope.block.first().unwrap();

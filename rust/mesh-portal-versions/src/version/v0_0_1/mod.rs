@@ -1,27 +1,26 @@
 use alloc::string::String;
 use nom_locate::LocatedSpan;
 
-use nom::{Offset, Slice};
 use nom::lib::std::collections::HashMap;
+use nom::{Offset, Slice};
 
+pub mod command;
+pub mod config;
+pub mod entity;
+pub mod frame;
+pub mod http;
+pub mod id;
 pub mod log;
 pub mod messaging;
-pub mod security;
-pub mod config;
-pub mod parse;
-pub mod id;
-pub mod selector;
-pub mod frame;
-pub mod payload;
-pub mod command;
 pub mod msg;
-pub mod entity;
+pub mod parse;
 pub mod particle;
+pub mod payload;
 pub mod portal;
+pub mod security;
+pub mod selector;
 pub mod span;
 pub mod wrap;
-pub mod http;
-
 
 use serde::{Deserialize, Serialize};
 
@@ -62,14 +61,14 @@ pub mod artifact {
 pub type Port = String;
 
 pub mod path {
+    use crate::error::MsgErr;
+    use crate::version::v0_0_1::parse::consume_path;
+    use crate::version::v0_0_1::span::new_span;
     use alloc::format;
     use alloc::string::{String, ToString};
     use alloc::vec::Vec;
-    use crate::error::MsgErr;
-    use crate::version::v0_0_1::parse::consume_path;
     use serde::{Deserialize, Serialize};
     use std::str::FromStr;
-    use crate::version::v0_0_1::span::{new_span};
 
     #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
     pub struct Path {
@@ -176,8 +175,8 @@ pub mod util {
     use serde::{Deserialize, Serialize};
 
     use crate::error::MsgErr;
-    use crate::version::v0_0_1::{mesh_portal_timestamp, mesh_portal_unique_id, Timestamp};
     use crate::version::v0_0_1::http::HttpMethod;
+    use crate::version::v0_0_1::{mesh_portal_timestamp, mesh_portal_unique_id, Timestamp};
 
     #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
     pub enum MethodPattern {
@@ -224,20 +223,38 @@ pub mod util {
         Pattern(T),
     }
 
-    impl<T> ValuePattern<T> where T: ToString {
+    impl<T> ValuePattern<T>
+    where
+        T: ToString,
+    {
         pub fn stringify(self) -> ValuePattern<String> {
             match self {
                 ValuePattern::Any => ValuePattern::Any,
                 ValuePattern::None => ValuePattern::None,
-                ValuePattern::Pattern(t) => {
-                    ValuePattern::Pattern(t.to_string())
-                }
+                ValuePattern::Pattern(t) => ValuePattern::Pattern(t.to_string()),
             }
         }
-
     }
 
     impl<T> ValuePattern<T> {
+        pub fn modify<X, F>(self, mut f: F) -> Result<ValuePattern<X>, MsgErr>
+        where
+            F: FnMut(T) -> Result<X, MsgErr>,
+        {
+            Ok(match self {
+                ValuePattern::Any => ValuePattern::Any,
+                ValuePattern::None => ValuePattern::None,
+                ValuePattern::Pattern(from) => ValuePattern::Pattern(f(from)?),
+            })
+        }
+
+        pub fn wrap<X>(self, x: X) -> ValuePattern<X> {
+            match self {
+                ValuePattern::Any => ValuePattern::Any,
+                ValuePattern::None => ValuePattern::None,
+                ValuePattern::Pattern(_) => ValuePattern::Pattern(x),
+            }
+        }
 
         pub fn is_match<X>(&self, x: &X) -> Result<(), ()>
         where
@@ -552,7 +569,3 @@ pub mod fail {
 
     */
 }
-
-
-
-

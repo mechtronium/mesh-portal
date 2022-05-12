@@ -1,13 +1,20 @@
 pub mod config {
     use std::collections::HashMap;
     use std::ops::Deref;
+    use std::pin::Pin;
 
     use serde::{Deserialize, Serialize};
 
     use crate::version::v0_0_1::config::config::bind::BindConfig;
     use crate::version::v0_0_1::id::id::{GenericKind, Point};
+    use crate::version::v0_0_1::messaging::messaging::Request;
+    use crate::version::v0_0_1::parse::model::{MessageScope, MethodScope, RouteScope};
     use crate::version::v0_0_1::particle::particle;
     use crate::version::v0_0_1::particle::particle::Stub;
+    use crate::version::v0_0_1::util::ValueMatcher;
+
+
+
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub enum PortalKind {
@@ -95,6 +102,7 @@ pub mod config {
         use std::convert::TryInto;
         use crate::version::v0_0_1::messaging::messaging::Request;
         use crate::version::v0_0_1::parse::model::{BindScope, RouteScope, PipelineSegment, PipelineSegmentDef, PipelineVar, MessageScope, MethodScope};
+        use crate::version::v0_0_1::parse::{Env, ToResolved};
         use crate::version::v0_0_1::selector::{PayloadBlock, PayloadBlockDef};
 
         #[derive(Clone)]
@@ -114,7 +122,7 @@ pub mod config {
                 }
             }
 
-            pub fn request_scopes(&self) -> Vec<&RouteScope> {
+            pub fn route_scopes(&self) -> Vec<&RouteScope> {
                 let mut scopes = vec![];
                 for scope in &self.scopes {
                     if let BindScope::RequestScope(request_scope) = &scope {
@@ -124,17 +132,28 @@ pub mod config {
                 scopes
             }
 
-            pub fn select(&self, request: &Request) -> Vec<&RouteScope>{
-                let mut scopes = vec![];
-                for scope in &self.scopes {
-                    if let BindScope::RequestScope(route_scope) = &scope {
-                        if route_scope.selector.is_match(request).is_ok() {
-                            scopes.push( route_scope );
+            pub fn select(&self, request: &Request) -> Result<&MethodScope,MsgErr>
+            {
+               for route_scope in self.route_scopes() {
+                   if route_scope.selector.is_match(request).is_ok() {
+
+                       for message_scope in &route_scope.block {
+                           if message_scope.selector.is_match(request).is_ok() {
+                               for method_scope in &message_scope.block {
+                                   if method_scope.selector.is_match(request).is_ok() {
+                                       return Ok(method_scope);
+                                   }
+                               }
+                           }
                        }
-                    }
-                }
-                scopes
-            }
+                   }
+               }
+                Err(MsgErr::err404())
+           }
+
+        }
+
+        pub struct Cursor {
 
         }
 
@@ -179,7 +198,7 @@ pub mod config {
         pub type Pipeline = PipelineDef<Point>;
         pub type PipelineCtx = PipelineDef<PointCtx>;
 
-        #[derive(Debug, Clone, Serialize, Deserialize )]
+        #[derive(Debug, Clone)]
         pub struct PipelineDef<Pnt> {
             pub segments: Vec<PipelineSegmentDef<Pnt>>,
         }
@@ -203,12 +222,43 @@ pub mod config {
         pub type PipelineStep = PipelineStepDef<Point>;
 
 
-        #[derive(Debug, Clone, Serialize, Deserialize)]
+        #[derive(Debug, Clone)]
         pub struct PipelineStepDef<Pnt> {
             pub entry: MessageKind,
             pub exit: MessageKind,
             pub blocks: Vec<PayloadBlockDef<Pnt>>,
         }
+
+        impl ToResolved<PipelineStep> for PipelineStepCtx {
+            fn to_resolved(self, env: &Env) -> Result<PipelineStep, MsgErr> {
+                let mut blocks = vec![];
+                for block in self.blocks {
+                    blocks.push( block.to_resolved(env)? );
+                }
+
+                Ok(PipelineStep {
+                    entry: self.entry,
+                    exit: self.exit,
+                    blocks
+                })
+            }
+        }
+
+        impl ToResolved<PipelineStepCtx> for PipelineStepVar {
+            fn to_resolved(self, env: &Env) -> Result<PipelineStepCtx, MsgErr> {
+                let mut blocks = vec![];
+                for block in self.blocks {
+                    blocks.push( block.to_resolved(env)? );
+                }
+
+                Ok(PipelineStepCtx {
+                    entry: self.entry,
+                    exit: self.exit,
+                    blocks
+                })
+            }
+        }
+
 
         /*
         impl CtxSubst<PipelineStep> for PipelineStepCtx{
@@ -267,6 +317,36 @@ pub mod config {
             Point(Pnt),
         }
 
+        impl ToResolved<PipelineStop> for PipelineStopVar{
+            fn to_resolved(self, env: &Env) -> Result<PipelineStop, MsgErr> {
+                let stop :PipelineStopCtx  = self.to_resolved(env)?;
+                stop.to_resolved(env)
+            }
+        }
+
+
+        impl ToResolved<PipelineStop> for PipelineStopCtx {
+            fn to_resolved(self, env: &Env) -> Result<PipelineStop, MsgErr> {
+                Ok(match self {
+                    PipelineStopCtx::Internal => PipelineStop::Internal,
+                    PipelineStopCtx::Call(call) => PipelineStop::Call(call.to_resolved(env)?),
+                    PipelineStopCtx::Respond => PipelineStop::Respond,
+                    PipelineStopCtx::Point(point) => PipelineStop::Point(point.to_resolved(env)?)
+                })
+            }
+        }
+
+        impl ToResolved<PipelineStopCtx> for PipelineStopVar {
+            fn to_resolved(self, env: &Env) -> Result<PipelineStopCtx, MsgErr> {
+                Ok(match self {
+                    PipelineStopVar::Internal => PipelineStopCtx::Internal,
+                    PipelineStopVar::Call(call) => PipelineStopCtx::Call(call.to_resolved(env)?),
+                    PipelineStopVar::Respond => PipelineStopCtx::Respond,
+                    PipelineStopVar::Point(point) => PipelineStopCtx::Point(point.to_resolved(env)?)
+                })
+            }
+        }
+
         /*
         impl CtxSubst<PipelineStop> for PipelineStopCtx {
             fn resolve_ctx(self, resolver: &dyn CtxResolver) -> Result<PipelineStop, MsgErr> {
@@ -281,7 +361,7 @@ pub mod config {
 
          */
 
-        #[derive(Debug, Clone, Serialize, Deserialize)]
+        #[derive(Debug, Clone )]
         pub struct Selector<P> {
             pub pattern: P,
             pub pipeline: Pipeline,

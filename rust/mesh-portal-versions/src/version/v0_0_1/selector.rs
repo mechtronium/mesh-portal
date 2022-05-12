@@ -1,10 +1,10 @@
 use alloc::string::String;
-use crate::version::v0_0_1::payload::payload::{Payload, PayloadPattern, PayloadPatternDef};
+use crate::version::v0_0_1::payload::payload::{Payload, PayloadPattern, PayloadPatternCtx, PayloadPatternDef};
 use crate::version::v0_0_1::util::ValuePattern;
 use serde::{Deserialize, Serialize};
 use crate::error::MsgErr;
 use crate::version::v0_0_1::id::id::{Point, PointCtx, PointVar};
-use crate::version::v0_0_1::parse::{CtxResolver};
+use crate::version::v0_0_1::parse::{CtxResolver, Env, ToResolved};
 
 pub mod selector {
     use alloc::format;
@@ -1178,11 +1178,44 @@ pub type PayloadBlock = PayloadBlockDef<Point>;
 pub type PayloadBlockCtx = PayloadBlockDef<PointCtx>;
 pub type PayloadBlockVar = PayloadBlockDef<PointVar>;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub enum PayloadBlockDef<Pnt> {
     RequestPattern(PatternBlockDef<Pnt>),
     ResponsePattern(PatternBlockDef<Pnt>),
 }
+
+impl ToResolved<PayloadBlock> for PayloadBlockCtx {
+    fn to_resolved(self, env: &Env) -> Result<PayloadBlock, MsgErr> {
+        match self {
+            PayloadBlockCtx::RequestPattern(block) => {
+               Ok(PayloadBlock::RequestPattern(block.modify(move |block| {
+                       let block : PayloadPattern = block.to_resolved(env)?;
+                       Ok(block)})? ))
+            }
+            PayloadBlockCtx::ResponsePattern(block) => {
+                Ok(PayloadBlock::ResponsePattern(block.modify(move |block| { block.to_resolved(env)})?))
+            }
+        }
+    }
+}
+
+impl ToResolved<PayloadBlockCtx> for PayloadBlockVar{
+    fn to_resolved(self, env: &Env) -> Result<PayloadBlockCtx, MsgErr> {
+        match self {
+            PayloadBlockVar::RequestPattern(block) => {
+                Ok(PayloadBlockCtx::RequestPattern(block.modify(move |block| {
+                    let block : PayloadPatternCtx = block.to_resolved(env)?;
+                    Ok(block)})? ))
+            }
+            PayloadBlockVar::ResponsePattern(block) => {
+                Ok(PayloadBlockCtx::ResponsePattern(block.modify(move |block| { block.to_resolved(env)})?))
+            }
+        }
+    }
+}
+
+
+
 /*
 impl CtxSubst<PayloadBlock> for PayloadBlockCtx{
     fn resolve_ctx(self, resolver: &dyn CtxResolver) -> Result<PayloadBlock, MsgErr> {
@@ -1214,17 +1247,28 @@ pub type PatternBlockVar = PatternBlockDef<PointVar>;
 pub type PatternBlockDef<Pnt> = ValuePattern<PayloadPatternDef<Pnt>>;
 
 
-/*
-impl CtxSubst<PatternBlock> for PatternBlockCtx{
-    fn resolve_ctx(self, resolver: &dyn CtxResolver) -> Result<PatternBlock, MsgErr> {
+impl ToResolved<PatternBlock> for PatternBlockCtx{
+    fn to_resolved(self, env: &Env) -> Result<PatternBlock, MsgErr> {
         match self {
             PatternBlockCtx::Any => Ok(PatternBlock::Any),
             PatternBlockCtx::None => Ok(PatternBlock::None),
             PatternBlockCtx::Pattern(pattern) => {
-                Ok(PatternBlock::Pattern(pattern.resolve_ctx(resolver)?))
+                Ok(PatternBlock::Pattern(pattern.to_resolved(env)?))
             }
         }
     }
 }
 
- */
+impl ToResolved<PatternBlockCtx> for PatternBlockVar{
+    fn to_resolved(self, env: &Env) -> Result<PatternBlockCtx, MsgErr> {
+        match self {
+            PatternBlockVar::Any => Ok(PatternBlockCtx::Any),
+            PatternBlockVar::None => Ok(PatternBlockCtx::None),
+            PatternBlockVar::Pattern(pattern) => {
+                Ok(PatternBlockCtx::Pattern(pattern.to_resolved(env)?))
+            }
+        }
+    }
+}
+
+

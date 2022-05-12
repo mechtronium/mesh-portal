@@ -449,6 +449,22 @@ pub mod payload {
         }
     }
 
+
+    impl ToResolved<PayloadTypePatternCtx> for PayloadTypePatternVar{
+        fn to_resolved(self, env: &Env ) -> Result<PayloadTypePatternCtx, MsgErr> {
+            match self {
+                PayloadTypePatternVar::Empty => Ok(PayloadTypePatternCtx::Empty),
+                PayloadTypePatternVar::Primitive(payload_type) =>Ok(PayloadTypePatternCtx::Primitive(payload_type)),
+                PayloadTypePatternVar::List(list)=>Ok(PayloadTypePatternCtx::List(list)),
+                PayloadTypePatternVar::Map(map)  => {
+                    Err("MapPatternCtx resolution not supported yet...".into())
+                }
+            }
+        }
+    }
+
+
+
     impl <Pnt> PayloadTypePatternDef<Pnt> {
         pub fn is_match(&self, payload: &Payload) -> Result<(), ()> {
             unimplemented!();
@@ -525,6 +541,41 @@ pub mod payload {
         pub format: Option<PayloadFormat>,
         pub validator: Option<CallWithConfigDef<Pnt>>,
     }
+    impl ToResolved<PayloadPatternCtx> for PayloadPatternVar{
+        fn to_resolved(self, env: &Env) -> Result<PayloadPatternCtx, MsgErr> {
+            let mut errs = vec![];
+            let structure = match self.structure.to_resolved(env) {
+                Ok(structure) => Some(structure),
+                Err(err) => {
+                    errs.push(err);
+                    None
+                }
+            };
+            let validator = match self.validator {
+                None => None,
+                Some(validator) => {
+                    match validator.to_resolved(env) {
+                        Ok(validator) => Some(validator),
+                        Err(err) => {
+                            errs.push(err);
+                            None
+                        }
+                    }
+                }
+            };
+
+
+            if errs.is_empty() {
+                Ok(PayloadPatternCtx {
+                    structure: structure.expect("structure"),
+                    validator: validator,
+                    format: self.format
+                })
+            } else {
+                Err(ParseErrs::fold(errs).into())
+            }
+        }
+    }
 
     impl ToResolved<PayloadPattern> for PayloadPatternCtx{
         fn to_resolved(self, resolver: &Env) -> Result<PayloadPattern, MsgErr> {
@@ -582,6 +633,39 @@ pub mod payload {
     pub type CallWithConfigCtx = CallWithConfigDef<PointCtx>;
     pub type CallWithConfigVar = CallWithConfigDef<PointVar>;
 
+    impl ToResolved<CallWithConfigCtx> for CallWithConfigVar {
+        fn to_resolved(self, resolver: &Env) -> Result<CallWithConfigCtx, MsgErr> {
+            let mut errs = vec![];
+            let call = match self.call.to_resolved(resolver) {
+                Ok(call) => Some(call),
+                Err(err) => {
+                    errs.push(err);
+                    None
+                }
+            };
+            let config = match self.config {
+                None => None,
+                Some(config) => {
+                    match config.to_resolved(resolver) {
+                        Ok(config) => Some(config),
+                        Err(err) => {
+                            errs.push(err);
+                            None
+                        }
+                    }
+                }
+            };
+
+            if errs.is_empty() {
+                Ok(CallWithConfigCtx {
+                    call: call.expect("call"),
+                    config
+                })
+            } else {
+                Err(ParseErrs::fold(errs).into())
+            }
+        }
+    }
     impl ToResolved<CallWithConfig> for CallWithConfigCtx {
         fn to_resolved(self, resolver: &Env) -> Result<CallWithConfig, MsgErr> {
             let mut errs = vec![];
@@ -631,12 +715,22 @@ pub mod payload {
         }
     }
 
+    impl ToResolved<CallCtx> for CallVar{
+        fn to_resolved(self, resolver: &Env ) -> Result<CallCtx, MsgErr> {
+            Ok(CallCtx {
+                point: self.point.to_resolved(resolver)?,
+                kind: self.kind
+            })
+        }
+    }
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct CallDef<Pnt> {
         pub point: Pnt,
         pub kind: CallKind,
     }
+
+
 
     #[derive(Debug, Clone, Serialize, Deserialize )]
     pub enum CallKind {
