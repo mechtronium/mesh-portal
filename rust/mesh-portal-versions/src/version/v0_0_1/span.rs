@@ -13,6 +13,7 @@ use nom_supreme::ParserExt;
 use crate::version::v0_0_1::parse::model::len;
 use crate::version::v0_0_1::parse::Res;
 use crate::version::v0_0_1::wrap::{Span, Wrap};
+use serde::{Serialize,Deserialize};
 
 //pub type OwnedSpan<'a> = LocatedSpan<&'a str, SpanExtra>;
 pub type SpanExtra = Arc<String>;
@@ -28,7 +29,7 @@ pub fn span_with_extra<'a>(s: &'a str, extra: Arc<String>) -> Wrap<LocatedSpan<&
 }
 
 
-#[derive(Clone)]
+#[derive(Debug,Clone,Serialize,Deserialize)]
 pub struct Trace {
     pub range: Range<usize>,
     pub extra: SpanExtra

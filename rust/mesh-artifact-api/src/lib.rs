@@ -10,21 +10,36 @@ use alloc::sync::Arc;
 use std::ops::Deref;
 use std::prelude::rust_2021::Vec;
 use mesh_portal::version::latest::config::bind::BindConfig;
+use mesh_portal::version::latest::id::Point;
+use mesh_portal_versions::version::v0_0_1::id::id::PointSegKind;
+use mesh_portal_versions::error::MsgErr;
 
 pub mod file;
 
 #[derive(Clone)]
 pub struct Artifact<T> {
-   pub item: Arc<T>
+   point: Point,
+   item: Arc<T>
 }
 
 impl <T> Artifact<T> {
-  pub fn new( item: T ) -> Artifact<T> {
+  pub fn new( item: T, point: Point ) -> Artifact<T> {
     Artifact {
+      point,
       item: Arc::new(item)
     }
   }
+
+  pub fn point(&self) -> &Point {
+      &self.point
+  }
+
+  pub fn bundle(&self) -> Result<Point,MsgErr> {
+      self.point.clone().truncate(PointSegKind::Version)
+  }
+
 }
+
 
 impl <T> Deref for Artifact<T> {
   type Target = T;

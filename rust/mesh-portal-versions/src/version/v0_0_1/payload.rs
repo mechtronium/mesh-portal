@@ -16,6 +16,8 @@ pub mod payload {
     use crate::version::v0_0_1::http::HttpMethod;
     use crate::version::v0_0_1::msg::MsgMethod;
     use crate::version::v0_0_1::parse::{CtxResolver, Env, ToResolved};
+    use crate::version::v0_0_1::parse::model::Subst;
+    use crate::version::v0_0_1::wrap::Tw;
 
     #[derive(
         Debug,
@@ -535,7 +537,7 @@ pub mod payload {
     pub type PayloadPatternCtx = PayloadPatternDef<PointCtx>;
     pub type PayloadPattern = PayloadPatternDef<Point>;
 
-    #[derive(Debug, Clone, Serialize, Deserialize)]
+    #[derive(Debug, Clone, Serialize,Deserialize )]
     pub struct PayloadPatternDef<Pnt> {
         pub structure: PayloadTypePatternDef<Pnt>,
         pub format: Option<PayloadFormat>,
@@ -623,7 +625,7 @@ pub mod payload {
         }
     }
 
-    #[derive(Debug, Clone, Serialize, Deserialize)]
+    #[derive(Debug, Clone,Serialize,Deserialize)]
     pub struct CallWithConfigDef<Pnt> {
         pub call: CallDef<Pnt>,
         pub config: Option<Pnt>,
@@ -707,24 +709,32 @@ pub mod payload {
     pub type CallVar = CallDef<PointVar>;
 
     impl ToResolved<Call> for CallCtx{
-        fn to_resolved(self, resolver: &Env ) -> Result<Call, MsgErr> {
+        fn to_resolved(self, env: &Env ) -> Result<Call, MsgErr> {
             Ok(Call {
-                point: self.point.to_resolved(resolver)?,
+                point: self.point.to_resolved(env)?,
                 kind: self.kind
             })
         }
     }
 
     impl ToResolved<CallCtx> for CallVar{
-        fn to_resolved(self, resolver: &Env ) -> Result<CallCtx, MsgErr> {
+        fn to_resolved(self, env: &Env ) -> Result<CallCtx, MsgErr> {
             Ok(CallCtx {
-                point: self.point.to_resolved(resolver)?,
+                point: self.point.to_resolved(env)?,
                 kind: self.kind
             })
         }
     }
 
-    #[derive(Debug, Clone, Serialize, Deserialize)]
+    impl ToResolved<Call> for CallVar{
+        fn to_resolved(self, env: &Env ) -> Result<Call, MsgErr> {
+            let call: CallCtx = self.to_resolved(env)?;
+            call.to_resolved(env)
+        }
+    }
+
+
+    #[derive(Debug, Clone,Serialize,Deserialize)]
     pub struct CallDef<Pnt> {
         pub point: Pnt,
         pub kind: CallKind,
@@ -732,13 +742,14 @@ pub mod payload {
 
 
 
-    #[derive(Debug, Clone, Serialize, Deserialize )]
+    #[derive(Debug, Clone,Serialize,Deserialize)]
     pub enum CallKind {
         Msg(MsgCall),
         Http(HttpCall),
     }
 
     impl CallKind {
+        /*
         pub fn core_with_body(self, body: Payload) -> Result<RequestCore, MsgErr> {
             Ok(match self {
                 CallKind::Msg(msg) => RequestCore {
@@ -755,6 +766,7 @@ pub mod payload {
                 },
             })
         }
+         */
     }
 
     impl ToString for Call {
@@ -763,41 +775,41 @@ pub mod payload {
         }
     }
 
-    #[derive(Debug, Clone, Serialize, Deserialize)]
+    #[derive(Debug, Clone,Serialize,Deserialize )]
     pub struct MsgCall {
-        pub path: String,
-        pub method: String,
+        pub path: Subst<Tw<String>>,
+        pub method: MsgMethod,
     }
 
     impl MsgCall {
-        pub fn new(action: String, path: String) -> Self {
-            Self { method: action, path }
+        pub fn new(method: MsgMethod, path: Subst<Tw<String>>) -> Self {
+            Self { method , path }
         }
     }
 
     impl ToString for MsgCall {
         fn to_string(&self) -> String {
-            format!("Msg<{}>{}", self.method, self.path)
+            format!("Msg<{}>{}", self.method.to_string(), self.path.to_string())
         }
     }
 
-    #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+    #[derive(Debug, Clone,Serialize,Deserialize)]
     pub struct HttpCall {
-        pub path: String,
+        pub path: Subst<Tw<String>>,
 
         #[serde(with = "http_serde::method")]
         pub method: HttpMethod,
     }
 
     impl HttpCall {
-        pub fn new(method: HttpMethod, path: String) -> Self {
+            pub fn new(method: HttpMethod, path: Subst<Tw<String>>) -> Self {
             Self { method, path }
         }
     }
 
     impl ToString for HttpCall {
         fn to_string(&self) -> String {
-            format!("Http<{}>{}", self.method.to_string(), self.path)
+            format!("Http<{}>{}", self.method.to_string(), self.path.to_string())
         }
     }
 
@@ -982,7 +994,7 @@ pub mod payload {
     pub type MapPatternVar = MapPatternDef<PointVar>;
 
 
-    #[derive(Debug, Clone, Serialize, Deserialize )]
+    #[derive(Debug, Clone,Serialize,Deserialize)]
     pub struct MapPatternDef<Pnt> {
         pub required: HashMap<String, ValuePattern<PayloadPatternDef<Pnt>>>,
         pub allowed: ValuePattern<PayloadPatternDef<Pnt>>,

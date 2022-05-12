@@ -107,7 +107,7 @@ pub mod config {
 
         #[derive(Clone)]
         pub struct BindConfig {
-            pub scopes: Vec<BindScope>
+            scopes: Vec<BindScope>
             /*pub msg: ConfigScope<EntityKind, Selector<MsgPipelineSelector>>,
             pub http: ConfigScope<EntityKind, Selector<HttpPipelineSelector>>,
             pub rc: ConfigScope<EntityKind, Selector<RcPipelineSelector>>,
@@ -309,7 +309,7 @@ pub mod config {
         pub type PipelineStopVar = PipelineStopDef<PointVar>;
         pub type PipelineStop = PipelineStopDef<Point>;
 
-        #[derive(Debug, Clone, Serialize, Deserialize )]
+        #[derive(Debug, Clone )]
         pub enum PipelineStopDef<Pnt> {
             Internal,
             Call(CallDef<Pnt>),

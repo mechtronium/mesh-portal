@@ -9,6 +9,7 @@ use nom_locate::LocatedSpan;
 use regex::internal::Input;
 use std::ops::{Deref, Range, RangeFrom, RangeTo};
 use std::sync::Arc;
+use serde::{Serialize,Deserialize};
 
 pub trait Span:
     Clone
@@ -446,5 +447,35 @@ where
             }
             res => res,
         }
+    }
+}
+
+// TraceWrap
+#[derive(Debug,Clone,Serialize,Deserialize)]
+pub struct Tw<W> {
+    pub trace: Trace,
+    pub w: W
+}
+
+impl <W> Tw<W> {
+    pub fn new<I:Span>( span: I, w: W ) -> Self {
+        Self {
+            trace: span.trace(),
+            w
+        }
+    }
+}
+
+impl <W> ToString for Tw<W> where W:ToString {
+    fn to_string(&self) -> String {
+        self.w.to_string()
+    }
+}
+
+impl <W> Deref for Tw<W> {
+    type Target = W;
+
+    fn deref(&self) -> &Self::Target {
+        &self.w
     }
 }

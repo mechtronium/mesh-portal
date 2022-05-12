@@ -301,7 +301,7 @@ pub mod id {
         }
     }
 
-    #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
+    #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash, strum_macros::Display)]
     pub enum PointSegKind {
         Root,
         Space,
@@ -1262,6 +1262,21 @@ pub mod id {
             } else {
                 false
             }
+        }
+
+        pub fn truncate( self, kind: PointSegKind  ) -> Result<Point,MsgErr> {
+            let mut segments = vec![];
+            for segment in &self.segments {
+                segments.push(segment.clone());
+                if segment.kind() == kind {
+                    return Ok(Self {
+                        route: self.route,
+                        segments
+                    })
+                }
+            }
+
+            Err(MsgErr::Status{ status: 404, message: format!("Point segment kind: {} not found in point: {}", kind.to_string(), self.to_string() ) })
         }
     }
 

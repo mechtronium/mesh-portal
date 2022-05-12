@@ -44,10 +44,10 @@
         use crate::version::v0_0_1::http::HttpMethod;
         use crate::version::v0_0_1::msg::MsgMethod;
 
-        #[derive(Debug, Clone, Serialize, Deserialize,Eq,PartialEq)]
+        #[derive(Debug, Clone, Serialize,Deserialize, Eq,PartialEq)]
         pub enum Method {
             Cmd(Rc),
-            Http(#[serde(with = "http_serde::method")] HttpMethod),
+            Http(#[serde(with = "http_serde::method")]HttpMethod),
             Msg(MsgMethod),
         }
 
@@ -94,7 +94,7 @@
             }
         }
 
-        #[derive(Debug, Clone, Serialize, Deserialize)]
+        #[derive(Debug, Clone, Serialize,Deserialize)]
         pub struct RequestCore {
             #[serde(with = "http_serde::header_map")]
             pub headers: HeaderMap,
@@ -206,7 +206,7 @@
             }
         }
 
-        #[derive(Debug, Clone, Serialize, Deserialize)]
+        #[derive(Debug, Clone,Serialize,Deserialize)]
         pub enum Rc {
             Create(Create),
             Select(Select),
@@ -673,7 +673,7 @@
                 }
             }
 
-            #[derive(Debug, Clone, Serialize, Deserialize)]
+            #[derive(Debug, Clone,Serialize,Deserialize)]
             pub struct Select {
                 pub pattern: PointSelector,
                 pub properties: PropertiesPattern,
@@ -733,7 +733,7 @@
                 }
             }
 
-            #[derive(Debug, Clone, Serialize, Deserialize)]
+            #[derive(Debug, Clone )]
             pub struct SubSelect {
                 pub point: Point,
                 pub pattern: PointSelector,

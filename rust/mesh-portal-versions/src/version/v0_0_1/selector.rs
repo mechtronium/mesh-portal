@@ -1214,6 +1214,13 @@ impl ToResolved<PayloadBlockCtx> for PayloadBlockVar{
     }
 }
 
+impl ToResolved<PayloadBlock> for PayloadBlockVar{
+    fn to_resolved(self, env: &Env) -> Result<PayloadBlock, MsgErr> {
+        let block: PayloadBlockCtx = self.to_resolved(env)?;
+        block.to_resolved(env)
+    }
+}
+
 
 
 /*

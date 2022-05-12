@@ -98,12 +98,6 @@ pub mod messaging {
             }
         }
 
-        pub fn to_call(&self) -> MsgCall {
-            MsgCall {
-                path: self.core.uri.to_string(),
-                method: self.core.method.to_string(),
-            }
-        }
     }
 
     impl Request {
