@@ -17,7 +17,7 @@ pub mod messaging {
         Privileges,
     };
     use crate::version::v0_0_1::selector::selector::{PointKindHierarchy, PointSelector};
-    use crate::version::v0_0_1::util::unique_id;
+    use crate::version::v0_0_1::util::uuid;
 
     /// RequestCtx wraps a request and provides extra context and functionality to the request handler
     pub struct RequestCtx {
@@ -63,7 +63,7 @@ pub mod messaging {
         pub fn result<E: StatusErr>(self, result: Result<ResponseCore, E>) -> Response {
             match result {
                 Ok(core) => Response {
-                    id: unique_id(),
+                    id: uuid(),
                     to: self.from,
                     from: self.to,
                     core,
@@ -72,7 +72,7 @@ pub mod messaging {
                 Err(err) => {
                     let core = self.core.err(err);
                     Response {
-                        id: unique_id(),
+                        id: uuid(),
                         to: self.from,
                         from: self.to,
                         core,
@@ -88,7 +88,7 @@ pub mod messaging {
                 Err(err) => {
                     let core = self.core.err(err);
                     Response {
-                        id: unique_id(),
+                        id: uuid(),
                         to: self.from,
                         from: self.to,
                         core,
@@ -103,7 +103,7 @@ pub mod messaging {
     impl Request {
         pub fn new(core: RequestCore, from: Point, to: Point) -> Self {
             Self {
-                id: unique_id(),
+                id: uuid(),
                 agent: Agent::Anonymous,
                 scope: Scope::Full,
                 handling: Default::default(),
@@ -118,7 +118,7 @@ pub mod messaging {
             match result {
                 Ok(core) => {
                     Response {
-                        id: unique_id(),
+                        id: uuid(),
                         to: self.from,
                         from: self.to,
                         core,
@@ -151,7 +151,7 @@ pub mod messaging {
                 body: Payload::Empty,
             };
             let response = Response {
-                id: unique_id(),
+                id: uuid(),
                 from: self.to,
                 to: self.from,
                 core,
@@ -167,7 +167,7 @@ pub mod messaging {
                 body: payload,
             };
             let response = Response {
-                id: unique_id(),
+                id: uuid(),
                 from: self.to,
                 to: self.from,
                 core,
@@ -183,7 +183,7 @@ pub mod messaging {
                 body: Payload::Errors(Errors::default(error.to_string().as_str())),
             };
             let response = Response {
-                id: unique_id(),
+                id: uuid(),
                 from: self.to,
                 to: self.from,
                 core,
@@ -199,7 +199,7 @@ pub mod messaging {
                 body: Payload::Empty,
             };
             let response = Response {
-                id: unique_id(),
+                id: uuid(),
                 from: self.to,
                 to: self.from,
                 core,
@@ -219,7 +219,7 @@ pub mod messaging {
                     body: Payload::Empty,
                 };
                 let response = Response {
-                    id: unique_id(),
+                    id: uuid(),
                     from: request.to.clone(),
                     to: request.from.clone(),
                     core,
@@ -288,7 +288,7 @@ pub mod messaging {
 
         pub fn build(self) -> Result<Request, MsgErr> {
             Ok(Request {
-                id: unique_id(),
+                id: uuid(),
                 to: self.to.ok_or("RequestBuilder: 'to' must be set")?,
                 from: self.from.ok_or("RequestBuilder: 'from' must be set")?,
                 core: self.core.ok_or("RequestBuilder: 'core' must be set")?,
@@ -323,7 +323,7 @@ pub mod messaging {
     impl ProtoRequest {
         pub fn new() -> Self {
             Self {
-                id: unique_id(),
+                id: uuid(),
                 to: Option::None,
                 core: Option::None,
             }
@@ -378,7 +378,7 @@ pub mod messaging {
     impl Response {
         pub fn new(core: ResponseCore, from: Point, to: Point, response_to: String) -> Self {
             Self {
-                id: unique_id(),
+                id: uuid(),
                 to,
                 from,
                 core,

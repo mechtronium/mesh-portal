@@ -1,3 +1,5 @@
+#![allow(warnings)]
+
 #[macro_use]
 extern crate anyhow;
 
@@ -144,7 +146,7 @@ impl Portal {
                        PortalCall::Assign(assign) => {
                            let portal_api = portal_api.clone();
                            let assign = Exchanger::new(assign);
-                           let stub = assign.stub.clone();
+                           let stub = assign.details.stub.clone();
                            outlet_tx.send(outlet::Frame::Assign(assign)).await;
                            let resource_api = PortalParticleApi {
                                stub,

@@ -860,7 +860,7 @@
         use crate::version::v0_0_1::id::id::{GenericKind, Meta, Point};
         use crate::version::v0_0_1::messaging::messaging::Response;
         use crate::version::v0_0_1::payload::payload::{Errors, Payload, Primitive};
-        use crate::version::v0_0_1::util::unique_id;
+        use crate::version::v0_0_1::util::uuid;
         use http::response::Parts;
         use http::{HeaderMap, StatusCode};
         use serde::{Deserialize, Serialize};
@@ -930,7 +930,7 @@
 
             pub fn into_response(self, from: Point, to: Point, response_to: String) -> Response {
                 Response {
-                    id: unique_id(),
+                    id: uuid(),
                     from,
                     to,
                     core: self,

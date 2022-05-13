@@ -1,4 +1,5 @@
 use alloc::string::String;
+use chrono::{DateTime, Utc};
 use nom_locate::LocatedSpan;
 
 use nom::lib::std::collections::HashMap;
@@ -28,11 +29,10 @@ use crate::error::MsgErr;
 use crate::version::v0_0_1::bin::Bin;
 
 pub type State = HashMap<String, Bin>;
-pub type Timestamp = String;
 
 extern "C" {
-    pub fn mesh_portal_unique_id() -> String;
-    pub fn mesh_portal_timestamp() -> Timestamp;
+    pub fn mesh_portal_uuid() -> String;
+    pub fn mesh_portal_timestamp() -> DateTime<Utc>;
 }
 
 pub mod artifact {
@@ -172,11 +172,12 @@ pub mod bin {
 pub mod util {
     use alloc::format;
     use alloc::string::{String, ToString};
+    use chrono::{DateTime, Utc};
     use serde::{Deserialize, Serialize};
 
     use crate::error::MsgErr;
     use crate::version::v0_0_1::http::HttpMethod;
-    use crate::version::v0_0_1::{mesh_portal_timestamp, mesh_portal_unique_id, Timestamp};
+    use crate::version::v0_0_1::{mesh_portal_timestamp, mesh_portal_uuid };
 
     #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
     pub enum MethodPattern {
@@ -369,11 +370,11 @@ pub mod util {
     }
      */
 
-    pub fn unique_id() -> String {
-        unsafe { mesh_portal_unique_id() }
+    pub fn uuid() -> String {
+        unsafe { mesh_portal_uuid() }
     }
 
-    pub fn timestamp() -> Timestamp {
+    pub fn timestamp() -> DateTime<Utc>{
         unsafe { mesh_portal_timestamp() }
     }
 }

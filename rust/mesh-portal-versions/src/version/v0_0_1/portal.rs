@@ -1,5 +1,5 @@
 pub mod portal {
-    use crate::version::v0_0_1::util::unique_id;
+    use crate::version::v0_0_1::util::uuid;
     use serde::{Deserialize, Serialize};
     use std::ops::Deref;
 
@@ -12,7 +12,7 @@ pub mod portal {
     impl<T> Exchanger<T> {
         pub fn new(item: T) -> Self {
             Exchanger {
-                id: unique_id(),
+                id: uuid(),
                 item,
             }
         }
@@ -44,7 +44,7 @@ pub mod portal {
         use crate::version::v0_0_1::portal::portal;
         use crate::version::v0_0_1::portal::portal::Exchanger;
         use crate::version::v0_0_1::selector::selector::KindSelector;
-        use crate::version::v0_0_1::util::unique_id;
+        use crate::version::v0_0_1::util::uuid;
         use serde::{Deserialize, Serialize};
         use crate::version::v0_0_1::log::{AuditLog, Log, LogSpanEvent, PointlessLog};
 
@@ -136,7 +136,7 @@ pub mod portal {
         impl Frame {
             pub fn to(&self) -> Option<Point> {
                 match self {
-                    Frame::Assign(assign) => Option::Some(assign.stub.point.clone()),
+                    Frame::Assign(assign) => Option::Some(assign.details.stub.point.clone()),
                     Frame::Request(request) => Option::Some(request.request.to.clone()),
                     Frame::Response(response) => Option::Some(response.to.clone()),
                     Frame::Artifact(artifact) => Option::Some(artifact.to.clone()),

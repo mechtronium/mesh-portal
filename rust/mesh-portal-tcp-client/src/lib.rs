@@ -1,3 +1,5 @@
+#![allow(warnings)]
+
 #[macro_use]
 extern crate async_trait;
 

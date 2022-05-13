@@ -59,7 +59,7 @@ pub mod config {
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct Assign {
         pub config: PointConfig<ParticleConfigBody>,
-        pub stub: particle::Stub,
+        pub details: particle::ParticleDetails,
     }
 
     #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -1,3 +1,4 @@
+#![allow(warnings)]
 #[macro_use]
 extern crate async_trait;
 
@@ -32,7 +33,7 @@ use mesh_portal::version::latest::id::Point;
 use mesh_portal::version::latest::messaging::{Request, Response};
 use mesh_portal::version::latest::portal::inlet::{AssignRequest};
 use mesh_portal::version::latest::portal::outlet::{Frame, RequestFrame};
-use mesh_portal::version::latest::util::unique_id;
+use mesh_portal::version::latest::util::uuid;
 use mesh_portal::version::latest::log::Log;
 use mesh_portal::version::latest::log::PointLogger;
 
@@ -175,7 +176,7 @@ println!("CLIENT PROCESS");
                                         logger: skel.logger.clone(),
                                     };
                                     let particle = skel.ctrl_factory.create(particle_skel)?;
-                                    particles.insert(assign.stub.point.clone(), particle.clone() );
+                                    particles.insert(assign.details.stub.point.clone(), particle.clone() );
                                     let assign = assign.clone();
                                     let skel = skel.clone();
                                     let frame = frame.clone();
@@ -200,7 +201,7 @@ println!("CLIENT PROCESS");
 
                                     let response = resource.handle_request(request_frame.clone()).await;
                                     let response = Response {
-                                        id: unique_id(),
+                                        id: uuid(),
                                         from: request_frame.request.to.clone(),
                                         to: request_frame.request.from.clone(),
                                         core: response,

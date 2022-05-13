@@ -1,13 +1,16 @@
 use crate::error::MsgErr;
 use crate::version::v0_0_1::id::id::Point;
-use crate::version::v0_0_1::util::{timestamp, unique_id};
-use crate::version::v0_0_1::{mesh_portal_timestamp, Timestamp};
+use crate::version::v0_0_1::util::{timestamp, uuid};
+use crate::version::v0_0_1::{mesh_portal_timestamp};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::ops::Deref;
 use std::sync::Arc;
+use chrono::{DateTime, Utc};
 use serde::{Serialize,Deserialize};
+use serde;
 use crate::version::v0_0_1::command::command::common::StateSrc::StatefulDirect;
+use chrono::serde::ts_milliseconds;
 
 #[derive(Debug, Clone, Serialize, Deserialize, strum_macros::Display)]
 pub enum Level {
@@ -29,7 +32,8 @@ pub struct Log {
     pub point: Point,
     pub source: LogSource,
     pub span: Option<String>,
-    pub timestamp: Timestamp,
+    #[serde(with= "ts_milliseconds")]
+    pub timestamp: DateTime<Utc>,
     pub payload: LogPayload,
     pub level: Level,
 }
@@ -63,12 +67,15 @@ pub struct LogSpanEvent {
     pub id: String,
     pub parent: Option<String>,
     pub attributes: HashMap<String,String>,
-    pub timestamp: Timestamp,
+
+    #[serde(with= "ts_milliseconds")]
+    pub timestamp: DateTime<Utc>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PointlessLog {
-    timestamp: Timestamp,
+    #[serde(with= "ts_milliseconds")]
+    timestamp: DateTime<Utc>,
     message: String,
     level: Level,
 }
@@ -354,7 +361,7 @@ impl PointLogger {
         SpanLogger {
             root_logger: self.logger.clone(),
             point: self.point.clone(),
-            span: unique_id(),
+            span: uuid(),
             entry_timestamp: timestamp(),
             attributes: Default::default(),
             parent: None
@@ -372,7 +379,8 @@ impl PointLogger {
 
 
 pub struct SpanLogBuilder {
-    pub entry_timestamp: Timestamp,
+
+    pub entry_timestamp: DateTime<Utc>,
     pub attributes: HashMap<String,String>,
 }
 
@@ -390,7 +398,7 @@ pub struct SpanLogger {
     root_logger: RootLogger,
     point: Point,
     span: String,
-    entry_timestamp: Timestamp,
+    entry_timestamp: DateTime<Utc>,
     attributes: HashMap<String,String>,
     parent: Option<String>
 }
@@ -404,7 +412,7 @@ impl SpanLogger {
         SpanLogger {
             root_logger: self.root_logger.clone(),
             point: self.point.clone(),
-            span: unique_id(),
+            span: uuid(),
             entry_timestamp: timestamp(),
             attributes: Default::default(),
             parent: Some(self.span.clone())
@@ -422,7 +430,7 @@ impl SpanLogger {
         }
     }
 
-    pub fn entry_timestamp(&self) -> Timestamp {
+    pub fn entry_timestamp(&self) -> DateTime<Utc>{
         self.entry_timestamp.clone()
     }
 
@@ -612,6 +620,7 @@ impl AuditLogBuilder {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AuditLog {
     pub point: Point,
-    pub timestamp: Timestamp,
+    #[serde(with= "ts_milliseconds")]
+    pub timestamp: DateTime<Utc>,
     pub metrics: HashMap<String, String>,
 }

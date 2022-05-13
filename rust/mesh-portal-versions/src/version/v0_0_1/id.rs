@@ -1075,6 +1075,14 @@ pub mod id {
     }
 
     impl Point {
+
+        pub fn registry() -> Self {
+            Self {
+                route: RouteSeg::Mesh("GLOBAL".to_string()),
+                segments: vec![PointSeg::Space("registry".to_string())]
+            }
+        }
+
         pub fn normalize(self) -> Result<Point, MsgErr> {
             if self.is_normalized() {
                 return Ok(self);

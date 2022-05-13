@@ -381,8 +381,8 @@ pub mod util {
     pub type Convert<A>= dyn current::util::Convert<A>;
     pub type ConvertFrom<A>= dyn current::util::ConvertFrom<A>;
 
-    pub fn unique_id() -> String {
-        current::util::unique_id()
+    pub fn uuid() -> String {
+        current::util::uuid()
     }
 }
 
