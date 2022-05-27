@@ -1033,6 +1033,11 @@ pub fn skewer_case<I: Span>(input: I) -> Res<I, I> {
     //recognize(alpha1)(input)
 }
 
+pub fn lowercase_alphanumeric<I: Span>(input: I) -> Res<I, I> {
+    recognize(tuple((lowercase1, alphanumeric0)))(input)
+}
+
+
 pub fn single_lowercase<T: Span, Input, Error: ParseError<Input>>(
     arr: T,
 ) -> impl Fn(Input) -> IResult<Input, Input, Error>

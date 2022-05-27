@@ -130,15 +130,13 @@ pub mod particle {
     pub struct ParticleDetails {
         pub stub: Stub,
         pub properties: Properties,
-        pub perms: Permissions
     }
 
     impl ParticleDetails {
-        pub fn new(stub: Stub, properties: Properties, perms: Permissions) -> Self {
+        pub fn new(stub: Stub, properties: Properties ) -> Self {
             Self {
                 stub,
                 properties,
-                perms
             }
         }
     }

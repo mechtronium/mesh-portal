@@ -3,7 +3,7 @@ use crate::version::v0_0_1::id::id::Point;
 use crate::version::v0_0_1::messaging::messaging::ScopeGrant;
 use crate::version::v0_0_1::parse::error::result;
 use crate::version::v0_0_1::parse::{MapResolver, particle_perms, permissions, permissions_mask, privilege};
-use crate::version::v0_0_1::selector::selector::PointSelector;
+use crate::version::v0_0_1::selector::selector::{PointKindHierarchy, PointSelector};
 use nom::combinator::all_consuming;
 use nom_supreme::parser_ext::MapRes;
 use serde::{Deserialize, Serialize};
@@ -493,6 +493,25 @@ pub struct AccessGrantDef<Priv, PermMask, PointSelector, Point> {
     pub by_particle: Point,
 }
 
+pub type GrantTo = GrantToDef<PointSelector>;
+pub enum GrantToDef<PointSelector> {
+    World,
+    PointSelector(PointSelector)
+}
+
+impl GrantTo {
+    pub fn is_match( &self, hierarchy: &PointKindHierarchy) -> Result<(),()> {
+        match self {
+            GrantTo::World => Ok(()),
+            GrantTo::PointSelector(selector) => {
+                match selector.matches(hierarchy) {
+                    true => Ok(()),
+                    false => Err(())
+                }
+            }
+        }
+    }
+}
 
 pub type AccessGrant = AccessGrantDef<Privilege, PermissionsMask, PointSelector, Point>;
 pub type AccessGrantKind = AccessGrantKindDef<Privilege, PermissionsMask>;

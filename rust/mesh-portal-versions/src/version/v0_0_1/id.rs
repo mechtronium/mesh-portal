@@ -1370,6 +1370,11 @@ pub mod id {
             }
         }
 
+
+        pub fn is_local_root(&self) -> bool {
+            self.segments.is_empty() && self.route.is_local()
+        }
+
         pub fn is_root(&self) -> bool {
             self.segments.is_empty()
         }
