@@ -1,3 +1,5 @@
+#![allow(warnings)]
+
 #[macro_use]
 extern crate async_trait;
 
@@ -6,7 +8,7 @@ extern crate anyhow;
 
 use mesh_portal_tcp_common::{PrimitiveFrameReader, PrimitiveFrameWriter, FrameWriter, FrameReader };
 use anyhow::Error;
-use mesh_portal_api_client::{Portal, ResourceCtrl, PortalSkel, InletApi, Inlet, ResourceCtrlFactory, Exchanges, PrePortalSkel};
+use mesh_portal_api_client::{Portal, ParticleCtrl, PortalSkel, InletApi, Inlet, ParticleCtrlFactory, Exchanges, PrePortalSkel};
 use std::sync::Arc;
 use dashmap::DashMap;
 use tokio::net::TcpStream;
@@ -16,6 +18,7 @@ use tokio::sync::mpsc::error::TrySendError;
 use tokio::task::yield_now;
 use mesh_portal::version;
 use tokio::time::Duration;
+use mesh_portal::version::latest::log::{SpanLogger, PointLogger};
 use mesh_portal::version::latest::portal::{outlet, inlet, Exchanger, initin, initout};
 use mesh_portal::version::latest::portal::initin::PortalAuth;
 use mesh_portal::version::latest::portal::inlet::AssignRequest;
@@ -29,6 +32,7 @@ pub struct PortalTcpClient {
 impl PortalTcpClient {
 
     pub async fn new( host: String, mut client: Box<dyn PortalClient> ) -> Result<Self,Error> {
+        let span_logger = client.logger().span();
         let stream = TcpStream::connect(host.clone()).await?;
 
         let (reader,writer) = stream.into_split();
@@ -44,7 +48,7 @@ impl PortalTcpClient {
 println!("client: Flavor negotiaion Ok");
         } else {
             let message = "FLAVOR NEGOTIATION FAILED".to_string();
-            (client.logger())(message.as_str());
+            span_logger.error(message.as_str());
             return Err(anyhow!(message));
         }
 
@@ -55,7 +59,7 @@ println!("client: Flavor negotiaion Ok");
 println!("client: auth Ok.");
         } else {
             let message = "AUTH FAILED".to_string();
-            (client.logger())(message.as_str());
+            span_logger.error(message.as_str());
             return Err(anyhow!(message));
         }
 
@@ -94,10 +98,11 @@ println!("client: transitioned to portal frames.");
             let close_tx = close_tx.clone();
             tokio::spawn(async move {
                 while let Option::Some(frame) = inlet_rx.recv().await {
+                    let logger = logger.span();
                     match writer.write(frame).await {
                         Ok(_) => {}
                         Err(err) => {
-                            (logger)("FATAL: writer disconnected");
+                            logger.error("FATAL: writer disconnected");
                             eprintln!("client: FATAL! writer disconnected.");
                             break;
                         }
@@ -122,7 +127,7 @@ println!("client reading frame: {}",frame.to_string());
 
                         }
                         Result::Err(err) => {
-                            (logger)("FATAL: reader disconnected");
+                            span_logger.error("FATAL: reader disconnected");
                             eprintln!("client: FATAL! reader disconnected.");
                             break;
                         }
@@ -142,7 +147,7 @@ println!("client reader.read() complete.");
 
     }
 
-    pub async fn request_assign( &self, request: AssignRequest ) -> Result<Arc<dyn ResourceCtrl>,Error> {
+    pub async fn request_assign( &self, request: AssignRequest ) -> Result<Arc<dyn ParticleCtrl>,Error> {
         self.portal.request_assign(request).await
     }
 }
@@ -151,20 +156,20 @@ println!("client reader.read() complete.");
 pub trait PortalClient: Send+Sync {
     fn flavor(&self) -> String;
     fn auth( &self ) -> PortalAuth;
-    fn logger(&self) -> fn(message: &str);
-    async fn init( &self, reader: & mut FrameReader<initout::Frame>, writer: & mut FrameWriter<initin::Frame>, skel: PrePortalSkel ) -> Result<Arc< dyn ResourceCtrlFactory >,Error>;
+    fn logger(&self) -> PointLogger;
+    async fn init( &self, reader: & mut FrameReader<initout::Frame>, writer: & mut FrameWriter<initin::Frame>, skel: PrePortalSkel ) -> Result<Arc< dyn ParticleCtrlFactory >,Error>;
 
 }
 
 struct TcpInlet {
     pub sender: mpsc::Sender<inlet::Frame>,
-    pub logger: fn( message: &str )
+    pub logger: PointLogger
 }
 
 impl Inlet for TcpInlet {
     fn inlet_frame(&self, frame: inlet::Frame) {
         let sender = self.sender.clone();
-        let logger = self.logger;
+        let logger = self.logger.span();
         tokio::spawn(async move {
 println!("Sending FRAME via inlet api...{}", frame.to_string());
             match sender.send(frame).await
@@ -173,7 +178,7 @@ println!("Sending FRAME via inlet api...{}", frame.to_string());
                     println!("SENT FRAME via inlet!");
                 }
                 Err(err) => {
-                    (logger)(format!("ERROR: frame failed to send to client inlet").as_str())
+                    logger.error(format!("ERROR: frame failed to send to client inlet").as_str())
                 }
             }
         });

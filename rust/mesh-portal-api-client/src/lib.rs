@@ -1,3 +1,4 @@
+#![allow(warnings)]
 #[macro_use]
 extern crate async_trait;
 
@@ -20,45 +21,47 @@ use std::ops::Deref;
 use std::collections::HashMap;
 use tokio::sync::watch::Receiver;
 use mesh_portal::version::latest::portal::{Exchanger, inlet, outlet};
-use mesh_portal::version::latest::resource::{ResourceStub, Status};
+use mesh_portal::version::latest::particle::{Status};
 use mesh_portal::version::latest::{portal, entity};
 use std::convert::TryInto;
 use dashmap::mapref::one::Ref;
 use tokio::sync::oneshot::Sender;
 use tokio::task::yield_now;
-use mesh_portal::version::latest::config::{Assign, Config, PortalConfig, ResourceConfigBody};
+use mesh_portal::version::latest::config::{Assign, Config, PortalConfig, ParticleConfigBody};
 use mesh_portal::version::latest::entity::response::ResponseCore;
-use mesh_portal::version::latest::id::Address;
+use mesh_portal::version::latest::id::Point;
 use mesh_portal::version::latest::messaging::{Request, Response};
-use mesh_portal::version::latest::portal::inlet::{AssignRequest, Log};
-use mesh_portal::version::latest::portal::outlet::Frame;
-use mesh_portal::version::latest::util::unique_id;
+use mesh_portal::version::latest::portal::inlet::{AssignRequest};
+use mesh_portal::version::latest::portal::outlet::{Frame, RequestFrame};
+use mesh_portal::version::latest::util::uuid;
+use mesh_portal::version::latest::log::Log;
+use mesh_portal::version::latest::log::PointLogger;
 
 pub fn std_logger( log: Log ) {
     println!("{}", log.to_string())
 }
 
 #[derive(Clone)]
-pub struct ResourceSkel {
+pub struct ParticleSkel {
   pub assign: Assign,
   pub portal: PortalSkel,
-  pub logger: fn(message: &str),
+  pub logger: PointLogger
 }
 
-pub trait ResourceCtrlFactory: Sync+Send {
-    fn matches(&self,config:Config<ResourceConfigBody>) -> bool;
-    fn create(&self, skel: ResourceSkel ) -> Result<Arc<dyn ResourceCtrl>, Error>;
+pub trait ParticleCtrlFactory: Sync+Send {
+    fn matches(&self,config:Config<ParticleConfigBody>) -> bool;
+    fn create(&self, skel: ParticleSkel ) -> Result<Arc<dyn ParticleCtrl>, Error>;
 }
 
 #[async_trait]
-pub trait ResourceCtrl: Sync+Send {
+pub trait ParticleCtrl: Sync+Send {
     async fn init(&self) -> Result<(), Error>
     {
         Ok(())
     }
 
-    async fn handle_request( &self, request: Request ) -> ResponseCore {
-        request.core.not_found()
+    async fn handle_request( &self, request: RequestFrame ) -> ResponseCore {
+        request.request.core.not_found()
     }
 
 }
@@ -93,9 +96,9 @@ pub type Exchanges = Arc<DashMap<String, oneshot::Sender<Response>>>;
 pub struct PrePortalSkel {
     pub config: PortalConfig,
     pub inlet: Arc<dyn Inlet>,
-    pub logger: fn(message: &str),
+    pub logger: PointLogger,
     pub exchanges: Exchanges,
-    pub assign_exchange: Arc<DashMap<String, oneshot::Sender<Arc<dyn ResourceCtrl>>>>,
+    pub assign_exchange: Arc<DashMap<String, oneshot::Sender<Arc<dyn ParticleCtrl >>>>,
 }
 impl PrePortalSkel {
 
@@ -108,7 +111,7 @@ impl PrePortalSkel {
 pub struct PortalSkel {
     pub pre: PrePortalSkel,
     pub tx: mpsc::Sender<outlet::Frame>,
-    pub ctrl_factory: Arc<dyn ResourceCtrlFactory>,
+    pub ctrl_factory: Arc<dyn ParticleCtrlFactory>,
 }
 
 impl Deref for PortalSkel {
@@ -120,8 +123,8 @@ impl Deref for PortalSkel {
 }
 
 pub enum ResourceCommand {
-    Add{address: Address, resource: Arc<dyn ResourceCtrl> },
-    Remove(Address),
+    Add{point: Point, resource: Arc<dyn ParticleCtrl> },
+    Remove(Point),
     None
 }
 
@@ -135,8 +138,8 @@ impl Portal {
         pre: PrePortalSkel,
         outlet_tx: mpsc::Sender<outlet::Frame>,
         mut outlet_rx: mpsc::Receiver<outlet::Frame>,
-        ctrl_factory: Arc<dyn ResourceCtrlFactory>,
-        logger: fn(message: &str)
+        ctrl_factory: Arc<dyn ParticleCtrlFactory>,
+        logger: PointLogger
     ) -> Result<Arc<Portal>, Error> {
 
         let skel =  PortalSkel {
@@ -159,7 +162,7 @@ println!("Portal received frame: {}", frame.to_string());
                     }
                     process(skel.clone(), &mut resources, frame).await;
 
-                        async fn process( skel: PortalSkel,  resources: &mut HashMap<Address,Arc<dyn ResourceCtrl>>, frame: outlet::Frame ) -> Result<(),Error> {
+                        async fn process(skel: PortalSkel, particles: &mut HashMap<Point,Arc<dyn ParticleCtrl>>, frame: outlet::Frame ) -> Result<(),Error> {
 println!("CLIENT PROCESS");
 
                             match &frame {
@@ -167,41 +170,42 @@ println!("CLIENT PROCESS");
 
                                 }
                                 outlet::Frame::Assign(assign) => {
-                                    let resource_skel = ResourceSkel {
+                                    let particle_skel = ParticleSkel{
                                         assign: assign.item.clone(),
                                         portal: skel.clone(),
-                                        logger: skel.logger,
+                                        logger: skel.logger.clone(),
                                     };
-                                    let resource = skel.ctrl_factory.create(resource_skel)?;
-                                    resources.insert( assign.stub.address.clone(), resource.clone() );
+                                    let particle = skel.ctrl_factory.create(particle_skel)?;
+                                    particles.insert(assign.details.stub.point.clone(), particle.clone() );
                                     let assign = assign.clone();
                                     let skel = skel.clone();
                                     let frame = frame.clone();
                                     tokio::spawn( async move {
                                         println!("CLIENT INIT");
-                                        resource.init().await;
+                                        particle.init().await;
                                         match skel.assign_exchange.remove( &assign.id ) {
                                             None => {
                                                 println!("could not find exchange for {}",assign.id);
                                             }
                                             Some((_,tx)) => {
-                                                tx.send( resource );
+                                                tx.send(particle);
                                             }
                                         }
                                         println!("CLIENT INIT COMPLETE");
                                     });
 
                                 }
-                                outlet::Frame::Request(request) => {
-                                    let request = request.clone();
-                                    let resource = resources.get(&request.to ).ok_or(anyhow!("expected to find resource for address '{}'", request.to.to_string()))?;
-                                    let response = resource.handle_request(request.clone()).await;
+                                outlet::Frame::Request(request_frame) => {
+                                    let resource = particles.get(&request_frame.request.to ).ok_or(anyhow!("expected to find resource for point '{}'", request_frame.request.to.to_string()))?;
+
+
+                                    let response = resource.handle_request(request_frame.clone()).await;
                                     let response = Response {
-                                        id: unique_id(),
-                                        from: request.to,
-                                        to: request.from,
+                                        id: uuid(),
+                                        from: request_frame.request.to.clone(),
+                                        to: request_frame.request.from.clone(),
                                         core: response,
-                                        response_to: request.id
+                                        response_to: request_frame.request.id.clone()
                                     };
                                     skel.inlet.inlet_frame(inlet::Frame::Response(response));
                                 }
@@ -240,7 +244,7 @@ println!("CLIENT PROCESS");
         self.skel.inlet.inlet_frame(inlet::Frame::Log(log));
     }
 
-    pub async fn request_assign( &self, request: AssignRequest) -> Result<Arc<dyn ResourceCtrl>,Error> {
+    pub async fn request_assign( &self, request: AssignRequest) -> Result<Arc<dyn ParticleCtrl>,Error> {
        let (tx,rx) = oneshot::channel();
        let request = Exchanger::new(request);
        self.skel.assign_exchange.insert( request.id.clone(), tx );
@@ -309,7 +313,6 @@ pub mod client {
     use std::ops::Deref;
     use anyhow::Error;
     use mesh_portal::version::latest::portal::outlet;
-    use mesh_portal::version::latest::id::{Address};
 
     /*
     #[derive(Clone)]
@@ -329,7 +332,7 @@ pub mod client {
 
     pub struct Request<REQUEST> {
         pub context: RequestContext,
-        pub from: Address,
+        pub from: Point,
         pub request: REQUEST
     }
 
@@ -351,7 +354,7 @@ pub mod example {
     use anyhow::Error;
 
 
-    use crate::{InletApi, ResourceCtrl, PortalSkel, inlet};
+    use crate::{InletApi, PortalSkel, inlet, ParticleCtrl};
     use std::collections::HashMap;
     use mesh_portal::version::latest::payload::{Payload, Primitive};
     use mesh_portal::version::latest::entity;
@@ -369,7 +372,7 @@ pub mod example {
     }
 
     #[async_trait]
-    impl ResourceCtrl for HelloCtrl {
+    impl ParticleCtrl for HelloCtrl {
 
         async fn init(&self) -> Result<(), Error> {
             unimplemented!();
@@ -382,7 +385,7 @@ pub mod example {
                     path: "/".to_string()
                 }));
 
-            request.to.push(self.inlet_api.info.address.clone());
+            request.to.push(self.inlet_api.info.point.clone());
 
             let response = self.inlet_api.exchange(request).await?;
 

@@ -23,20 +23,21 @@ pub mod artifact {
 
 pub mod id {
     use mesh_portal_versions::version::v0_0_1 as current;
-    pub type ResourceType = current::id::ResourceType;
-    pub type ResourceKind = current::id::ResourceKind;
-    pub type AddressAndKind = current::id::AddressAndKind;
-    pub type AddressAndType = current::id::AddressAndType;
-    pub type Meta = current::id::Meta;
-    pub type PayloadClaim = current::id::PayloadClaim;
-    pub type HostKey = current::id::HostKey;
-    pub type Version = current::id::Version;
-    pub type Tks = dyn current::id::Tks;
-    pub type Specific = current::id::Specific;
-    pub type RouteSegment = current::id::RouteSegment;
-    pub type AddressSegment = current::id::AddressSegment;
-    pub type Address = current::id::Address;
-    pub type KindParts = current::id::KindParts;
+    use mesh_portal_versions::version::v0_0_1::id;
+
+    pub type ResourceType = id::id::GenericKindBase;
+    pub type ResourceKind = id::id::GenericKind;
+    pub type AddressAndKind = id::id::PointKind;
+    pub type AddressAndType = id::id::AddressAndType;
+    pub type Meta = id::id::Meta;
+    pub type HostKey = id::id::HostKey;
+    pub type Version = id::id::Version;
+    pub type Tks = dyn id::id::Tks;
+    pub type Specific = id::id::Specific;
+    pub type RouteSegment = id::id::RouteSeg;
+    pub type AddressSegment = id::id::PointSeg;
+    pub type Point = id::id::Point;
+    pub type KindParts = id::id::GenericKind;
 }
 
 pub mod path {
@@ -44,62 +45,75 @@ pub mod path {
     pub type Path=current::path::Path;
 }
 
-pub mod pattern {
-    use mesh_portal_versions::version::v0_0_1 as current;
+pub mod selector {
+    use mesh_portal_versions::version::{v0_0_1 as current, v0_0_1};
+    use mesh_portal_versions::version::v0_0_1::selector;
 
-    pub type TksPattern = current::pattern::TksPattern;
-    pub type KindPattern = current::pattern::KindPattern;
-    pub type AddressKindPattern = current::pattern::AddressKindPattern;
-    pub type VersionReq = current::pattern::VersionReq;
-    pub type SegmentPattern = current::pattern::SegmentPattern;
-    pub type KeySegment = current::pattern::KeySegment;
-    pub type ExactSegment = current::pattern::ExactSegment;
-    pub type SpecificPattern = current::pattern::SpecificPattern;
-    pub type LabeledPrimitiveTypeDef = current::pattern::LabeledPrimitiveTypeDef;
-    pub type PrimitiveTypeDef = current::pattern::PrimitiveTypeDef;
-    pub type Format = current::pattern::Format;
-    pub type EntityPattern = current::pattern::EntityPattern;
-    pub type RcPattern = current::pattern::RcPattern;
-    pub type MsgPattern = current::pattern::MsgPattern;
-    pub type HttpPattern = current::pattern::HttpPattern;
-    pub type Block = current::pattern::Block;
-    pub type UploadBlock = current::pattern::UploadBlock;
-    pub type CreateBlock = current::pattern::CreateBlock;
-    pub type PatternBlock = current::pattern::PatternBlock;
-    pub type MapEntryPattern= current::pattern::MapEntryPattern;
-    pub type Hop = current::pattern::Hop;
-    pub type Pattern<P> = current::pattern::Pattern<P>;
-    pub type EmptyPattern<P> = current::pattern::EmptyPattern<P>;
-    pub type ResourceTypePattern  = current::pattern::ResourceTypePattern;
-    pub type AddressKindPath = current::pattern::AddressKindPath;
-    pub type AddressKindSegment = current::pattern::AddressKindSegment;
+    pub type GenericKindSelector = selector::selector::GenericKindSelector;
+    pub type GenericSubKindSelector = selector::selector::GenericSubKindSelector;
+    pub type PointSelector = selector::selector::PointSelector;
+    pub type KindSelector = selector::selector::KindSelector;
+    pub type VersionReq = selector::selector::VersionReq;
+    pub type PointSegSelector = selector::selector::PointSegSelector;
+    pub type KeySegment = selector::selector::KeySegment;
+    pub type ExactSegment = selector::selector::ExactPointSeg;
+    pub type SpecificPattern = selector::selector::SpecificSelector;
+    pub type LabeledPrimitiveType = selector::selector::LabeledPrimitiveType;
+    pub type PrimitiveType = selector::selector::PayloadType2;
+    pub type Format = selector::selector::Format;
+    pub type EntityPattern = selector::selector::PipelineSelector;
+    pub type RcPattern = selector::selector::RcPipelineSelector;
+    pub type MsgPattern = selector::selector::MsgPipelineSelector;
+    pub type HttpPattern = selector::selector::HttpPipelineSelector;
+    pub type Block = v0_0_1::selector::PayloadBlock;
+    pub type UploadBlock = v0_0_1::selector::UploadBlock;
+    pub type CreateBlock = v0_0_1::selector::CreateBlock;
+    pub type PatternBlock = v0_0_1::selector::PatternBlock;
+    pub type MapEntryPattern= selector::selector::MapEntryPattern;
+    pub type Hop = selector::selector::Hop;
+    pub type Pattern<P> = selector::selector::Pattern<P>;
+    pub type EmptyPattern<P> = selector::selector::EmptyPattern<P>;
+    pub type PointKindHierarchy = selector::selector::PointKindHierarchy;
+    pub type PointKindSeg = selector::selector::PointKindSeg;
 
     pub mod specific {
         use mesh_portal_versions::version::v0_0_1 as current;
+        use mesh_portal_versions::version::v0_0_1::selector;
 
-        pub type VersionReq = current::pattern::specific::VersionReq;
-        pub type VendorPattern = current::pattern::specific::VendorPattern;
-        pub type ProductPattern = current::pattern::specific::ProductPattern;
-        pub type VariantPattern = current::pattern::specific::VariantPattern;
-        pub type VersionPattern = current::pattern::specific::VersionPattern;
+        pub type VersionReq = selector::selector::specific::VersionReq;
+        pub type VendorSelector = selector::selector::specific::VendorSelector;
+        pub type ProductSelector = selector::selector::specific::ProductSelector;
+        pub type VariantSelector = selector::selector::specific::VariantSelector;
+        pub type VersionPattern = selector::selector::specific::VersionPattern;
    }
 }
 
 pub mod messaging {
     use mesh_portal_versions::version::v0_0_1 as current;
+    use mesh_portal_versions::version::v0_0_1::messaging;
 
-    pub type Request = current::messaging::Request;
-    pub type Response= current::messaging::Response;
-    pub type ProtoRequest= current::messaging::ProtoRequest;
-    pub type Message = current::messaging::Message;
+    pub type Request = messaging::messaging::Request;
+    pub type Response= messaging::messaging::Response;
+    pub type RequestBuilder = messaging::messaging::RequestBuilder;
+    pub type ProtoRequest= messaging::messaging::ProtoRequest;
+    pub type Message = messaging::messaging::Message;
+    pub type Agent = messaging::messaging::Agent;
+    pub type AuthedAgent = messaging::messaging::AuthedAgent;
+    pub type Session = messaging::messaging::Session;
+    pub type Scope = messaging::messaging::Scope;
+    pub type Priority = messaging::messaging::Priority;
+    pub type Karma = messaging::messaging::Karma;
+    pub type Handling = messaging::messaging::Handling;
+    pub type HandlingKind = messaging::messaging::HandlingKind;
 }
 
 
 pub mod frame {
     use mesh_portal_versions::version::v0_0_1 as current;
+    use mesh_portal_versions::version::v0_0_1::frame;
 
-    pub type PrimitiveFrame = current::frame::PrimitiveFrame;
-    pub type CloseReason = current::frame::CloseReason;
+    pub type PrimitiveFrame = frame::frame::PrimitiveFrame;
+    pub type CloseReason = frame::frame::CloseReason;
 }
 
 pub mod bin {
@@ -115,199 +129,244 @@ pub mod parse {
 
 pub mod payload {
     use mesh_portal_versions::version::v0_0_1 as current;
+    use mesh_portal_versions::version::v0_0_1::payload;
 
-    pub type Payload = current::payload::Payload;
-    pub type PayloadMap = current::payload::PayloadMap;
-    pub type Primitive = current::payload::Primitive;
-    pub type PrimitiveList = current::payload::PrimitiveList;
-    pub type PrimitiveType = current::payload::PrimitiveType;
-    pub type PayloadType = current::payload::PayloadType;
-    pub type Errors = current::payload::Errors;
-    pub type ListPattern = current::payload::ListPattern;
-    pub type Range = current::payload::Range;
-    pub type PayloadTypePattern = current::payload::PayloadTypePattern;
-    pub type PayloadPattern = current::payload::PayloadPattern;
-    pub type CallWithConfig = current::payload::CallWithConfig;
-    pub type Call = current::payload::Call;
-    pub type CallKind = current::payload::CallKind;
-    pub type MsgCall = current::payload::MsgCall;
-    pub type HttpCall = current::payload::HttpCall;
-    pub type HttpMethod = current::payload::HttpMethod;
-    pub type PayloadFormat = current::payload::PayloadFormat;
-    pub type MapPattern = current::payload::MapPattern;
+    pub type Payload = payload::payload::Payload;
+    pub type PayloadMap = payload::payload::PayloadMap;
+    pub type Primitive = payload::payload::Primitive;
+    pub type PrimitiveList = payload::payload::PayloadList;
+    pub type PrimitiveType = payload::payload::PrimitiveType;
+    pub type PayloadType = payload::payload::PayloadType;
+    pub type Errors = payload::payload::Errors;
+    pub type ListPattern = payload::payload::ListPattern;
+    pub type Range = payload::payload::NumRange;
+    pub type PayloadPattern = payload::payload::PayloadPattern;
+    pub type CallWithConfig = payload::payload::CallWithConfig;
+    pub type Call = payload::payload::Call;
+    pub type CallKind = payload::payload::CallKind;
+    pub type MsgCall = payload::payload::MsgCall;
+    pub type HttpCall = payload::payload::HttpCall;
+    pub type PayloadFormat = payload::payload::PayloadFormat;
+    pub type MapPattern = payload::payload::MapPattern;
 }
 
 pub mod command {
     use mesh_portal_versions::version::v0_0_1 as current;
+    use mesh_portal_versions::version::v0_0_1::command;
 
-    pub type Command = current::command::Command;
-    pub type CommandStatus = current::command::CommandStatus;
-    pub type CommandEvent = current::command::CommandEvent;
-    pub type CliId = current::command::CliId;
+    pub type Command = command::command::Command;
+    pub type CommandStatus = command::command::CommandStatus;
+    pub type CommandEvent = command::command::CommandEvent;
+    pub type CliId = command::command::CliId;
 
     pub mod common {
         use mesh_portal_versions::version::v0_0_1 as current;
+        use mesh_portal_versions::version::v0_0_1::command;
 
-        pub type StateSrc = current::command::common::StateSrc;
-        pub type SetLabel = current::command::common::SetLabel;
-        pub type SetProperties = current::command::common::SetProperties;
-        pub type PropertyMod = current::command::common::PropertyMod;
-        pub type SetRegistry = current::command::common::SetRegistry;
+        pub type StateSrc = command::command::common::StateSrc;
+        pub type SetLabel = command::command::common::SetLabel;
+        pub type SetProperties = command::command::common::SetProperties;
+        pub type PropertyMod = command::command::common::PropertyMod;
+        pub type SetRegistry = command::command::common::SetRegistry;
     }
 }
-pub mod msg {
+
+pub mod security {
     use mesh_portal_versions::version::v0_0_1 as current;
 
-    pub type MsgRequest = current::msg::MsgRequest;
+    pub type Access = current::security::Access;
+    pub type Privileges = current::security::EnumeratedPrivileges;
+    pub type EnumeratedAccess = current::security::EnumeratedAccess;
+    pub type Permissions = current::security::Permissions;
+    pub type PermissionsMask = current::security::PermissionsMask;
+    pub type PermissionsMaskKind = current::security::PermissionsMaskKind;
+    pub type ChildPerms = current::security::ChildPerms;
+    pub type ParticlePerms = current::security::ParticlePerms;
+    pub type AccessGrant = current::security::AccessGrant;
+    pub type AccessGrantKind = current::security::AccessGrantKind;
+}
+
+
+pub mod msg {
+    use mesh_portal_versions::version::v0_0_1 as current;
+    use mesh_portal_versions::version::v0_0_1::msg;
+
+    pub type MsgRequest = msg::MsgRequest;
+    pub type MsgMethod = msg::MsgMethod;
+}
+
+pub mod http {
+    use mesh_portal_versions::version::v0_0_1 as current;
+    use mesh_portal_versions::version::v0_0_1::http;
+
+    pub type HttpRequest = http::HttpRequest;
+    pub type HttpMethod = http::HttpMethod;
 }
 
 pub mod config {
     use mesh_portal_versions::version::v0_0_1 as current;
+    use mesh_portal_versions::version::v0_0_1::config;
 
-    pub type PortalKind = current::config::PortalKind;
-    pub type Info = current::config::Info;
-    pub type PortalConfig = current::config::PortalConfig;
-    pub type Assign = current::config::Assign;
-    pub type Config<BODY> = current::config::Config<BODY>;
-    pub type ConfigBody = current::config::ConfigBody;
-    pub type ResourceConfigBody = current::config::ResourceConfigBody;
+    pub type PortalKind = config::config::PortalKind;
+    pub type Info = config::config::Info;
+    pub type PortalConfig = config::config::PortalConfig;
+    pub type Assign = config::config::Assign;
+    pub type Config<BODY> = config::config::PointConfig<BODY>;
+    pub type ConfigBody = config::config::Document;
+    pub type ParticleConfigBody = config::config::ParticleConfigBody;
 
 
     pub mod bind {
         use mesh_portal_versions::version::v0_0_1 as current;
+        use mesh_portal_versions::version::v0_0_1::config;
 
-        pub type ProtoBind = current::config::bind::ProtoBind;
-        pub type BindConfig = current::config::bind::BindConfig;
-        pub type Scope<T,E>= current::config::bind::Scope<T,E>;
-        pub type Pipeline=current::config::bind::Pipeline;
-        pub type PipelineStep=current::config::bind::PipelineStep;
-        pub type PipelineStop=current::config::bind::PipelineStop;
-        pub type PatternBlock =current::config::bind::PatternBlock;
-        pub type Selector<P> =current::config::bind::Selector<P>;
-        pub type Whitelist =current::config::bind::Whitelist;
-        pub type CallPattern =current::config::bind::CallPattern;
-        pub type PipelineSegment =current::config::bind::PipelineSegment;
-        pub type StepKind =current::config::bind::StepKind;
-        pub type PipelineSubScope =current::config::bind::PipelinesSubScope;
-        pub type ScopeType =current::config::bind::ScopeType;
+        pub type BindConfig = config::config::bind::BindConfig;
+        pub type ConfigScope<T,E>= config::config::bind::ConfigScope<T,E>;
+        pub type Pipeline= config::config::bind::Pipeline;
+        pub type PipelineStep= config::config::bind::PipelineStep;
+        pub type PipelineStop= config::config::bind::PipelineStop;
+        pub type PatternBlock = config::config::bind::PatternBlock;
+        pub type Selector<P> = config::config::bind::Selector<P>;
+        pub type Whitelist = config::config::bind::Whitelist;
+        pub type CallPattern = config::config::bind::CallPattern;
+        pub type StepKind = config::config::bind::MessageKind;
+        pub type PipelineSubScope = config::config::bind::PipelinesSubScope;
+        pub type ScopeType = config::config::bind::ScopeType;
     }
 }
 
 pub mod entity {
     use mesh_portal_versions::version::v0_0_1 as current;
+    use mesh_portal_versions::version::v0_0_1::entity;
 
-    pub type EntityType = current::entity::EntityType;
+    pub type EntityType = entity::MethodKind;
 
     pub mod request {
         use mesh_portal_versions::version::v0_0_1 as current;
+        use mesh_portal_versions::version::v0_0_1::entity;
 
-        pub type Action = current::entity::request::Action;
-        pub type RequestCore= current::entity::request::RequestCore;
-        pub type Rc = current::entity::request::Rc;
-        pub type RcCommandType = current::entity::request::RcCommandType;
+        pub type Method = entity::request::Method;
+        pub type RequestCore= entity::request::RequestCore;
+        pub type Rc = entity::request::Rc;
+        pub type RcCommandType = entity::request::RcCommandType;
 
         pub mod create {
             use mesh_portal_versions::version::v0_0_1 as current;
+            use mesh_portal_versions::version::v0_0_1::entity;
 
-            pub type Create= current::entity::request::create::Create;
-            pub type Template = current::entity::request::create::Template;
-            pub type KindTemplate = current::entity::request::create::KindTemplate;
-            pub type Fulfillment = current::entity::request::create::Fulfillment;
-            pub type Strategy = current::entity::request::create::Strategy;
-            pub type AddressTemplate = current::entity::request::create::AddressTemplate;
-            pub type AddressSegmentTemplate = current::entity::request::create::AddressSegmentTemplate;
-            pub type CreateOp = current::entity::request::create::CreateOp;
-            pub type Require = current::entity::request::create::Require;
-            pub type Fulfilemment = current::entity::request::create::Fulfillment;
-            pub type Set = current::entity::request::set::Set;
+            pub type Create= entity::request::create::Create;
+            pub type Template = entity::request::create::Template;
+            pub type KindTemplate = entity::request::create::KindTemplate;
+            pub type Fulfillment = entity::request::create::Fulfillment;
+            pub type Strategy = entity::request::create::Strategy;
+            pub type PointTemplate = entity::request::create::PointTemplate;
+            pub type PointSegFactory = entity::request::create::PointSegFactory;
+            pub type CreateOp = entity::request::create::CreateOp;
+            pub type Require = entity::request::create::Require;
+            pub type Fulfilemment = entity::request::create::Fulfillment;
+            pub type Set = entity::request::set::Set;
         }
 
         pub mod select {
             use mesh_portal_versions::version::v0_0_1 as current;
+            use mesh_portal_versions::version::v0_0_1::entity;
 
-            pub type SelectIntoPayload = current::entity::request::select::SelectIntoPayload;
-            pub type Select = current::entity::request::select::Select;
-            pub type SelectionKind = current::entity::request::select::SelectKind;
-            pub type SubSelector = current::entity::request::select::SubSelect;
-            pub type PropertiesPattern = current::entity::request::select::PropertiesPattern;
+            pub type SelectIntoPayload = entity::request::select::SelectIntoPayload;
+            pub type Select = entity::request::select::Select;
+            pub type SelectionKind = entity::request::select::SelectKind;
+            pub type SubSelector = entity::request::select::SubSelect;
+            pub type PropertiesPattern = entity::request::select::PropertiesPattern;
         }
 
         pub mod update {
             use mesh_portal_versions::version::v0_0_1 as current;
+            use mesh_portal_versions::version::v0_0_1::entity;
 
-            pub type Update = current::entity::request::update::Update;
+            pub type Update = entity::request::update::Update;
         }
 
         pub mod query {
             use mesh_portal_versions::version::v0_0_1 as current;
+            use mesh_portal_versions::version::v0_0_1::entity;
 
-            pub type Query= current::entity::request::query::Query;
-            pub type QueryResult = current::entity::request::query::QueryResult;
+            pub type Query= entity::request::query::Query;
+            pub type QueryResult = entity::request::query::QueryResult;
         }
 
         pub mod get {
             use mesh_portal_versions::version::v0_0_1 as current;
+            use mesh_portal_versions::version::v0_0_1::entity;
 
-            pub type Get = current::entity::request::get::Get;
-            pub type GetOp = current::entity::request::get::GetOp;
+            pub type Get = entity::request::get::Get;
+            pub type GetOp = entity::request::get::GetOp;
         }
 
         pub mod set {
             use mesh_portal_versions::version::v0_0_1 as current;
+            use mesh_portal_versions::version::v0_0_1::entity;
 
-            pub type Set = current::entity::request::set::Set;
+            pub type Set = entity::request::set::Set;
         }
     }
 
     pub mod response {
         use mesh_portal_versions::version::v0_0_1 as current;
+        use mesh_portal_versions::version::v0_0_1::entity;
 
-        pub type ResponseCore = current::entity::response::ResponseCore;
+        pub type ResponseCore = entity::response::ResponseCore;
     }
 }
 
-pub mod resource {
+pub mod particle {
     use mesh_portal_versions::version::v0_0_1 as current;
+    use mesh_portal_versions::version::v0_0_1::particle;
 
-    pub type StatusUpdate = current::resource::StatusUpdate;
-    pub type Status = current::resource::Status;
-    pub type Code = current::resource::Code;
-    pub type Progress = current::resource::Progress;
-    pub type Properties = current::resource::Properties;
-    pub type Archetype = current::resource::Archetype;
-    pub type ResourceStub = current::resource::ResourceStub;
-    pub type Resource = current::resource::Resource;
-    pub type Property = current::resource::Property;
+    pub type StatusUpdate = particle::particle::StatusUpdate;
+    pub type Status = particle::particle::Status;
+    pub type Code = particle::particle::Code;
+    pub type Progress = particle::particle::Progress;
+    pub type Properties = particle::particle::Properties;
+    pub type Archetype = particle::particle::Archetype;
+    pub type Stub = particle::particle::Stub;
+    pub type Resource = particle::particle::Particle;
+    pub type Property = particle::particle::Property;
 }
 
 pub mod portal {
     use mesh_portal_versions::version::v0_0_1 as current;
+    use mesh_portal_versions::version::v0_0_1::portal;
 
-    pub type Exchanger<T> = current::portal::Exchanger<T>;
+    pub type Exchanger<T> = portal::portal::Exchanger<T>;
 
     pub mod inlet {
         use mesh_portal_versions::version::v0_0_1 as current;
+        use mesh_portal_versions::version::v0_0_1::portal;
 
-        pub type Log = current::portal::inlet::Log;
-        pub type Frame = current::portal::inlet::Frame;
-        pub type AssignRequest = current::portal::inlet::AssignRequest;
+        pub type Frame = portal::portal::inlet::Frame;
+        pub type AssignRequest = portal::portal::inlet::AssignRequest;
     }
 
     pub mod outlet {
         use mesh_portal_versions::version::v0_0_1 as current;
+        use mesh_portal_versions::version::v0_0_1::portal;
 
-        pub type Frame = current::portal::outlet::Frame;
+        pub type Frame = portal::portal::outlet::Frame;
+        pub type RequestFrame = portal::portal::outlet::RequestFrame;
     }
 
     pub mod initin {
         use mesh_portal_versions::version::v0_0_1 as current;
-        pub type Frame = current::portal::initin::Frame;
-        pub type PortalAuth = current::portal::initin::PortalAuth;
+        use mesh_portal_versions::version::v0_0_1::portal;
+
+        pub type Frame = portal::portal::initin::Frame;
+        pub type PortalAuth = portal::portal::initin::PortalAuth;
     }
 
     pub mod initout{
         use mesh_portal_versions::version::v0_0_1 as current;
-        pub type Frame = current::portal::initout::Frame;
+        use mesh_portal_versions::version::v0_0_1::portal;
+
+        pub type Frame = portal::portal::initout::Frame;
     }
 }
 
@@ -322,8 +381,8 @@ pub mod util {
     pub type Convert<A>= dyn current::util::Convert<A>;
     pub type ConvertFrom<A>= dyn current::util::ConvertFrom<A>;
 
-    pub fn unique_id() -> String {
-        current::util::unique_id()
+    pub fn uuid() -> String {
+        current::util::uuid()
     }
 }
 
@@ -374,6 +433,22 @@ pub mod fail {
     pub type Wrong = current::fail::Wrong;
     pub type Messaging= current::fail::Messaging;
     pub type Fail = current::fail::Fail;
+}
+
+pub mod log {
+    use mesh_portal_versions::version::v0_0_1 as current;
+    pub type Log = current::log::Log;
+    pub type LogSpan = current::log::LogSpanEvent;
+    pub type LogSpanKind = current::log::LogSpanEventKind;
+    pub type LogPayload = current::log::LogPayload;
+    pub type LogAppender = dyn current::log::LogAppender;
+    pub type RootLogger = current::log::RootLogger;
+    pub type RootLogBuilder = current::log::RootLogBuilder;
+    pub type LogSource = current::log::LogSource;
+    pub type SpanLogBuilder = current::log::SpanLogBuilder;
+    pub type PointlessLog = current::log::PointlessLog;
+    pub type PointLogger = current::log::PointLogger;
+    pub type SpanLogger = current::log::SpanLogger;
 }
 
 
