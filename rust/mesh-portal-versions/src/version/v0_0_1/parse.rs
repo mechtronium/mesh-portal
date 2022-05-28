@@ -93,6 +93,8 @@ where
                 && !(char_item == ':')
                 && !(char_item == '(')
                 && !(char_item == ')')
+                && !(char_item == '[')
+                && !(char_item == ']')
                 && !(char_item.is_alpha() || char_item.is_dec_digit())
         },
         ErrorKind::AlphaNumeric,
