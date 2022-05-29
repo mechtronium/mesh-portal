@@ -89,7 +89,7 @@ pub mod config {
 
     pub mod bind {
         use crate::error::{MsgErr, ParseErrs};
-        use crate::version::v0_0_1::entity::request::{Rc, RequestCore};
+        use crate::version::v0_0_1::cmd::request::{Rc, RequestCore};
         use crate::version::v0_0_1::entity::MethodKind;
         use crate::version::v0_0_1::id::id::{Point, PointCtx, PointVar};
         use crate::version::v0_0_1::payload::payload::{Call, CallDef};

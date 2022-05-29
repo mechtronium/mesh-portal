@@ -15,10 +15,10 @@ use nom::combinator::{cut, eof, fail, not, peek, recognize, success, value, veri
 
 use crate::error::{MsgErr, ParseErrs};
 use crate::version::v0_0_1::cmd::command::common::{PropertyMod, SetProperties, StateSrc};
-use crate::version::v0_0_1::entity::request::create::{ Create, CreateVar, KindTemplate, PointSegFactory, PointTemplate, PointTemplateSeg, PointTemplateVar, Require, Strategy, Template, TemplateVar};
-use crate::version::v0_0_1::entity::request::get::{Get, GetOp, GetVar};
-use crate::version::v0_0_1::entity::request::select::{Select, SelectIntoPayload, SelectKind, SelectVar};
-use crate::version::v0_0_1::entity::request::set::{Set, SetVar};
+use crate::version::v0_0_1::cmd::request::create::{Create, CreateVar, KindTemplate, PointSegFactory, PointTemplate, PointTemplateSeg, PointTemplateVar, Require, Strategy, Template, TemplateVar};
+use crate::version::v0_0_1::cmd::request::get::{Get, GetOp, GetVar};
+use crate::version::v0_0_1::cmd::request::select::{Select, SelectIntoPayload, SelectKind, SelectVar};
+use crate::version::v0_0_1::cmd::request::set::{Set, SetVar};
 use crate::version::v0_0_1::id::id::{
     Point, PointCtx, PointKindVar, PointSegCtx, PointSegDelim, PointSegment, PointSegVar, PointVar,
     RouteSeg, RouteSegVar, Variable, Version,
@@ -1404,8 +1404,12 @@ pub fn get_properties<I: Span>(input: I) -> Res<I, Vec<String>> {
 }
 
 pub fn create<I: Span>(input: I) -> Res<I, CreateVar> {
-    tuple((template, opt(delimited(tag("{"), set_properties, tag("}")))))(input).map(
-        |(next, (template, properties))| {
+    tuple((opt(value(Strategy::Ensure,tag("?"))),space1,template, opt(delimited(tag("{"), set_properties, tag("}")))))(input).map(
+        |(next, (strategy,_,template, properties))| {
+            let strategy = match strategy {
+                None => Strategy::Commit,
+                Some(strategy) => strategy
+            };
             let properties = match properties {
                 Some(properties) => properties,
                 None => SetProperties::new(),
@@ -1414,7 +1418,7 @@ pub fn create<I: Span>(input: I) -> Res<I, CreateVar> {
                 template,
                 state: StateSrc::Stateless,
                 properties,
-                strategy: Strategy::Commit,
+                strategy,
                 registry: Default::default(),
             };
             (next, create)
@@ -2936,7 +2940,7 @@ pub mod model {
         BindConfig, MessageKind, PipelineStepCtx, PipelineStepDef, PipelineStepVar,
         PipelineStopCtx, PipelineStopDef, PipelineStopVar, Selector,
     };
-    use crate::version::v0_0_1::entity::request::{Method, RcCommandType, RequestCore};
+    use crate::version::v0_0_1::cmd::request::{Method, RcCommandType, RequestCore};
     use crate::version::v0_0_1::entity::MethodKind;
     use crate::version::v0_0_1::http::HttpMethod;
     use crate::version::v0_0_1::id::id::{Point, PointCtx, PointVar, Version};
@@ -4402,7 +4406,7 @@ use crate::version::v0_0_1::config::config::bind::{
     PipelineStop, PipelineStopCtx, PipelineStopVar, Selector,
 };
 use crate::version::v0_0_1::config::config::Document;
-use crate::version::v0_0_1::entity::request::{Method, RcCommandType};
+use crate::version::v0_0_1::cmd::request::{Method, RcCommandType};
 use crate::version::v0_0_1::entity::MethodKind;
 use crate::version::v0_0_1::http::HttpMethod;
 use crate::version::v0_0_1::id::id::{GenericKind, GenericKindBase, PointKind, PointSeg, Specific};
@@ -6238,7 +6242,7 @@ pub mod test {
     use std::str::FromStr;
     use std::sync::Arc;
     use bincode::config;
-    use crate::version::v0_0_1::entity::request::create::{PointSegFactory, PointTemplate, PointTemplateCtx};
+    use crate::version::v0_0_1::cmd::request::create::{PointSegFactory, PointTemplate, PointTemplateCtx};
     use crate::version::v0_0_1::util::ToResolved;
 
     #[test]
@@ -7204,7 +7208,7 @@ Bind(version=1.2.3)-> {
 }
 
 fn create_command<I:Span>(input: I) -> Res<I, CommandVar> {
-    tuple((tag("create"),space1,create))(input).map( |(next,(_,_,create))|{
+    tuple((tag("create"),create))(input).map( |(next,(_,create))|{
         (next, CommandVar::Create(create))
     })
 }

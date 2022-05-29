@@ -243,68 +243,68 @@ pub mod entity {
 
     pub mod request {
         use mesh_portal_versions::version::v0_0_1 as current;
-        use mesh_portal_versions::version::v0_0_1::entity;
+        use mesh_portal_versions::version::v0_0_1::{cmd, entity};
 
-        pub type Method = entity::request::Method;
-        pub type RequestCore= entity::request::RequestCore;
-        pub type Rc = entity::request::Rc;
-        pub type RcCommandType = entity::request::RcCommandType;
+        pub type Method = cmd::request::Method;
+        pub type RequestCore= cmd::request::RequestCore;
+        pub type Rc = cmd::request::Rc;
+        pub type RcCommandType = cmd::request::RcCommandType;
 
         pub mod create {
             use mesh_portal_versions::version::v0_0_1 as current;
-            use mesh_portal_versions::version::v0_0_1::entity;
+            use mesh_portal_versions::version::v0_0_1::{cmd, entity};
 
-            pub type Create= entity::request::create::Create;
-            pub type Template = entity::request::create::Template;
-            pub type KindTemplate = entity::request::create::KindTemplate;
-            pub type Fulfillment = entity::request::create::Fulfillment;
-            pub type Strategy = entity::request::create::Strategy;
-            pub type PointTemplate = entity::request::create::PointTemplate;
-            pub type PointSegFactory = entity::request::create::PointSegFactory;
-            pub type CreateOp = entity::request::create::Create;
-            pub type Require = entity::request::create::Require;
-            pub type Set = entity::request::set::Set;
+            pub type Create= cmd::request::create::Create;
+            pub type Template = cmd::request::create::Template;
+            pub type KindTemplate = cmd::request::create::KindTemplate;
+            pub type Fulfillment = cmd::request::create::Fulfillment;
+            pub type Strategy = cmd::request::create::Strategy;
+            pub type PointTemplate = cmd::request::create::PointTemplate;
+            pub type PointSegFactory = cmd::request::create::PointSegFactory;
+            pub type CreateOp = cmd::request::create::Create;
+            pub type Require = cmd::request::create::Require;
+            pub type Set = cmd::request::set::Set;
         }
 
         pub mod select {
             use mesh_portal_versions::version::v0_0_1 as current;
-            use mesh_portal_versions::version::v0_0_1::entity;
+            use mesh_portal_versions::version::v0_0_1::{cmd, entity};
 
-            pub type SelectIntoPayload = entity::request::select::SelectIntoPayload;
-            pub type Select = entity::request::select::Select;
-            pub type SelectionKind = entity::request::select::SelectKind;
-            pub type SubSelector = entity::request::select::SubSelect;
-            pub type PropertiesPattern = entity::request::select::PropertiesPattern;
+            pub type SelectIntoPayload = cmd::request::select::SelectIntoPayload;
+            pub type Select = cmd::request::select::Select;
+            pub type SelectionKind = cmd::request::select::SelectKind;
+            pub type SubSelector = cmd::request::select::SubSelect;
+            pub type PropertiesPattern = cmd::request::select::PropertiesPattern;
         }
 
         pub mod update {
             use mesh_portal_versions::version::v0_0_1 as current;
-            use mesh_portal_versions::version::v0_0_1::entity;
+            use mesh_portal_versions::version::v0_0_1::{cmd, entity};
 
-            pub type Update = entity::request::update::Update;
+            pub type Update = cmd::request::update::Update;
         }
 
         pub mod query {
             use mesh_portal_versions::version::v0_0_1 as current;
-            use mesh_portal_versions::version::v0_0_1::entity;
+            use mesh_portal_versions::version::v0_0_1::{cmd, entity};
 
-            pub type Query= entity::request::query::Query;
-            pub type QueryResult = entity::request::query::QueryResult;
+            pub type Query= cmd::request::query::Query;
+            pub type QueryResult = cmd::request::query::QueryResult;
         }
 
         pub mod get {
             use mesh_portal_versions::version::v0_0_1 as current;
-            use mesh_portal_versions::version::v0_0_1::entity;
+            use mesh_portal_versions::version::v0_0_1::{cmd, entity};
 
-            pub type Get = entity::request::get::Get;
-            pub type GetOp = entity::request::get::GetOp;
+            pub type Get = cmd::request::get::Get;
+            pub type GetOp = cmd::request::get::GetOp;
         }
 
         pub mod set {
             use mesh_portal_versions::version::v0_0_1 as current;
-            use mesh_portal_versions::version::v0_0_1::entity;
+            use mesh_portal_versions::version::v0_0_1::{cmd, entity};
 
-            pub type Set = entity::request::set::Set;
+            pub type Set = cmd::request::set::Set;
         }
     }
 

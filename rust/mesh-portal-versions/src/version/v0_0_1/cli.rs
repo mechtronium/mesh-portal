@@ -3,10 +3,10 @@ use nom::combinator::all_consuming;
 
 use crate::error::MsgErr;
 use crate::version::v0_0_1::bin::Bin;
-use crate::version::v0_0_1::entity::request::create::{Create, CreateCtx, CreateVar, Strategy};
-use crate::version::v0_0_1::entity::request::select::{Select, SelectCtx, SelectVar};
-use crate::version::v0_0_1::entity::request::get::{Get, GetCtx, GetVar};
-use crate::version::v0_0_1::entity::request::set::{Set, SetCtx, SetVar};
+use crate::version::v0_0_1::cmd::request::create::{Create, CreateCtx, CreateVar, Strategy};
+use crate::version::v0_0_1::cmd::request::select::{Select, SelectCtx, SelectVar};
+use crate::version::v0_0_1::cmd::request::get::{Get, GetCtx, GetVar};
+use crate::version::v0_0_1::cmd::request::set::{Set, SetCtx, SetVar};
 use crate::version::v0_0_1::parse::{command_line, Env};
 use crate::version::v0_0_1::parse::error::result;
 use crate::version::v0_0_1::payload::payload::Payload;
