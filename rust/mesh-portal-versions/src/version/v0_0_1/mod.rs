@@ -5,7 +5,7 @@ use nom_locate::LocatedSpan;
 use nom::lib::std::collections::HashMap;
 use nom::{Offset, Slice};
 
-pub mod cmd;
+pub mod command;
 pub mod config;
 pub mod entity;
 pub mod frame;

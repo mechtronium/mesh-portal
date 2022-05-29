@@ -1,3 +1,17 @@
+use core::str::FromStr;
+use nom::combinator::all_consuming;
+use crate::error::MsgErr;
+use crate::version::v0_0_1::command::request::create::{Create, CreateCtx, CreateVar, Strategy};
+use crate::version::v0_0_1::command::request::delete::{Delete, DeleteCtx, DeleteVar};
+use crate::version::v0_0_1::command::request::get::{Get, GetCtx, GetVar};
+use crate::version::v0_0_1::command::request::query::Query;
+use crate::version::v0_0_1::command::request::select::{Select, SelectCtx, SelectVar};
+use crate::version::v0_0_1::command::request::set::{Set, SetCtx, SetVar};
+use crate::version::v0_0_1::parse::{command_line, Env};
+use crate::version::v0_0_1::parse::error::result;
+use crate::version::v0_0_1::span::new_span;
+use crate::version::v0_0_1::util::ToResolved;
+
 pub mod command {
     use serde::{Deserialize, Serialize};
 
@@ -130,12 +144,12 @@ pub mod command {
 pub mod request {
     use crate::error::{MsgErr, StatusErr};
     use crate::version::v0_0_1::bin::Bin;
-    use crate::version::v0_0_1::cmd::request::create::Create;
-    use crate::version::v0_0_1::cmd::request::get::Get;
-    use crate::version::v0_0_1::cmd::request::query::Query;
-    use crate::version::v0_0_1::cmd::request::select::Select;
-    use crate::version::v0_0_1::cmd::request::set::Set;
-    use crate::version::v0_0_1::cmd::request::update::Update;
+    use crate::version::v0_0_1::command::request::create::Create;
+    use crate::version::v0_0_1::command::request::get::Get;
+    use crate::version::v0_0_1::command::request::query::Query;
+    use crate::version::v0_0_1::command::request::select::Select;
+    use crate::version::v0_0_1::command::request::set::Set;
+    use crate::version::v0_0_1::command::request::update::Update;
     use crate::version::v0_0_1::entity::response::ResponseCore;
     use crate::version::v0_0_1::fail;
     use crate::version::v0_0_1::fail::{BadRequest, Fail, NotFound};
@@ -398,7 +412,7 @@ pub mod request {
 
     pub mod set {
         use crate::error::MsgErr;
-        use crate::version::v0_0_1::cmd::command::common::SetProperties;
+        use crate::version::v0_0_1::command::command::common::SetProperties;
         use crate::version::v0_0_1::id::id::{Point, PointCtx, PointVar};
         use crate::version::v0_0_1::parse::Env;
         use serde::{Deserialize, Serialize};
@@ -442,7 +456,7 @@ pub mod request {
 
     pub mod get {
         use crate::error::MsgErr;
-        use crate::version::v0_0_1::cmd::command::common::SetProperties;
+        use crate::version::v0_0_1::command::command::common::SetProperties;
         use crate::version::v0_0_1::id::id::{Point, PointCtx, PointVar};
         use crate::version::v0_0_1::parse::Env;
         use serde::{Deserialize, Serialize};
@@ -497,7 +511,7 @@ pub mod request {
 
         use crate::error::MsgErr;
         use crate::version::v0_0_1::bin::Bin;
-        use crate::version::v0_0_1::cmd::command::common::{
+        use crate::version::v0_0_1::command::command::common::{
             SetProperties, SetRegistry, StateSrc,
         };
         use crate::version::v0_0_1::id::id::{
@@ -899,13 +913,38 @@ pub mod request {
         pub type PropertiesPattern = MapPattern;
     }
 
+    pub mod delete {
+        use crate::error::MsgErr;
+        use crate::version::v0_0_1::command::request::select::PropertiesPattern;
+        use crate::version::v0_0_1::parse::Env;
+        use crate::version::v0_0_1::selector::selector::{Hop, PointSelectorDef};
+        use crate::version::v0_0_1::util::ToResolved;
+        use serde::{Serialize,Deserialize};
+
+        pub type Delete = DeleteDef<Hop>;
+        pub type DeleteCtx = DeleteDef<Hop>;
+        pub type DeleteVar = DeleteDef<Hop>;
+
+        impl ToResolved<Delete> for Delete{
+            fn to_resolved(self, env: &Env) -> Result<Delete, MsgErr> {
+                Ok(self)
+            }
+        }
+
+        #[derive(Debug, Clone,Serialize,Deserialize)]
+        pub struct DeleteDef<Hop> {
+            pub selector: PointSelectorDef<Hop>,
+        }
+
+    }
+
     pub mod update {
         use std::convert::TryInto;
 
         use serde::{Deserialize, Serialize};
 
         use crate::error::MsgErr;
-        use crate::version::v0_0_1::cmd::command::common::SetProperties;
+        use crate::version::v0_0_1::command::command::common::SetProperties;
         use crate::version::v0_0_1::id::id::Point;
         use crate::version::v0_0_1::payload::payload::Payload;
 
@@ -921,7 +960,7 @@ pub mod request {
         use serde::{Deserialize, Serialize};
 
         use crate::error::MsgErr;
-        use crate::version::v0_0_1::cmd::request::Rc;
+        use crate::version::v0_0_1::command::request::Rc;
         use crate::version::v0_0_1::selector::selector::PointKindHierarchy;
 
         #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -957,5 +996,81 @@ pub mod request {
                 Rc::Query(self)
             }
         }
+    }
+}
+
+
+pub enum Command{
+    Create(Create),
+    Delete(Delete),
+    Select(Select),
+    Publish(Create),
+    Set(Set),
+    Get(Get),
+    Query(Query),
+}
+
+pub enum CommandCtx{
+    Create(CreateCtx),
+    Delete(DeleteCtx),
+    Select(SelectCtx),
+    Publish(CreateCtx),
+    Set(SetCtx),
+    Get(GetCtx),
+    Query(Query),
+}
+
+pub enum CommandVar {
+    Create(CreateVar),
+    Delete(DeleteVar),
+    Select(SelectVar),
+    Publish(CreateVar),
+    Set(SetVar),
+    Get(GetVar),
+    Query(Query),
+}
+
+
+impl FromStr for CommandVar {
+    type Err = MsgErr;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let s = new_span(s);
+        result(all_consuming(command_line)(s))
+    }
+}
+
+impl ToResolved<Command> for CommandVar {
+    fn to_resolved(self, env: &Env) -> Result<Command, MsgErr> {
+        let command: CommandCtx = self.to_resolved(env)?;
+        command.to_resolved(env)
+    }
+}
+
+impl ToResolved<CommandCtx> for CommandVar {
+    fn to_resolved(self, env: &Env) -> Result<CommandCtx, MsgErr> {
+        Ok(match self {
+            CommandVar::Create(i) => CommandCtx::Create(i.to_resolved(env)?),
+            CommandVar::Select(i) => CommandCtx::Select(i.to_resolved(env)?),
+            CommandVar::Publish(i) => CommandCtx::Publish(i.to_resolved(env)?),
+            CommandVar::Set(i) => CommandCtx::Set(i.to_resolved(env)?),
+            CommandVar::Get(i) => CommandCtx::Get(i.to_resolved(env)?),
+            CommandVar::Delete(i) => CommandCtx::Delete(i.to_resolved(env)?),
+            CommandVar::Query(i) => CommandCtx::Query(i)
+        })
+    }
+}
+
+impl ToResolved<Command> for CommandCtx {
+    fn to_resolved(self, env: &Env) -> Result<Command, MsgErr> {
+        Ok(match self {
+            CommandCtx::Create(i) => Command::Create(i.to_resolved(env)?),
+            CommandCtx::Select(i) => Command::Select(i.to_resolved(env)?),
+            CommandCtx::Publish(i) => Command::Publish(i.to_resolved(env)?),
+            CommandCtx::Set(i) => Command::Set(i.to_resolved(env)?),
+            CommandCtx::Get(i) => Command::Get(i.to_resolved(env)?),
+            CommandCtx::Delete(i) => Command::Delete(i.to_resolved(env)?),
+            CommandCtx::Query(i) => Command::Query(i)
+        })
     }
 }

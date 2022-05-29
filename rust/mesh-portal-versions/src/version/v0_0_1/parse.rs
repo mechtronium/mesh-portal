@@ -14,11 +14,11 @@ use nom::character::complete::{
 use nom::combinator::{cut, eof, fail, not, peek, recognize, success, value, verify};
 
 use crate::error::{MsgErr, ParseErrs};
-use crate::version::v0_0_1::cmd::command::common::{PropertyMod, SetProperties, StateSrc};
-use crate::version::v0_0_1::cmd::request::create::{Create, CreateVar, KindTemplate, PointSegFactory, PointTemplate, PointTemplateSeg, PointTemplateVar, Require, Strategy, Template, TemplateVar};
-use crate::version::v0_0_1::cmd::request::get::{Get, GetOp, GetVar};
-use crate::version::v0_0_1::cmd::request::select::{Select, SelectIntoPayload, SelectKind, SelectVar};
-use crate::version::v0_0_1::cmd::request::set::{Set, SetVar};
+use crate::version::v0_0_1::command::command::common::{PropertyMod, SetProperties, StateSrc};
+use crate::version::v0_0_1::command::request::create::{Create, CreateVar, KindTemplate, PointSegFactory, PointTemplate, PointTemplateSeg, PointTemplateVar, Require, Strategy, Template, TemplateVar};
+use crate::version::v0_0_1::command::request::get::{Get, GetOp, GetVar};
+use crate::version::v0_0_1::command::request::select::{Select, SelectIntoPayload, SelectKind, SelectVar};
+use crate::version::v0_0_1::command::request::set::{Set, SetVar};
 use crate::version::v0_0_1::id::id::{
     Point, PointCtx, PointKindVar, PointSegCtx, PointSegDelim, PointSegment, PointSegVar, PointVar,
     RouteSeg, RouteSegVar, Variable, Version,
@@ -27,7 +27,7 @@ use crate::version::v0_0_1::security::{
     AccessGrantKind, AccessGrantKindDef, ChildPerms, ParticlePerms, Permissions, PermissionsMask,
     PermissionsMaskKind, Privilege,
 };
-use crate::version::v0_0_1::selector::selector::{MapEntryPatternCtx, MapEntryPatternVar, PointKindHierarchy, PointKindSeg };
+use crate::version::v0_0_1::selector::selector::{MapEntryPatternCtx, MapEntryPatternVar, PointKindHierarchy, PointKindSeg};
 use crate::version::v0_0_1::util::{MethodPattern, StringMatcher, ToResolved, ValuePattern};
 use nom::bytes::complete::take;
 use nom::character::is_space;
@@ -2940,7 +2940,7 @@ pub mod model {
         BindConfig, MessageKind, PipelineStepCtx, PipelineStepDef, PipelineStepVar,
         PipelineStopCtx, PipelineStopDef, PipelineStopVar, Selector,
     };
-    use crate::version::v0_0_1::cmd::request::{Method, RcCommandType, RequestCore};
+    use crate::version::v0_0_1::command::request::{Method, RcCommandType, RequestCore};
     use crate::version::v0_0_1::entity::MethodKind;
     use crate::version::v0_0_1::http::HttpMethod;
     use crate::version::v0_0_1::id::id::{Point, PointCtx, PointVar, Version};
@@ -4406,7 +4406,7 @@ use crate::version::v0_0_1::config::config::bind::{
     PipelineStop, PipelineStopCtx, PipelineStopVar, Selector,
 };
 use crate::version::v0_0_1::config::config::Document;
-use crate::version::v0_0_1::cmd::request::{Method, RcCommandType};
+use crate::version::v0_0_1::command::request::{Method, RcCommandType};
 use crate::version::v0_0_1::entity::MethodKind;
 use crate::version::v0_0_1::http::HttpMethod;
 use crate::version::v0_0_1::id::id::{GenericKind, GenericKindBase, PointKind, PointSeg, Specific};
@@ -4445,7 +4445,8 @@ use nom_supreme::error::ErrorTree;
 use nom_supreme::{parse_from_str, ParserExt};
 use nom_supreme::parser_ext::MapRes;
 use crate::version::v0_0_1::cli;
-use crate::version::v0_0_1::cli::{CommandVar, RawCommand};
+use crate::version::v0_0_1::cli::RawCommand;
+use crate::version::v0_0_1::command::CommandVar;
 
 fn inclusive_any_segment<I: Span>(input: I) -> Res<I, PointSegSelector> {
     alt((tag("+*"), tag("ROOT+*")))(input).map(|(next, _)| (next, PointSegSelector::InclusiveAny))
@@ -6242,7 +6243,7 @@ pub mod test {
     use std::str::FromStr;
     use std::sync::Arc;
     use bincode::config;
-    use crate::version::v0_0_1::cmd::request::create::{PointSegFactory, PointTemplate, PointTemplateCtx};
+    use crate::version::v0_0_1::command::request::create::{PointSegFactory, PointTemplate, PointTemplateCtx};
     use crate::version::v0_0_1::util::ToResolved;
 
     #[test]
@@ -7250,21 +7251,15 @@ pub fn command<I:Span>(input: I) -> Res<I, CommandVar> {
     context("command", alt( (create_command, publish_command, select_command, set_command, get_command,fail) ))(input)
 }
 
-pub fn command_mutation<I:Span>(input: I) -> Res<I, CommandVar> {
-    context("command_mutation", tuple((command_strategy, command)))(input).map( |(next,(strategy,mut command)),| {
-        command.set_strategy(strategy);
-        (next, command)
-    })
-}
 
 pub fn command_line<I:Span>(input: I) -> Res<I, CommandVar> {
-    tuple( (multispace0,command_mutation,multispace0,opt(tag(";")),multispace0))(input).map(|(next,(_,command,_,_,_))|{
+    tuple( (multispace0,command,multispace0,opt(tag(";")),multispace0))(input).map(|(next,(_,command,_,_,_))|{
         (next,command)
     })
 }
 
 pub fn script_line<I:Span>(input: I) -> Res<I, CommandVar> {
-    tuple( (multispace0,command_mutation,multispace0,tag(";"),multispace0))(input).map(|(next,(_,command,_,_,_))|{
+    tuple( (multispace0,command,multispace0,tag(";"),multispace0))(input).map(|(next,(_,command,_,_,_))|{
         (next,command)
     })
 }
@@ -7283,12 +7278,12 @@ pub fn rec_script_line<I:Span>(input: I) -> Res<I,I> {
 
 #[cfg(test)]
 pub mod cmd_test {
-    use crate::version::v0_0_1::parse::{command, command_mutation, Res, script};
+    use crate::version::v0_0_1::parse::{command,  Res, script};
     use crate::version::v0_0_1::span::new_span;
     use nom::error::{VerboseError, VerboseErrorKind};
     use nom_supreme::final_parser::{ExtractContext, final_parser};
-    use crate::version::v0_0_1::cli::{Command, CommandVar};
     use crate::error::MsgErr;
+    use crate::version::v0_0_1::command::{Command, CommandVar};
 
     /*
     #[test]
@@ -7310,8 +7305,8 @@ pub mod cmd_test {
 
     #[test]
     pub fn test() -> Result<(),MsgErr>{
-        let input = "? xreate localhost<Space>";
-        match command_mutation(new_span(input)) {
+        let input = "xreate? localhost<Space>";
+        match command(new_span(input)) {
             Ok(_) => {}
             Err(nom::Err::Error(e)) => {
                 eprintln!("yikes!");
@@ -7342,11 +7337,11 @@ pub mod cmd_test {
 
     #[test]
     pub fn test_script() -> Result<(),MsgErr>{
-        let input = r#" ? create localhost<Space>;
+        let input = r#" create? localhost<Space>;
  Xcrete localhost:repo<Base<Repo>>;
-? create localhost:repo:tutorial<ArtifactBundleSeries>;
-? publish ^[ bundle.zip ]-> localhost:repo:tutorial:1.0.0;
-set localhost{ +bind=localhost:repo:tutorial:1.0.0:/bind/localhost.bind };
+ create? localhost:repo:tutorial<ArtifactBundleSeries>;
+ publish? ^[ bundle.zip ]-> localhost:repo:tutorial:1.0.0;
+ set localhost{ +bind=localhost:repo:tutorial:1.0.0:/bind/localhost.bind } ;
         "#;
 
         crate::version::v0_0_1::parse::script(new_span(input))?;

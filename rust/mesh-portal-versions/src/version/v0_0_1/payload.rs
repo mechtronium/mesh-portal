@@ -5,7 +5,7 @@ pub mod payload {
 
     use crate::error::{MsgErr, ParseErrs};
     use crate::version::v0_0_1::bin::Bin;
-    use crate::version::v0_0_1::cmd::request::{Method, Rc, RcCommandType, RequestCore};
+    use crate::version::v0_0_1::command::request::{Method, Rc, RcCommandType, RequestCore};
     use crate::version::v0_0_1::id::id::{GenericKind, GenericKindBase, Meta, Point, PointCtx, PointVar};
     use crate::version::v0_0_1::particle::particle::{Particle, Status, Stub};
     use crate::version::v0_0_1::selector::selector::{KindSelector, PointSelector};

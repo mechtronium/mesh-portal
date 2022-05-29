@@ -24,7 +24,7 @@
     pub mod response {
         use crate::error::MsgErr;
         use crate::version::v0_0_1::bin::Bin;
-        use crate::version::v0_0_1::cmd::request::RequestCore;
+        use crate::version::v0_0_1::command::request::RequestCore;
         use crate::version::v0_0_1::fail;
         use crate::version::v0_0_1::fail::Fail;
         use crate::version::v0_0_1::id::id::{GenericKind, Meta, Point};

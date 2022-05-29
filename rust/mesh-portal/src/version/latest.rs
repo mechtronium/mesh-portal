@@ -152,22 +152,22 @@ pub mod payload {
 
 pub mod command {
     use mesh_portal_versions::version::v0_0_1 as current;
-    use mesh_portal_versions::version::v0_0_1::cmd;
+    use mesh_portal_versions::version::v0_0_1::command;
 
-    pub type Command = cmd::command::Command;
-    pub type CommandStatus = cmd::command::CommandStatus;
-    pub type CommandEvent = cmd::command::CommandEvent;
-    pub type CliId = cmd::command::CliId;
+    pub type Command = command::command::Command;
+    pub type CommandStatus = command::command::CommandStatus;
+    pub type CommandEvent = command::command::CommandEvent;
+    pub type CliId = command::command::CliId;
 
     pub mod common {
         use mesh_portal_versions::version::v0_0_1 as current;
-        use mesh_portal_versions::version::v0_0_1::cmd;
+        use mesh_portal_versions::version::v0_0_1::command;
 
-        pub type StateSrc = cmd::command::common::StateSrc;
-        pub type SetLabel = cmd::command::common::SetLabel;
-        pub type SetProperties = cmd::command::common::SetProperties;
-        pub type PropertyMod = cmd::command::common::PropertyMod;
-        pub type SetRegistry = cmd::command::common::SetRegistry;
+        pub type StateSrc = command::command::common::StateSrc;
+        pub type SetLabel = command::command::common::SetLabel;
+        pub type SetProperties = command::command::common::SetProperties;
+        pub type PropertyMod = command::command::common::PropertyMod;
+        pub type SetRegistry = command::command::common::SetRegistry;
     }
 }
 
@@ -243,68 +243,68 @@ pub mod entity {
 
     pub mod request {
         use mesh_portal_versions::version::v0_0_1 as current;
-        use mesh_portal_versions::version::v0_0_1::{cmd, entity};
+        use mesh_portal_versions::version::v0_0_1::{command, entity};
 
-        pub type Method = cmd::request::Method;
-        pub type RequestCore= cmd::request::RequestCore;
-        pub type Rc = cmd::request::Rc;
-        pub type RcCommandType = cmd::request::RcCommandType;
+        pub type Method = command::request::Method;
+        pub type RequestCore= command::request::RequestCore;
+        pub type Rc = command::request::Rc;
+        pub type RcCommandType = command::request::RcCommandType;
 
         pub mod create {
             use mesh_portal_versions::version::v0_0_1 as current;
-            use mesh_portal_versions::version::v0_0_1::{cmd, entity};
+            use mesh_portal_versions::version::v0_0_1::{command, entity};
 
-            pub type Create= cmd::request::create::Create;
-            pub type Template = cmd::request::create::Template;
-            pub type KindTemplate = cmd::request::create::KindTemplate;
-            pub type Fulfillment = cmd::request::create::Fulfillment;
-            pub type Strategy = cmd::request::create::Strategy;
-            pub type PointTemplate = cmd::request::create::PointTemplate;
-            pub type PointSegFactory = cmd::request::create::PointSegFactory;
-            pub type CreateOp = cmd::request::create::Create;
-            pub type Require = cmd::request::create::Require;
-            pub type Set = cmd::request::set::Set;
+            pub type Create= command::request::create::Create;
+            pub type Template = command::request::create::Template;
+            pub type KindTemplate = command::request::create::KindTemplate;
+            pub type Fulfillment = command::request::create::Fulfillment;
+            pub type Strategy = command::request::create::Strategy;
+            pub type PointTemplate = command::request::create::PointTemplate;
+            pub type PointSegFactory = command::request::create::PointSegFactory;
+            pub type CreateOp = command::request::create::Create;
+            pub type Require = command::request::create::Require;
+            pub type Set = command::request::set::Set;
         }
 
         pub mod select {
             use mesh_portal_versions::version::v0_0_1 as current;
-            use mesh_portal_versions::version::v0_0_1::{cmd, entity};
+            use mesh_portal_versions::version::v0_0_1::{command, entity};
 
-            pub type SelectIntoPayload = cmd::request::select::SelectIntoPayload;
-            pub type Select = cmd::request::select::Select;
-            pub type SelectionKind = cmd::request::select::SelectKind;
-            pub type SubSelector = cmd::request::select::SubSelect;
-            pub type PropertiesPattern = cmd::request::select::PropertiesPattern;
+            pub type SelectIntoPayload = command::request::select::SelectIntoPayload;
+            pub type Select = command::request::select::Select;
+            pub type SelectionKind = command::request::select::SelectKind;
+            pub type SubSelector = command::request::select::SubSelect;
+            pub type PropertiesPattern = command::request::select::PropertiesPattern;
         }
 
         pub mod update {
             use mesh_portal_versions::version::v0_0_1 as current;
-            use mesh_portal_versions::version::v0_0_1::{cmd, entity};
+            use mesh_portal_versions::version::v0_0_1::{command, entity};
 
-            pub type Update = cmd::request::update::Update;
+            pub type Update = command::request::update::Update;
         }
 
         pub mod query {
             use mesh_portal_versions::version::v0_0_1 as current;
-            use mesh_portal_versions::version::v0_0_1::{cmd, entity};
+            use mesh_portal_versions::version::v0_0_1::{command, entity};
 
-            pub type Query= cmd::request::query::Query;
-            pub type QueryResult = cmd::request::query::QueryResult;
+            pub type Query= command::request::query::Query;
+            pub type QueryResult = command::request::query::QueryResult;
         }
 
         pub mod get {
             use mesh_portal_versions::version::v0_0_1 as current;
-            use mesh_portal_versions::version::v0_0_1::{cmd, entity};
+            use mesh_portal_versions::version::v0_0_1::{command, entity};
 
-            pub type Get = cmd::request::get::Get;
-            pub type GetOp = cmd::request::get::GetOp;
+            pub type Get = command::request::get::Get;
+            pub type GetOp = command::request::get::GetOp;
         }
 
         pub mod set {
             use mesh_portal_versions::version::v0_0_1 as current;
-            use mesh_portal_versions::version::v0_0_1::{cmd, entity};
+            use mesh_portal_versions::version::v0_0_1::{command, entity};
 
-            pub type Set = cmd::request::set::Set;
+            pub type Set = command::request::set::Set;
         }
     }
 
