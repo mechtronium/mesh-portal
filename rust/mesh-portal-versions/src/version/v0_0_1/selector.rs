@@ -1,10 +1,10 @@
 use alloc::string::String;
 use crate::version::v0_0_1::payload::payload::{Payload, PayloadPattern, PayloadPatternCtx, PayloadPatternDef};
-use crate::version::v0_0_1::util::ValuePattern;
+use crate::version::v0_0_1::util::{ToResolved, ValuePattern};
 use serde::{Deserialize, Serialize};
 use crate::error::MsgErr;
 use crate::version::v0_0_1::id::id::{Point, PointCtx, PointVar};
-use crate::version::v0_0_1::parse::{CtxResolver, Env, ToResolved};
+use crate::version::v0_0_1::parse::{CtxResolver, Env };
 
 pub mod selector {
     use alloc::format;
@@ -22,13 +22,13 @@ pub mod selector {
     use crate::error::MsgErr;
 
     use crate::version::v0_0_1::entity::request::{Method, Rc, RcCommandType, RequestCore};
-    use crate::version::v0_0_1::id::id::{GenericKind, GenericKindBase, Point, PointCtx, PointSeg, PointVar, RouteSeg, Specific, Tks, Version};
-    use crate::version::v0_0_1::parse::{camel_case, camel_case_to_string_matcher, consume_hierarchy, file_chars, path, path_regex, point_segment_selector, point_selector, Res};
+    use crate::version::v0_0_1::id::id::{GenericKind, GenericKindBase, Point, PointCtx, PointSeg, PointVar, RouteSeg, Specific, Tks, Variable, VarVal, Version};
+    use crate::version::v0_0_1::parse::{camel_case, camel_case_to_string_matcher, consume_hierarchy, Env, file_chars, path, path_regex, point_segment_selector, point_selector, Res};
     use crate::version::v0_0_1::payload::payload::{Call, CallKind, CallWithConfig, CallWithConfigDef, HttpCall, HttpMethodType, ListPattern, MapPattern, MsgCall, NumRange, Payload, PayloadFormat, PayloadPattern, PayloadPatternDef, PayloadType, PayloadTypePatternDef, Primitive, PrimitiveType};
     use crate::version::v0_0_1::selector::selector::specific::{
         ProductSelector, VariantSelector, VendorSelector,
     };
-    use crate::version::v0_0_1::util::{MethodPattern, StringMatcher, ValueMatcher, ValuePattern};
+    use crate::version::v0_0_1::util::{MethodPattern, StringMatcher, ToResolved, ValueMatcher, ValuePattern};
     use crate::version::v0_0_1::parse;
     use crate::{Deserialize, Serialize};
     use nom::branch::alt;
@@ -46,10 +46,12 @@ pub mod selector {
     use regex::Regex;
     use std::collections::HashMap;
     use crate::version::v0_0_1::parse::error::result;
-    use crate::version::v0_0_1::span::{new_span};
+    use crate::version::v0_0_1::parse::model::Var;
+    use crate::version::v0_0_1::span::{new_span, Trace};
     use crate::version::v0_0_1::wrap::Span;
 
     pub type KindSelector =KindSelectorDef<GenericKindSelector,GenericSubKindSelector,SpecificSelector>;
+    pub type KindSelectorVar =KindSelectorDef<VarVal<GenericKindSelector>,VarVal<GenericSubKindSelector>,VarVal<SpecificSelector>>;
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct KindSelectorDef<GenericKindSelector,GenericSubKindSelector,SpecificSelector> {
@@ -111,8 +113,16 @@ pub mod selector {
     }
 
     pub type PointSelector = PointSelectorDef<Hop>;
+    pub type PointSelectorCtx = PointSelectorDef<Hop>;
+    pub type PointSelectorVar = PointSelectorDef<Hop>;
 
-    impl FromStr for PointSelector {
+    impl ToResolved<PointSelector> for PointSelector {
+        fn to_resolved(self, env: &Env) -> Result<PointSelector, MsgErr> {
+            Ok(self)
+        }
+    }
+
+    impl FromStr for PointSelector{
         type Err = MsgErr;
 
         fn from_str(s: &str) -> Result<Self, Self::Err> {
@@ -371,6 +381,31 @@ pub mod selector {
         Recursive,          // **
         Exact(ExactPointSeg),
         Version(VersionReq),
+    }
+
+    #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
+    pub enum PointSegSelectorVar {
+        InclusiveAny,       // +:*  // includes Root if it's the first segment
+        InclusiveRecursive, // +:** // includes Root if its the first segment
+        Any,                // *
+        Recursive,          // **
+        Exact(ExactPointSeg),
+        Version(VersionReq),
+        Var(Variable),
+        Working(Trace),
+        Pop(Trace)
+    }
+
+    #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
+    pub enum PointSegSelectorCtx {
+        InclusiveAny,       // +:*  // includes Root if it's the first segment
+        InclusiveRecursive, // +:** // includes Root if its the first segment
+        Any,                // *
+        Recursive,          // **
+        Exact(ExactPointSeg),
+        Version(VersionReq),
+        Working(Trace),
+        Pop(Trace)
     }
 
     impl FromStr for PointSegSelector {
@@ -892,6 +927,8 @@ pub mod selector {
      */
 
     pub type Hop = HopDef<PointSegSelector, KindSelector>;
+    pub type HopCtx = HopDef<PointSegSelectorCtx, KindSelector>;
+    pub type HopVar = HopDef<PointSegSelectorVar, KindSelectorVar>;
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct HopDef<Segment, KindSelector> {

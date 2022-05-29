@@ -97,12 +97,12 @@ pub mod config {
         use crate::version::v0_0_1::selector::selector::{
             PipelineSelector, HttpPipelineSelector, MsgPipelineSelector, RcPipelineSelector,
         };
-        use crate::version::v0_0_1::util::{ValueMatcher, ValuePattern};
+        use crate::version::v0_0_1::util::{ToResolved, ValueMatcher, ValuePattern};
         use serde::{Deserialize, Serialize};
         use std::convert::TryInto;
         use crate::version::v0_0_1::messaging::messaging::Request;
         use crate::version::v0_0_1::parse::model::{BindScope, RouteScope, PipelineSegment, PipelineSegmentDef, PipelineVar, MessageScope, MethodScope};
-        use crate::version::v0_0_1::parse::{Env, ToResolved};
+        use crate::version::v0_0_1::parse::{Env};
         use crate::version::v0_0_1::selector::{PayloadBlock, PayloadBlockDef};
 
         #[derive(Clone)]

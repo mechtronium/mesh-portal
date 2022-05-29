@@ -26,6 +26,23 @@ impl MsgMethod {
     }
 }
 
+impl TryFrom<String> for MsgMethod {
+    type Error = MsgErr;
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        Self::new(value)
+    }
+}
+
+impl TryFrom<&str> for MsgMethod {
+    type Error = MsgErr;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        Self::new(value)
+    }
+}
+
+
 impl Deref for MsgMethod {
     type Target = String;
 
@@ -54,7 +71,31 @@ pub struct MsgRequest {
     pub body: Payload,
 }
 
+impl Default for MsgRequest {
+    fn default() -> Self {
+        Self {
+            method: Default::default(),
+            headers: Default::default(),
+            uri: Default::default(),
+            body: Default::default()
+        }
+    }
+}
+
 impl MsgRequest {
+
+    pub fn new<M>(method: M) -> Result<Self,MsgErr> where M: TryInto<MsgMethod,Error=MsgErr>{
+        Ok(MsgRequest {
+            method: method.try_into()?,
+            ..Default::default()
+        })
+    }
+
+    pub fn with_body(mut self, body:Payload) -> Self {
+        self.body = body;
+        self
+    }
+
     pub fn ok(&self, payload: Payload) -> ResponseCore {
         ResponseCore {
             headers: Default::default(),

@@ -1,25 +1,7 @@
 pub mod command {
     use serde::{Deserialize, Serialize};
 
-    #[derive(Debug, Clone, Serialize, Deserialize)]
-    pub struct Command {
-        pub cli: CliId,
-        pub payload: String,
-    }
 
-    #[derive(Debug, Clone, Serialize, Deserialize)]
-    pub enum CommandStatus {
-        Running,
-        Exit(i32),
-    }
-
-    pub type CliId = String;
-    #[derive(Debug, Clone, Serialize, Deserialize)]
-    pub struct CommandEvent {
-        pub cli: CliId,
-        pub line: Option<String>,
-        pub status: CommandStatus,
-    }
 
     pub mod common {
         use std::collections::HashMap;

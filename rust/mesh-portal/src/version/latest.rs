@@ -152,22 +152,22 @@ pub mod payload {
 
 pub mod command {
     use mesh_portal_versions::version::v0_0_1 as current;
-    use mesh_portal_versions::version::v0_0_1::command;
+    use mesh_portal_versions::version::v0_0_1::cmd;
 
-    pub type Command = command::command::Command;
-    pub type CommandStatus = command::command::CommandStatus;
-    pub type CommandEvent = command::command::CommandEvent;
-    pub type CliId = command::command::CliId;
+    pub type Command = cmd::command::Command;
+    pub type CommandStatus = cmd::command::CommandStatus;
+    pub type CommandEvent = cmd::command::CommandEvent;
+    pub type CliId = cmd::command::CliId;
 
     pub mod common {
         use mesh_portal_versions::version::v0_0_1 as current;
-        use mesh_portal_versions::version::v0_0_1::command;
+        use mesh_portal_versions::version::v0_0_1::cmd;
 
-        pub type StateSrc = command::command::common::StateSrc;
-        pub type SetLabel = command::command::common::SetLabel;
-        pub type SetProperties = command::command::common::SetProperties;
-        pub type PropertyMod = command::command::common::PropertyMod;
-        pub type SetRegistry = command::command::common::SetRegistry;
+        pub type StateSrc = cmd::command::common::StateSrc;
+        pub type SetLabel = cmd::command::common::SetLabel;
+        pub type SetProperties = cmd::command::common::SetProperties;
+        pub type PropertyMod = cmd::command::common::PropertyMod;
+        pub type SetRegistry = cmd::command::common::SetRegistry;
     }
 }
 
@@ -261,9 +261,8 @@ pub mod entity {
             pub type Strategy = entity::request::create::Strategy;
             pub type PointTemplate = entity::request::create::PointTemplate;
             pub type PointSegFactory = entity::request::create::PointSegFactory;
-            pub type CreateOp = entity::request::create::CreateOp;
+            pub type CreateOp = entity::request::create::Create;
             pub type Require = entity::request::create::Require;
-            pub type Fulfilemment = entity::request::create::Fulfillment;
             pub type Set = entity::request::set::Set;
         }
 
@@ -380,6 +379,7 @@ pub mod util {
     pub type StringMatcher = current::util::StringMatcher;
     pub type Convert<A>= dyn current::util::Convert<A>;
     pub type ConvertFrom<A>= dyn current::util::ConvertFrom<A>;
+    pub type ToResolved<R> = dyn current::parse::ToResolved<R>;
 
     pub fn uuid() -> String {
         current::util::uuid()
@@ -451,4 +451,10 @@ pub mod log {
     pub type SpanLogger = current::log::SpanLogger;
 }
 
+pub mod cli {
+    use mesh_portal_versions::version::v0_0_1 as current;
+    pub type CommandTemplate = current::cli::CommandTemplate;
+    pub type RawCommand = current::cli::RawCommand;
+    pub type Transfer = current::cli::Transfer;
+}
 

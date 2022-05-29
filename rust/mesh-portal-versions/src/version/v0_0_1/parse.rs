@@ -14,28 +14,21 @@ use nom::character::complete::{
 use nom::combinator::{cut, eof, fail, not, peek, recognize, success, value, verify};
 
 use crate::error::{MsgErr, ParseErrs};
-use crate::version::v0_0_1::command::command::common::{PropertyMod, SetProperties, StateSrc};
-use crate::version::v0_0_1::entity::request::create::{
-    Create, CreateOp, CreateOpVar, KindTemplate, PointSegFactory, PointTemplate, PointTemplateSeg,
-    Require, Strategy, Template, TemplateVar,
-};
+use crate::version::v0_0_1::cmd::command::common::{PropertyMod, SetProperties, StateSrc};
+use crate::version::v0_0_1::entity::request::create::{ Create, CreateVar, KindTemplate, PointSegFactory, PointTemplate, PointTemplateSeg, PointTemplateVar, Require, Strategy, Template, TemplateVar};
 use crate::version::v0_0_1::entity::request::get::{Get, GetOp, GetVar};
-use crate::version::v0_0_1::entity::request::select::{
-    Select, SelectIntoPayload, SelectKind,
-};
+use crate::version::v0_0_1::entity::request::select::{Select, SelectIntoPayload, SelectKind, SelectVar};
 use crate::version::v0_0_1::entity::request::set::{Set, SetVar};
 use crate::version::v0_0_1::id::id::{
-    Point, PointCtx, PointKindVar, PointSegCtx, PointSegDelim, PointSegVar, PointSegment, PointVar,
+    Point, PointCtx, PointKindVar, PointSegCtx, PointSegDelim, PointSegment, PointSegVar, PointVar,
     RouteSeg, RouteSegVar, Variable, Version,
 };
 use crate::version::v0_0_1::security::{
     AccessGrantKind, AccessGrantKindDef, ChildPerms, ParticlePerms, Permissions, PermissionsMask,
     PermissionsMaskKind, Privilege,
 };
-use crate::version::v0_0_1::selector::selector::{
-    MapEntryPatternCtx, MapEntryPatternVar, PointKindHierarchy, PointKindSeg,
-};
-use crate::version::v0_0_1::util::{MethodPattern, StringMatcher, ValuePattern};
+use crate::version::v0_0_1::selector::selector::{MapEntryPatternCtx, MapEntryPatternVar, PointKindHierarchy, PointKindSeg };
+use crate::version::v0_0_1::util::{MethodPattern, StringMatcher, ToResolved, ValuePattern};
 use nom::bytes::complete::take;
 use nom::character::is_space;
 use nom_supreme::final_parser::ExtractContext;
@@ -106,6 +99,10 @@ pub fn local_route_segment<I: Span>(input: I) -> Res<I, RouteSeg> {
         .map(|(next, _)| (next, RouteSeg::Local))
 }
 
+pub fn global_route_segment<I: Span>(input: I) -> Res<I, RouteSeg> {
+    tag("GLOBAL")(input).map(|(next, _)| (next, RouteSeg::Global))
+}
+
 pub fn domain_route_segment<I: Span>(input: I) -> Res<I, RouteSeg> {
     domain_chars(input).map(|(next, domain)| (next, RouteSeg::Domain(domain.to_string())))
 }
@@ -121,7 +118,7 @@ pub fn mesh_route_segment<I: Span>(input: I) -> Res<I, RouteSeg> {
 }
 
 pub fn other_route_segment<I: Span>(input: I) -> Res<I, RouteSeg> {
-    alt((tag_route_segment, domain_route_segment, mesh_route_segment))(input)
+    alt((tag_route_segment, domain_route_segment, mesh_route_segment,global_route_segment))(input)
 }
 
 pub fn point_route_segment<I: Span>(input: I) -> Res<I, RouteSeg> {
@@ -172,6 +169,7 @@ pub fn eop<I: Span>(input: I) -> Res<I, I> {
         tag("["),
         tag("("),
         tag("{"),
+        tag("%")
     )))(input)
 }
 
@@ -218,10 +216,13 @@ pub fn dir_pop<I: Span>(input: I) -> Res<I, PointSegVar> {
     context("point:dir_pop", tuple((tag(".."), opt(tag("/")))))(input).map(|(next, _)| {
         (
             next.clone(),
-            PointSegVar::Pop {
-                range: next.location_offset() - 2..next.location_offset(),
-                extra: next.extra(),
-            },
+            PointSegVar::Pop(
+                Trace {
+                    range: next.location_offset() - 2..next.location_offset(),
+                    extra: next.extra(),
+                }
+            ),
+
         )
     })
 }
@@ -265,7 +266,7 @@ pub fn file_point_segment<I: Span>(input: I) -> Res<I, PointSeg> {
 pub fn point_var<I: Span>(input: I) -> Res<I, PointVar> {
     context(
         "point",
-        tuple((alt((root_point_var, point_non_root_var)), peek(eop))),
+        tuple((alt((root_point_var, point_non_root_var)), eop)),
     )(input.clone())
     .map(|(next, (point, _))| (next, point))
 }
@@ -321,7 +322,11 @@ where
                     start: offset,
                     end: next.location_offset(),
                 };
-                let var = Variable::new(var.to_string(), range, next.extra());
+                let trace = Trace {
+                    range,
+                    extra: next.extra()
+                };
+                let var = Variable::new(var.to_string(), trace );
                 Ok((next, PointSegVar::Var(var)))
             }
             Err(err) => match err {
@@ -349,7 +354,11 @@ where
                     start: offset,
                     end: next.location_offset(),
                 };
-                let var = Variable::new(var.to_string(), range, next.extra());
+                let trace = Trace {
+                    range,
+                    extra: next.extra()
+                };
+                let var = Variable::new(var.to_string(), trace );
                 Ok((next, RouteSegVar::Var(var)))
             }
             Err(err) => f.parse(input).map(|(next, seg)| (next, seg.into())),
@@ -1117,7 +1126,7 @@ pub fn filepath_point_segment_template<I: Span>(input: I) -> Res<I, PointTemplat
         .map(|(next, segment)| (next, PointTemplateSeg::ExactSeg(segment)))
 }
 
-pub fn point_template<I: Span>(input: I) -> Res<I, PointTemplate> {
+/*pub fn point_template<I: Span>(input: I) -> Res<I, PointTemplate> {
     let (next, ((hub, space), mut bases, version, root, mut files)) = tuple((
         tuple((point_route_segment, space_point_segment)),
         many0(alt((
@@ -1247,6 +1256,37 @@ pub fn point_template<I: Span>(input: I) -> Res<I, PointTemplate> {
     Ok((next, point_template))
 }
 
+ */
+
+
+pub fn point_template<I: Span>(input: I) -> Res<I, PointTemplateVar> {
+    let (next, (point,wildcard) ) = pair( point_var, opt(recognize(tag("%"))) )(input.clone())?;
+
+    if point.is_root() {
+        let err = ErrorTree::from_error_kind(input.clone(),ErrorKind::Not);
+        return Err(nom::Err::Failure( ErrorTree::add_context(input, "point-template-cannot-be-root", err) ))
+    }
+
+    let parent = point.parent().expect("expect that point template has a parent");
+    let child = point.last_segment().expect("expect that point template has a last segment");
+
+    match wildcard {
+        None => {
+            Ok((next,PointTemplateVar {
+                parent,
+                child_segment_template: PointSegFactory::Exact(child.to_string()),
+            }))
+        }
+        Some(_) => {
+            let child = format!("{}%",child.to_string());
+            Ok((next,PointTemplateVar {
+                parent,
+                child_segment_template: PointSegFactory::Exact(child),
+            }))
+        }
+    }
+}
+
 pub fn kind_template<I: Span>(input: I) -> Res<I, KindTemplate> {
     tuple((
         generic_kind_base,
@@ -1278,9 +1318,9 @@ pub fn kind_template<I: Span>(input: I) -> Res<I, KindTemplate> {
     })
 }
 
-pub fn template<I: Span>(input: I) -> Res<I, Template> {
+pub fn template<I: Span>(input: I) -> Res<I, TemplateVar> {
     tuple((point_template, delimited(tag("<"), kind_template, tag(">"))))(input)
-        .map(|(next, (point, kind))| (next, Template { point, kind }))
+        .map(|(next, (point, kind))| (next, TemplateVar { point, kind }))
 }
 
 pub fn set_property_mod<I: Span>(input: I) -> Res<I, PropertyMod> {
@@ -1363,18 +1403,18 @@ pub fn get_properties<I: Span>(input: I) -> Res<I, Vec<String>> {
     )
 }
 
-pub fn create<I: Span>(input: I) -> Res<I, Create> {
+pub fn create<I: Span>(input: I) -> Res<I, CreateVar> {
     tuple((template, opt(delimited(tag("{"), set_properties, tag("}")))))(input).map(
         |(next, (template, properties))| {
             let properties = match properties {
                 Some(properties) => properties,
                 None => SetProperties::new(),
             };
-            let create = Create {
+            let create = CreateVar {
                 template,
                 state: StateSrc::Stateless,
                 properties,
-                strategy: Strategy::Create,
+                strategy: Strategy::Commit,
                 registry: Default::default(),
             };
             (next, create)
@@ -1407,9 +1447,9 @@ pub fn get<I: Span>(input: I) -> Res<I, GetVar> {
     })
 }
 
-pub fn select<I: Span>(input: I) -> Res<I, Select> {
+pub fn select<I: Span>(input: I) -> Res<I, SelectVar> {
     point_selector(input).map(|(next, point_kind_pattern)| {
-        let select = Select {
+        let select = SelectVar {
             pattern: point_kind_pattern,
             properties: Default::default(),
             into_payload: SelectIntoPayload::Stubs,
@@ -1419,8 +1459,8 @@ pub fn select<I: Span>(input: I) -> Res<I, Select> {
     })
 }
 
-pub fn publish<I: Span>(input: I) -> Res<I, CreateOpVar> {
-    let (next, (upload, _, point)) = tuple((upload_step, space1, point_var))(input.clone())?;
+pub fn publish<I: Span>(input: I) -> Res<I, CreateVar> {
+    let (next, (upload, _, point)) = tuple((upload_step, space1, point_template))(input.clone())?;
 
     /*
     let parent = match point.parent() {
@@ -1454,13 +1494,12 @@ pub fn publish<I: Span>(input: I) -> Res<I, CreateOpVar> {
         },
     };
 
-    let create = CreateOpVar {
+    let create = CreateVar {
         template,
         state: StateSrc::Stateless,
         properties: Default::default(),
-        strategy: Strategy::Create,
+        strategy: Strategy::Commit,
         registry: Default::default(),
-        requirements: vec![Require::File(upload.name)],
     };
 
     Ok((next, create))
@@ -1671,17 +1710,6 @@ impl VarResolver for MultiVarResolver {
     }
 }
 
-pub trait ToResolved<R>
-where
-    Self: Sized,
-{
-    fn collapse(self) -> Result<R, MsgErr> {
-        self.to_resolved(&Env::empty())
-    }
-
-    fn to_resolved(self, env: &Env) -> Result<R, MsgErr>;
-}
-
 /*
 pub trait BruteResolver<Resolved>
 where
@@ -1747,18 +1775,22 @@ where
     move |input: I| match pair(tag::<&str, I, E>(".."), eos)(input.clone()) {
         Ok((next, v)) => Ok((
             next.clone(),
-            PointSegCtx::Pop {
+            PointSegCtx::Pop (
+                Trace {
                 range: next.location_offset() - 2..next.location_offset(),
                 extra: next.extra(),
-            },
+               }
+            ),
         )),
         Err(err) => match pair(tag::<&str, I, E>("."), eos)(input.clone()) {
             Ok((next, _)) => Ok((
                 next.clone(),
-                PointSegCtx::Working {
-                    range: next.location_offset() - 1..next.location_offset(),
-                    extra: next.extra(),
-                },
+                PointSegCtx::Working(
+                    Trace {
+                        range: next.location_offset() - 1..next.location_offset(),
+                        extra: next.extra(),
+                    }
+                ),
             )),
             Err(err) => match f.parse(input) {
                 Ok((next, seg)) => Ok((next, seg.into())),
@@ -1786,10 +1818,12 @@ where
     move |input: I| match pair(tag::<&str, I, E>("."), eos)(input.clone()) {
         Ok((next, v)) => Ok((
             next.clone(),
-            PointSegCtx::Working {
-                range: next.location_offset() - 1..next.location_offset(),
-                extra: next.extra(),
-            },
+            PointSegCtx::Working (
+                Trace {
+                    range: next.location_offset() - 1..next.location_offset(),
+                    extra: next.extra(),
+                }
+            ),
         )),
         Err(err) => match f.parse(input.clone()) {
             Ok((next, seg)) => Ok((next, seg.into())),
@@ -1816,10 +1850,12 @@ where
     move |input: I| match pair(tag::<&str, I, E>(".."), eos)(input.clone()) {
         Ok((next, v)) => Ok((
             next.clone(),
-            PointSegCtx::Working {
-                range: next.location_offset() - 2..next.location_offset(),
-                extra: next.extra(),
-            },
+            PointSegCtx::Working(
+                Trace {
+                    range: next.location_offset() - 2..next.location_offset(),
+                    extra: next.extra(),
+                }
+            ),
         )),
         Err(err) => match f.parse(input.clone()) {
             Ok((next, seg)) => Ok((next, seg.into())),
@@ -1838,7 +1874,7 @@ where
     S2: PointSegment,
 {
     move |input: I| {
-        tuple((seg_delim, f, peek(eos)))(input).map(|(next, (delim, seg, _))| (next, seg.into()))
+        tuple((seg_delim, f, eos))(input).map(|(next, (delim, seg, _))| (next, seg.into()))
     }
 }
 
@@ -1875,7 +1911,7 @@ where
     <I as InputTakeAtPosition>::Item: AsChar + Clone,
     E: nom::error::ContextError<I> + nom::error::ParseError<I>,
 {
-    peek(alt((tag("/"), tag(":"), space1, eof)))(input).map(|(next, _)| (next, ()))
+    peek(alt((tag("/"), tag(":"), tag("%"),space1, eof)))(input).map(|(next, _)| (next, ()))
 }
 
 /*
@@ -2906,9 +2942,9 @@ pub mod model {
     use crate::version::v0_0_1::id::id::{Point, PointCtx, PointVar, Version};
     use crate::version::v0_0_1::messaging::messaging::{Agent, Request};
     use crate::version::v0_0_1::parse::error::result;
-    use crate::version::v0_0_1::parse::{camel_case, entity_pattern, http_method, lex_child_scopes, message_kind, pipeline, rc_command_type, value_pattern, wrapped_http_method, wrapped_msg_method, CtxResolver, Res, SubstParser, ToResolved, Env, VarResolverErr, filepath_chars};
+    use crate::version::v0_0_1::parse::{camel_case, CtxResolver, entity_pattern, Env, filepath_chars, http_method, lex_child_scopes, message_kind, pipeline, rc_command_type, Res, SubstParser, value_pattern, VarResolverErr, wrapped_http_method, wrapped_msg_method};
     use crate::version::v0_0_1::span::{new_span, Trace};
-    use crate::version::v0_0_1::util::{MethodPattern, StringMatcher, ValueMatcher, ValuePattern};
+    use crate::version::v0_0_1::util::{MethodPattern, StringMatcher, ToResolved, ValueMatcher, ValuePattern};
     use crate::version::v0_0_1::wrap::{Span, Tw};
     use bincode::Options;
     use nom::bytes::complete::tag;
@@ -4399,11 +4435,13 @@ use crate::version::v0_0_1::selector::{
     PatternBlock, PatternBlockCtx, PatternBlockVar, PayloadBlock, PayloadBlockCtx, PayloadBlockVar,
     UploadBlock,
 };
-use crate::version::v0_0_1::span::{new_span, span_with_extra};
+use crate::version::v0_0_1::span::{new_span, span_with_extra, Trace};
 use crate::version::v0_0_1::wrap::{Span, Wrap};
 use nom_supreme::error::ErrorTree;
 use nom_supreme::{parse_from_str, ParserExt};
 use nom_supreme::parser_ext::MapRes;
+use crate::version::v0_0_1::cli;
+use crate::version::v0_0_1::cli::{CommandVar, RawCommand};
 
 fn inclusive_any_segment<I: Span>(input: I) -> Res<I, PointSegSelector> {
     alt((tag("+*"), tag("ROOT+*")))(input).map(|(next, _)| (next, PointSegSelector::InclusiveAny))
@@ -6173,6 +6211,7 @@ pub fn var_chunk<I: Span>(input: I) -> Res<I, Chunk<I>> {
     .map(|(next, variable_name)| (next, Chunk::Var(variable_name)))
 }
 
+
 #[cfg(test)]
 pub mod test {
     use crate::error::{MsgErr, ParseErrs};
@@ -6182,7 +6221,7 @@ pub mod test {
     use crate::version::v0_0_1::parse::model::{
         BlockKind, DelimitedBlockKind, LexScope, NestedBlockKind, TerminatedBlockKind,
     };
-    use crate::version::v0_0_1::parse::{args, base_point_segment, parse_bind_config, comment, consume_point_var, ctx_seg, expected_block_terminator_or_non_terminator, lex_block, lex_child_scopes, lex_nested_block, lex_scope, lex_scope_pipeline_step_and_block, lex_scope_selector, lex_scope_selector_and_filters, lex_scopes, lowercase1, mesh_eos, nested_block, nested_block_content, next_selector, no_comment, parse_include_blocks, parse_inner_block, path_regex, pipeline, pipeline_segment, pipeline_step_var, pipeline_stop_var, point_non_root_var, point_var, pop, rec_version, root_scope, root_scope_selector, scope_filter, scope_filters, skewer_case, skewer_dot, space_chars, space_no_dupe_dots, space_point_segment, strip_comments, subst, var_seg, variable_name, version, version_point_segment, wrapper, Env, MapResolver, Res, SubstParser, ToResolved, VarResolver, doc, EnvBuilder};
+    use crate::version::v0_0_1::parse::{args, base_point_segment, comment, consume_point_var, ctx_seg, doc, Env, EnvBuilder, expected_block_terminator_or_non_terminator, lex_block, lex_child_scopes, lex_nested_block, lex_scope, lex_scope_pipeline_step_and_block, lex_scope_selector, lex_scope_selector_and_filters, lex_scopes, lowercase1, MapResolver, mesh_eos, nested_block, nested_block_content, next_selector, no_comment, parse_bind_config, parse_include_blocks, parse_inner_block, path_regex, pipeline, pipeline_segment, pipeline_step_var, pipeline_stop_var, point_non_root_var, point_template, point_var, pop, rec_version, Res, root_scope, root_scope_selector, scope_filter, scope_filters, skewer_case, skewer_dot, space_chars, space_no_dupe_dots, space_point_segment, strip_comments, subst, SubstParser, var_seg, variable_name, VarResolver, version, version_point_segment, wrapper};
     use crate::version::v0_0_1::span::{new_span, span_with_extra};
     use nom::branch::alt;
     use nom::bytes::complete::{escaped, tag};
@@ -6199,6 +6238,33 @@ pub mod test {
     use std::str::FromStr;
     use std::sync::Arc;
     use bincode::config;
+    use crate::version::v0_0_1::entity::request::create::{PointSegFactory, PointTemplate, PointTemplateCtx};
+    use crate::version::v0_0_1::util::ToResolved;
+
+    #[test]
+    pub fn test_point_template() -> Result<(), MsgErr> {
+
+        assert!(mesh_eos(new_span(":")).is_ok());
+        assert!(mesh_eos(new_span("%")).is_ok());
+        assert!(mesh_eos(new_span("x")).is_err());
+
+        assert!(point_var(new_span("localhost:some-%")).is_ok());
+
+        log(result(all_consuming(point_template)(new_span(
+            "localhost",
+        ))))?;
+
+        let template = log(result(point_template(new_span(
+            "localhost:other:some-%",
+        ))))?;
+
+        let template: PointTemplate = log(template.collapse())?;
+        if let PointSegFactory::Pattern(child) = template.child_segment_template {
+           assert_eq!(child.as_str(),"some-%")
+        }
+
+        Ok(())
+    }
 
     #[test]
     pub fn test_point_var() -> Result<(), MsgErr> {
@@ -7135,4 +7201,153 @@ Bind(version=1.2.3)-> {
             }
         }
     }
+}
+
+fn create_command<I:Span>(input: I) -> Res<I, CommandVar> {
+    tuple((tag("create"),space1,create))(input).map( |(next,(_,_,create))|{
+        (next, CommandVar::Create(create))
+    })
+}
+
+fn publish_command<I:Span>(input: I) -> Res<I, CommandVar> {
+    tuple((tag("publish"),space1,publish))(input).map( |(next,(_,_,create))|{
+        (next, CommandVar::Publish(create))
+    })
+}
+
+fn select_command<I:Span>(input: I) -> Res<I, CommandVar> {
+    tuple((tag("select"),space1,select))(input).map( |(next,(_,_,select))|{
+        (next, CommandVar::Select(select))
+    })
+}
+
+fn set_command<I:Span>(input: I) -> Res<I, CommandVar> {
+    tuple((tag("set"),space1,set))(input).map( |(next,(_,_,set))|{
+        (next, CommandVar::Set(set))
+    })
+}
+
+fn get_command<I:Span>(input: I) -> Res<I, CommandVar> {
+    tuple((tag("get"),space1,get))(input).map( |(next,(_,_,get))|{
+        (next, CommandVar::Get(get))
+    })
+}
+
+pub fn command_strategy<I:Span>(input: I) -> Res<I, Strategy> {
+    opt( tuple((tag("?"),multispace0)) )(input).map( |(next,hint)| {
+        match hint {
+            None => (next, Strategy::Commit),
+            Some(_) => (next, Strategy::Ensure)
+        }
+    } )
+}
+
+pub fn command<I:Span>(input: I) -> Res<I, CommandVar> {
+    context("command", alt( (create_command, publish_command, select_command, set_command, get_command,fail) ))(input)
+}
+
+pub fn command_mutation<I:Span>(input: I) -> Res<I, CommandVar> {
+    context("command_mutation", tuple((command_strategy, command)))(input).map( |(next,(strategy,mut command)),| {
+        command.set_strategy(strategy);
+        (next, command)
+    })
+}
+
+pub fn command_line<I:Span>(input: I) -> Res<I, CommandVar> {
+    tuple( (multispace0,command_mutation,multispace0,opt(tag(";")),multispace0))(input).map(|(next,(_,command,_,_,_))|{
+        (next,command)
+    })
+}
+
+pub fn script_line<I:Span>(input: I) -> Res<I, CommandVar> {
+    tuple( (multispace0,command_mutation,multispace0,tag(";"),multispace0))(input).map(|(next,(_,command,_,_,_))|{
+        (next,command)
+    })
+}
+
+pub fn script<I:Span>(input: I) -> Res<I,Vec<CommandVar>> {
+    many0(script_line)(input)
+}
+
+pub fn consume_command_line<I:Span>(input: I) -> Res<I, CommandVar> {
+    all_consuming(command_line)(input)
+}
+
+pub fn rec_script_line<I:Span>(input: I) -> Res<I,I> {
+    recognize(script_line)(input)
+}
+
+#[cfg(test)]
+pub mod cmd_test {
+    use crate::version::v0_0_1::parse::{command, command_mutation, Res, script};
+    use crate::version::v0_0_1::span::new_span;
+    use nom::error::{VerboseError, VerboseErrorKind};
+    use nom_supreme::final_parser::{ExtractContext, final_parser};
+    use crate::version::v0_0_1::cli::{Command, CommandVar};
+    use crate::error::MsgErr;
+
+    /*
+    #[test]
+    pub async fn test2() -> Result<(),Error>{
+        let input = "? xreate localhost<Space>";
+        let x: Result<CommandOp,VerboseError<&str>> = final_parser(command)(input);
+        match x {
+            Ok(_) => {}
+            Err(err) => {
+                println!("err: {}", err.to_string())
+            }
+        }
+
+
+        Ok(())
+    }
+
+     */
+
+    #[test]
+    pub fn test() -> Result<(),MsgErr>{
+        let input = "? xreate localhost<Space>";
+        match command_mutation(new_span(input)) {
+            Ok(_) => {}
+            Err(nom::Err::Error(e)) => {
+                eprintln!("yikes!");
+                return Err("could not find context".into());
+            }
+            Err(e) => {
+                return Err("some err".into());
+            }
+        }
+        Ok(())
+    }
+
+    #[test]
+    pub fn test_kind() -> Result<(),MsgErr>{
+        let input = "create localhost:users<UserBase<Keycloak>>";
+        let (_, command) = command(new_span(input))?;
+        match command {
+            CommandVar::Create(create) => {
+                assert_eq!(create.template.kind.sub_kind, Some("Keycloak".to_string()));
+            }
+            _ => {
+                panic!("expected create command")
+            }
+        }
+        Ok(())
+    }
+
+
+    #[test]
+    pub fn test_script() -> Result<(),MsgErr>{
+        let input = r#" ? create localhost<Space>;
+ Xcrete localhost:repo<Base<Repo>>;
+? create localhost:repo:tutorial<ArtifactBundleSeries>;
+? publish ^[ bundle.zip ]-> localhost:repo:tutorial:1.0.0;
+set localhost{ +bind=localhost:repo:tutorial:1.0.0:/bind/localhost.bind };
+        "#;
+
+        crate::version::v0_0_1::parse::script(new_span(input))?;
+        Ok(())
+    }
+
+
 }

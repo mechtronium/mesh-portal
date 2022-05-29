@@ -9,13 +9,14 @@ pub mod payload {
     use crate::version::v0_0_1::id::id::{GenericKind, GenericKindBase, Meta, Point, PointCtx, PointVar};
     use crate::version::v0_0_1::particle::particle::{Particle, Status, Stub};
     use crate::version::v0_0_1::selector::selector::{KindSelector, PointSelector};
-    use crate::version::v0_0_1::util::{ValueMatcher, ValuePattern};
+    use crate::version::v0_0_1::util::{ToResolved, ValueMatcher, ValuePattern};
     use http::{Uri};
     use std::str::FromStr;
     use std::sync::Arc;
+    use crate::version::v0_0_1::cli::RawCommand;
     use crate::version::v0_0_1::http::HttpMethod;
     use crate::version::v0_0_1::msg::MsgMethod;
-    use crate::version::v0_0_1::parse::{CtxResolver, Env, ToResolved};
+    use crate::version::v0_0_1::parse::{CtxResolver, Env};
     use crate::version::v0_0_1::parse::model::Subst;
     use crate::version::v0_0_1::wrap::Tw;
 
@@ -44,6 +45,7 @@ pub mod payload {
         Particle,
         Errors,
         Json,
+        CommandLine
     }
 
     #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, strum_macros::Display)]
@@ -60,8 +62,15 @@ pub mod payload {
         Int(i64),
         Status(Status),
         Particle(Particle),
+        CommandLine(RawCommand),
         Errors(Errors),
         Json(serde_json::Value),
+    }
+
+    impl Default for Payload {
+        fn default() -> Self {
+            Payload::Empty
+        }
     }
 
     impl Payload {
@@ -101,6 +110,7 @@ pub mod payload {
                 Payload::Particle(_) => PayloadType::Particle,
                 Payload::Errors(_) => PayloadType::Errors,
                 Payload::Json(_) => PayloadType::Json,
+                Payload::CommandLine(_) => PayloadType::CommandLine
             }
         }
 

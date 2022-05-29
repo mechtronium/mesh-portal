@@ -5,7 +5,7 @@ use nom_locate::LocatedSpan;
 use std::borrow::Borrow;
 use std::cell::Cell;
 use std::ops;
-use std::ops::{Deref, Range, RangeFrom, RangeTo};
+use std::ops::{Deref, DerefMut, Range, RangeFrom, RangeTo};
 use std::str::{CharIndices, Chars};
 use std::sync::{Arc, Mutex};
 use nom_supreme::error::{ErrorTree, StackContext};
@@ -29,7 +29,7 @@ pub fn span_with_extra<'a>(s: &'a str, extra: Arc<String>) -> Wrap<LocatedSpan<&
 }
 
 
-#[derive(Debug,Clone,Serialize,Deserialize)]
+#[derive(Debug,Clone,Serialize,Deserialize,Eq,PartialEq,Hash)]
 pub struct Trace {
     pub range: Range<usize>,
     pub extra: SpanExtra
@@ -61,6 +61,42 @@ impl Trace {
 }
 
 
+/*
+// Return a TraceWrapper
+pub fn tw<I,F,O>( f: F ) -> impl FnMut(I) -> Res<I,Tw<O>> where I:Span, F: FnMut(I) -> Res<I,O>+Copy {
+  move |input:I| {
+      let (next,output) = f(input.clone())?;
+      let range = input.location_offset()..next.location_offset();
+      let trace = Trace::new(range,input.extra());
+      let tw = Tw {
+          trace,
+          item: output
+      };
+      Ok((next,tw))
+  }
+}
+
+ */
+
+// TraceWrapper
+pub struct Tw<I> {
+    pub trace: Trace,
+    pub item: I
+}
+
+impl <I> Deref for Tw<I> {
+    type Target = I;
+
+    fn deref(&self) -> &Self::Target {
+        &self.item
+    }
+}
+
+impl <I> DerefMut for Tw<I> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+       &mut self.item
+    }
+}
 
 
 

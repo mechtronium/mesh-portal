@@ -292,10 +292,11 @@
 
         pub mod set {
             use crate::error::MsgErr;
-            use crate::version::v0_0_1::command::command::common::SetProperties;
+            use crate::version::v0_0_1::cmd::command::common::SetProperties;
             use crate::version::v0_0_1::id::id::{Point, PointCtx, PointVar};
-            use crate::version::v0_0_1::parse::{Env, ToResolved};
+            use crate::version::v0_0_1::parse::{Env};
             use serde::{Deserialize, Serialize};
+            use crate::version::v0_0_1::util::ToResolved;
 
             pub type Set = SetDef<Point>;
             pub type SetCtx = SetDef<PointCtx>;
@@ -335,10 +336,11 @@
 
         pub mod get {
             use crate::error::MsgErr;
-            use crate::version::v0_0_1::command::command::common::SetProperties;
+            use crate::version::v0_0_1::cmd::command::common::SetProperties;
             use crate::version::v0_0_1::id::id::{Point, PointCtx, PointVar};
-            use crate::version::v0_0_1::parse::{Env, ToResolved};
+            use crate::version::v0_0_1::parse::{Env};
             use serde::{Deserialize, Serialize};
+            use crate::version::v0_0_1::util::ToResolved;
 
             pub type Get = GetDef<Point>;
             pub type GetCtx = GetDef<PointCtx>;
@@ -389,16 +391,16 @@
 
             use crate::error::MsgErr;
             use crate::version::v0_0_1::bin::Bin;
-            use crate::version::v0_0_1::command::command::common::{
+            use crate::version::v0_0_1::cmd::command::common::{
                 SetProperties, SetRegistry, StateSrc,
             };
             use crate::version::v0_0_1::id::id::{
                 GenericKind, HostKey, Point, PointCtx, PointSeg, PointVar,
             };
-            use crate::version::v0_0_1::parse::{Env, ToResolved};
+            use crate::version::v0_0_1::parse::{Env};
             use crate::version::v0_0_1::payload::payload::{Payload, Primitive};
             use crate::version::v0_0_1::selector::selector::SpecificSelector;
-            use crate::version::v0_0_1::util::ConvertFrom;
+            use crate::version::v0_0_1::util::{ConvertFrom, ToResolved};
 
             pub enum PointTemplateSeg {
                 ExactSeg(PointSeg),
@@ -415,8 +417,8 @@
             }
 
             pub type Template = TemplateDef<PointTemplate>;
-            pub type TemplateCtx = TemplateDef<PointCtx>;
-            pub type TemplateVar = TemplateDef<PointVar>;
+            pub type TemplateCtx = TemplateDef<PointTemplateCtx>;
+            pub type TemplateVar = TemplateDef<PointTemplateVar>;
 
             #[derive(Debug, Clone, Serialize, Deserialize)]
             pub struct TemplateDef<Pnt> {
@@ -424,9 +426,17 @@
                 pub kind: KindTemplate,
             }
 
+            impl ToResolved<Template> for TemplateVar {
+                fn to_resolved(self, env: &Env) -> Result<Template, MsgErr> {
+                    let template: TemplateCtx = self.to_resolved(env)?;
+                    template.to_resolved(env)
+                }
+            }
+
             impl ToResolved<TemplateCtx> for TemplateVar {
                 fn to_resolved(self, env: &Env) -> Result<TemplateCtx, MsgErr> {
-                    let point : PointCtx= self.point.to_resolved(env)?;
+                    let point : PointTemplateCtx = self.point.to_resolved(env)?;
+
                     let template = TemplateCtx {
                         point,
                         kind: KindTemplate {
@@ -441,24 +451,6 @@
             impl ToResolved<Template> for TemplateCtx {
                 fn to_resolved(self, env: &Env) -> Result<Template, MsgErr> {
                     let point = self.point.to_resolved(env)?;
-                    let parent = match point.parent() {
-                        None => {
-                            return Err("point must have a parent".into());
-                        }
-                        Some(parent) => parent,
-                    };
-
-                    let last = match point.last_segment() {
-                        None => {
-                            return Err("Point must have a final segment".into());
-                        }
-                        Some(last) => last,
-                    };
-
-                    let point = PointTemplate {
-                        parent,
-                        child_segment_template: PointSegFactory::Exact(last.to_string()),
-                    };
 
                     let template = Template {
                         point,
@@ -512,50 +504,57 @@
                 Complete,
             }
 
-            pub type CreateOp = CreateOpDef<PointTemplate>;
-            pub type CreateOpVar = CreateOpDef<PointVar>;
-            pub type CreateOpCtx = CreateOpDef<PointCtx>;
+            pub type Create = CreateDef<Point>;
+            pub type CreateVar = CreateDef<PointVar>;
+            pub type CreateCtx = CreateDef<PointCtx>;
 
-            impl ToResolved<CreateOpCtx> for CreateOpVar {
-                fn to_resolved(self, env: &Env) -> Result<CreateOpCtx, MsgErr> {
+            impl ToResolved<Create> for CreateVar {
+                fn to_resolved(self, env: &Env) -> Result<Create, MsgErr> {
+                    let create: CreateCtx = self.to_resolved(env)?;
+                    create.to_resolved(env)
+                }
+            }
+
+
+            impl ToResolved<CreateCtx> for CreateVar {
+                fn to_resolved(self, env: &Env) -> Result<CreateCtx, MsgErr> {
                     let template = self.template.to_resolved(env)?;
-                    Ok(CreateOpCtx{
+                    Ok(CreateCtx {
                         template,
                         properties: self.properties,
                         strategy: self.strategy,
                         registry: self.registry,
                         state: self.state,
-                        requirements: self.requirements
                     })
                 }
             }
 
-            impl ToResolved<CreateOp> for CreateOpCtx{
-                fn to_resolved(self, env: &Env) -> Result<CreateOp, MsgErr> {
+            impl ToResolved<Create> for CreateCtx {
+                fn to_resolved(self, env: &Env) -> Result<Create, MsgErr> {
                     let template = self.template.to_resolved(env)?;
-                    Ok(CreateOp{
+                    Ok(Create {
                         template,
                         properties: self.properties,
                         strategy: self.strategy,
                         registry: self.registry,
                         state: self.state,
-                        requirements: self.requirements
                     })
                 }
             }
 
 
 
-            pub struct CreateOpDef<Pnt> {
-                pub template: TemplateDef<Pnt>,
+
+            #[derive(Debug, Clone,Serialize,Deserialize)]
+            pub struct CreateDef<Pnt> {
+                pub template: TemplateDef<PointTemplateDef<Pnt>>,
                 pub properties: SetProperties,
                 pub strategy: Strategy,
                 pub registry: SetRegistry,
                 pub state: StateSrc,
-                pub requirements: Vec<Require>,
             }
 
-            impl CreateOp {
+            impl Create {
                 pub fn fulfillment(mut self, bin: Bin) -> Create {
                     Create {
                         template: self.template,
@@ -567,45 +566,11 @@
                 }
             }
 
-            impl Into<Create> for CreateOp {
-                fn into(self) -> Create {
-                    Create {
-                        template: self.template,
-                        state: self.state,
-                        properties: self.properties,
-                        strategy: self.strategy,
-                        registry: self.registry,
-                    }
-                }
-            }
-
-            #[derive(Debug, Clone, Serialize, Deserialize)]
-            pub struct Create {
-                pub template: Template,
-                pub state: StateSrc,
-                pub properties: SetProperties,
-                pub strategy: Strategy,
-                pub registry: SetRegistry,
-            }
-
-            impl Create {
-                pub fn new(template: Template) -> Self {
-                    Self {
-                        template,
-                        state: StateSrc::Stateless,
-                        properties: Default::default(),
-                        strategy: Strategy::Create,
-                        registry: Default::default(),
-                    }
-                }
-            }
 
             #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
             pub enum Strategy {
-                Create,
-                Apply,
+                Commit,
                 Ensure,
-                HostedBy(HostKey),
             }
 
             pub type PointTemplate = PointTemplateDef<Point>;
@@ -617,6 +582,35 @@
                 pub parent: Pnt,
                 pub child_segment_template: PointSegFactory,
             }
+
+            impl ToResolved<PointTemplateCtx> for PointTemplateVar {
+                fn to_resolved(self, env: &Env) -> Result<PointTemplateCtx, MsgErr> {
+                    let parent = self.parent.to_resolved(env)?;
+                    Ok(PointTemplateCtx {
+                        parent,
+                        child_segment_template: self.child_segment_template
+                    })
+                }
+            }
+
+            impl ToResolved<PointTemplate> for PointTemplateCtx{
+                fn to_resolved(self, env: &Env) -> Result<PointTemplate, MsgErr> {
+                    let parent = self.parent.to_resolved(env)?;
+                    Ok(PointTemplate{
+                        parent,
+                        child_segment_template: self.child_segment_template
+                    })
+                }
+            }
+
+            impl ToResolved<PointTemplate> for PointTemplateVar {
+                fn to_resolved(self, env: &Env) -> Result<PointTemplate, MsgErr> {
+                    let ctx: PointTemplateCtx = self.to_resolved(env)?;
+                    ctx.to_resolved(env)
+                }
+            }
+
+
 
             #[derive(Debug, Clone, strum_macros::Display, Serialize, Deserialize)]
             pub enum PointSegFactory {
@@ -635,14 +629,13 @@
             use crate::error::MsgErr;
             use crate::version::v0_0_1::fail::{BadCoercion, Fail};
             use crate::version::v0_0_1::id::id::Point;
+            use crate::version::v0_0_1::parse::Env;
             use crate::version::v0_0_1::particle::particle::Stub;
             use crate::version::v0_0_1::payload::payload::{
                 MapPattern, Payload, PayloadList, Primitive, PrimitiveType,
             };
-            use crate::version::v0_0_1::selector::selector::{
-                Hop, PointKindHierarchy, PointSelector,
-            };
-            use crate::version::v0_0_1::util::ConvertFrom;
+            use crate::version::v0_0_1::selector::selector::{Hop, HopCtx, HopVar, PointKindHierarchy, PointSelector, PointSelectorDef};
+            use crate::version::v0_0_1::util::{ConvertFrom, ToResolved};
 
             #[derive(Debug, Clone, Serialize, Deserialize)]
             pub enum SelectIntoPayload {
@@ -673,9 +666,19 @@
                 }
             }
 
+            pub type Select = SelectDef<Hop>;
+            pub type SelectCtx = SelectDef<Hop>;
+            pub type SelectVar = SelectDef<Hop>;
+
+            impl ToResolved<Select> for Select{
+                fn to_resolved(self, env: &Env) -> Result<Select, MsgErr> {
+                    Ok(self)
+                }
+            }
+
             #[derive(Debug, Clone,Serialize,Deserialize)]
-            pub struct Select {
-                pub pattern: PointSelector,
+            pub struct SelectDef<Hop> {
+                pub pattern: PointSelectorDef<Hop>,
                 pub properties: PropertiesPattern,
                 pub into_payload: SelectIntoPayload,
                 pub kind: SelectKind,
@@ -796,7 +799,7 @@
             use serde::{Deserialize, Serialize};
 
             use crate::error::MsgErr;
-            use crate::version::v0_0_1::command::command::common::SetProperties;
+            use crate::version::v0_0_1::cmd::command::common::SetProperties;
             use crate::version::v0_0_1::id::id::Point;
             use crate::version::v0_0_1::payload::payload::Payload;
 

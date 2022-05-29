@@ -16,16 +16,19 @@ use crate::version::v0_0_1::span::{new_span};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Access {
-    // bool is true if Super is also Owner
-    Super(bool),
+    Super,
     Owner,
+    // in the cases where describing access for an agent that
+    // has both super and is owner
+    SuperOwner,
     Enumerated(EnumeratedAccess),
 }
 
 impl Access {
     pub fn has_super(&self) -> bool {
         match self {
-            Access::Super(_) => true,
+            Access::Super => true,
+            Access::SuperOwner=> true,
             _ => false,
         }
     }
@@ -33,15 +36,16 @@ impl Access {
     pub fn has_owner(&self) -> bool {
         match self {
             Access::Owner => true,
-            Access::Super(owner) => owner.clone(),
+            Access::SuperOwner=> true,
             _ => false,
         }
     }
 
     pub fn has_full(&self) -> bool {
         match self {
-            Access::Super(_) => true,
+            Access::Super => true,
             Access::Owner => true,
+            Access::SuperOwner => true,
             Access::Enumerated(_) => false,
         }
     }
@@ -52,16 +56,18 @@ impl Access {
 
     pub fn permissions(&self) -> Permissions {
         match self {
-            Access::Super(_) => Permissions::full(),
+            Access::Super => Permissions::full(),
             Access::Owner => Permissions::full(),
+            Access::SuperOwner => Permissions::full(),
             Access::Enumerated(enumerated) => enumerated.permissions.clone(),
         }
     }
 
     pub fn check_privilege(&self, privilege: &str) -> Result<(), MsgErr> {
         match self {
-            Access::Super(_) => Ok(()),
+            Access::Super => Ok(()),
             Access::Owner => Ok(()),
+            Access::SuperOwner => Ok(()),
             Access::Enumerated(enumerated) => {
                 match enumerated.privileges.has(privilege).is_ok() {
                     true => Ok(()),

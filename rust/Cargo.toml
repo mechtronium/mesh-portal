@@ -10,5 +10,7 @@ members = [
     "mesh-portal-tcp-server",
     "mesh-portal-api-test",
     "mesh-portal-versions",
+    "cosmic-portal-cli",
+    "cosmic-portal-cli-exe"
 ]
 
