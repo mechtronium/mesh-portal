@@ -9,7 +9,7 @@ pub mod messaging {
     use crate::error::{MsgErr, StatusErr};
     use crate::version::v0_0_1::command::request::RequestCore;
     use crate::version::v0_0_1::entity::response::ResponseCore;
-    use crate::version::v0_0_1::id::id::Point;
+    use crate::version::v0_0_1::id::id::{Point, Port, ToPort};
     use crate::version::v0_0_1::log::{SpanLogger, PointLogger};
     use crate::version::v0_0_1::payload::payload::{Errors, MsgCall, Payload, Primitive};
     use crate::version::v0_0_1::security::{
@@ -54,8 +54,8 @@ pub mod messaging {
         pub agent: Agent,
         pub scope: Scope,
         pub handling: Handling,
-        pub from: Point,
-        pub to: Point,
+        pub from: Port,
+        pub to: Port,
         pub core: RequestCore,
     }
 
@@ -107,8 +107,8 @@ pub mod messaging {
                 agent: Agent::Anonymous,
                 scope: Scope::Full,
                 handling: Default::default(),
-                from,
-                to,
+                from: from.into(),
+                to: to.into(),
                 core,
             }
         }
@@ -235,8 +235,8 @@ pub mod messaging {
     }
 
     pub struct RequestBuilder {
-        pub to: Option<Point>,
-        pub from: Option<Point>,
+        pub to: Option<Port>,
+        pub from: Option<Port>,
         pub core: Option<RequestCore>,
         pub agent: Agent,
         pub session: Option<Session>,
@@ -251,13 +251,13 @@ pub mod messaging {
             }
         }
 
-        pub fn to(mut self, point: Point) -> Self {
-            self.to = Some(point);
+        pub fn to<P:ToPort>(mut self, point: P) -> Self {
+            self.to = Some(point.to_port());
             self
         }
 
-        pub fn from(mut self, point: Point) -> Self {
-            self.from = Some(point);
+        pub fn from<P:ToPort>(mut self, point: P) -> Self {
+            self.from = Some(point.to_port());
             self
         }
 
@@ -316,7 +316,7 @@ pub mod messaging {
     #[derive(Debug, Clone)]
     pub struct ProtoRequest {
         pub id: String,
-        pub to: Option<Point>,
+        pub to: Option<Port>,
         pub core: Option<RequestCore>,
     }
 
@@ -334,20 +334,20 @@ pub mod messaging {
             Ok(())
         }
 
-        pub fn to(&mut self, to: Point) {
-            self.to = Option::Some(to);
+        pub fn to<P>(&mut self, to: P) where P:ToPort {
+            self.to = Option::Some(to.to_port());
         }
 
         pub fn core(&mut self, core: RequestCore) {
             self.core = Option::Some(core);
         }
 
-        pub fn into_request(
+        pub fn into_request<P>(
             self,
-            from: Point,
+            from: P,
             agent: Agent,
             scope: Scope,
-        ) -> Result<Request, MsgErr> {
+        ) -> Result<Request, MsgErr> where P:ToPort {
             self.validate()?;
             let core = self
                 .core
@@ -355,7 +355,7 @@ pub mod messaging {
                 .expect("expected RequestCore");
             let request = Request {
                 id: self.id,
-                from,
+                from: from.to_port(),
                 to: self.to.expect("expected to point"),
                 core,
                 agent,
@@ -369,8 +369,8 @@ pub mod messaging {
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct Response {
         pub id: String,
-        pub from: Point,
-        pub to: Point,
+        pub from: Port,
+        pub to: Port,
         pub core: ResponseCore,
         pub response_to: String,
     }
@@ -379,8 +379,8 @@ pub mod messaging {
         pub fn new(core: ResponseCore, from: Point, to: Point, response_to: String) -> Self {
             Self {
                 id: uuid(),
-                to,
-                from,
+                to: to.into(),
+                from: from.into(),
                 core,
                 response_to,
             }
@@ -413,7 +413,7 @@ pub mod messaging {
             }
         }
 
-        pub fn to(&self) -> Point {
+        pub fn to(&self) -> Port {
             match self {
                 Message::Request(request) => request.to.clone(),
                 Message::Response(response) => response.to.clone(),

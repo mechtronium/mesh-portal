@@ -11,6 +11,7 @@ use crate::version::v0_0_1::parse::{command_line, Env};
 use crate::version::v0_0_1::parse::error::result;
 use crate::version::v0_0_1::span::new_span;
 use crate::version::v0_0_1::util::ToResolved;
+use serde::{Serialize,Deserialize};
 
 pub mod command {
     use serde::{Deserialize, Serialize};
@@ -27,13 +28,13 @@ pub mod command {
         use crate::error::MsgErr;
         use crate::version::v0_0_1::payload::payload::{Payload, PayloadMap};
 
-        #[derive(Debug, Clone, Serialize, Deserialize, strum_macros::Display)]
+        #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, strum_macros::Display)]
         pub enum StateSrc {
             Stateless,
             StatefulDirect(Payload),
         }
 
-        #[derive(Debug, Clone, Serialize, Deserialize)]
+        #[derive(Debug, Clone, Serialize, Deserialize,Eq,PartialEq)]
         pub enum PropertyMod {
             Set {
                 key: String,
@@ -59,7 +60,7 @@ pub mod command {
             }
         }
 
-        #[derive(Debug, Clone, Serialize, Deserialize)]
+        #[derive(Debug, Clone, Serialize, Deserialize,Eq,PartialEq)]
         pub struct SetProperties {
             pub map: HashMap<String, PropertyMod>,
         }
@@ -105,14 +106,14 @@ pub mod command {
             }
         }
 
-        #[derive(Debug, Clone, Serialize, Deserialize, strum_macros::Display)]
+        #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, strum_macros::Display)]
         pub enum SetLabel {
             Set(String),
             SetValue { key: String, value: String },
             Unset(String),
         }
 
-        #[derive(Debug, Clone, Serialize, Deserialize)]
+        #[derive(Debug, Clone, Serialize, Deserialize,Eq,PartialEq)]
         pub struct SetRegistry {
             pub labels: Vec<SetLabel>,
         }
@@ -422,7 +423,7 @@ pub mod request {
         pub type SetCtx = SetDef<PointCtx>;
         pub type SetVar = SetDef<PointVar>;
 
-        #[derive(Debug, Clone, Serialize, Deserialize)]
+        #[derive(Debug, Clone, Serialize, Deserialize,Eq,PartialEq)]
         pub struct SetDef<Pnt> {
             pub point: Pnt,
             pub properties: SetProperties,
@@ -466,7 +467,7 @@ pub mod request {
         pub type GetCtx = GetDef<PointCtx>;
         pub type GetVar = GetDef<PointVar>;
 
-        #[derive(Debug, Clone, Serialize, Deserialize)]
+        #[derive(Debug, Clone, Serialize, Deserialize,Eq,PartialEq)]
         pub struct GetDef<Pnt> {
             pub point: Pnt,
             pub op: GetOp,
@@ -497,7 +498,7 @@ pub mod request {
             }
         }
 
-        #[derive(Debug, Clone, Serialize, Deserialize)]
+        #[derive(Debug, Clone, Serialize, Deserialize,Eq,PartialEq)]
         pub enum GetOp {
             State,
             Properties(Vec<String>),
@@ -540,7 +541,7 @@ pub mod request {
         pub type TemplateCtx = TemplateDef<PointTemplateCtx>;
         pub type TemplateVar = TemplateDef<PointTemplateVar>;
 
-        #[derive(Debug, Clone, Serialize, Deserialize)]
+        #[derive(Debug, Clone, Serialize, Deserialize,Eq,PartialEq)]
         pub struct TemplateDef<Pnt> {
             pub point: Pnt,
             pub kind: KindTemplate,
@@ -590,7 +591,7 @@ pub mod request {
             }
         }
 
-        #[derive(Debug, Clone, Serialize, Deserialize)]
+        #[derive(Debug, Clone, Serialize, Deserialize,Eq,PartialEq)]
         pub struct KindTemplate {
             pub kind: String,
             pub sub_kind: Option<String>,
@@ -665,7 +666,7 @@ pub mod request {
 
 
 
-        #[derive(Debug, Clone,Serialize,Deserialize)]
+        #[derive(Debug, Clone,Serialize,Deserialize,Eq,PartialEq)]
         pub struct CreateDef<Pnt> {
             pub template: TemplateDef<PointTemplateDef<Pnt>>,
             pub properties: SetProperties,
@@ -697,7 +698,7 @@ pub mod request {
         pub type PointTemplateCtx = PointTemplateDef<PointCtx>;
         pub type PointTemplateVar = PointTemplateDef<PointVar>;
 
-        #[derive(Debug, Clone, Serialize, Deserialize)]
+        #[derive(Debug, Clone, Serialize, Deserialize,Eq,PartialEq)]
         pub struct PointTemplateDef<Pnt> {
             pub parent: Pnt,
             pub child_segment_template: PointSegFactory,
@@ -732,7 +733,7 @@ pub mod request {
 
 
 
-        #[derive(Debug, Clone, strum_macros::Display, Serialize, Deserialize)]
+        #[derive(Debug, Clone, strum_macros::Display, Serialize, Deserialize,Eq,PartialEq)]
         pub enum PointSegFactory {
             Exact(String),
             Pattern(String), // must have a '%'
@@ -757,7 +758,7 @@ pub mod request {
         use crate::version::v0_0_1::selector::selector::{Hop, HopCtx, HopVar, PointKindHierarchy, PointSelector, PointSelectorDef};
         use crate::version::v0_0_1::util::{ConvertFrom, ToResolved};
 
-        #[derive(Debug, Clone, Serialize, Deserialize)]
+        #[derive(Debug, Clone, Serialize, Deserialize,Eq,PartialEq)]
         pub enum SelectIntoPayload {
             Stubs,
             Points,
@@ -796,7 +797,7 @@ pub mod request {
             }
         }
 
-        #[derive(Debug, Clone,Serialize,Deserialize)]
+        #[derive(Debug, Clone,Serialize,Deserialize,Eq,PartialEq)]
         pub struct SelectDef<Hop> {
             pub pattern: PointSelectorDef<Hop>,
             pub properties: PropertiesPattern,
@@ -804,7 +805,7 @@ pub mod request {
             pub kind: SelectKind,
         }
 
-        #[derive(Debug, Clone, Serialize, Deserialize)]
+        #[derive(Debug, Clone, Serialize, Deserialize,Eq,PartialEq)]
         pub enum SelectKind {
             Initial,
             SubSelect {
@@ -931,7 +932,7 @@ pub mod request {
             }
         }
 
-        #[derive(Debug, Clone,Serialize,Deserialize)]
+        #[derive(Debug, Clone,Serialize,Deserialize,Eq,PartialEq)]
         pub struct DeleteDef<Hop> {
             pub selector: PointSelectorDef<Hop>,
         }
@@ -963,7 +964,7 @@ pub mod request {
         use crate::version::v0_0_1::command::request::Rc;
         use crate::version::v0_0_1::selector::selector::PointKindHierarchy;
 
-        #[derive(Debug, Clone, Serialize, Deserialize)]
+        #[derive(Debug, Clone, Serialize, Deserialize,Eq,PartialEq)]
         pub enum Query {
             PointKindHierarchy,
         }
@@ -1000,6 +1001,7 @@ pub mod request {
 }
 
 
+#[derive(Debug, Clone,Serialize,Deserialize,Eq,PartialEq)]
 pub enum Command{
     Create(Create),
     Delete(Delete),

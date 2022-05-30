@@ -451,7 +451,7 @@ where
 }
 
 // TraceWrap
-#[derive(Debug,Clone,Serialize,Deserialize)]
+#[derive(Debug,Clone,Serialize,Deserialize,Eq,PartialEq)]
 pub struct Tw<W> {
     pub trace: Trace,
     pub w: W

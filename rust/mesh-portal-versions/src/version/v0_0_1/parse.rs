@@ -4029,7 +4029,7 @@ pub mod model {
         }
     }
 
-    #[derive(Debug, Clone, Serialize, Deserialize)]
+    #[derive(Debug, Clone, Serialize, Deserialize,Eq,PartialEq)]
     pub enum Chunk<I> {
         Var(I),
         Text(I),
@@ -4078,7 +4078,7 @@ pub mod model {
     }
 
 
-    #[derive(Debug,Clone,Serialize,Deserialize)]
+    #[derive(Debug,Clone,Serialize,Deserialize,Eq,PartialEq)]
     pub struct Subst<I>
     {
         pub chunks: Vec<Chunk<I>>,

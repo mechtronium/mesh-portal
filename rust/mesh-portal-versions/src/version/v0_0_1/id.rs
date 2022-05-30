@@ -15,6 +15,7 @@ pub mod id {
     use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 
     use crate::error::{MsgErr, ParseErrs};
+    use crate::version::v0_0_1::id::id::TargetLayer::Unspecified;
     use crate::version::v0_0_1::id::id::PointSegCtx::Working;
     use crate::version::v0_0_1::parse::{camel_case, consume_point, consume_point_ctx, kind, point_and_kind, point_route_segment, Ctx, CtxResolver,  Res, VarResolver, VarResolverErr,   Env};
 
@@ -930,8 +931,16 @@ pub mod id {
     }
 
     #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
+    pub enum TargetLayer {
+        Unspecified,
+        Shell,
+        Core
+    }
+
+    #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
     pub struct Port {
        pub point: Point,
+       pub layer: TargetLayer,
        pub topic: Topic
     }
 
@@ -944,20 +953,31 @@ pub mod id {
     }
 
     impl ToPoint for Port {
-        fn to_point(&self) -> Point {
-            self.point.clone()
+        fn to_point(self) -> Point {
+            self.point
+        }
+    }
+
+    impl ToPort for Port {
+        fn to_port(self) -> Port {
+            self
         }
     }
 
     pub trait ToPoint {
-        fn to_point(&self) -> Point;
+        fn to_point(self) -> Point;
+    }
+
+    pub trait ToPort{
+        fn to_port(self) -> Port;
     }
 
     impl Into<Port> for Point {
         fn into(self) -> Port {
             Port {
                 point: self,
-                topic: Topic::None
+                topic: Topic::None,
+                layer: TargetLayer::Unspecified
             }
         }
     }
@@ -975,6 +995,19 @@ pub mod id {
             self.collapse()
         }
     }
+
+    impl ToPoint for Point {
+        fn to_point(self) -> Point {
+            self
+        }
+    }
+
+    impl ToPort for Point {
+        fn to_port(self) -> Port {
+            self.into()
+        }
+    }
+
 
     impl ToResolved<Point> for PointVar {
         fn to_resolved(self, env: &Env) -> Result<Point, MsgErr> {

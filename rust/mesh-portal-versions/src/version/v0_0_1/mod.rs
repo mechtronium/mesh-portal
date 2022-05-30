@@ -62,8 +62,6 @@ pub mod artifact {
     }
 }
 
-pub type Port = String;
-
 pub mod path {
     use crate::error::MsgErr;
     use crate::version::v0_0_1::parse::consume_path;

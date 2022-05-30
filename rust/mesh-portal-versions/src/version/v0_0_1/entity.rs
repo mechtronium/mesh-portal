@@ -27,7 +27,7 @@
         use crate::version::v0_0_1::command::request::RequestCore;
         use crate::version::v0_0_1::fail;
         use crate::version::v0_0_1::fail::Fail;
-        use crate::version::v0_0_1::id::id::{GenericKind, Meta, Point};
+        use crate::version::v0_0_1::id::id::{GenericKind, Meta, Point, ToPort};
         use crate::version::v0_0_1::messaging::messaging::Response;
         use crate::version::v0_0_1::payload::payload::{Errors, Payload, Primitive};
         use crate::version::v0_0_1::util::uuid;
@@ -98,11 +98,11 @@
                 return self.status.is_success();
             }
 
-            pub fn into_response(self, from: Point, to: Point, response_to: String) -> Response {
+            pub fn into_response<P>(self, from: P, to: P, response_to: String) -> Response where P: ToPort{
                 Response {
                     id: uuid(),
-                    from,
-                    to,
+                    from: from.to_port(),
+                    to: to.to_port(),
                     core: self,
                     response_to,
                 }

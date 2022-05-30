@@ -53,7 +53,7 @@ pub mod selector {
     pub type KindSelector =KindSelectorDef<GenericKindSelector,GenericSubKindSelector,SpecificSelector>;
     pub type KindSelectorVar =KindSelectorDef<VarVal<GenericKindSelector>,VarVal<GenericSubKindSelector>,VarVal<SpecificSelector>>;
 
-    #[derive(Debug, Clone, Serialize, Deserialize)]
+    #[derive(Debug, Clone, Serialize, Deserialize,Eq,PartialEq)]
     pub struct KindSelectorDef<GenericKindSelector,GenericSubKindSelector,SpecificSelector> {
         pub kind: GenericKindSelector,
         pub sub_kind: GenericSubKindSelector,
@@ -107,7 +107,7 @@ pub mod selector {
 
     pub type GenericSubKindSelector = Pattern<String>;
 
-    #[derive(Debug, Clone, Serialize, Deserialize)]
+    #[derive(Debug, Clone, Serialize, Deserialize,Eq,PartialEq)]
     pub struct PointSelectorDef<Hop> {
         pub hops: Vec<Hop>,
     }
@@ -508,7 +508,7 @@ pub mod selector {
     }
     pub type SpecificSelector = SpecificSelectorDef<VendorSelector,ProductSelector,VariantSelector,VersionReq>;
 
-    #[derive(Debug, Clone, Serialize, Deserialize)]
+    #[derive(Debug, Clone, Serialize, Deserialize,Eq,PartialEq)]
     pub struct SpecificSelectorDef<VendorSelector,ProductSelector,VariantSelector,VersionReq> {
         pub vendor: VendorSelector,
         pub product: ProductSelector,
@@ -930,7 +930,7 @@ pub mod selector {
     pub type HopCtx = HopDef<PointSegSelectorCtx, KindSelector>;
     pub type HopVar = HopDef<PointSegSelectorVar, KindSelectorVar>;
 
-    #[derive(Debug, Clone, Serialize, Deserialize)]
+    #[derive(Debug, Clone, Serialize, Deserialize,Eq,PartialEq)]
     pub struct HopDef<Segment, KindSelector> {
         pub inclusive: bool,
         pub segment_selector: Segment,
@@ -971,7 +971,7 @@ pub mod selector {
         }
     }
 
-    #[derive(Debug, Clone, Serialize, Deserialize)]
+    #[derive(Debug, Clone, Serialize, Deserialize,Eq,PartialEq)]
     pub enum Pattern<P> {
         Any,
         Exact(P),

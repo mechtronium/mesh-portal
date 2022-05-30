@@ -37,7 +37,7 @@ pub mod portal {
         use crate::error::MsgErr;
         use crate::version::v0_0_1::artifact::ArtifactRequest;
         use crate::version::v0_0_1::frame::frame::{CloseReason, PrimitiveFrame};
-        use crate::version::v0_0_1::id::id::{GenericKind, GenericKindBase, Point};
+        use crate::version::v0_0_1::id::id::{GenericKind, GenericKindBase, Point, ToPoint};
         use crate::version::v0_0_1::messaging::messaging::{Request, Response, Session};
         use crate::version::v0_0_1::particle::particle::StatusUpdate;
         use crate::version::v0_0_1::payload::payload::Payload;
@@ -69,7 +69,7 @@ pub mod portal {
                     Frame::LogSpan(span) => Option::Some(span.point.clone()),
                     Frame::Audit(log) => Option::Some(log.point.clone()),
                     Frame::PointlessLog(_) => Option::None,
-                    Frame::Request(request) => Option::Some(request.from.clone()),
+                    Frame::Request(request) => Option::Some(request.from.clone().to_point()),
                     Frame::Response(response) => {
                         // Response will need a from field for it to work within Ports
                         Option::None
@@ -116,7 +116,7 @@ pub mod portal {
         use crate::version::v0_0_1::artifact::{Artifact, ArtifactResponse};
         use crate::version::v0_0_1::config::config::{Assign, PointConfig, Document};
         use crate::version::v0_0_1::frame::frame::{CloseReason, PrimitiveFrame};
-        use crate::version::v0_0_1::id::id::{GenericKind, GenericKindBase, Point};
+        use crate::version::v0_0_1::id::id::{GenericKind, GenericKindBase, Point, ToPoint};
         use crate::version::v0_0_1::messaging::messaging::{Request, Response, Session};
         use crate::version::v0_0_1::payload::payload::Payload;
         use crate::version::v0_0_1::portal::portal::Exchanger;
@@ -137,8 +137,8 @@ pub mod portal {
             pub fn to(&self) -> Option<Point> {
                 match self {
                     Frame::Assign(assign) => Option::Some(assign.details.stub.point.clone()),
-                    Frame::Request(request) => Option::Some(request.request.to.clone()),
-                    Frame::Response(response) => Option::Some(response.to.clone()),
+                    Frame::Request(request) => Option::Some(request.request.to.clone().to_point()),
+                    Frame::Response(response) => Option::Some(response.to.clone().to_point()),
                     Frame::Artifact(artifact) => Option::Some(artifact.to.clone()),
                     Frame::Close(_) => Option::None,
                     Frame::Init => Option::None,

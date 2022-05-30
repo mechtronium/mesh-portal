@@ -6,7 +6,7 @@ pub mod payload {
     use crate::error::{MsgErr, ParseErrs};
     use crate::version::v0_0_1::bin::Bin;
     use crate::version::v0_0_1::command::request::{Method, Rc, RcCommandType, RequestCore};
-    use crate::version::v0_0_1::id::id::{GenericKind, GenericKindBase, Meta, Point, PointCtx, PointVar};
+    use crate::version::v0_0_1::id::id::{GenericKind, GenericKindBase, Meta, Point, PointCtx, PointVar, Port};
     use crate::version::v0_0_1::particle::particle::{Particle, Status, Stub};
     use crate::version::v0_0_1::selector::selector::{KindSelector, PointSelector};
     use crate::version::v0_0_1::util::{ToResolved, ValueMatcher, ValuePattern};
@@ -14,6 +14,7 @@ pub mod payload {
     use std::str::FromStr;
     use std::sync::Arc;
     use crate::version::v0_0_1::cli::RawCommand;
+    use crate::version::v0_0_1::command::Command;
     use crate::version::v0_0_1::http::HttpMethod;
     use crate::version::v0_0_1::msg::MsgMethod;
     use crate::version::v0_0_1::parse::{CtxResolver, Env};
@@ -35,6 +36,7 @@ pub mod payload {
         List,
         Map,
         Point,
+        Port,
         Text,
         Boolean,
         Int,
@@ -45,7 +47,8 @@ pub mod payload {
         Particle,
         Errors,
         Json,
-        CommandLine
+        CommandLine,
+        Command
     }
 
     #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, strum_macros::Display)]
@@ -54,6 +57,7 @@ pub mod payload {
         List(PayloadList),
         Map(PayloadMap),
         Point(Point),
+        Port(Port),
         Text(String),
         Stub(Stub),
         Meta(Meta),
@@ -63,6 +67,7 @@ pub mod payload {
         Status(Status),
         Particle(Particle),
         CommandLine(RawCommand),
+        Command(Box<Command>),
         Errors(Errors),
         Json(serde_json::Value),
     }
@@ -110,7 +115,9 @@ pub mod payload {
                 Payload::Particle(_) => PayloadType::Particle,
                 Payload::Errors(_) => PayloadType::Errors,
                 Payload::Json(_) => PayloadType::Json,
-                Payload::CommandLine(_) => PayloadType::CommandLine
+                Payload::CommandLine(_) => PayloadType::CommandLine,
+                Payload::Port(_) => PayloadType::Port,
+                Payload::Command(_) => PayloadType::Command
             }
         }
 
@@ -438,7 +445,7 @@ pub mod payload {
     pub type PayloadTypePatternCtx = PayloadTypePatternDef<PointCtx>;
     pub type PayloadTypePatternVar = PayloadTypePatternDef<PointVar>;
 
-    #[derive(Debug, Clone, Serialize, Deserialize )]
+    #[derive(Debug, Clone, Serialize, Deserialize,Eq,PartialEq)]
     pub enum PayloadTypePatternDef<Pnt> {
         Empty,
         Primitive(PayloadType),
@@ -547,7 +554,7 @@ pub mod payload {
     pub type PayloadPatternCtx = PayloadPatternDef<PointCtx>;
     pub type PayloadPattern = PayloadPatternDef<Point>;
 
-    #[derive(Debug, Clone, Serialize,Deserialize )]
+    #[derive(Debug, Clone, Serialize,Deserialize,Eq,PartialEq)]
     pub struct PayloadPatternDef<Pnt> {
         pub structure: PayloadTypePatternDef<Pnt>,
         pub format: Option<PayloadFormat>,
@@ -635,7 +642,7 @@ pub mod payload {
         }
     }
 
-    #[derive(Debug, Clone,Serialize,Deserialize)]
+    #[derive(Debug, Clone,Serialize,Deserialize,Eq,PartialEq)]
     pub struct CallWithConfigDef<Pnt> {
         pub call: CallDef<Pnt>,
         pub config: Option<Pnt>,
@@ -744,7 +751,7 @@ pub mod payload {
     }
 
 
-    #[derive(Debug, Clone,Serialize,Deserialize)]
+    #[derive(Debug, Clone,Serialize,Deserialize,Eq,PartialEq)]
     pub struct CallDef<Pnt> {
         pub point: Pnt,
         pub kind: CallKind,
@@ -752,7 +759,7 @@ pub mod payload {
 
 
 
-    #[derive(Debug, Clone,Serialize,Deserialize)]
+    #[derive(Debug, Clone,Serialize,Deserialize,Eq,PartialEq)]
     pub enum CallKind {
         Msg(MsgCall),
         Http(HttpCall),
@@ -785,7 +792,7 @@ pub mod payload {
         }
     }
 
-    #[derive(Debug, Clone,Serialize,Deserialize )]
+    #[derive(Debug, Clone,Serialize,Deserialize,Eq,PartialEq )]
     pub struct MsgCall {
         pub path: Subst<Tw<String>>,
         pub method: MsgMethod,
@@ -803,7 +810,7 @@ pub mod payload {
         }
     }
 
-    #[derive(Debug, Clone,Serialize,Deserialize)]
+    #[derive(Debug, Clone,Serialize,Deserialize,Eq,PartialEq)]
     pub struct HttpCall {
         pub path: Subst<Tw<String>>,
 
@@ -1004,7 +1011,7 @@ pub mod payload {
     pub type MapPatternVar = MapPatternDef<PointVar>;
 
 
-    #[derive(Debug, Clone,Serialize,Deserialize)]
+    #[derive(Debug, Clone,Serialize,Deserialize,Eq,PartialEq)]
     pub struct MapPatternDef<Pnt> {
         pub required: HashMap<String, ValuePattern<PayloadPatternDef<Pnt>>>,
         pub allowed: ValuePattern<PayloadPatternDef<Pnt>>,
