@@ -27,7 +27,7 @@ use std::convert::TryInto;
 use dashmap::mapref::one::Ref;
 use tokio::sync::oneshot::Sender;
 use tokio::task::yield_now;
-use mesh_portal::version::latest::config::{Assign, Config, PortalConfig, ParticleConfigBody};
+use mesh_portal::version::latest::config::{Assign, PointConfig, PortalConfig, ParticleConfigBody};
 use mesh_portal::version::latest::entity::response::ResponseCore;
 use mesh_portal::version::latest::id::Point;
 use mesh_portal::version::latest::messaging::{Request, Response};
@@ -49,7 +49,7 @@ pub struct ParticleSkel {
 }
 
 pub trait ParticleCtrlFactory: Sync+Send {
-    fn matches(&self,config:Config<ParticleConfigBody>) -> bool;
+    fn matches(&self, config: PointConfig<ParticleConfigBody>) -> bool;
     fn create(&self, skel: ParticleSkel ) -> Result<Arc<dyn ParticleCtrl>, Error>;
 }
 

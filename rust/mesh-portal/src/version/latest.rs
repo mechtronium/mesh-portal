@@ -11,7 +11,6 @@ use mesh_portal_versions::version::v0_0_1 as current;
 
 
 pub type State = current::State;
-pub type Port = current::Port;
 
 pub mod artifact {
     use mesh_portal_versions::version::v0_0_1 as current;
@@ -25,6 +24,7 @@ pub mod id {
     use mesh_portal_versions::version::v0_0_1 as current;
     use mesh_portal_versions::version::v0_0_1::id;
 
+    pub type Uuid = id::id::Uuid;
     pub type ResourceType = id::id::GenericKindBase;
     pub type ResourceKind = id::id::GenericKind;
     pub type AddressAndKind = id::id::PointKind;
@@ -37,6 +37,11 @@ pub mod id {
     pub type RouteSegment = id::id::RouteSeg;
     pub type AddressSegment = id::id::PointSeg;
     pub type Point = id::id::Point;
+    pub type Port = id::id::Port;
+    pub type ToPort = id::id::ToPort;
+    pub type ToPoint = id::id::ToPoint;
+    pub type TargetLayer = id::id::TargetLayer;
+    pub type Topic = id::id::Topic;
     pub type KindParts = id::id::GenericKind;
 }
 
@@ -125,6 +130,7 @@ pub mod bin {
 pub mod parse {
     use mesh_portal_versions::version::v0_0_1 as current;
     pub type Res<I,O> = current::parse::Res<I,O>;
+    pub type Env = current::parse::Env;
 }
 
 pub mod payload {
@@ -211,8 +217,8 @@ pub mod config {
     pub type Info = config::config::Info;
     pub type PortalConfig = config::config::PortalConfig;
     pub type Assign = config::config::Assign;
-    pub type Config<BODY> = config::config::PointConfig<BODY>;
-    pub type ConfigBody = config::config::Document;
+    pub type PointConfig<BODY> = config::config::PointConfig<BODY>;
+    pub type Document = config::config::Document;
     pub type ParticleConfigBody = config::config::ParticleConfigBody;
 
 
@@ -456,5 +462,14 @@ pub mod cli {
     pub type CommandTemplate = current::cli::CommandTemplate;
     pub type RawCommand = current::cli::RawCommand;
     pub type Transfer = current::cli::Transfer;
+}
+
+
+pub mod service {
+    use mesh_portal_versions::version::v0_0_1 as current;
+    pub type Router=dyn current::service::Router;
+    pub type Global=dyn current::service::Global;
+    pub type AccessProvider=dyn current::service::AccessProvider;
+    pub type AllAccessProvider=current::service::AllAccessProvider;
 }
 

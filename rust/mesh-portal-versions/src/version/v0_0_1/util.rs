@@ -208,7 +208,7 @@ where
     Self: Sized,
 {
     fn collapse(self) -> Result<R, MsgErr> {
-        self.to_resolved(&Env::empty())
+        self.to_resolved(&Env::no_point())
     }
 
     fn to_resolved(self, env: &Env) -> Result<R, MsgErr>;

@@ -4,7 +4,6 @@ use crate::error::MsgErr;
 use crate::version::v0_0_1::command::request::create::{Create, CreateCtx, CreateVar, Strategy};
 use crate::version::v0_0_1::command::request::delete::{Delete, DeleteCtx, DeleteVar};
 use crate::version::v0_0_1::command::request::get::{Get, GetCtx, GetVar};
-use crate::version::v0_0_1::command::request::query::Query;
 use crate::version::v0_0_1::command::request::select::{Select, SelectCtx, SelectVar};
 use crate::version::v0_0_1::command::request::set::{Set, SetCtx, SetVar};
 use crate::version::v0_0_1::parse::{command_line, Env};
@@ -147,7 +146,6 @@ pub mod request {
     use crate::version::v0_0_1::bin::Bin;
     use crate::version::v0_0_1::command::request::create::Create;
     use crate::version::v0_0_1::command::request::get::Get;
-    use crate::version::v0_0_1::command::request::query::Query;
     use crate::version::v0_0_1::command::request::select::Select;
     use crate::version::v0_0_1::command::request::set::Set;
     use crate::version::v0_0_1::command::request::update::Update;
@@ -155,7 +153,7 @@ pub mod request {
     use crate::version::v0_0_1::fail;
     use crate::version::v0_0_1::fail::{BadRequest, Fail, NotFound};
     use crate::version::v0_0_1::id::id::{GenericKind, GenericKindBase, Meta, Point};
-    use crate::version::v0_0_1::payload::payload::{Errors, Payload, Primitive};
+    use crate::version::v0_0_1::payload::payload::{Errors, Payload, };
     use crate::version::v0_0_1::selector::selector::KindSelector;
     use crate::version::v0_0_1::util::ValueMatcher;
     use http::status::InvalidStatusCode;
@@ -215,7 +213,7 @@ pub mod request {
         }
     }
 
-    #[derive(Debug, Clone, Serialize,Deserialize)]
+    #[derive(Debug, Clone, Serialize,Deserialize,Eq,PartialEq)]
     pub struct RequestCore {
         #[serde(with = "http_serde::header_map")]
         pub headers: HeaderMap,
@@ -332,7 +330,6 @@ pub mod request {
         Create(Create),
         Select(Select),
         Update(Update),
-        Query(Query),
         Get(Get),
         Set(Set),
     }
@@ -353,7 +350,6 @@ pub mod request {
                 Rc::Create(_) => RcCommandType::Create,
                 Rc::Select(_) => RcCommandType::Select,
                 Rc::Update(_) => RcCommandType::Update,
-                Rc::Query(_) => RcCommandType::Query,
                 Rc::Get(_) => RcCommandType::Get,
                 Rc::Set(_) => RcCommandType::Set,
             }
@@ -519,7 +515,7 @@ pub mod request {
             GenericKind, HostKey, Point, PointCtx, PointSeg, PointVar,
         };
         use crate::version::v0_0_1::parse::Env;
-        use crate::version::v0_0_1::payload::payload::{Payload, Primitive};
+        use crate::version::v0_0_1::payload::payload::{Payload, };
         use crate::version::v0_0_1::selector::selector::SpecificSelector;
         use crate::version::v0_0_1::util::{ConvertFrom, ToResolved};
 
@@ -753,7 +749,7 @@ pub mod request {
         use crate::version::v0_0_1::parse::Env;
         use crate::version::v0_0_1::particle::particle::Stub;
         use crate::version::v0_0_1::payload::payload::{
-            MapPattern, Payload, PayloadList, Primitive, PrimitiveType,
+            MapPattern, Payload, PayloadList,
         };
         use crate::version::v0_0_1::selector::selector::{Hop, HopCtx, HopVar, PointKindHierarchy, PointSelector, PointSelectorDef};
         use crate::version::v0_0_1::util::{ConvertFrom, ToResolved};
@@ -901,7 +897,7 @@ pub mod request {
         }
 
         impl Select {
-            fn new(pattern: PointSelector) -> Self {
+            pub fn new(pattern: PointSelector) -> Self {
                 Self {
                     pattern,
                     properties: Default::default(),
@@ -916,7 +912,7 @@ pub mod request {
 
     pub mod delete {
         use crate::error::MsgErr;
-        use crate::version::v0_0_1::command::request::select::PropertiesPattern;
+        use crate::version::v0_0_1::command::request::select::{PropertiesPattern, Select, SelectIntoPayload};
         use crate::version::v0_0_1::parse::Env;
         use crate::version::v0_0_1::selector::selector::{Hop, PointSelectorDef};
         use crate::version::v0_0_1::util::ToResolved;
@@ -935,6 +931,14 @@ pub mod request {
         #[derive(Debug, Clone,Serialize,Deserialize,Eq,PartialEq)]
         pub struct DeleteDef<Hop> {
             pub selector: PointSelectorDef<Hop>,
+        }
+
+        impl Into<Select> for Delete {
+            fn into(self) -> Select {
+                let mut select = Select::new(self.selector );
+                select.into_payload = SelectIntoPayload::Points;
+                select
+            }
         }
 
     }
@@ -991,12 +995,6 @@ pub mod request {
                 }
             }
         }
-
-        impl Into<Rc> for Query {
-            fn into(self) -> Rc {
-                Rc::Query(self)
-            }
-        }
     }
 }
 
@@ -1009,7 +1007,6 @@ pub enum Command{
     Publish(Create),
     Set(Set),
     Get(Get),
-    Query(Query),
 }
 
 pub enum CommandCtx{
@@ -1019,7 +1016,6 @@ pub enum CommandCtx{
     Publish(CreateCtx),
     Set(SetCtx),
     Get(GetCtx),
-    Query(Query),
 }
 
 pub enum CommandVar {
@@ -1029,7 +1025,6 @@ pub enum CommandVar {
     Publish(CreateVar),
     Set(SetVar),
     Get(GetVar),
-    Query(Query),
 }
 
 
@@ -1058,7 +1053,6 @@ impl ToResolved<CommandCtx> for CommandVar {
             CommandVar::Set(i) => CommandCtx::Set(i.to_resolved(env)?),
             CommandVar::Get(i) => CommandCtx::Get(i.to_resolved(env)?),
             CommandVar::Delete(i) => CommandCtx::Delete(i.to_resolved(env)?),
-            CommandVar::Query(i) => CommandCtx::Query(i)
         })
     }
 }
@@ -1072,7 +1066,6 @@ impl ToResolved<Command> for CommandCtx {
             CommandCtx::Set(i) => Command::Set(i.to_resolved(env)?),
             CommandCtx::Get(i) => Command::Get(i.to_resolved(env)?),
             CommandCtx::Delete(i) => Command::Delete(i.to_resolved(env)?),
-            CommandCtx::Query(i) => Command::Query(i)
         })
     }
 }

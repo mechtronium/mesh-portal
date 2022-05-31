@@ -10,6 +10,8 @@ extern crate strum_macros;
 extern crate core;
 extern crate alloc;
 
+#[macro_use]
+extern crate async_trait;
 
 use serde::{Deserialize, Serialize};
 

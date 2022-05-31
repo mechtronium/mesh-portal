@@ -7,3 +7,4 @@ edition = "2021"
 
 [dependencies]
 mesh-portal= { path="../mesh-portal"}
+mesh-portal-versions = { path="../mesh-portal-versions"}

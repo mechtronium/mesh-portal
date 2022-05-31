@@ -1524,69 +1524,39 @@ impl ToString for Ctx {
     }
 }
 
-pub struct EnvBuilder {
-    pub point: Option<Point>,
-    pub map: Option<MapResolver>
-}
-
-impl EnvBuilder {
-    pub fn empty() -> Self {
-        Self {
-            point: None,
-            map: None
-        }
-    }
-
-    pub fn new(point: Point) -> Self {
-        Self {
-            point: Some(point),
-            map: None
-        }
-    }
-    pub fn insert<K:ToString,V:ToString>( &mut self, key: K, value: V  ) {
-        if self.map.is_none() {
-            self.map = Some(MapResolver::new());
-        }
-        let map = self.map.as_mut().unwrap();
-        map.insert(key,value);
-    }
-
-    pub fn build(self) -> Env {
-        Env {
-            point: self.point,
-            var_resolver: match self.map {
-                None => None,
-                Some(map) => Some( Box::new(map))
-            }
-        }
-    }
-}
-
+#[derive(Clone)]
 pub struct Env {
     pub point: Option<Point>,
-    pub var_resolver: Option<Box<dyn VarResolver>>,
+    pub var_resolver: Option<CompositeResolver>
 }
 
 impl Env {
 
-    pub fn empty() -> Self {
+    pub fn no_point() -> Self {
         Self {
             point: None,
-            var_resolver: None,
+            var_resolver: Some(CompositeResolver::new())
+        }
+    }
+
+    pub fn unavailable() -> Self {
+        Self {
+            point: None,
+            var_resolver: None
         }
     }
 
     pub fn new(point: Point) -> Self {
         Self {
             point: Some(point),
-            var_resolver: Some(Box::new(MapResolver::new())),
+            var_resolver: Some(CompositeResolver::new())
         }
     }
 
-    pub fn new_with_resolver(point: Point, resolver: Box<dyn VarResolver>) -> Self {
+    pub fn just_point(point: Point) -> Self {
         Self {
             point: Some(point),
-            var_resolver: Some(resolver)
+            var_resolver: None
         }
     }
 
@@ -1599,13 +1569,63 @@ impl Env {
 
     pub fn val(&self, var: &str) -> Result<String, VarResolverErr> {
         if let None = self.var_resolver {
-            Err(VarResolverErr::NotAvaiable)
+            Err(VarResolverErr::NotAvailable)
         } else {
             self.var_resolver.as_ref().unwrap().val(var)
         }
     }
+
+    pub fn set_working(& mut self, point: Point) {
+        self.point.replace(point);
+    }
+
+    pub fn set_var<V:ToString>(& mut self, key: V, value: V ) {
+        match self.var_resolver.as_mut() {
+            None => {
+
+            }
+            Some(var_resolver) => {
+                var_resolver.set(key,value);
+            }
+        }
+    }
 }
 
+#[derive(Clone)]
+pub struct CompositeResolver {
+  pub env_resolver: Arc<dyn VarResolver>,
+  pub scope_resolver: MapResolver,
+  pub other_resolver: MultiVarResolver
+}
+
+impl CompositeResolver {
+    pub fn new() -> Self {
+        Self {
+            env_resolver: Arc::new(NoResolver::new() ),
+            scope_resolver: MapResolver::new(),
+            other_resolver: MultiVarResolver::new()
+        }
+    }
+
+    pub fn set<S>(&mut self, key: S, value: S) where S:ToString {
+        self.scope_resolver.insert( key.to_string(), value.to_string() );
+    }
+
+}
+
+impl VarResolver for CompositeResolver {
+    fn val(&self, var: &str) -> Result<String, VarResolverErr> {
+        if let Ok(val) = self.scope_resolver.val(var) {
+            Ok(val)
+        } else if let Ok(val) = self.scope_resolver.val(var) {
+            Ok(val)
+        } else if let Ok(val) = self.other_resolver.val(var) {
+            Ok(val)
+        } else {
+            Err(VarResolverErr::NotFound)
+        }
+    }
+}
 
 pub trait CtxResolver {
     fn working_point(&self) -> Result<&Point, MsgErr>;
@@ -1621,16 +1641,17 @@ impl CtxResolver for PointCtxResolver {
 
 
 pub enum VarResolverErr {
-    NotAvaiable,
+    NotAvailable,
     NotFound,
 }
 
-pub trait VarResolver: Send+Sync {
+pub trait VarResolver: Send+Sync{
     fn val(&self, var: &str) -> Result<String, VarResolverErr> {
         Err(VarResolverErr::NotFound)
     }
 }
 
+#[derive(Clone)]
 pub struct NoResolver;
 
 impl NoResolver {
@@ -1664,6 +1685,7 @@ impl VarResolver for MapResolver {
     }
 }
 
+#[derive(Clone)]
 pub struct RegexCapturesResolver {
     regex: Regex,
     text: String
@@ -1689,7 +1711,8 @@ impl VarResolver for RegexCapturesResolver {
     }
 }
 
-pub struct MultiVarResolver(Vec<Box<dyn VarResolver>>);
+#[derive(Clone)]
+pub struct MultiVarResolver(Vec<Arc<dyn VarResolver>>);
 
 impl MultiVarResolver {
 
@@ -1698,7 +1721,7 @@ impl MultiVarResolver {
     }
 
     pub fn push<R>( & mut self, resolver: R ) where R: VarResolver+'static{
-        self.0.push( Box::new( resolver ));
+        self.0.push( Arc::new( resolver ));
     }
 }
 
@@ -6226,7 +6249,7 @@ pub mod test {
     use crate::version::v0_0_1::parse::model::{
         BlockKind, DelimitedBlockKind, LexScope, NestedBlockKind, TerminatedBlockKind,
     };
-    use crate::version::v0_0_1::parse::{args, base_point_segment, comment, consume_point_var, ctx_seg, doc, Env, EnvBuilder, expected_block_terminator_or_non_terminator, lex_block, lex_child_scopes, lex_nested_block, lex_scope, lex_scope_pipeline_step_and_block, lex_scope_selector, lex_scope_selector_and_filters, lex_scopes, lowercase1, MapResolver, mesh_eos, nested_block, nested_block_content, next_selector, no_comment, parse_bind_config, parse_include_blocks, parse_inner_block, path_regex, pipeline, pipeline_segment, pipeline_step_var, pipeline_stop_var, point_non_root_var, point_template, point_var, pop, rec_version, Res, root_scope, root_scope_selector, scope_filter, scope_filters, skewer_case, skewer_dot, space_chars, space_no_dupe_dots, space_point_segment, strip_comments, subst, SubstParser, var_seg, variable_name, VarResolver, version, version_point_segment, wrapper};
+    use crate::version::v0_0_1::parse::{args, base_point_segment, comment, consume_point_var, ctx_seg, doc, Env,  expected_block_terminator_or_non_terminator, lex_block, lex_child_scopes, lex_nested_block, lex_scope, lex_scope_pipeline_step_and_block, lex_scope_selector, lex_scope_selector_and_filters, lex_scopes, lowercase1, MapResolver, mesh_eos, nested_block, nested_block_content, next_selector, no_comment, parse_bind_config, parse_include_blocks, parse_inner_block, path_regex, pipeline, pipeline_segment, pipeline_step_var, pipeline_stop_var, point_non_root_var, point_template, point_var, pop, rec_version, Res, root_scope, root_scope_selector, scope_filter, scope_filters, skewer_case, skewer_dot, space_chars, space_no_dupe_dots, space_point_segment, strip_comments, subst, SubstParser, var_seg, variable_name, VarResolver, version, version_point_segment, wrapper};
     use crate::version::v0_0_1::span::{new_span, span_with_extra};
     use nom::branch::alt;
     use nom::bytes::complete::{escaped, tag};
@@ -6336,10 +6359,9 @@ pub mod test {
             assert!(false);
         }
 
-        let mut env = EnvBuilder::new(Point::from_str("my-domain.com")?);
-        env.insert("route", "[hub]");
-        env.insert("name", "zophis");
-        let env = env.build();
+        let mut env = Env::new(Point::from_str("my-domain.com")?);
+        env.set_var("route", "[hub]");
+        env.set_var("name", "zophis");
         let point: Point = point.to_resolved(&env)?;
         println!("point.to_string(): {}", point.to_string());
 
@@ -6357,10 +6379,9 @@ pub mod test {
         .to_point());
 
         let point = log(result(point_var(new_span("${route}::${root}:base1"))))?;
-        let mut env = EnvBuilder::new(Point::from_str("my-domain.com:blah")?);
-        env.insert("route", "[hub]");
-        env.insert("root", "..");
-        let env = env.build();
+        let mut env = Env::new(Point::from_str("my-domain.com:blah")?);
+        env.set_var("route", "[hub]");
+        env.set_var("root", "..");
 
         let point: PointCtx = log(point.to_resolved(&env))?;
 

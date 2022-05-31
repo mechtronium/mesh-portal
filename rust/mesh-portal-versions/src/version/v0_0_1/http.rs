@@ -1,7 +1,7 @@
 use crate::version::v0_0_1::command::request::{Method, RequestCore};
 use crate::version::v0_0_1::entity::response::ResponseCore;
 use crate::version::v0_0_1::id::id::Meta;
-use crate::version::v0_0_1::payload::payload::{Errors, Payload, Primitive};
+use crate::version::v0_0_1::payload::payload::{Errors, Payload };
 use http::{HeaderMap, StatusCode, Uri};
 use serde::{Deserialize, Serialize};
 use crate::error::MsgErr;

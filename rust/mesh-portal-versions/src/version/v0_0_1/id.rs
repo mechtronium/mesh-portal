@@ -481,7 +481,7 @@ pub mod id {
                         Err(err) => {
                             let trace = var.trace;
                             match err {
-                                VarResolverErr::NotAvaiable => {
+                                VarResolverErr::NotAvailable => {
                                     Err(ParseErrs::from_range(
                                         "variables not available in this context",
                                         "variables not available",
@@ -927,7 +927,8 @@ pub mod id {
     #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
     pub enum Topic {
         None,
-        Uuid(Uuid)
+        Uuid(Uuid),
+        Named(String)
     }
 
     #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
@@ -1044,7 +1045,7 @@ pub mod id {
                     }
                     Err(err) => {
                         match err {
-                            VarResolverErr::NotAvaiable => {
+                            VarResolverErr::NotAvailable => {
                                 errs.push(ParseErrs::from_range(
                                     format!("variables not available in this context '{}'", var.name.clone())
                                         .as_str(),
@@ -1099,7 +1100,7 @@ pub mod id {
                         Err(err) => {
 
                             match err {
-                                VarResolverErr::NotAvaiable => {
+                                VarResolverErr::NotAvailable => {
                                     errs.push(ParseErrs::from_range(
                                         format!("variables not available in this context '{}'", var.name.clone())
                                             .as_str(),

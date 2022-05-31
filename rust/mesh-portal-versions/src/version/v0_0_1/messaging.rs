@@ -1,51 +1,172 @@
 pub mod messaging {
+    use http::status::InvalidStatusCode;
     use std::collections::HashMap;
     use std::convert::TryInto;
     use std::ops::Deref;
+    use std::sync::Arc;
 
-    use http::StatusCode;
+    use http::{StatusCode, Uri};
     use serde::{Deserialize, Serialize};
 
     use crate::error::{MsgErr, StatusErr};
     use crate::version::v0_0_1::command::request::RequestCore;
     use crate::version::v0_0_1::entity::response::ResponseCore;
-    use crate::version::v0_0_1::id::id::{Point, Port, ToPort};
-    use crate::version::v0_0_1::log::{SpanLogger, PointLogger};
-    use crate::version::v0_0_1::payload::payload::{Errors, MsgCall, Payload, Primitive};
+    use crate::version::v0_0_1::id::id::{Point, Port, ToPort, Uuid};
+    use crate::version::v0_0_1::log::{PointLogger, SpanLogger};
+    use crate::version::v0_0_1::payload::payload::{Errors, MsgCall, Payload};
     use crate::version::v0_0_1::security::{
         Access, AccessGrant, EnumeratedAccess, EnumeratedPrivileges, Permissions, Privilege,
         Privileges,
     };
     use crate::version::v0_0_1::selector::selector::{PointKindHierarchy, PointSelector};
+    use crate::version::v0_0_1::service::{AsyncMessenger, AsyncMessengerProxy, Messenger, MessengerProxy, Router};
     use crate::version::v0_0_1::util::uuid;
 
-    /// RequestCtx wraps a request and provides extra context and functionality to the request handler
-    pub struct RequestCtx {
+    pub struct RootMessageCtx<I, E> {
+        pub input: I,
         pub request: Request,
-        pub session: Option<Session>,
-        pub logger: SpanLogger
+        session: Option<Session>,
+        logger: SpanLogger,
+        pub messenger: E,
     }
 
-    impl Deref for RequestCtx {
-        type Target = Request;
+    impl<E> RootMessageCtx<Request, E> {
+        pub fn new(request: Request, messenger: E, logger: SpanLogger) -> Self {
+            Self {
+                request: request.clone(),
+                input: request.clone(),
+                logger,
+                messenger,
+                session: None,
+            }
+        }
+    }
+
+    impl<I, E> RootMessageCtx<I, E> {
+        pub fn transform_input<I2>(self) -> Result<RootMessageCtx<I2, E>, MsgErr>
+        where
+            I2: TryFrom<I, Error = MsgErr>,
+        {
+            Ok(RootMessageCtx {
+                logger: self.logger,
+                request: self.request,
+                input: I2::try_from(self.input)?,
+                messenger: self.messenger,
+                session: self.session,
+            })
+        }
+
+        pub fn push<'a>(&'a mut self) -> MessageCtx<'a, I, E> {
+            MessageCtx::new(self, &self.input, self.logger.clone())
+        }
+    }
+
+    pub struct MessageCtx<'a, I, E> {
+        root: &'a mut RootMessageCtx<I, E>,
+        parent: Option<Box<MessageCtx<'a, I, E>>>,
+        pub input: &'a I,
+        pub logger: SpanLogger,
+    }
+
+    impl<'a, I, E> Deref for MessageCtx<'a, I, E> {
+        type Target = I;
 
         fn deref(&self) -> &Self::Target {
-            &self.request
+            self.input
         }
     }
 
-    impl RequestCtx {
-        pub fn span( &self ) -> RequestCtx {
-           RequestCtx {
-               request: self.request.clone(),
-               session: self.session.clone(),
-               logger:self.logger.span()
-           }
+    impl<'a, I, E> MessageCtx<'a, I, E> {
+        pub fn new(root: &'a mut RootMessageCtx<I, E>, input: &'a I, logger: SpanLogger) -> Self {
+            Self {
+                root,
+                parent: None,
+                input,
+                logger,
+            }
+        }
+
+        pub fn push(self) -> MessageCtx<'a, I, E> {
+            MessageCtx {
+                root: self.root,
+                input: self.input,
+                logger: self.logger.span(),
+                parent: Some(Box::new(self)),
+            }
+        }
+
+        pub fn pop(self) -> Option<MessageCtx<'a, I, E>> {
+            match self.parent {
+                None => None,
+                Some(parent) => Some(*parent)
+            }
+        }
+
+    }
+
+    impl<'a, I> MessageCtx<'a, I, MessengerProxy>
+    {
+        pub fn send(&self, request: Request ) -> Response {
+            self.root.messenger.send(request)
         }
     }
 
-    pub struct ResponseCtx {
+    impl<'a, I> MessageCtx<'a, I,AsyncMessengerProxy>
+    {
+        pub async fn send(&self, request: Request ) -> Response {
+            self.root.messenger.send(request).await
+        }
+    }
 
+    impl<'a, E> MessageCtx<'a, &mut Request, E> {
+        pub fn ok_payload(self, payload: Payload) -> ResponseCore {
+            self.input.core.ok(payload)
+        }
+
+        pub fn not_found(self) -> ResponseCore {
+            self.input.core.not_found()
+        }
+
+        pub fn err(self, err: MsgErr) -> ResponseCore {
+            self.input.core.err(err)
+        }
+
+        pub fn body(&mut self, body: Payload) {
+            self.input.core.body = body;
+        }
+
+        pub fn uri(&mut self, uri: Uri) {
+            self.input.core.uri = uri;
+        }
+    }
+
+    impl<'a, E> MessageCtx<'a, Response, E> {
+        pub fn pass(self) -> ResponseCore {
+            self.input.core.clone()
+        }
+
+        pub fn not_found(self) -> ResponseCore {
+            let mut core = self.input.core.clone();
+            core.status = StatusCode::from_u16(404).unwrap();
+            core
+        }
+
+        pub fn err(self, err: MsgErr) -> ResponseCore {
+            let mut core = self.input.core.clone();
+            let status = match StatusCode::from_u16(err.status()) {
+                Ok(status) => status,
+                Err(_) => StatusCode::from_u16(500).unwrap(),
+            };
+            core.status = status;
+            // somehow set the body to a proper Err
+            //            core.body =
+            core
+        }
+    }
+
+    pub trait ToMessage {
+        fn to_message_in(self) -> MessageIn;
+        fn to_message_out(self, reply_to: Uuid) -> MessageOut;
     }
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -57,6 +178,16 @@ pub mod messaging {
         pub from: Port,
         pub to: Port,
         pub core: RequestCore,
+    }
+
+    impl ToMessage for Request {
+        fn to_message_in(self) -> MessageIn {
+            MessageIn::new(Message::Request(self))
+        }
+
+        fn to_message_out(self, reply_to: Uuid) -> MessageOut {
+            MessageOut::new(Message::Request(self), reply_to)
+        }
     }
 
     impl Request {
@@ -98,6 +229,16 @@ pub mod messaging {
             }
         }
 
+        pub fn err(self, err: MsgErr) -> Response {
+            let core = self.core.err(err);
+            Response {
+                id: uuid(),
+                to: self.from,
+                from: self.to,
+                core,
+                response_to: self.id,
+            }
+        }
     }
 
     impl Request {
@@ -234,6 +375,40 @@ pub mod messaging {
         }
     }
 
+    pub struct MessageIn {
+        pub id: Uuid,
+        pub message: Message,
+    }
+
+    impl MessageIn {
+        pub fn new(message: Message) -> Self {
+            let id = uuid();
+            Self { id, message }
+        }
+
+        pub fn out(self, message: Message) -> MessageOut {
+            MessageOut {
+                reply_to: self.id,
+                message,
+            }
+        }
+
+        pub fn to(&self) -> Port {
+            self.message.to()
+        }
+    }
+
+    pub struct MessageOut {
+        pub reply_to: Uuid,
+        pub message: Message,
+    }
+
+    impl MessageOut {
+        pub fn new(message: Message, reply_to: Uuid) -> Self {
+            Self { message, reply_to }
+        }
+    }
+
     pub struct RequestBuilder {
         pub to: Option<Port>,
         pub from: Option<Port>,
@@ -251,12 +426,12 @@ pub mod messaging {
             }
         }
 
-        pub fn to<P:ToPort>(mut self, point: P) -> Self {
+        pub fn to<P: ToPort>(mut self, point: P) -> Self {
             self.to = Some(point.to_port());
             self
         }
 
-        pub fn from<P:ToPort>(mut self, point: P) -> Self {
+        pub fn from<P: ToPort>(mut self, point: P) -> Self {
             self.from = Some(point.to_port());
             self
         }
@@ -334,7 +509,10 @@ pub mod messaging {
             Ok(())
         }
 
-        pub fn to<P>(&mut self, to: P) where P:ToPort {
+        pub fn to<P>(&mut self, to: P)
+        where
+            P: ToPort,
+        {
             self.to = Option::Some(to.to_port());
         }
 
@@ -342,12 +520,10 @@ pub mod messaging {
             self.core = Option::Some(core);
         }
 
-        pub fn into_request<P>(
-            self,
-            from: P,
-            agent: Agent,
-            scope: Scope,
-        ) -> Result<Request, MsgErr> where P:ToPort {
+        pub fn into_request<P>(self, from: P, agent: Agent, scope: Scope) -> Result<Request, MsgErr>
+        where
+            P: ToPort,
+        {
             self.validate()?;
             let core = self
                 .core
@@ -373,6 +549,16 @@ pub mod messaging {
         pub to: Port,
         pub core: ResponseCore,
         pub response_to: String,
+    }
+
+    impl ToMessage for Response {
+        fn to_message_in(self) -> MessageIn {
+            MessageIn::new(Message::Response(self))
+        }
+
+        fn to_message_out(self, reply_to: Uuid) -> MessageOut {
+            MessageOut::new(Message::Response(self), reply_to)
+        }
     }
 
     impl Response {
@@ -406,6 +592,13 @@ pub mod messaging {
     }
 
     impl Message {
+        pub fn id(&self) -> Uuid {
+            match self {
+                Message::Request(request) => request.id.clone(),
+                Message::Response(response) => response.id.clone(),
+            }
+        }
+
         pub fn payload(&self) -> Payload {
             match self {
                 Message::Request(request) => request.core.body.clone(),

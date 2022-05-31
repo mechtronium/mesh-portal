@@ -27,7 +27,7 @@ use std::fmt::Debug;
 use dashmap::DashMap;
 use tokio::task::yield_now;
 use mesh_portal::version::latest::artifact::{Artifact, ArtifactRequest, ArtifactResponse};
-use mesh_portal::version::latest::config::{Assign, Config, ConfigBody, PortalConfig};
+use mesh_portal::version::latest::config::{Assign, PointConfig, Document, PortalConfig};
 use mesh_portal::version::latest::id::Point;
 use mesh_portal::version::latest::log::{SpanLogger, RootLogger};
 use mesh_portal::version::latest::messaging::{Request, Response};

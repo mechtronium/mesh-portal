@@ -11,6 +11,7 @@ description = "The raw data types for mesh-portal-api serde."
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+async-trait = "0.1.48"
 lazy_static = "1.4.0"
 serde = { version="1.0.69", features=['derive','rc'] }
 strum = "0.21.0"

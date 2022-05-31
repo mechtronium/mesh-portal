@@ -3,16 +3,26 @@ use alloc::vec::Vec;
 use core::option::Option;
 use core::option::Option::None;
 use core::result::Result::{Err, Ok};
+use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
+use mesh_portal::error::MsgErr;
 use mesh_portal::version::latest::cli::{RawCommand, Transfer};
 use mesh_portal::version::latest::entity::request::create::{CreateOp, Fulfillment, KindTemplate, Set};
 use mesh_portal::version::latest::entity::request::{Method, Rc};
 use mesh_portal::version::latest::entity::request::get::Get;
 use mesh_portal::version::latest::entity::request::select::Select;
+use mesh_portal::version::latest::id::{Point, Port, TargetLayer, Topic, Uuid};
 use mesh_portal::version::latest::messaging::{Request, Response};
 use mesh_portal::version::latest::particle::Stub;
-use mesh_portal::version::latest::payload::Payload;
-use mesh_portal_versions::version::v0_0_1::parse::{command_line, Env};
+use mesh_portal::version::latest::payload::{Payload, PayloadType};
+use mesh_portal::version::latest::Port;
+use mesh_portal::version::latest::util::uuid;
+use mesh_portal_versions::version::v0_0_1::id::id::ToPort;
+use mesh_portal_versions::version::v0_0_1::parse::{command, command_line, Env};
+use mesh_portal_versions::version::v0_0_1::parse::error::result;
+use mesh_portal_versions::version::v0_0_1::service::{Handler, Router};
 use mesh_portal_versions::version::v0_0_1::span::new_span;
+use mesh_portal_versions::version::v0_0_1::util::ToResolved;
 use starlane_core::particle::KindBase;
 use starlane_core::starlane::api::StarlaneApi;
 use tokio::sync::mpsc::bounded;
@@ -26,8 +36,102 @@ mod tests {
     }
 }
 
+pub struct CliRelay {
+  pub sessions: HashMap<Topic,CliSession>,
+  pub point: Point,
+  pub router: Arc<dyn Router>,
+}
+
+impl CliRelay {
+    pub fn new_session(&mut self) -> Port {
+        let mut session_port = self.point.to_port();
+        session_port.layer = TargetLayer::Shell;
+        session_port.topic = Topic::Uuid(uuid());
+
+        let session = CliSession{
+            stub: stub.clone(),
+            env: Env::new(self.point.clone()),
+            router: self.router.clone()
+        };
+
+        self.sessions.insert(session_port.topic.clone(), session );
+
+        session_port
+    }
+
+    pub async fn handle( & mut self, request: Request ) -> Response {
+
+        async fn inner_handle( relay: &mut CliRelay, request: Request ) -> Result<Response,MsgErr> {
+            match &request.core.method {
+                Method::Msg(method) if method.as_str() == "NewSession" && request.core.body.payload_type() == PayloadType::Empty => {
+                    let session = relay.new_session();
+                    Ok(request.ok_payload(Payload::Port(session)))
+                }
+                _ => {
+                    Ok(request.fail("expected method 'NewSession' with payload 'Empty'"))
+                }
+            }
+        }
+
+        match inner_handle(self, request.clone() ).await {
+            Ok(response) => response,
+            Err(err) => request.fail(err.to_string().as_str() )
+        }
+    }
+}
+
+#[derive(Serialize,Deserialize)]
+pub struct CliSessionStub {
+   pub relay: Port,
+}
+
+
+pub struct CliSession {
+    pub stub: CliSessionStub,
+    pub env: Env,
+    pub router: Arc<dyn Router>
+}
+
+impl Handler for CliSession {
+    fn handle(&mut self, request: mesh_portal_versions::version::v0_0_1::messaging::messaging::Request) -> mesh_portal_versions::version::v0_0_1::messaging::messaging::Response {
+        todo!()
+    }
+}
+
+impl CliSession {
+    pub async fn handle( & mut self, request: Request ) -> Response {
+
+        async fn inner_handle( relay: &CliRelay, request: Request ) -> Result<Response,MsgErr> {
+            match &request.core.method {
+                Method::Msg(method) if method.as_str() == "Command" && request.core.body.payload_type() == PayloadType::RawCommand => {
+                    if let Payload::RawCommand(raw) = &request.core.body {
+                        let command = result(command(new_span(raw.line.as_str())))?;
+                        let command = command.to_resolved(relay.)
+
+                        // resolve command
+                        // transfers...
+                        // send to GLOBAL::command-service
+                        // respond to request
+                        Ok(request.ok())
+                    } else {
+                        Ok(request.fail("expected method 'Command' with payload 'RawCommand'"))
+                    }
+                }
+                _ => {
+                    Ok(request.fail("expected method 'Command' with payload 'RawCommand'"))
+                }
+            }
+        }
+
+        match inner_handle(self, request.clone() ).await {
+            Ok(response) => response,
+            Err(err) => request.fail(err.to_string().as_str() )
+        }
+    }
+}
+
 pub struct CommandExecutor {
-    router: Router,
+    router: Arc<dyn Router>,
     stub: Stub,
     raw_command: RawCommand,
     env: Env
@@ -60,7 +164,7 @@ info!("executing line: {}", line);
             output_tx,
             raw_command: line,
             fulfillments,
-            env: Env::empty()
+            env: Env::no_point()
         };
         tokio::task::spawn_blocking(move || {
             tokio::spawn(async move {

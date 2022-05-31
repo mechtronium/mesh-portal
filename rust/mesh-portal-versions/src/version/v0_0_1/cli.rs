@@ -27,7 +27,7 @@ pub struct RawCommand {
 
 impl Into<Payload> for RawCommand {
     fn into(self) -> Payload {
-        Payload::CommandLine(self)
+        Payload::RawCommand(self)
     }
 }
 

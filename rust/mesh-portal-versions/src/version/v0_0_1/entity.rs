@@ -29,14 +29,14 @@
         use crate::version::v0_0_1::fail::Fail;
         use crate::version::v0_0_1::id::id::{GenericKind, Meta, Point, ToPort};
         use crate::version::v0_0_1::messaging::messaging::Response;
-        use crate::version::v0_0_1::payload::payload::{Errors, Payload, Primitive};
+        use crate::version::v0_0_1::payload::payload::{Errors, Payload };
         use crate::version::v0_0_1::util::uuid;
         use http::response::Parts;
         use http::{HeaderMap, StatusCode};
         use serde::{Deserialize, Serialize};
         use std::sync::Arc;
 
-        #[derive(Debug, Clone, Serialize, Deserialize)]
+        #[derive(Debug, Clone, Serialize, Deserialize,Eq,PartialEq)]
         pub struct ResponseCore {
             #[serde(with = "http_serde::header_map")]
             pub headers: HeaderMap,

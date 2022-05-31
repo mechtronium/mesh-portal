@@ -15,7 +15,9 @@ pub mod payload {
     use std::sync::Arc;
     use crate::version::v0_0_1::cli::RawCommand;
     use crate::version::v0_0_1::command::Command;
+    use crate::version::v0_0_1::entity::response::ResponseCore;
     use crate::version::v0_0_1::http::HttpMethod;
+    use crate::version::v0_0_1::messaging::messaging::Response;
     use crate::version::v0_0_1::msg::MsgMethod;
     use crate::version::v0_0_1::parse::{CtxResolver, Env};
     use crate::version::v0_0_1::parse::model::Subst;
@@ -47,8 +49,10 @@ pub mod payload {
         Particle,
         Errors,
         Json,
-        CommandLine,
-        Command
+        RawCommand,
+        Command,
+        Request,
+        Response
     }
 
     #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, strum_macros::Display)]
@@ -66,11 +70,14 @@ pub mod payload {
         Int(i64),
         Status(Status),
         Particle(Particle),
-        CommandLine(RawCommand),
+        RawCommand(RawCommand),
         Command(Box<Command>),
         Errors(Errors),
         Json(serde_json::Value),
+        Request(Box<RequestCore>),
+        Response(Box<ResponseCore>),
     }
+
 
     impl Default for Payload {
         fn default() -> Self {
@@ -115,9 +122,11 @@ pub mod payload {
                 Payload::Particle(_) => PayloadType::Particle,
                 Payload::Errors(_) => PayloadType::Errors,
                 Payload::Json(_) => PayloadType::Json,
-                Payload::CommandLine(_) => PayloadType::CommandLine,
+                Payload::RawCommand(_) => PayloadType::RawCommand,
                 Payload::Port(_) => PayloadType::Port,
-                Payload::Command(_) => PayloadType::Command
+                Payload::Command(_) => PayloadType::Command,
+                Payload::Request(_) => PayloadType::Request,
+                Payload::Response(_) => PayloadType::Response
             }
         }
 
@@ -273,93 +282,8 @@ pub mod payload {
         }
     }
 
-    #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, strum_macros::Display)]
-    pub enum Primitive {
-        Text(String),
-        Point(Point),
-        Stub(Stub),
-        Meta(Meta),
-        Bin(Bin),
-        Boolean(bool),
-        Int(i64),
-        Status(Status),
-        Particle(Particle),
-        Errors(Errors),
-    }
 
-    impl Primitive {
-        pub fn primitive_type(&self) -> PrimitiveType {
-            match self {
-                Primitive::Text(_) => PrimitiveType::Text,
-                Primitive::Point(_) => PrimitiveType::Address,
-                Primitive::Stub(_) => PrimitiveType::Stub,
-                Primitive::Meta(_) => PrimitiveType::Meta,
-                Primitive::Bin(_) => PrimitiveType::Bin,
-                Primitive::Boolean(_) => PrimitiveType::Boolean,
-                Primitive::Int(_) => PrimitiveType::Int,
-                Primitive::Status(_) => PrimitiveType::Status,
-                Primitive::Particle(_) => PrimitiveType::Resource,
-                Primitive::Errors(_) => PrimitiveType::Errors,
-            }
-        }
 
-        pub fn to_bin(self) -> Result<Bin, MsgErr> {
-            match self {
-                Primitive::Text(text) => {
-                    let text = text.into_bytes();
-                    Ok(Arc::new(text))
-                }
-                Primitive::Point(point) => {
-                    let point = point.to_string().into_bytes();
-                    Ok(Arc::new(point))
-                }
-                Primitive::Stub(stub) => Ok(Arc::new(bincode::serialize(&stub)?)),
-                Primitive::Meta(meta) => Ok(Arc::new(bincode::serialize(&meta)?)),
-                Primitive::Bin(bin) => Ok(bin),
-                Primitive::Boolean(flag) => Ok(Arc::new(flag.to_string().into_bytes())),
-                Primitive::Int(int) => Ok(Arc::new(int.to_string().into_bytes())),
-                Primitive::Status(status) => {
-                    let status = status.to_string().into_bytes();
-                    Ok(Arc::new(status))
-                }
-                Primitive::Particle(resource) => Ok(Arc::new(bincode::serialize(&resource)?)),
-                Primitive::Errors(errors) => Ok(Arc::new(bincode::serialize(&errors)?)),
-            }
-        }
-    }
-
-    impl TryInto<Bin> for Primitive {
-        type Error = MsgErr;
-
-        fn try_into(self) -> Result<Bin, Self::Error> {
-            match self {
-                Primitive::Bin(bin) => Ok(bin),
-                _ => Err("Primitive must be of type Bin".into()),
-            }
-        }
-    }
-
-    impl TryInto<Point> for Primitive {
-        type Error = MsgErr;
-
-        fn try_into(self) -> Result<Point, Self::Error> {
-            match self {
-                Primitive::Point(point) => Ok(point),
-                _ => Err("Primitive must be of type Address".into()),
-            }
-        }
-    }
-
-    impl TryInto<String> for Primitive {
-        type Error = MsgErr;
-
-        fn try_into(self) -> Result<String, Self::Error> {
-            match self {
-                Primitive::Text(text) => Ok(text),
-                _ => Err("Primitive must be of type Text".into()),
-            }
-        }
-    }
 
     #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
     pub struct PayloadList {
@@ -393,20 +317,6 @@ pub mod payload {
         fn deref_mut(&mut self) -> &mut Self::Target {
             &mut self.list
         }
-    }
-    #[derive(Debug, Clone, strum_macros::Display, Eq, PartialEq, Hash, Serialize, Deserialize)]
-    pub enum PrimitiveType {
-        Address,
-        Text,
-        Boolean,
-        Code,
-        Int,
-        Meta,
-        Bin,
-        Stub,
-        Status,
-        Resource,
-        Errors,
     }
 
     #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
@@ -929,82 +839,7 @@ pub mod payload {
         Image,
     }
 
-    impl PrimitiveType {
-        pub fn is_match(&self, primitive: &Primitive) -> Result<(), MsgErr> {
-            match primitive {
-                Primitive::Text(_) => {
-                    if *self == Self::Text {
-                        Ok(())
-                    } else {
-                        Err("expected Text primitive".into())
-                    }
-                }
-                Primitive::Point(_) => {
-                    if *self == Self::Address {
-                        Ok(())
-                    } else {
-                        Err("expected Address primitive".into())
-                    }
-                }
-                Primitive::Stub(_) => {
-                    if *self == Self::Stub {
-                        Ok(())
-                    } else {
-                        Err("expected Stub primitive".into())
-                    }
-                }
-                Primitive::Meta(_) => {
-                    if *self == Self::Meta {
-                        Ok(())
-                    } else {
-                        Err("expected Meta primitive".into())
-                    }
-                }
-                Primitive::Bin(_) => {
-                    if *self == Self::Bin {
-                        Ok(())
-                    } else {
-                        Err("expected Bin primitive".into())
-                    }
-                }
-                Primitive::Boolean(_) => {
-                    if *self == Self::Boolean {
-                        Ok(())
-                    } else {
-                        Err("expected Boolean primitive".into())
-                    }
-                }
-                Primitive::Int(_) => {
-                    if *self == Self::Int {
-                        Ok(())
-                    } else {
-                        Err("expected Int primitive".into())
-                    }
-                }
-                Primitive::Status(_) => {
-                    if *self == Self::Status {
-                        Ok(())
-                    } else {
-                        Err("expected Status primitive".into())
-                    }
-                }
-                Primitive::Particle(_) => {
-                    if *self == Self::Resource {
-                        Ok(())
-                    } else {
-                        Err("expected Resource primitive".into())
-                    }
-                }
-                Primitive::Errors(errors) => {
-                    if *self == Self::Errors {
-                        Ok(())
-                    } else {
-                        Err("expected Errors primitive".into())
-                    }
-                }
-            }
-        }
-    }
+
 
     pub type MapPattern = MapPatternDef<Point>;
     pub type MapPatternCtx = MapPatternDef<PointCtx>;
