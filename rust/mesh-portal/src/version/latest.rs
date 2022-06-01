@@ -38,8 +38,8 @@ pub mod id {
     pub type AddressSegment = id::id::PointSeg;
     pub type Point = id::id::Point;
     pub type Port = id::id::Port;
-    pub type ToPort = id::id::ToPort;
-    pub type ToPoint = id::id::ToPoint;
+    pub type ToPort = dyn id::id::ToPort;
+    pub type ToPoint = dyn id::id::ToPoint;
     pub type TargetLayer = id::id::TargetLayer;
     pub type Topic = id::id::Topic;
     pub type KindParts = id::id::GenericKind;
@@ -139,9 +139,7 @@ pub mod payload {
 
     pub type Payload = payload::payload::Payload;
     pub type PayloadMap = payload::payload::PayloadMap;
-    pub type Primitive = payload::payload::Primitive;
     pub type PrimitiveList = payload::payload::PayloadList;
-    pub type PrimitiveType = payload::payload::PrimitiveType;
     pub type PayloadType = payload::payload::PayloadType;
     pub type Errors = payload::payload::Errors;
     pub type ListPattern = payload::payload::ListPattern;
@@ -160,10 +158,6 @@ pub mod command {
     use mesh_portal_versions::version::v0_0_1 as current;
     use mesh_portal_versions::version::v0_0_1::command;
 
-    pub type Command = command::command::Command;
-    pub type CommandStatus = command::command::CommandStatus;
-    pub type CommandEvent = command::command::CommandEvent;
-    pub type CliId = command::command::CliId;
 
     pub mod common {
         use mesh_portal_versions::version::v0_0_1 as current;
@@ -385,7 +379,6 @@ pub mod util {
     pub type StringMatcher = current::util::StringMatcher;
     pub type Convert<A>= dyn current::util::Convert<A>;
     pub type ConvertFrom<A>= dyn current::util::ConvertFrom<A>;
-    pub type ToResolved<R> = dyn current::parse::ToResolved<R>;
 
     pub fn uuid() -> String {
         current::util::uuid()

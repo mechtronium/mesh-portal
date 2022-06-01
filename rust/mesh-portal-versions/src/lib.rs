@@ -3,6 +3,10 @@
 #[no_std]
 
 #[macro_use]
+extern crate cosmic_macros;
+
+
+#[macro_use]
 extern crate lazy_static;
 
 #[macro_use]

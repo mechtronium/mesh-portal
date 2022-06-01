@@ -155,7 +155,7 @@ pub mod request {
     use crate::version::v0_0_1::id::id::{GenericKind, GenericKindBase, Meta, Point};
     use crate::version::v0_0_1::payload::payload::{Errors, Payload, };
     use crate::version::v0_0_1::selector::selector::KindSelector;
-    use crate::version::v0_0_1::util::ValueMatcher;
+    use crate::version::v0_0_1::util::{ValueMatcher, ValuePattern};
     use http::status::InvalidStatusCode;
     use http::{HeaderMap, Request, StatusCode, Uri};
     use serde::{Deserialize, Serialize};
@@ -169,6 +169,58 @@ pub mod request {
         Http(#[serde(with = "http_serde::method")]HttpMethod),
         Msg(MsgMethod),
     }
+
+    #[derive(Debug, Clone,Eq,PartialEq)]
+    pub enum MethodPattern {
+        Cmd(ValuePattern<Rc>),
+        Http(ValuePattern<HttpMethod>),
+        Msg(ValuePattern<MsgMethod>),
+    }
+
+    impl ToString for MethodPattern {
+        fn to_string(&self) -> String {
+            match self {
+                MethodPattern::Cmd(c) => {
+                    format!("Cmd<{}>",c.to_string())
+                }
+                MethodPattern::Http(c) => {
+                    format!("Http<{}>",c.to_string())
+                }
+                MethodPattern::Msg(c) => {
+                    format!("Msg<{}>",c.to_string())
+                }
+            }
+        }
+    }
+
+    impl ValueMatcher<Method> for MethodPattern {
+        fn is_match(&self, x: &Method) -> Result<(), ()> {
+            match self {
+                MethodPattern::Cmd(pattern) => {
+                    if let Method::Cmd(v) = x {
+                        pattern.is_match(v)
+                    } else {
+                        Err(())
+                    }
+                }
+                MethodPattern::Http(pattern) => {
+                    if let Method::Http(v) = x {
+                        pattern.is_match(v)
+                    }else {
+                        Err(())
+                    }
+                }
+                MethodPattern::Msg(pattern) => {
+                    if let Method::Msg(v) = x {
+                        pattern.is_match(v)
+                    }else {
+                        Err(())
+                    }
+                }
+            }
+        }
+    }
+
 
     impl ValueMatcher<Method> for Method {
         fn is_match(&self, x: &Method) -> Result<(), ()> {

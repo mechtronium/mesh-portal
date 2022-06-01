@@ -28,7 +28,7 @@ pub mod selector {
     use crate::version::v0_0_1::selector::selector::specific::{
         ProductSelector, VariantSelector, VendorSelector,
     };
-    use crate::version::v0_0_1::util::{MethodPattern, StringMatcher, ToResolved, ValueMatcher, ValuePattern};
+    use crate::version::v0_0_1::util::{HttpMethodPattern, StringMatcher, ToResolved, ValueMatcher, ValuePattern};
     use crate::version::v0_0_1::parse;
     use crate::{Deserialize, Serialize};
     use nom::branch::alt;
@@ -717,7 +717,7 @@ pub mod selector {
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct HttpPipelineSelector {
-        pub method: MethodPattern,
+        pub method: HttpMethodPattern,
         pub path_regex: String,
     }
 

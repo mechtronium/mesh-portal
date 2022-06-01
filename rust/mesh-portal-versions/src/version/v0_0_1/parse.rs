@@ -28,7 +28,7 @@ use crate::version::v0_0_1::security::{
     PermissionsMaskKind, Privilege,
 };
 use crate::version::v0_0_1::selector::selector::{MapEntryPatternCtx, MapEntryPatternVar, PointKindHierarchy, PointKindSeg};
-use crate::version::v0_0_1::util::{MethodPattern, StringMatcher, ToResolved, ValuePattern};
+use crate::version::v0_0_1::util::{HttpMethodPattern, StringMatcher, ToResolved, ValuePattern};
 use nom::bytes::complete::take;
 use nom::character::is_space;
 use nom_supreme::final_parser::ExtractContext;
@@ -2952,7 +2952,7 @@ pub fn lex_root_scope<I: Span>(span: I) -> Result<LexRootScope<I>, MsgErr> {
     Ok(root_scope)
 }
 
-pub fn message_kind<I: Span>(input: I) -> Res<I, MethodKind> {
+pub fn method_kind<I: Span>(input: I) -> Res<I, MethodKind> {
     let (next, v) = recognize(alt((tag("Cmd"), tag("Msg"), tag("Http"))))(input)?;
     Ok((next, MethodKind::from_str(v.to_string().as_str()).unwrap()))
 }
@@ -2969,9 +2969,9 @@ pub mod model {
     use crate::version::v0_0_1::id::id::{Point, PointCtx, PointVar, Version};
     use crate::version::v0_0_1::messaging::messaging::{Agent, Request};
     use crate::version::v0_0_1::parse::error::result;
-    use crate::version::v0_0_1::parse::{camel_case, CtxResolver, entity_pattern, Env, filepath_chars, http_method, lex_child_scopes, message_kind, pipeline, rc_command_type, Res, SubstParser, value_pattern, VarResolverErr, wrapped_http_method, wrapped_msg_method};
+    use crate::version::v0_0_1::parse::{camel_case, CtxResolver, entity_pattern, Env, filepath_chars, http_method, lex_child_scopes, method_kind, pipeline, rc_command_type, Res, SubstParser, value_pattern, VarResolverErr, wrapped_http_method, wrapped_msg_method};
     use crate::version::v0_0_1::span::{new_span, Trace};
-    use crate::version::v0_0_1::util::{MethodPattern, StringMatcher, ToResolved, ValueMatcher, ValuePattern};
+    use crate::version::v0_0_1::util::{HttpMethodPattern, StringMatcher, ToResolved, ValueMatcher, ValuePattern};
     use crate::version::v0_0_1::wrap::{Span, Tw};
     use bincode::Options;
     use nom::bytes::complete::tag;
@@ -3261,7 +3261,7 @@ pub mod model {
 
     impl MessageScopeSelector {
         pub fn from_selector<I: Span>(selector: LexScopeSelector<I>) -> Result<Self, MsgErr> {
-            let kind = match result(value_pattern(message_kind)(selector.name.clone())) {
+            let kind = match result(value_pattern(method_kind)(selector.name.clone())) {
                 Ok(kind) => kind,
                 Err(_) => {
                     return Err(ParseErrs::from_loc_span(
@@ -4429,20 +4429,13 @@ use crate::version::v0_0_1::config::config::bind::{
     PipelineStop, PipelineStopCtx, PipelineStopVar, Selector,
 };
 use crate::version::v0_0_1::config::config::Document;
-use crate::version::v0_0_1::command::request::{Method, RcCommandType};
+use crate::version::v0_0_1::command::request::{Method, MethodPattern, RcCommandType};
 use crate::version::v0_0_1::entity::MethodKind;
 use crate::version::v0_0_1::http::HttpMethod;
 use crate::version::v0_0_1::id::id::{GenericKind, GenericKindBase, PointKind, PointSeg, Specific};
 use crate::version::v0_0_1::msg::MsgMethod;
 use crate::version::v0_0_1::parse::error::result;
-use crate::version::v0_0_1::parse::model::{
-    BindScope, BindScopeKind, Block, BlockKind, Chunk, DelimitedBlockKind, LexBlock,
-    LexParentScope, LexRootScope, LexScope, LexScopeSelector, LexScopeSelectorAndFilters,
-    NestedBlockKind, PipelineCtx, PipelineSegment, PipelineSegmentCtx, PipelineSegmentVar,
-    PipelineVar, RootScopeSelector, RouteScope, ScopeFilterDef, ScopeFiltersDef,
-    ScopeSelectorAndFiltersDef, Spanned, Subst, TerminatedBlockKind, TextType, Var, VarParser,
-
-};
+use crate::version::v0_0_1::parse::model::{BindScope, BindScopeKind, Block, BlockKind, Chunk, DelimitedBlockKind, LexBlock, LexParentScope, LexRootScope, LexScope, LexScopeSelector, LexScopeSelectorAndFilters, MessageScopeSelectorAndFilters, NestedBlockKind, PipelineCtx, PipelineSegment, PipelineSegmentCtx, PipelineSegmentVar, PipelineVar, RootScopeSelector, RouteScope, ScopeFilterDef, ScopeFiltersDef, ScopeSelectorAndFiltersDef, Spanned, Subst, TerminatedBlockKind, TextType, Var, VarParser};
 use crate::version::v0_0_1::payload::payload::{
     Call, CallCtx, CallKind, CallVar, CallWithConfig, CallWithConfigCtx, CallWithConfigVar,
     HttpCall, HttpMethodType, ListPattern, MapPattern, MapPatternCtx, MapPatternVar, MsgCall,
@@ -5529,29 +5522,31 @@ pub fn parse_camel_case_str<I: Span, O: FromStr>(input: I) -> Res<I, O> {
     }
 }
 
+
+
 pub fn http_method<I: Span>(input: I) -> Res<I, HttpMethod> {
     context("http_method", parse_camel_case_str)
         .parse(input)
         .map(|(next, method): (I, HttpMethodType)| (next, method.to_method()))
 }
 
-pub fn http_method_pattern<I: Span>(input: I) -> Res<I, MethodPattern> {
+pub fn http_method_pattern<I: Span>(input: I) -> Res<I, HttpMethodPattern> {
     context("@http_method_pattern", method_pattern(http_method))(input)
 }
 
 pub fn method_pattern<I: Clone, E: ParseError<I>, F>(
     mut f: F,
-) -> impl FnMut(I) -> IResult<I, MethodPattern, E>
+) -> impl FnMut(I) -> IResult<I, HttpMethodPattern, E>
 where
     I: InputLength + InputTake + Compare<&'static str>,
     F: Parser<I, HttpMethod, E>,
     E: nom::error::ContextError<I>,
 {
     move |input: I| match tag::<&'static str, I, E>("*")(input.clone()) {
-        Ok((next, _)) => Ok((next, MethodPattern::Any)),
+        Ok((next, _)) => Ok((next, HttpMethodPattern::Any)),
         Err(err) => f
             .parse(input.clone())
-            .map(|(next, res)| (next, MethodPattern::Pattern(res))),
+            .map(|(next, res)| (next, HttpMethodPattern::Pattern(res))),
     }
 }
 
@@ -5974,7 +5969,7 @@ fn parse_bind_config<I: Span>(input: I) -> Result<BindConfig, MsgErr> {
 fn semantic_bind_scope<I: Span>(scope: LexScope<I>) -> Result<BindScope, MsgErr> {
     let selector_name = scope.selector.selector.name.to_string();
     match selector_name.as_str() {
-        "Pipeline" => {
+        "Route" => {
             let scope = lex_child_scopes(scope)?;
             let scope = RouteScope::try_from(scope)?;
             Ok(BindScope::RequestScope(scope))
@@ -6239,6 +6234,42 @@ pub fn var_chunk<I: Span>(input: I) -> Res<I, Chunk<I>> {
     .map(|(next, variable_name)| (next, Chunk::Var(variable_name)))
 }
 
+pub fn message_scope_selector_and_filters<I:Span>( input: I ) -> Res<I,()> {
+
+    let (next,selector) = lex_scope_selector(input)?;
+
+    println!("selector.children: {}",selector.children.as_ref().unwrap().to_string() );
+    let (_,method_kind) = value_pattern( method_kind )(selector.name)?;
+    let (method,path,children) = match &method_kind {
+        ValuePattern::Any => {(ValuePattern::Any, selector.path, selector.children) }
+        ValuePattern::None => {(ValuePattern::None,selector.path, selector.children) }
+        ValuePattern::Pattern(method_kind) => {
+            match method_kind {
+                MethodKind::Cmd => {
+                    panic!("not supported yet!");
+                }
+                MethodKind::Msg => {
+                    let (_, selector) = lex_scope_selector(selector.children.as_ref().unwrap().clone())?;
+                    let (_,method) = value_pattern(msg_method)(selector.name)?;
+                    (ValuePattern::Pattern(MethodPattern::Msg(method)), selector.path, selector.children)
+                }
+                MethodKind::Http => {
+                    let (_, selector) = lex_scope_selector(selector.children.as_ref().unwrap().clone())?;
+                    let (_,method) = value_pattern(http_method)(selector.name)?;
+                    (ValuePattern::Pattern(MethodPattern::Http(method)), selector.path, selector.children)
+                }
+            }
+        }
+    };
+
+    println!("method: {}",method.to_string() );
+//    println!("children: {}",children.unwrap().to_string() );
+    println!("path: {}",path.unwrap().to_string() );
+    println!("THE REST {}", next.to_string() );
+
+    Ok((next, ()))
+}
+
 
 #[cfg(test)]
 pub mod test {
@@ -6249,7 +6280,7 @@ pub mod test {
     use crate::version::v0_0_1::parse::model::{
         BlockKind, DelimitedBlockKind, LexScope, NestedBlockKind, TerminatedBlockKind,
     };
-    use crate::version::v0_0_1::parse::{args, base_point_segment, comment, consume_point_var, ctx_seg, doc, Env,  expected_block_terminator_or_non_terminator, lex_block, lex_child_scopes, lex_nested_block, lex_scope, lex_scope_pipeline_step_and_block, lex_scope_selector, lex_scope_selector_and_filters, lex_scopes, lowercase1, MapResolver, mesh_eos, nested_block, nested_block_content, next_selector, no_comment, parse_bind_config, parse_include_blocks, parse_inner_block, path_regex, pipeline, pipeline_segment, pipeline_step_var, pipeline_stop_var, point_non_root_var, point_template, point_var, pop, rec_version, Res, root_scope, root_scope_selector, scope_filter, scope_filters, skewer_case, skewer_dot, space_chars, space_no_dupe_dots, space_point_segment, strip_comments, subst, SubstParser, var_seg, variable_name, VarResolver, version, version_point_segment, wrapper};
+    use crate::version::v0_0_1::parse::{args, base_point_segment, comment, consume_point_var, ctx_seg, doc, Env, expected_block_terminator_or_non_terminator, lex_block, lex_child_scopes, lex_nested_block, lex_scope, lex_scope_pipeline_step_and_block, lex_scope_selector, lex_scope_selector_and_filters, lex_scopes, lowercase1, MapResolver, mesh_eos, message_scope_selector_and_filters, nested_block, nested_block_content, next_selector, no_comment, parse_bind_config, parse_include_blocks, parse_inner_block, path_regex, pipeline, pipeline_segment, pipeline_step_var, pipeline_stop_var, point_non_root_var, point_template, point_var, pop, rec_version, Res, root_scope, root_scope_selector, scope_filter, scope_filters, skewer_case, skewer_dot, space_chars, space_no_dupe_dots, space_point_segment, strip_comments, subst, SubstParser, var_seg, variable_name, VarResolver, version, version_point_segment, wrapper};
     use crate::version::v0_0_1::span::{new_span, span_with_extra};
     use nom::branch::alt;
     use nom::bytes::complete::{escaped, tag};
@@ -6268,6 +6299,12 @@ pub mod test {
     use bincode::config;
     use crate::version::v0_0_1::command::request::create::{PointSegFactory, PointTemplate, PointTemplateCtx};
     use crate::version::v0_0_1::util::ToResolved;
+
+    #[test]
+    pub fn test_message_selector() {
+        let blah = log(result(message_scope_selector_and_filters(new_span("Http<*>/this/is/the/way -> The;")))).unwrap();
+
+    }
 
     #[test]
     pub fn test_point_template() -> Result<(), MsgErr> {

@@ -20,11 +20,13 @@ use mesh_portal::version::latest::Port;
 use mesh_portal::version::latest::util::uuid;
 use mesh_portal_versions::version::v0_0_1::id::id::{ToPoint, ToPort};
 use mesh_portal_versions::version::v0_0_1::messaging::messaging::{MessageCtx, RootMessageCtx};
+use mesh_portal_versions::version::v0_0_1::msg::MsgMethod;
 use mesh_portal_versions::version::v0_0_1::parse::{command, command_line, Env};
 use mesh_portal_versions::version::v0_0_1::parse::error::result;
-use mesh_portal_versions::version::v0_0_1::service::{Handlers, Handler, Router, MessengerProxy, AsyncMessenger, AsyncMessengerProxy, HandlerPair, HandlerSelector};
+use mesh_portal_versions::version::v0_0_1::parse::model::MethodScopeSelector;
+use mesh_portal_versions::version::v0_0_1::service::{Handlers, Handler, Router, MessengerProxy, AsyncMessenger, AsyncMessengerProxy, HandlerPair, IntPipelineSelector};
 use mesh_portal_versions::version::v0_0_1::span::new_span;
-use mesh_portal_versions::version::v0_0_1::util::ToResolved;
+use mesh_portal_versions::version::v0_0_1::util::{ToResolved, ValuePattern};
 use starlane_core::particle::KindBase;
 use starlane_core::starlane::api::StarlaneApi;
 use tokio::sync::mpsc::bounded;
@@ -39,17 +41,31 @@ mod tests {
 }
 
 pub struct CliRelay {
-  pub sessions: HashMap<Port,CliSession>,
   pub port: Port,
   pub router: Arc<dyn Router>,
-  pub handlers: Arc<Handlers<AsyncMessengerProxy<Request>,dyn FnMut(RootMessageCtx<Request,AsyncMessengerProxy<Request>>)->Result<ResponseCore,MsgErr>>>
+  pub handlers: Arc<Handlers<AsyncMessengerProxy<Request>,dyn FnMut(RootMessageCtx<Request,AsyncMessengerProxy<Request>>)->Result<ResponseCore,MsgErr>>>,
 }
 
 impl CliRelay {
-    fn new_session(&mut self, source: Port ) -> Port {
+
+    fn new(port: Port, router: Arc<dyn Router>, handlers: Arc<Handlers<AsyncMessengerProxy<Request>,dyn FnMut(RootMessageCtx<Request,AsyncMessengerProxy<Request>>)->Result<ResponseCore,MsgErr>>>)-> Self {
+
+        let selector = IntPipelineSelector::Request(MsgMethod::new("NewSession").unwrap().into());
+
+        let rtn = Self {
+            port,
+            router,
+            handlers,
+        };
+        let pair = HandlerPair::new( selector, rtn.new_session );
+        rtn
+    }
+
+    fn new_session(&mut self, ctx: MessageCtx<Request,AsyncMessengerProxy<Request>> ) -> Port {
         let mut port = self.port.clone();
         port.layer = TargetLayer::Shell;
         port.topic = Topic::Uuid(uuid());
+        let mut source = ctx.input.from.clone();
 
         let session = CliSession{
             stub: stub.clone(),
@@ -58,35 +74,13 @@ impl CliRelay {
             source
         };
 
+        let pair = HandlerPair::new(IntPipelineSelector::Topic(port.topic.clone()), session );
 
-
-        HandlerPair::new( HandlerSelector::Topic(port.topic.clone()), )
-        self.sessions.insert(port.clone(), session );
-
-        self.handlers.add( )
+        self.handlers.add( pair );
 
         port
     }
 
-    pub async fn handle( & mut self, request: Request ) -> ResponseCore {
-
-        async fn inner_handle( relay: &mut CliRelay, request: Request ) -> Result<Response,MsgErr> {
-            match &request.core.method {
-                Method::Msg(method) if method.as_str() == "NewSession" && request.core.body.payload_type() == PayloadType::Empty => {
-                    let session = relay.new_session();
-                    Ok(request.ok_payload(Payload::Port(session)))
-                }
-                _ => {
-                    Ok(request.fail("expected method 'NewSession' with payload 'Empty'"))
-                }
-            }
-        }
-
-        match inner_handle(self, request.clone() ).await {
-            Ok(response) => response,
-            Err(err) => request.core.fail(err.to_string().as_str() )
-        }
-    }
 }
 
 #[derive(Serialize,Deserialize)]

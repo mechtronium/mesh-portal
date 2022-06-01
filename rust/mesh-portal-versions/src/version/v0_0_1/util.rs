@@ -13,13 +13,13 @@ use crate::version::v0_0_1::parse::Env;
 use serde::{Serialize,Deserialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
-pub enum MethodPattern {
+pub enum HttpMethodPattern {
     Any,
     None,
     Pattern(#[serde(with = "http_serde::method")] HttpMethod),
 }
 
-impl MethodPattern {
+impl HttpMethodPattern {
     pub fn is_match(&self, x: &HttpMethod) -> Result<(), ()> {
         match self {
             Self::Any => Ok(()),
@@ -40,7 +40,7 @@ impl MethodPattern {
     }
 }
 
-impl ToString for MethodPattern {
+impl ToString for HttpMethodPattern {
     fn to_string(&self) -> String {
         match self {
             Self::Any => "*".to_string(),
@@ -49,6 +49,7 @@ impl ToString for MethodPattern {
         }
     }
 }
+
 
 #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
 pub enum ValuePattern<T> {
@@ -66,6 +67,16 @@ where
             ValuePattern::Any => ValuePattern::Any,
             ValuePattern::None => ValuePattern::None,
             ValuePattern::Pattern(t) => ValuePattern::Pattern(t.to_string()),
+        }
+    }
+}
+
+impl <T> ToString for ValuePattern<T> where T:ToString {
+    fn to_string(&self) -> String {
+        match self {
+            ValuePattern::Any => "*".to_string(),
+            ValuePattern::None => "!".to_string(),
+            ValuePattern::Pattern(pattern) => pattern.to_string()
         }
     }
 }
@@ -116,15 +127,6 @@ impl<T> ValuePattern<T> {
     }
 }
 
-impl<V: ToString> ToString for ValuePattern<V> {
-    fn to_string(&self) -> String {
-        match self {
-            ValuePattern::Any => "*".to_string(),
-            ValuePattern::None => "!".to_string(),
-            ValuePattern::Pattern(pattern) => pattern.to_string(),
-        }
-    }
-}
 
 pub trait ValueMatcher<X> {
     fn is_match(&self, x: &X) -> Result<(), ()>;

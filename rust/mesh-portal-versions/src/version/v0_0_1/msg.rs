@@ -6,10 +6,13 @@ use crate::version::v0_0_1::id::id::Meta;
 use crate::version::v0_0_1::payload::payload::{Errors, Payload};
 use http::{HeaderMap, StatusCode, Uri};
 use nom::combinator::all_consuming;
+use regex::Regex;
 use serde::{Deserialize, Serialize};
 use crate::version::v0_0_1::parse::camel_case;
 use crate::version::v0_0_1::parse::error::result;
+use crate::version::v0_0_1::parse::model::MethodScopeSelector;
 use crate::version::v0_0_1::span::new_span;
+use crate::version::v0_0_1::util::{ValueMatcher, ValuePattern};
 
 #[derive(Debug, Clone, Serialize, Deserialize,Eq,PartialEq,Hash)]
 pub struct MsgMethod {
@@ -25,6 +28,35 @@ impl MsgMethod {
         })
     }
 }
+
+impl ToString for MsgMethod {
+    fn to_string(&self) -> String {
+        self.string.clone()
+    }
+}
+
+impl ValueMatcher<MsgMethod> for MsgMethod {
+    fn is_match(&self, x: &MsgMethod) -> Result<(), ()> {
+        if *self == *x {
+            Ok(())
+        } else {
+            Err(())
+        }
+    }
+}
+
+impl Into<Method> for MsgMethod {
+    fn into(self) -> Method {
+        Method::Msg(self)
+    }
+}
+
+impl Into<MethodScopeSelector> for MsgMethod {
+    fn into(self) -> MethodScopeSelector{
+        MethodScopeSelector::new( ValuePattern::Pattern(Method::Msg(self)), Regex::new(".*").unwrap() )
+    }
+}
+
 
 impl TryFrom<String> for MsgMethod {
     type Error = MsgErr;

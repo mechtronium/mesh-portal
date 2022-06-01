@@ -11,6 +11,7 @@ members = [
     "mesh-portal-api-test",
     "mesh-portal-versions",
     "cosmic-portal-cli",
-    "cosmic-portal-cli-exe"
+    "cosmic-portal-cli-exe",
+    "cosmic-macros"
 ]
 
