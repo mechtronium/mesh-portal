@@ -101,19 +101,18 @@ pub mod messaging {
                 Some(parent) => Some(*parent)
             }
         }
-
     }
 
-    impl<'a, I> MessageCtx<'a, I, MessengerProxy>
+    impl<'a, I, R> MessageCtx<'a, I, MessengerProxy<R>>
     {
-        pub fn send(&self, request: Request ) -> Response {
+        pub fn send(&self, request: RequestCtx<R> ) -> Response {
             self.root.messenger.send(request)
         }
     }
 
-    impl<'a, I> MessageCtx<'a, I,AsyncMessengerProxy>
+    impl<'a, I, R> MessageCtx<'a, I,AsyncMessengerProxy<R>> where R:Send+Sync
     {
-        pub async fn send(&self, request: Request ) -> Response {
+        pub async fn send(&self, request: RequestCtx<R> ) -> ResponseCtx<Response> {
             self.root.messenger.send(request).await
         }
     }
@@ -159,6 +158,50 @@ pub mod messaging {
     pub trait ToMessage {
         fn to_message_in(self) -> MessageIn;
         fn to_message_out(self, reply_to: Uuid) -> MessageOut;
+    }
+
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub struct RequestCtx<R> {
+        pub request: R,
+        pub data: Payload
+    }
+
+    impl <R> RequestCtx<R> {
+        pub fn new( request: R ) -> Self {
+            Self {
+                request,
+                data: Payload::Empty
+            }
+        }
+
+        pub fn new_with_data( request: R, data: Payload ) -> Self {
+            Self {
+                request,
+                data
+            }
+        }
+    }
+
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub struct ResponseCtx<R> {
+        pub response: R,
+        pub data: Payload
+    }
+
+    impl <R> ResponseCtx<R> {
+        pub fn new( response: R ) -> Self {
+            Self {
+                response,
+                data: Payload::Empty
+            }
+        }
+
+        pub fn new_with_data( response: R, data: Payload ) -> Self {
+            Self {
+                response,
+                data
+            }
+        }
     }
 
     #[derive(Debug, Clone, Serialize, Deserialize)]

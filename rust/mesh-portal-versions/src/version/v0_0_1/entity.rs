@@ -22,7 +22,7 @@
     }
 
     pub mod response {
-        use crate::error::MsgErr;
+        use crate::error::{MsgErr, StatusErr};
         use crate::version::v0_0_1::bin::Bin;
         use crate::version::v0_0_1::command::request::RequestCore;
         use crate::version::v0_0_1::fail;
@@ -82,6 +82,15 @@
                 Self {
                     headers: HeaderMap::new(),
                     status: StatusCode::from_u16(500u16).unwrap(),
+                    body: Payload::Errors(errors),
+                }
+            }
+
+            pub fn err(err: MsgErr) -> Self {
+                let errors = Errors::default(err.to_string().as_str() );
+                Self {
+                    headers: HeaderMap::new(),
+                    status: StatusCode::from_u16(err.status()).unwrap_or(StatusCode::from_u16(500u16).unwrap()),
                     body: Payload::Errors(errors),
                 }
             }

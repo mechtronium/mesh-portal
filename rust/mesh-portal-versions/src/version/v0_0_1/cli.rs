@@ -14,6 +14,7 @@ use crate::version::v0_0_1::span::{new_span, Trace};
 use crate::version::v0_0_1::util::ToResolved;
 use serde::{Deserialize, Serialize};
 
+#[derive(Debug, Clone, Serialize, Deserialize )]
 pub struct CommandTemplate {
     pub line: String,
     pub transfers: Vec<Trace>

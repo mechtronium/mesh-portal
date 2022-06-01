@@ -11,16 +11,18 @@ use mesh_portal::version::latest::entity::request::create::{CreateOp, Fulfillmen
 use mesh_portal::version::latest::entity::request::{Method, Rc};
 use mesh_portal::version::latest::entity::request::get::Get;
 use mesh_portal::version::latest::entity::request::select::Select;
+use mesh_portal::version::latest::entity::response::ResponseCore;
 use mesh_portal::version::latest::id::{Point, Port, TargetLayer, Topic, Uuid};
 use mesh_portal::version::latest::messaging::{Request, Response};
 use mesh_portal::version::latest::particle::Stub;
 use mesh_portal::version::latest::payload::{Payload, PayloadType};
 use mesh_portal::version::latest::Port;
 use mesh_portal::version::latest::util::uuid;
-use mesh_portal_versions::version::v0_0_1::id::id::ToPort;
+use mesh_portal_versions::version::v0_0_1::id::id::{ToPoint, ToPort};
+use mesh_portal_versions::version::v0_0_1::messaging::messaging::{MessageCtx, RootMessageCtx};
 use mesh_portal_versions::version::v0_0_1::parse::{command, command_line, Env};
 use mesh_portal_versions::version::v0_0_1::parse::error::result;
-use mesh_portal_versions::version::v0_0_1::service::{Handler, Router};
+use mesh_portal_versions::version::v0_0_1::service::{Handlers, Handler, Router, MessengerProxy, AsyncMessenger, AsyncMessengerProxy, HandlerPair, HandlerSelector};
 use mesh_portal_versions::version::v0_0_1::span::new_span;
 use mesh_portal_versions::version::v0_0_1::util::ToResolved;
 use starlane_core::particle::KindBase;
@@ -37,29 +39,36 @@ mod tests {
 }
 
 pub struct CliRelay {
-  pub sessions: HashMap<Topic,CliSession>,
-  pub point: Point,
+  pub sessions: HashMap<Port,CliSession>,
+  pub port: Port,
   pub router: Arc<dyn Router>,
+  pub handlers: Arc<Handlers<AsyncMessengerProxy<Request>,dyn FnMut(RootMessageCtx<Request,AsyncMessengerProxy<Request>>)->Result<ResponseCore,MsgErr>>>
 }
 
 impl CliRelay {
-    pub fn new_session(&mut self) -> Port {
-        let mut session_port = self.point.to_port();
-        session_port.layer = TargetLayer::Shell;
-        session_port.topic = Topic::Uuid(uuid());
+    fn new_session(&mut self, source: Port ) -> Port {
+        let mut port = self.port.clone();
+        port.layer = TargetLayer::Shell;
+        port.topic = Topic::Uuid(uuid());
 
         let session = CliSession{
             stub: stub.clone(),
-            env: Env::new(self.point.clone()),
-            router: self.router.clone()
+            env: Env::new(self.port.clone().to_point() ),
+            router: self.router.clone(),
+            source
         };
 
-        self.sessions.insert(session_port.topic.clone(), session );
 
-        session_port
+
+        HandlerPair::new( HandlerSelector::Topic(port.topic.clone()), )
+        self.sessions.insert(port.clone(), session );
+
+        self.handlers.add( )
+
+        port
     }
 
-    pub async fn handle( & mut self, request: Request ) -> Response {
+    pub async fn handle( & mut self, request: Request ) -> ResponseCore {
 
         async fn inner_handle( relay: &mut CliRelay, request: Request ) -> Result<Response,MsgErr> {
             match &request.core.method {
@@ -75,7 +84,7 @@ impl CliRelay {
 
         match inner_handle(self, request.clone() ).await {
             Ok(response) => response,
-            Err(err) => request.fail(err.to_string().as_str() )
+            Err(err) => request.core.fail(err.to_string().as_str() )
         }
     }
 }
@@ -83,19 +92,16 @@ impl CliRelay {
 #[derive(Serialize,Deserialize)]
 pub struct CliSessionStub {
    pub relay: Port,
+   pub port: Port
 }
 
 
 pub struct CliSession {
     pub stub: CliSessionStub,
     pub env: Env,
-    pub router: Arc<dyn Router>
-}
-
-impl Handler for CliSession {
-    fn handle(&mut self, request: mesh_portal_versions::version::v0_0_1::messaging::messaging::Request) -> mesh_portal_versions::version::v0_0_1::messaging::messaging::Response {
-        todo!()
-    }
+    pub router: Arc<dyn Router>,
+    // will only handle requests from THIS port
+    pub source: Port
 }
 
 impl CliSession {

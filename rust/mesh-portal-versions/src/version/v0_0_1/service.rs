@@ -2,47 +2,46 @@ use crate::error::MsgErr;
 use crate::version::v0_0_1::command::request::{Method, RequestCore};
 use crate::version::v0_0_1::entity::response::ResponseCore;
 use crate::version::v0_0_1::id::id::{Point, Topic};
-use crate::version::v0_0_1::messaging::messaging::{
-    Agent, Message, MessageCtx, MessageIn, MessageOut, Request, Response, RootMessageCtx,
-};
+use crate::version::v0_0_1::messaging::messaging::{Agent, Message, MessageCtx, MessageIn, MessageOut, Request, RequestCtx, Response, ResponseCtx, RootMessageCtx};
 use crate::version::v0_0_1::parse::model::MethodScopeSelector;
 use crate::version::v0_0_1::security::Access;
 use crate::version::v0_0_1::util::ValueMatcher;
 use std::collections::HashMap;
 use std::marker::PhantomData;
 use std::ops::{Deref, DerefMut};
+use std::sync::RwLock;
 
 pub trait Router: Send + Sync {
     fn route(&self, message: Message);
 }
 
 #[async_trait]
-pub trait AsyncMessenger: Send + Sync {
-    async fn send(&self, request: Request) -> Response;
+pub trait AsyncMessenger<R>: Send + Sync {
+    async fn send(&self, request: RequestCtx<R>) -> ResponseCtx<Response>;
 }
 
-pub struct AsyncMessengerProxy {
-    pub messenger: Box<dyn AsyncMessenger>,
+pub struct AsyncMessengerProxy<R> where R: Send+Sync{
+    pub messenger: Box<dyn AsyncMessenger<R>>,
 }
 
 #[async_trait]
-impl AsyncMessenger for AsyncMessengerProxy {
-    async fn send(&self, request: Request) -> Response {
+impl <R> AsyncMessenger<R> for AsyncMessengerProxy<R> where R:Send+Sync{
+    async fn send(&self, request: RequestCtx<R>) -> ResponseCtx<Response> {
         self.messenger.send(request).await
     }
 }
 
-pub trait Messenger: Send + Sync {
-    fn send(&self, request: Request) -> Response;
+pub trait Messenger<R>: Send + Sync {
+    fn send(&self, request: RequestCtx<R>) -> Response;
 }
 
-pub struct MessengerProxy {
-    pub messenger: Box<dyn Messenger>,
+pub struct MessengerProxy<R> {
+    pub messenger: Box<dyn Messenger<R>>,
 }
 
 #[async_trait]
-impl Messenger for MessengerProxy {
-    fn send(&self, request: Request) -> Response {
+impl <R> Messenger<R> for MessengerProxy<R> {
+    fn send(&self, request: RequestCtx<R>) -> Response {
         self.messenger.send(request)
     }
 }
@@ -70,20 +69,20 @@ pub enum HandlerSelector {
     Request(MethodScopeSelector),
 }
 
-pub struct HandlerPair<E, F>
+pub struct HandlerPair<E,H>
 where
-    F: FnMut(MessageCtx<Request, E>) -> Result<ResponseCore, MsgErr>,
+    H: Handler<E>
 {
     pub selector: HandlerSelector,
-    pub handler: F,
+    pub handler: H,
     pub messenger: PhantomData<E>,
 }
 
-impl<E, F> HandlerPair<E, F>
+impl<E, H> HandlerPair<E, H>
 where
-    F: FnMut(MessageCtx<Request, E>) -> Result<ResponseCore, MsgErr>,
+    H: Handler<E>
 {
-    fn new<I, O>(selector: HandlerSelector, mut f: F) -> Self
+    fn new<I, O>(selector: HandlerSelector, mut handler: H) -> Self
     where
         I: TryFrom<Request, Error = MsgErr>,
         O: Into<ResponseCore>,
@@ -91,7 +90,7 @@ where
         let messenger = Default::default();
         Self {
             selector,
-            handler: f,
+            handler,
             messenger,
         }
     }
@@ -107,15 +106,15 @@ impl HandlerSelector {
     }
 }
 
-pub trait Handler<I, O, E> {
-    fn handle(&mut self, ctx: MessageCtx<I, E>) -> Result<O, MsgErr>;
+pub trait Handler<E> {
+    fn handle(&self, ctx: MessageCtx<Request, E>) -> Result<ResponseCore, MsgErr>;
 }
 
-impl<I, O, E, F> Handler<I, O, E> for F
+impl<E,F> Handler<E> for F
 where
-    F: FnMut(MessageCtx<I, E>) -> Result<O, MsgErr> + Copy,
+    F: Fn(MessageCtx<Request, E>) -> Result<ResponseCore, MsgErr> + Copy,
 {
-    fn handle(&mut self, ctx: MessageCtx<I, E>) -> Result<O, MsgErr> {
+    fn handle(&self, ctx: MessageCtx<Request, E>) -> Result<ResponseCore, MsgErr> {
         self(ctx)
     }
 }
@@ -124,81 +123,67 @@ pub trait HandlerMatch {
     fn is_match(&self, message: MessageIn) -> Result<(), ()>;
 }
 
-pub struct Handlers<E, F>
-where
-    F: FnMut(MessageCtx<Request, E>) -> Result<ResponseCore, MsgErr> + Copy,
+pub struct Handlers<E, H> where H: Handler<E>
 {
-    handlers: Vec<HandlerPair<E, F>>,
+    handlers: RwLock<Vec<HandlerPair<E, H>>>,
     messenger: PhantomData<E>,
 }
 
-impl<E, F> Handlers<E, F>
+impl<E,H> Handlers<E, H>
 where
-    F: FnMut(MessageCtx<Request, E>) -> Result<ResponseCore, MsgErr> + Copy,
+    E: Sized,
+    H: Handler<E>
 {
     pub fn new() -> Self {
         Handlers {
-            handlers: vec![],
+            handlers: RwLock::new(vec![]),
             messenger: Default::default(),
         }
     }
 
-    fn map_selector<I, S>(mut s: S) -> impl FnMut(RootMessageCtx<Request, E>) -> Result<(), ()>
-    where
-        S: FnMut(MessageCtx<'_, I, E>) -> Result<(), ()> + Copy,
-        I: TryFrom<Request, Error = MsgErr>,
-    {
-        move |ctx| {
-            let mut root: RootMessageCtx<I, E> = ctx.transform_input().map_err(|e| ())?;
-            let ctx = root.push();
-            s(ctx)
-        }
+    pub fn add(&mut self, handler: HandlerPair<E,H>) -> Result<(),MsgErr>{
+        let mut write = self.handlers.write()?;
+        write.push(handler);
+        Ok(())
     }
 
-    fn map_handler<I, O, F2>(
-        mut f: F2,
-    ) -> impl FnMut(RootMessageCtx<Request, E>) -> Result<Response, MsgErr>
-    where
-        I: TryFrom<Request, Error = MsgErr>,
-        O: Into<Response>,
-        F2: FnMut(MessageCtx<'_, I, E>) -> Result<O, MsgErr>,
-    {
-        move |ctx| {
-            let mut root: RootMessageCtx<I, E> = ctx.transform_input()?;
-            let ctx = root.push();
-            f(ctx).map(|o| o.into())
-        }
-    }
-
-    pub fn add(&mut self, handler: HandlerPair<E, F>) {
-        self.handlers.push(handler);
-    }
-
-    pub fn remove(&mut self, topic: &Topic) {
-        self.handlers.retain(|h| {
+    pub fn remove(&self, topic: &Topic) -> Result<(),MsgErr>{
+        let mut write = self.handlers.write()?;
+        write.retain(|h| {
             if let HandlerSelector::Topic(t) = &h.selector {
                 *t != *topic
             } else {
                 true
             }
         });
+        Ok(())
     }
 
-    pub fn handle(&self, mut ctx: RootMessageCtx<Request, E>) -> ResponseCore {
-        for handler in self.handlers.iter() {
-            if handler.selector.is_match(&ctx.request) {
-                let ctx = ctx.push();
-                match (handler.handler.clone())(ctx) {
-                    Ok(response) => {
-                        return response;
-                    }
-                    Err(err) => {
-                        return ResponseCore::fail(err.to_string().as_str());
+    pub fn handle(&self, ctx: RootMessageCtx<Request, E>) -> ResponseCore {
+
+        fn unlock<E2,H2>(handlers: & Handlers<E2,H2>, ctx: RootMessageCtx<Request,E2>) -> Result<ResponseCore,MsgErr> where E2: Sized, H2: Handler<E2>{
+            let read = handlers.handlers.read()?;
+            for pair in read.iter() {
+                if pair.selector.is_match(&ctx.request) {
+                    let ctx = ctx.push();
+                    let handler = &pair.handler;
+                    match handler.handle(ctx) {
+                        Ok(response) => {
+                            return Ok(response)
+                        }
+                        Err(err) => {
+                            return Ok(ResponseCore::fail(err.to_string().as_str()));
+                        }
                     }
                 }
             }
+            Ok(ResponseCore::fail("could not match request to handler"))
         }
-        ResponseCore::fail("could not match request to handler")
+
+        match unlock(self, ctx ) {
+            Ok(response) => response,
+            Err(err) => ResponseCore::err(err)
+        }
     }
 }
 

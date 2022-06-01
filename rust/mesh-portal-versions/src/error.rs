@@ -14,7 +14,7 @@ use semver::{ReqParseError, SemVerError};
 use std::num::ParseIntError;
 use std::ops::Range;
 use std::rc::Rc;
-use std::sync::Arc;
+use std::sync::{Arc, PoisonError};
 use ariadne::{Label, Report, ReportBuilder, ReportKind, Source};
 use crate::version::v0_0_1::parse::error::find_parse_err;
 use crate::version::v0_0_1::span::SpanExtra;
@@ -167,6 +167,15 @@ impl From<String> for MsgErr {
         Self::Status {
             status: 500,
             message,
+        }
+    }
+}
+
+impl <T> From<PoisonError<T>> for MsgErr {
+    fn from(e: PoisonError<T>) -> Self {
+        MsgErr::Status {
+            status: 500,
+            message: e.to_string()
         }
     }
 }
