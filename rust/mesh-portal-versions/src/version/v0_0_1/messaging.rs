@@ -56,13 +56,13 @@ pub mod messaging {
             })
         }
 
-        pub fn push<'a>(&'a mut self) -> MessageCtx<'a, I, E> {
+        pub fn push<'a>(&'a self) -> MessageCtx<'a, I, E> {
             MessageCtx::new(self, &self.input, self.logger.clone())
         }
     }
 
     pub struct MessageCtx<'a, I, E> {
-        root: &'a mut RootMessageCtx<I, E>,
+        root: &'a RootMessageCtx<I, E>,
         parent: Option<Box<MessageCtx<'a, I, E>>>,
         pub input: &'a I,
         pub logger: SpanLogger,
@@ -77,7 +77,7 @@ pub mod messaging {
     }
 
     impl<'a, I, E> MessageCtx<'a, I, E> {
-        pub fn new(root: &'a mut RootMessageCtx<I, E>, input: &'a I, logger: SpanLogger) -> Self {
+        pub fn new(root: &'a RootMessageCtx<I, E>, input: &'a I, logger: SpanLogger) -> Self {
             Self {
                 root,
                 parent: None,
@@ -129,14 +129,6 @@ pub mod messaging {
 
         pub fn err(self, err: MsgErr) -> ResponseCore {
             self.input.core.err(err)
-        }
-
-        pub fn body(&mut self, body: Payload) {
-            self.input.core.body = body;
-        }
-
-        pub fn uri(&mut self, uri: Uri) {
-            self.input.core.uri = uri;
         }
     }
 

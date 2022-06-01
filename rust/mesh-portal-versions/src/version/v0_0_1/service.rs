@@ -72,46 +72,31 @@ pub enum HandlerSelector {
 
 pub struct HandlerPair<E, F>
 where
-    F: FnMut(RootMessageCtx<Request, E>) -> Result<ResponseCore, MsgErr>,
+    F: FnMut(MessageCtx<Request, E>) -> Result<ResponseCore, MsgErr>,
 {
     pub selector: HandlerSelector,
-    pub handler: Box<F>,
+    pub handler: F,
     pub messenger: PhantomData<E>,
 }
 
 impl<E, F> HandlerPair<E, F>
 where
-    F: FnMut(RootMessageCtx<Request, E>) -> Result<ResponseCore, MsgErr>,
+    F: FnMut(MessageCtx<Request, E>) -> Result<ResponseCore, MsgErr>,
 {
-    fn new<I, O, F2>(selector: HandlerSelector, mut f: F2) -> Self
+    fn new<I, O>(selector: HandlerSelector, mut f: F) -> Self
     where
         I: TryFrom<Request, Error = MsgErr>,
         O: Into<ResponseCore>,
-        F2: FnMut(MessageCtx<'_, I, E>) -> Result<O, MsgErr> + Copy + 'static,
     {
         let messenger = Default::default();
         Self {
             selector,
-            handler: Box::new(map_handler::<I, O, F2, E>(f)),
+            handler: f,
             messenger,
         }
     }
 }
 
-fn map_handler<I, O, F2, E>(
-    mut f: F2,
-) -> impl FnMut(RootMessageCtx<Request, E>) -> Result<ResponseCore, MsgErr>
-where
-    I: TryFrom<Request, Error = MsgErr>,
-    O: Into<ResponseCore>,
-    F2: FnMut(MessageCtx<'_, I, E>) -> Result<O, MsgErr> + Copy + 'static,
-{
-    move |ctx: RootMessageCtx<Request, E>| -> Result<ResponseCore, MsgErr> {
-        let mut root: RootMessageCtx<I, E> = ctx.transform_input()?;
-        let ctx = root.push();
-        f(ctx).map(|o| o.into())
-    }
-}
 
 impl HandlerSelector {
     pub fn is_match(&self, request: &Request) -> bool {
@@ -141,7 +126,7 @@ pub trait HandlerMatch {
 
 pub struct Handlers<E, F>
 where
-    F: FnMut(RootMessageCtx<Request, E>) -> Result<ResponseCore, MsgErr> + Copy,
+    F: FnMut(MessageCtx<Request, E>) -> Result<ResponseCore, MsgErr> + Copy,
 {
     handlers: Vec<HandlerPair<E, F>>,
     messenger: PhantomData<E>,
@@ -149,7 +134,7 @@ where
 
 impl<E, F> Handlers<E, F>
 where
-    F: FnMut(RootMessageCtx<Request, E>) -> Result<ResponseCore, MsgErr> + Copy,
+    F: FnMut(MessageCtx<Request, E>) -> Result<ResponseCore, MsgErr> + Copy,
 {
     pub fn new() -> Self {
         Handlers {
@@ -199,15 +184,16 @@ where
         });
     }
 
-    pub fn handle(&self, ctx: RootMessageCtx<Request, E>) -> ResponseCore {
+    pub fn handle(&self, mut ctx: RootMessageCtx<Request, E>) -> ResponseCore {
         for handler in self.handlers.iter() {
             if handler.selector.is_match(&ctx.request) {
-                match handler.handler(ctx) {
+                let ctx = ctx.push();
+                match (handler.handler.clone())(ctx) {
                     Ok(response) => {
                         return response;
                     }
                     Err(err) => {
-                        return ResponseCore::fail(err.to_string());
+                        return ResponseCore::fail(err.to_string().as_str());
                     }
                 }
             }
