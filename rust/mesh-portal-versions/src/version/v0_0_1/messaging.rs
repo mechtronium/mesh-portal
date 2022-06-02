@@ -45,7 +45,7 @@ pub mod messaging {
     impl<I, E> RootMessageCtx<I, E> {
         pub fn transform_input<I2>(self) -> Result<RootMessageCtx<I2, E>, MsgErr>
         where
-            I2: TryFrom<I, Error = MsgErr>,
+            I2: TryFrom<I,Error=MsgErr>,
         {
             Ok(RootMessageCtx {
                 logger: self.logger,
@@ -214,6 +214,7 @@ pub mod messaging {
         pub to: Port,
         pub core: RequestCore,
     }
+
 
     impl ToMessage for Request {
         fn to_message_in(self) -> MessageIn {

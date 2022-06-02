@@ -230,7 +230,7 @@ pub trait IntHandler<E> {
     fn handle(&self, ctx: MessageCtx<Request, E>) -> Result<ResponseCore, MsgErr>;
 }
 
-impl<E,F> IntHandler<E> for F
+impl<E, F> IntHandler<E> for F
 where
     F: Fn(MessageCtx<Request, E>) -> Result<ResponseCore, MsgErr> + Copy,
 {
@@ -252,15 +252,8 @@ impl<E> IntRouter<E> {
         }
     }
 
-    pub fn add(
-        &mut self,
-        selector: IntPipelineSelector,
-        handler: Box<dyn IntHandler<E>>,
-    ) {
-        let pipeline = IntPipeline {
-            selector,
-            handler
-        };
+    pub fn add(&mut self, selector: IntPipelineSelector, handler: Box<dyn IntHandler<E>>) {
+        let pipeline = IntPipeline { selector, handler };
         self.pipelines.push(pipeline);
     }
 
@@ -268,7 +261,7 @@ impl<E> IntRouter<E> {
         for pipeline in self.pipelines.iter() {
             if pipeline.selector.is_match(&ctx.request) {
                 let ctx = ctx.push();
-                let handler= &pipeline.handler;
+                let handler = &pipeline.handler;
                 return handler.handle(ctx);
             }
         }
@@ -278,45 +271,3 @@ impl<E> IntRouter<E> {
 
 
 
-
-#[cfg(test)]
-pub mod test {
-    use crate::error::MsgErr;
-    use crate::version::v0_0_1::entity::response::ResponseCore;
-    use crate::version::v0_0_1::id::id::Topic;
-    use crate::version::v0_0_1::messaging::messaging::{MessageCtx, Request};
-    use crate::version::v0_0_1::service::{IntPipelineSelector, Handlers, IntPipeline, IntRouter};
-
-    pub struct Obj {
-        pub router: IntRouter<String>,
-    }
-
-    #[select("Msg<NewSession> -[ Text ]->")]
-    pub fn something() {
-
-    }
-
-    impl Obj {
-        pub fn new() -> Self {
-            let mut router = IntRouter::new();
-            let rtn = Self {
-                router: IntRouter::new(),
-            };
-            router.add(
-                IntPipelineSelector::Topic(Topic::Named("blah".to_string())),
-                Box::new(do_something),
-            );
-            rtn
-        }
-    }
-
-    pub fn do_something(ctx: MessageCtx<Request, String>) -> Result<ResponseCore, MsgErr> {
-        Ok(ResponseCore::fail("Test failure"))
-    }
-
-    #[test]
-    pub fn test() {
-        let mut router:IntRouter<String> = IntRouter::new();
-//        router.pipelines.push(IntPipeline)
-    }
-}

@@ -161,6 +161,7 @@ pub mod request {
     use serde::{Deserialize, Serialize};
     use crate::version::v0_0_1::entity::MethodKind;
     use crate::version::v0_0_1::http::HttpMethod;
+    use crate::version::v0_0_1::messaging::messaging;
     use crate::version::v0_0_1::msg::MsgMethod;
 
     #[derive(Debug, Clone, Serialize,Deserialize, Eq,PartialEq)]
@@ -273,6 +274,14 @@ pub mod request {
         #[serde(with = "http_serde::uri")]
         pub uri: Uri,
         pub body: Payload,
+    }
+
+    impl TryFrom<messaging::Request> for RequestCore {
+        type Error = MsgErr;
+
+        fn try_from(request: messaging::Request) -> Result<Self, Self::Error> {
+            Ok(request.core)
+        }
     }
 
     impl RequestCore {

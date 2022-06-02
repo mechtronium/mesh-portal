@@ -1,8 +1,6 @@
 #![allow(warnings)]
 #[no_std]
 
-#[macro_use]
-extern crate cosmic_macros;
 
 #[macro_use]
 extern crate lazy_static;
@@ -27,9 +25,3 @@ mod tests {
     fn it_works() {
     }
 }
-
-#[select("Msg<NewSession>/ ->")]
-pub fn new_session() {
-
-}
-

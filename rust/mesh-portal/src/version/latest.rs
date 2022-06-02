@@ -66,10 +66,7 @@ pub mod selector {
     pub type LabeledPrimitiveType = selector::selector::LabeledPrimitiveType;
     pub type PrimitiveType = selector::selector::PayloadType2;
     pub type Format = selector::selector::Format;
-    pub type EntityPattern = selector::selector::PipelineSelector;
-    pub type RcPattern = selector::selector::RcPipelineSelector;
-    pub type MsgPattern = selector::selector::MsgPipelineSelector;
-    pub type HttpPattern = selector::selector::HttpPipelineSelector;
+
     pub type Block = v0_0_1::selector::PayloadBlock;
     pub type UploadBlock = v0_0_1::selector::UploadBlock;
     pub type CreateBlock = v0_0_1::selector::CreateBlock;
@@ -97,6 +94,8 @@ pub mod messaging {
     use mesh_portal_versions::version::v0_0_1 as current;
     use mesh_portal_versions::version::v0_0_1::messaging;
 
+    pub type MessageCtx<'a,R,E> = messaging::messaging::MessageCtx<'a,R,E>;
+    pub type RootMessageCtx<R,E> = messaging::messaging::RootMessageCtx<R,E>;
     pub type Request = messaging::messaging::Request;
     pub type Response= messaging::messaging::Response;
     pub type RequestBuilder = messaging::messaging::RequestBuilder;
@@ -157,7 +156,6 @@ pub mod payload {
 pub mod command {
     use mesh_portal_versions::version::v0_0_1 as current;
     use mesh_portal_versions::version::v0_0_1::command;
-
 
     pub mod common {
         use mesh_portal_versions::version::v0_0_1 as current;
@@ -226,12 +224,9 @@ pub mod config {
         pub type PipelineStep= config::config::bind::PipelineStep;
         pub type PipelineStop= config::config::bind::PipelineStop;
         pub type PatternBlock = config::config::bind::PatternBlock;
-        pub type Selector<P> = config::config::bind::Selector<P>;
         pub type Whitelist = config::config::bind::Whitelist;
         pub type CallPattern = config::config::bind::CallPattern;
         pub type StepKind = config::config::bind::MessageKind;
-        pub type PipelineSubScope = config::config::bind::PipelinesSubScope;
-        pub type ScopeType = config::config::bind::ScopeType;
     }
 }
 
