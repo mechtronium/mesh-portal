@@ -89,7 +89,7 @@ pub mod config {
 
     pub mod bind {
         use crate::error::{MsgErr, ParseErrs};
-        use crate::version::v0_0_1::command::request::{Rc, RequestCore};
+        use crate::version::v0_0_1::command::request::{MethodPattern, Rc, RequestCore};
         use crate::version::v0_0_1::entity::MethodKind;
         use crate::version::v0_0_1::id::id::{Point, PointCtx, PointVar};
         use crate::version::v0_0_1::payload::payload::{Call, CallDef};
@@ -98,8 +98,9 @@ pub mod config {
         use crate::version::v0_0_1::util::{ToResolved, ValueMatcher, ValuePattern};
         use serde::{Deserialize, Serialize};
         use std::convert::TryInto;
+        use regex::Regex;
         use crate::version::v0_0_1::messaging::messaging::Request;
-        use crate::version::v0_0_1::parse::model::{BindScope, RouteScope, PipelineSegment, PipelineSegmentDef, PipelineVar, MessageScope, MethodScope};
+        use crate::version::v0_0_1::parse::model::{BindScope, RouteScope, PipelineSegment, PipelineSegmentDef, PipelineVar, MessageScope, MethodScope, ScopeFilters};
         use crate::version::v0_0_1::parse::{Env};
         use crate::version::v0_0_1::selector::{PayloadBlock, PayloadBlockDef};
 
@@ -356,5 +357,21 @@ pub mod config {
             Response,
         }
 
+
+        pub struct RouteSelector {
+           pub method:  ValuePattern<MethodPattern>,
+           pub path:    Regex,
+           pub filters: ScopeFilters
+        }
+
+        impl RouteSelector {
+            pub fn new( method: ValuePattern<MethodPattern>, path: Regex, filters: ScopeFilters ) -> Self {
+                Self {
+                    method,
+                    path,
+                    filters
+                }
+            }
+        }
     }
 }

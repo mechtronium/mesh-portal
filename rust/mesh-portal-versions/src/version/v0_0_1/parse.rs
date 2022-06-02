@@ -33,7 +33,7 @@ use nom::bytes::complete::take;
 use nom::character::is_space;
 use nom_supreme::final_parser::ExtractContext;
 use regex::internal::Input;
-use regex::{Captures, Match, Regex};
+use regex::{Captures, Error, Match, Regex};
 use serde::{Deserialize, Serialize};
 
 /*
@@ -2753,10 +2753,8 @@ pub fn lex_name_stack<I:Span>(mut input:I) -> Res<I,Vec<I>> {
                 input = children.clone();
             }
         }
-println!("next name...");
         let (_,(name,c)) = next_stacked_name(input)?;
         children = c;
-println!("got next name: {} children:", name.to_string(), );
         stack.push(name);
     }
 
@@ -3428,6 +3426,14 @@ pub mod model {
     #[derive(Clone)]
     pub struct ScopeFiltersDef<I> {
         pub filters: Vec<ScopeFilterDef<I>>,
+    }
+
+    impl <I> Deref for ScopeFiltersDef<I> {
+        type Target = Vec<ScopeFilterDef<I>>;
+
+        fn deref(&self) -> &Self::Target {
+            &self.filters
+        }
     }
 
     impl <I> ScopeFiltersDef<I> {
@@ -4467,10 +4473,7 @@ use nom::{
 use nom::{Err, IResult};
 use nom_locate::LocatedSpan;
 
-use crate::version::v0_0_1::config::config::bind::{
-    BindConfig, MessageKind, Pipeline, PipelineStep, PipelineStepCtx, PipelineStepVar,
-    PipelineStop, PipelineStopCtx, PipelineStopVar,
-};
+use crate::version::v0_0_1::config::config::bind::{BindConfig, MessageKind, Pipeline, PipelineStep, PipelineStepCtx, PipelineStepVar, PipelineStop, PipelineStopCtx, PipelineStopVar, RouteSelector};
 use crate::version::v0_0_1::config::config::Document;
 use crate::version::v0_0_1::command::request::{Method, MethodPattern, RcCommandType};
 use crate::version::v0_0_1::entity::MethodKind;
@@ -6176,60 +6179,52 @@ pub fn var_chunk<I: Span>(input: I) -> Res<I, Chunk<I>> {
     .map(|(next, variable_name)| (next, Chunk::Var(variable_name)))
 }
 
-pub fn msl<I:Span>(input: I ) -> Result<(),MsgErr> {
+pub fn msl<I:Span>(input: I ) -> Result<RouteSelector,MsgErr> {
+    let lex_route = result(lex_route_selector(input.clone()))?;
 
-    let lex_route = result(lex_route_selector(input))?;
-
-    println!("path: {}", lex_route.path.unwrap().to_string());
-
-    /*
-    let (next,scope) = lex_scope_selector(input).unwrap();
-
-    if let Some(children) = scope.children {
-        let (children,(name,more)) = next_selector(children)?;
-println!("name {}", name.to_string() );
- println!("children {}", children.to_string() );
-    }
-
-     */
-
-
-
-    Ok(())
-
-        /*
-    println!("selector.children: {}",selector.children.as_ref().unwrap().to_string() );
-    let (_,method_kind) = value_pattern( method_kind )(selector.name)?;
-    let (method,path,children) = match &method_kind {
-        ValuePattern::Any => {(ValuePattern::Any, selector.path, selector.children) }
-        ValuePattern::None => {(ValuePattern::None,selector.path, selector.children) }
+    let mut names = lex_route.names.clone();
+    names.reverse();
+    let method_kind_span = names.pop().ok_or(ParseErrs::from_loc_span("expecting MethodKind [ Http, Msg ]", "expecting MethodKind", input))?.clone();
+    let method_kind = result(value_pattern(method_kind)(method_kind_span.clone()))?;
+    let method = match &method_kind {
+        ValuePattern::Any => { ValuePattern::Any }
+        ValuePattern::None => { ValuePattern::None }
         ValuePattern::Pattern(method_kind) => {
             match method_kind {
                 MethodKind::Cmd => {
-                    panic!("not supported yet!");
+                    return Err(ParseErrs::from_loc_span("Cmd not supported yet", "not supported (yet)", method_kind_span).into());
                 }
                 MethodKind::Msg => {
-                    let (_, selector) = lex_scope_selector(selector.children.as_ref().unwrap().clone())?;
-                    let (_,method) = value_pattern(msg_method)(selector.name)?;
-                    (ValuePattern::Pattern(MethodPattern::Msg(method)), selector.path, selector.children)
+                    let method = names.pop().ok_or(ParseErrs::from_loc_span("Msg method requires a sub kind i.e. Msg<Get> or Msg<*>", "sub kind required", method_kind_span))?;
+                    let method = result(value_pattern(msg_method)(method))?;
+                    ValuePattern::Pattern(MethodPattern::Msg(method))
                 }
                 MethodKind::Http => {
-                    let (_, selector) = lex_scope_selector(selector.children.as_ref().unwrap().clone())?;
-                    let (_,method) = value_pattern(http_method)(selector.name)?;
-                    (ValuePattern::Pattern(MethodPattern::Http(method)), selector.path, selector.children)
+                    let method = names.pop().ok_or(ParseErrs::from_loc_span("Http method requires a sub kind i.e. Http<Get> or Http<*>", "sub kind required", method_kind_span))?;
+                    let method = result(value_pattern(http_method)(method))?;
+                    ValuePattern::Pattern(MethodPattern::Http(method))
                 }
             }
         }
     };
 
-    println!("method: {}",method.to_string() );
-//    println!("children: {}",children.unwrap().to_string() );
-    println!("path: {}",path.unwrap().to_string() );
-    println!("THE REST {}", next.to_string() );
+    if !names.is_empty()
+    {
+        let name = names.pop().unwrap();
+        return Err(ParseErrs::from_loc_span("Too many SubKinds: only Http/Msg supported with one subkind i.e. Http<Get>, Msg<MyMethod>", "too many subkinds", name).into());
+    }
 
+    let path = match lex_route.path.as_ref() {
+        None => Regex::new("/.*").unwrap(),
+        Some(i) => match Regex::new( i.to_string().as_str() ) {
+            Ok(path) => path,
+            Err(err) => {
+                return Err(ParseErrs::from_loc_span(format!("cannot parse Path regex: '{}'",err.to_string()).as_str(), "path regex error", i.clone() ));
+            }
+        }
+    };
 
-    Ok((next, ()))
-         */
+    Ok(RouteSelector::new( method, path, lex_route.filters.to_scope_filters() ))
 }
 
 
@@ -6264,8 +6259,9 @@ pub mod test {
 
     #[test]
     pub fn test_message_selector() {
-        let blah = log(msl(new_span("Http<Get>/hello -> {};"))).unwrap();
-
+        let route = log(msl(new_span("Http<Get>(auth)/hello"))).unwrap();
+        println!("path: {}",route.path.to_string() );
+        println!("filters: {}",route.filters.first().unwrap().name)
     }
 
     #[test]
