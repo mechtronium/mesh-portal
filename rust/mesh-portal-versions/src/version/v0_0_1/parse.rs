@@ -2508,15 +2508,15 @@ pub fn lex_hierarchy_scope<'a>(
 
 pub fn lex_child_scopes<I: Span>(parent: LexScope<I>) -> Result<LexParentScope<I>, MsgErr> {
     if parent.selector.selector.children.is_some() {
-        let (_, child_selector) = all_consuming(lex_scope_selector)(
-            parent
-                .selector
-                .selector
-                .children
-                .as_ref()
-                .expect("child names...")
-                .clone(),
-        )?;
+            let (_, child_selector) = all_consuming(lex_scope_selector)(
+                parent
+                    .selector
+                    .selector
+                    .children
+                    .as_ref()
+                    .expect("child names...")
+                    .clone(),
+            )?;
 
         let child = LexScope::new(
             ScopeSelectorAndFiltersDef::new(child_selector.into(), parent.selector.filters),
@@ -2690,7 +2690,7 @@ pub fn lex_scope_selector_no_filters(
 
  */
 
-pub fn next_selector<I: Span>(input: I) -> Res<I, (I, Option<I>)> {
+pub fn next_stacked_name<I: Span>(input: I) -> Res<I, (I, Option<I>)> {
     match wrapper(
         input.clone(),
         pair(
@@ -2727,16 +2727,59 @@ pub fn lex_scope_selector_and_filters<I: Span>(
 }
 
 pub fn lex_scope_selector<I: Span>(input: I) -> Res<I, LexScopeSelector<I>> {
-    let (next, (name, children)) = context("parsed-scope-selector", next_selector)(input)?;
+    let (next, (name, children)) = context("parsed-scope-selector", next_stacked_name)(input.clone())?;
 
     let (next, path) = if children.is_none() {
+println!("children... is none...");
         opt(path_regex)(next)?
     } else {
+println!("NO PATH");
         (next, None)
     };
 
+    println!("opt path: {} on input: {}", path.is_some(), input.to_string() );
+
     Ok((next, LexScopeSelector::new(name, path, children)))
 }
+
+pub fn lex_name_stack<I:Span>(mut input:I) -> Res<I,Vec<I>> {
+    let mut stack = vec![];
+    let (next,(name,mut children)) = next_stacked_name(input)?;
+    stack.push(name);
+    loop {
+        match &children {
+            None => {break;}
+            Some(children) => {
+                input = children.clone();
+            }
+        }
+println!("next name...");
+        let (_,(name,c)) = next_stacked_name(input)?;
+        children = c;
+println!("got next name: {} children:", name.to_string(), );
+        stack.push(name);
+    }
+
+    Ok((next,stack))
+}
+
+pub struct LexRouteSelector<I> {
+    pub names: Vec<I>,
+    pub filters: ScopeFiltersDef<I>,
+    pub path: Option<I>
+}
+
+pub fn lex_route_selector<I:Span>(input:I) -> Res<I,LexRouteSelector<I>> {
+    tuple((lex_name_stack,scope_filters,opt(path_regex)))(input).map( |(next,(names,filters,path))| {
+        let selector = LexRouteSelector {
+            names,
+            filters,
+            path
+        };
+        (next,selector)
+    } )
+}
+
 
 pub fn wrapper<I: Span, O, F>(input: I, mut f: F) -> Res<I, O>
 where
@@ -2961,7 +3004,7 @@ pub mod model {
     use crate::error::{MsgErr, ParseErrs};
     use crate::version::v0_0_1::config::config::bind::{
         BindConfig, MessageKind, PipelineStepCtx, PipelineStepDef, PipelineStepVar,
-        PipelineStopCtx, PipelineStopDef, PipelineStopVar, Selector,
+        PipelineStopCtx, PipelineStopDef, PipelineStopVar,
     };
     use crate::version::v0_0_1::command::request::{Method, RcCommandType, RequestCore};
     use crate::version::v0_0_1::entity::MethodKind;
@@ -2969,7 +3012,7 @@ pub mod model {
     use crate::version::v0_0_1::id::id::{Point, PointCtx, PointVar, Version};
     use crate::version::v0_0_1::messaging::messaging::{Agent, Request};
     use crate::version::v0_0_1::parse::error::result;
-    use crate::version::v0_0_1::parse::{camel_case, CtxResolver, entity_pattern, Env, filepath_chars, http_method, lex_child_scopes, method_kind, pipeline, rc_command_type, Res, SubstParser, value_pattern, VarResolverErr, wrapped_http_method, wrapped_msg_method};
+    use crate::version::v0_0_1::parse::{camel_case, CtxResolver, Env, filepath_chars, http_method, lex_child_scopes, method_kind, pipeline, rc_command_type, Res, SubstParser, value_pattern, VarResolverErr, wrapped_http_method, wrapped_msg_method};
     use crate::version::v0_0_1::span::{new_span, Trace};
     use crate::version::v0_0_1::util::{HttpMethodPattern, StringMatcher, ToResolved, ValueMatcher, ValuePattern};
     use crate::version::v0_0_1::wrap::{Span, Tw};
@@ -4426,7 +4469,7 @@ use nom_locate::LocatedSpan;
 
 use crate::version::v0_0_1::config::config::bind::{
     BindConfig, MessageKind, Pipeline, PipelineStep, PipelineStepCtx, PipelineStepVar,
-    PipelineStop, PipelineStopCtx, PipelineStopVar, Selector,
+    PipelineStop, PipelineStopCtx, PipelineStopVar,
 };
 use crate::version::v0_0_1::config::config::Document;
 use crate::version::v0_0_1::command::request::{Method, MethodPattern, RcCommandType};
@@ -4435,10 +4478,10 @@ use crate::version::v0_0_1::http::HttpMethod;
 use crate::version::v0_0_1::id::id::{GenericKind, GenericKindBase, PointKind, PointSeg, Specific};
 use crate::version::v0_0_1::msg::MsgMethod;
 use crate::version::v0_0_1::parse::error::result;
-use crate::version::v0_0_1::parse::model::{BindScope, BindScopeKind, Block, BlockKind, Chunk, DelimitedBlockKind, LexBlock, LexParentScope, LexRootScope, LexScope, LexScopeSelector, LexScopeSelectorAndFilters, MessageScopeSelectorAndFilters, NestedBlockKind, PipelineCtx, PipelineSegment, PipelineSegmentCtx, PipelineSegmentVar, PipelineVar, RootScopeSelector, RouteScope, ScopeFilterDef, ScopeFiltersDef, ScopeSelectorAndFiltersDef, Spanned, Subst, TerminatedBlockKind, TextType, Var, VarParser};
+use crate::version::v0_0_1::parse::model::{BindScope, BindScopeKind, Block, BlockKind, Chunk, DelimitedBlockKind, LexBlock, LexParentScope, LexRootScope, LexScope, LexScopeSelector, LexScopeSelectorAndFilters, MessageScopeSelectorAndFilters, NestedBlockKind, PipelineCtx, PipelineSegment, PipelineSegmentCtx, PipelineSegmentVar, PipelineVar, RootScopeSelector, RouteScope, ScopeFilterDef, ScopeFilters, ScopeFiltersDef, ScopeSelectorAndFiltersDef, Spanned, Subst, TerminatedBlockKind, TextType, Var, VarParser};
 use crate::version::v0_0_1::payload::payload::{
     Call, CallCtx, CallKind, CallVar, CallWithConfig, CallWithConfigCtx, CallWithConfigVar,
-    HttpCall, HttpMethodType, ListPattern, MapPattern, MapPatternCtx, MapPatternVar, MsgCall,
+    HttpCall, ListPattern, MapPattern, MapPatternCtx, MapPatternVar, MsgCall,
     NumRange, PayloadFormat, PayloadPattern, PayloadPatternCtx, PayloadPatternVar, PayloadType,
     PayloadTypePatternCtx, PayloadTypePatternDef, PayloadTypePatternVar,
 };
@@ -4446,9 +4489,9 @@ use crate::version::v0_0_1::selector::selector::specific::{
     ProductSelector, VariantSelector, VendorSelector,
 };
 use crate::version::v0_0_1::selector::selector::{
-    ExactPointSeg, GenericKindSelector, GenericSubKindSelector, Hop, HttpPipelineSelector,
-    KindSelector, LabeledPrimitiveTypeDef, MapEntryPattern, MsgPipelineSelector, Pattern,
-    PayloadType2Def, PipelineSelector, PointSegSelector, PointSelector, RcPipelineSelector,
+    ExactPointSeg, GenericKindSelector, GenericSubKindSelector, Hop,
+    KindSelector, LabeledPrimitiveTypeDef, MapEntryPattern, Pattern,
+    PayloadType2Def, PointSegSelector, PointSelector,
     SpecificSelector, VersionReq,
 };
 use crate::version::v0_0_1::selector::{
@@ -5476,41 +5519,6 @@ pub fn msg_action<I: Span>(input: I) -> Res<I, ValuePattern<StringMatcher>> {
     value_pattern(camel_case_to_string_matcher)(input)
 }
 
-pub fn msg_pattern_scoped<I: Span>(input: I) -> Res<I, MsgPipelineSelector> {
-    tuple((delimited(tag("<"), msg_action, tag(">")), opt(path_regex)))(input).map(
-        |(next, (action, path_regex))| {
-            let path_regex = match path_regex {
-                None => "*".to_string(),
-                Some(path_regex) => path_regex.to_string(),
-            };
-            let rtn = MsgPipelineSelector {
-                action,
-                path_regex: path_regex.to_string(),
-            };
-            (next, rtn)
-        },
-    )
-}
-
-pub fn msg_pattern<I: Span>(input: I) -> Res<I, MsgPipelineSelector> {
-    tuple((
-        tag("Msg"),
-        delimited(tag("<"), msg_action, tag(">")),
-        opt(path_regex),
-    ))(input)
-    .map(|(next, (_, action, path_regex))| {
-        let path_regex = match path_regex {
-            None => "*".to_string(),
-            Some(path_regex) => path_regex.to_string(),
-        };
-        let rtn = MsgPipelineSelector {
-            action,
-            path_regex: path_regex.to_string(),
-        };
-        (next, rtn)
-    })
-}
-
 pub fn parse_camel_case_str<I: Span, O: FromStr>(input: I) -> Res<I, O> {
     let (next, rtn) = recognize(camel_case)(input)?;
     match O::from_str(rtn.to_string().as_str()) {
@@ -5527,7 +5535,6 @@ pub fn parse_camel_case_str<I: Span, O: FromStr>(input: I) -> Res<I, O> {
 pub fn http_method<I: Span>(input: I) -> Res<I, HttpMethod> {
     context("http_method", parse_camel_case_str)
         .parse(input)
-        .map(|(next, method): (I, HttpMethodType)| (next, method.to_method()))
 }
 
 pub fn http_method_pattern<I: Span>(input: I) -> Res<I, HttpMethodPattern> {
@@ -5550,46 +5557,7 @@ where
     }
 }
 
-pub fn http_pattern_scoped<I: Span>(input: I) -> Res<I, HttpPipelineSelector> {
-    tuple((
-        delimited(
-            context("angle_bracket_open", tag("<")),
-            http_method_pattern,
-            context("angle_bracket_close", tag(">")),
-        ),
-        opt(path_regex),
-    ))(input)
-    .map(|(next, (method, path_regex))| {
-        let path_regex = match path_regex {
-            None => "*".to_string(),
-            Some(path_regex) => path_regex.to_string(),
-        };
-        let rtn = HttpPipelineSelector {
-            method,
-            path_regex: path_regex.to_string(),
-        };
-        (next, rtn)
-    })
-}
 
-pub fn http_pattern<I: Span>(input: I) -> Res<I, HttpPipelineSelector> {
-    tuple((
-        tag("Http"),
-        delimited(tag("<"), http_method_pattern, tag(">")),
-        opt(path_regex),
-    ))(input)
-    .map(|(next, (_, method, path_regex))| {
-        let path_regex = match path_regex {
-            None => "*".to_string(),
-            Some(path_regex) => path_regex.to_string(),
-        };
-        let rtn = HttpPipelineSelector {
-            method,
-            path_regex: path_regex.to_string(),
-        };
-        (next, rtn)
-    })
-}
 
 pub fn msg_method<I: Span>(input: I) -> Res<I, MsgMethod> {
     let (next, msg_method) = camel_case(input.clone())?;
@@ -5623,16 +5591,6 @@ pub fn rc_command_type<I: Span>(input: I) -> Res<I, RcCommandType> {
     parse_alpha1_str(input)
 }
 
-pub fn rc_pattern_scoped<I: Span>(input: I) -> Res<I, RcPipelineSelector> {
-    pattern(delimited(tag("<"), rc_command_type, tag(">")))(input)
-        .map(|(next, command)| (next, RcPipelineSelector { command }))
-}
-
-pub fn rc_pattern<I: Span>(input: I) -> Res<I, RcPipelineSelector> {
-    tuple((tag("Rc"), delimited(tag("<"), rc_pattern_scoped, tag(">"))))(input)
-        .map(|(next, (_, pattern))| (next, pattern))
-}
-
 pub fn map_pattern_payload_structure<I: Span>(input: I) -> Res<I, PayloadTypePatternDef<PointVar>> {
     map_pattern(input).map(|(next, con)| (next, PayloadTypePatternDef::Map(Box::new(con))))
 }
@@ -5643,22 +5601,6 @@ pub fn payload_structure<I: Span>(input: I) -> Res<I, PayloadTypePatternDef<Poin
         primitive_data_struct,
         map_pattern_payload_structure,
     ))(input)
-}
-
-pub fn msg_entity_pattern<I: Span>(input: I) -> Res<I, PipelineSelector> {
-    msg_pattern(input).map(|(next, pattern)| (next, PipelineSelector::Msg(pattern)))
-}
-
-pub fn http_entity_pattern<I: Span>(input: I) -> Res<I, PipelineSelector> {
-    http_pattern(input).map(|(next, pattern)| (next, PipelineSelector::Http(pattern)))
-}
-
-pub fn rc_entity_pattern<I: Span>(input: I) -> Res<I, PipelineSelector> {
-    rc_pattern(input).map(|(next, pattern)| (next, PipelineSelector::Rc(pattern)))
-}
-
-pub fn entity_pattern<I: Span>(input: I) -> Res<I, PipelineSelector> {
-    alt((msg_entity_pattern, http_entity_pattern, rc_entity_pattern))(input)
 }
 
 pub fn payload_structure_with_validation<I: Span>(input: I) -> Res<I, PayloadPatternVar> {
@@ -6234,10 +6176,28 @@ pub fn var_chunk<I: Span>(input: I) -> Res<I, Chunk<I>> {
     .map(|(next, variable_name)| (next, Chunk::Var(variable_name)))
 }
 
-pub fn message_scope_selector_and_filters<I:Span>( input: I ) -> Res<I,()> {
+pub fn msl<I:Span>(input: I ) -> Result<(),MsgErr> {
 
-    let (next,selector) = lex_scope_selector(input)?;
+    let lex_route = result(lex_route_selector(input))?;
 
+    println!("path: {}", lex_route.path.unwrap().to_string());
+
+    /*
+    let (next,scope) = lex_scope_selector(input).unwrap();
+
+    if let Some(children) = scope.children {
+        let (children,(name,more)) = next_selector(children)?;
+println!("name {}", name.to_string() );
+ println!("children {}", children.to_string() );
+    }
+
+     */
+
+
+
+    Ok(())
+
+        /*
     println!("selector.children: {}",selector.children.as_ref().unwrap().to_string() );
     let (_,method_kind) = value_pattern( method_kind )(selector.name)?;
     let (method,path,children) = match &method_kind {
@@ -6267,7 +6227,9 @@ pub fn message_scope_selector_and_filters<I:Span>( input: I ) -> Res<I,()> {
     println!("path: {}",path.unwrap().to_string() );
     println!("THE REST {}", next.to_string() );
 
+
     Ok((next, ()))
+         */
 }
 
 
@@ -6280,7 +6242,7 @@ pub mod test {
     use crate::version::v0_0_1::parse::model::{
         BlockKind, DelimitedBlockKind, LexScope, NestedBlockKind, TerminatedBlockKind,
     };
-    use crate::version::v0_0_1::parse::{args, base_point_segment, comment, consume_point_var, ctx_seg, doc, Env, expected_block_terminator_or_non_terminator, lex_block, lex_child_scopes, lex_nested_block, lex_scope, lex_scope_pipeline_step_and_block, lex_scope_selector, lex_scope_selector_and_filters, lex_scopes, lowercase1, MapResolver, mesh_eos, message_scope_selector_and_filters, nested_block, nested_block_content, next_selector, no_comment, parse_bind_config, parse_include_blocks, parse_inner_block, path_regex, pipeline, pipeline_segment, pipeline_step_var, pipeline_stop_var, point_non_root_var, point_template, point_var, pop, rec_version, Res, root_scope, root_scope_selector, scope_filter, scope_filters, skewer_case, skewer_dot, space_chars, space_no_dupe_dots, space_point_segment, strip_comments, subst, SubstParser, var_seg, variable_name, VarResolver, version, version_point_segment, wrapper};
+    use crate::version::v0_0_1::parse::{args, base_point_segment, comment, consume_point_var, ctx_seg, doc, Env, expected_block_terminator_or_non_terminator, lex_block, lex_child_scopes, lex_nested_block, lex_scope, lex_scope_pipeline_step_and_block, lex_scope_selector, lex_scope_selector_and_filters, lex_scopes, lowercase1, MapResolver, mesh_eos, msl, nested_block, nested_block_content, next_stacked_name, no_comment, parse_bind_config, parse_include_blocks, parse_inner_block, path_regex, pipeline, pipeline_segment, pipeline_step_var, pipeline_stop_var, point_non_root_var, point_template, point_var, pop, rec_version, Res, root_scope, root_scope_selector, scope_filter, scope_filters, skewer_case, skewer_dot, space_chars, space_no_dupe_dots, space_point_segment, strip_comments, subst, SubstParser, var_seg, variable_name, VarResolver, version, version_point_segment, wrapper};
     use crate::version::v0_0_1::span::{new_span, span_with_extra};
     use nom::branch::alt;
     use nom::bytes::complete::{escaped, tag};
@@ -6302,7 +6264,7 @@ pub mod test {
 
     #[test]
     pub fn test_message_selector() {
-        let blah = log(result(message_scope_selector_and_filters(new_span("Http<*>/this/is/the/way -> The;")))).unwrap();
+        let blah = log(msl(new_span("Http<Get>/hello -> {};"))).unwrap();
 
     }
 
@@ -6484,7 +6446,7 @@ pub mod test {
     }
     #[test]
     pub fn test_bind_config() -> Result<(), MsgErr> {
-        let bind_config_str = r#"Bind(version=1.0.0)  { Pipeline<Rc> -> { <Create> -> localhost:app => &; } }
+        let bind_config_str = r#"Bind(version=1.0.0)  { Route<Http> -> { <Get> -> localhost:app => &; } }
         "#;
 
         log(doc(bind_config_str))?;
@@ -6492,34 +6454,34 @@ pub mod test {
             assert_eq!(bind.route_scopes().len(), 1);
             let mut pipelines = bind.route_scopes();
             let pipeline_scope = pipelines.pop().unwrap();
-            assert_eq!(pipeline_scope.selector.selector.name.as_str(), "Pipeline");
+            assert_eq!(pipeline_scope.selector.selector.name.as_str(), "Route");
             let message_scope = pipeline_scope.block.first().unwrap();
             assert_eq!(
                 message_scope.selector.selector.name.to_string().as_str(),
-                "Rc"
+                "Http"
             );
             let action_scope = message_scope.block.first().unwrap();
             assert_eq!(
                 action_scope.selector.selector.name.to_string().as_str(),
-                "Create"
+                "Get"
             );
         } else {
             assert!(false);
         }
 
         let bind_config_str = r#"Bind(version=1.0.0)  {
-              Pipeline<Rc<Create>> -> localhost:app => &;
+              Route<Msg<Create>> -> localhost:app => &;
            }"#;
 
         if let Document::BindConfig(bind) = log(doc(bind_config_str))? {
             assert_eq!(bind.route_scopes().len(), 1);
             let mut pipelines = bind.route_scopes();
             let pipeline_scope = pipelines.pop().unwrap();
-            assert_eq!(pipeline_scope.selector.selector.name.as_str(), "Pipeline");
+            assert_eq!(pipeline_scope.selector.selector.name.as_str(), "Route");
             let message_scope = pipeline_scope.block.first().unwrap();
             assert_eq!(
                 message_scope.selector.selector.name.to_string().as_str(),
-                "Rc"
+                "Msg"
             );
             let action_scope = message_scope.block.first().unwrap();
             assert_eq!(
@@ -6531,9 +6493,9 @@ pub mod test {
         }
 
         let bind_config_str = r#"  Bind(version=1.0.0) {
-              Pipeline -> {
+              Route -> {
                  <*> -> {
-                    <Get>(auth)/users/(?P<user>)/.* -> localhost:users:${user} => &;
+                    <Get>/users/(?P<user>)/.* -> localhost:users:${user} => &;
                  }
               }
            }
@@ -6542,10 +6504,8 @@ pub mod test {
         log(doc(bind_config_str))?;
 
         let bind_config_str = r#"  Bind(version=1.0.0) {
-              Pipeline -> {
-                 <*> -> {
-                    <*>/users -> localhost:users => &;
-                 }
+              Route -> {
+                 <Http<*>>/users -> localhost:users => &;
               }
            }
 
@@ -6553,7 +6513,7 @@ pub mod test {
         log(doc(bind_config_str))?;
 
         let bind_config_str = r#"  Bind(version=1.0.0) {
-              * -> { // This should fail since Pipeline needs to be defined
+              * -> { // This should fail since Route needs to be defined
                  <*> -> {
                     <Get>/users -> localhost:users => &;
                  }
@@ -6563,7 +6523,7 @@ pub mod test {
            "#;
         assert!(log(doc(bind_config_str)).is_err());
         let bind_config_str = r#"  Bind(version=1.0.0) {
-              Pipeline<Rc> -> {
+              Route<Rc> -> {
                 Create ; Bok;
                   }
            }
@@ -6627,13 +6587,13 @@ pub mod test {
         let unknown_config_kind = r#"
 Unknown(version=1.0.0)-> # test unknown config kind
 {
-    Pipelines {
+    Route{
     }
 }"#;
         let unsupported_bind_version = r#"
 Bind(version=100.0.0)-> # test unsupported version
 {
-    Pipelines {
+    Route{
     }
 }"#;
         let multiple_unknown_sub_selectors = r#"
@@ -6649,14 +6609,14 @@ Bind(version=1.0.0)->
         let now_we_got_rows_to_parse = r#"
 Bind(version=1.0.0)->
 {
-    Pipelines(auth)-> {
+    Route(auth)-> {
        Http {
           <$(method=.*)>/users/$(user=.*)/$(path=.*)-> localhost:app:users:$(user)^Http<$(method)>/$(path) => &;
           <Get>/logout -> localhost:app:mechtrons:logout-handler => &;
        }
     }
 
-    Pipelines-> {
+    Route -> {
        Msg<FullStop> -> localhost:apps:
        * -> localhost:app:bad-page => &;
     }
@@ -6678,13 +6638,13 @@ Bind(version=1.0.0)->
 Bind(version=1.0.0)->
 {
   # let's see if it works a couple of spaces in.
-  Pipeline(auth)-> {  # and if it works on teh same line as something we wan to keep
+  Route(auth)-> {  # and if it works on teh same line as something we wan to keep
 
   }
 
   # looky!  I deliberatly put an error here (space between the filter and the kazing -> )
   # My hope is that we will get a an appropriate error message WITH COMMENTS INTACT
-  Pipeline(noauth)-> # look!  I made a boo boo
+  Route(noauth)-> # look!  I made a boo boo
   {
      # nothign to see here
   }
@@ -6875,7 +6835,7 @@ Hello my friend
     pub fn test_next_selector() {
         assert_eq!(
             "Http",
-            next_selector(new_span("Http"))
+            next_stacked_name(new_span("Http"))
                 .unwrap()
                 .1
                  .0
@@ -6884,7 +6844,7 @@ Hello my friend
         );
         assert_eq!(
             "Http",
-            next_selector(new_span("<Http>"))
+            next_stacked_name(new_span("<Http>"))
                 .unwrap()
                 .1
                  .0
@@ -6893,7 +6853,7 @@ Hello my friend
         );
         assert_eq!(
             "Http",
-            next_selector(new_span("Http<Msg>"))
+            next_stacked_name(new_span("Http<Msg>"))
                 .unwrap()
                 .1
                  .0
@@ -6902,7 +6862,7 @@ Hello my friend
         );
         assert_eq!(
             "Http",
-            next_selector(new_span("<Http<Msg>>"))
+            next_stacked_name(new_span("<Http<Msg>>"))
                 .unwrap()
                 .1
                  .0
@@ -6912,7 +6872,7 @@ Hello my friend
 
         assert_eq!(
             "*",
-            next_selector(new_span("<*<Msg>>"))
+            next_stacked_name(new_span("<*<Msg>>"))
                 .unwrap()
                 .1
                  .0
@@ -6922,7 +6882,7 @@ Hello my friend
 
         assert_eq!(
             "*",
-            next_selector(new_span("*"))
+            next_stacked_name(new_span("*"))
                 .unwrap()
                 .1
                  .0
@@ -6930,7 +6890,7 @@ Hello my friend
                 .as_str()
         );
 
-        assert!(next_selector(new_span("<*x<Msg>>")).is_err());
+        assert!(next_stacked_name(new_span("<*x<Msg>>")).is_err());
     }
     #[test]
     pub fn test_lex_scope2() -> Result<(), MsgErr> {
@@ -6994,11 +6954,11 @@ Hello my friend
         assert_eq!(pipes.selector.filters.len(), 1);
         assert!(pipes.pipeline_step.is_some());
 
-        let pipes = log(result(lex_scope(new_span("Pipeline<Msg> -> {}"))))?;
+        let pipes = log(result(lex_scope(new_span("Route<Msg> -> {}"))))?;
 
         assert_eq!(
             pipes.selector.selector.name.to_string().as_str(),
-            "Pipeline"
+            "Route"
         );
         assert_eq!(
             Some(
@@ -7020,11 +6980,11 @@ Hello my friend
         assert!(pipes.pipeline_step.is_some());
 
         let pipes = log(result(lex_scope(new_span(
-            "Pipeline<Http>(noauth) -> {zoink!{}}",
+            "Route<Http>(noauth) -> {zoink!{}}",
         ))))?;
         assert_eq!(
             pipes.selector.selector.name.to_string().as_str(),
-            "Pipeline"
+            "Route"
         );
         assert_eq!(
             Some(
@@ -7061,11 +7021,11 @@ Hello my friend
         assert!(pipes.pipeline_step.is_none());
 
         let pipes = log(result(lex_scope(new_span(
-            "Pipeline<Http<Get>>/users/ -[Text ]-> {}",
+            "Route<Http<Get>>/users/ -[Text ]-> {}",
         ))))?;
         assert_eq!(
             pipes.selector.selector.name.to_string().as_str(),
-            "Pipeline"
+            "Route"
         );
         assert_eq!(
             Some(
@@ -7088,11 +7048,11 @@ Hello my friend
         );
 
         let pipes = log(result(lex_scope(new_span(
-            "Pipeline<Http<Get>>/users/(auth) -[Text ]-> {}",
+            "Route<Http<Get>>/users/(auth) -[Text ]-> {}",
         ))))?;
         assert_eq!(
             pipes.selector.selector.name.to_string().as_str(),
-            "Pipeline"
+            "Route"
         );
         assert_eq!(
             Some(
@@ -7115,11 +7075,11 @@ Hello my friend
         );
 
         let pipes = log(result(lex_scope(new_span(
-            "Pipeline<Http<Get>>/users/(auth)-(blah xyz) -[Text ]-> {}",
+            "Route<Http<Get>>/users/(auth)-(blah xyz) -[Text ]-> {}",
         ))))?;
         assert_eq!(
             pipes.selector.selector.name.to_string().as_str(),
-            "Pipeline"
+            "Route"
         );
         assert_eq!(
             Some(
@@ -7142,7 +7102,7 @@ Hello my friend
         );
 
         let (next, stripped) = strip_comments(new_span(
-            r#"Pipeline<Http>/users/$(auth)(blah xyz) -[Text]-> {
+            r#"Route<Http>/users/$(auth)(blah xyz) -[Text]-> {
 
             Get -> {}
             <Put>(superuser) -> localhost:app => &;
@@ -7168,7 +7128,7 @@ Hello my friend
             r#"
 
 
-            Pipeline<Http>/auth/.*(auth) -> {
+            Route<Http>/auth/.*(auth) -> {
 
                    <Get>/auth/more ->
 
@@ -7181,10 +7141,10 @@ Hello my friend
     pub fn test_root_and_subscope_phases() -> Result<(), MsgErr> {
         let config = r#"
 Bind(version=1.2.3)-> {
-   Pipeline -> {
+   Route -> {
    }
 
-   Pipeline(auth)-> {
+   Route(auth)-> {
    }
 }
 

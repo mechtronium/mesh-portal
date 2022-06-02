@@ -1,18 +1,65 @@
+use crate::error::MsgErr;
 use crate::version::v0_0_1::command::request::{Method, RequestCore};
 use crate::version::v0_0_1::entity::response::ResponseCore;
 use crate::version::v0_0_1::id::id::Meta;
-use crate::version::v0_0_1::payload::payload::{Errors, Payload };
+use crate::version::v0_0_1::payload::payload::{Errors, Payload};
 use http::{HeaderMap, StatusCode, Uri};
 use serde::{Deserialize, Serialize};
-use crate::error::MsgErr;
+use crate::version::v0_0_1::util::ValueMatcher;
 
-pub type HttpMethod = http::Method;
+#[derive(Debug, Clone, Serialize, Deserialize, strum_macros::Display, strum_macros::EnumString, Eq, PartialEq,Hash)]
+pub enum HttpMethod {
+    Options,
+    Get,
+    Post,
+    Put,
+    Delete,
+    Head,
+    Trace,
+    Connect,
+    Patch,
+}
+
+
+impl Into<http::Method> for HttpMethod {
+    fn into(self) -> http::Method {
+        match self {
+            HttpMethod::Options => http::Method::OPTIONS,
+            HttpMethod::Get => http::Method::GET,
+            HttpMethod::Post => http::Method::POST,
+            HttpMethod::Put => http::Method::PUT,
+            HttpMethod::Delete => http::Method::DELETE,
+            HttpMethod::Head => http::Method::HEAD,
+            HttpMethod::Trace => http::Method::TRACE,
+            HttpMethod::Connect => http::Method::CONNECT,
+            HttpMethod::Patch => http::Method::PATCH,
+        }
+    }
+}
+
+impl TryFrom<http::Method> for HttpMethod {
+    type Error = MsgErr;
+
+    fn try_from(method: http::Method) -> Result<Self, Self::Error> {
+        match method.as_str() {
+            "OPTIONS" => Ok(HttpMethod::Options),
+            "GET" => Ok(HttpMethod::Get),
+            "POST" => Ok(HttpMethod::Post),
+            "PUT" => Ok(HttpMethod::Put),
+            "DELETE" => Ok(HttpMethod::Delete),
+            "HEAD" => Ok(HttpMethod::Head),
+            "TRACE" => Ok(HttpMethod::Trace),
+            "CONNECT" => Ok(HttpMethod::Connect),
+            "PATCH" => Ok(HttpMethod::Patch),
+            _ => Err("http method extensions not supported".into()),
+        }
+    }
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HttpRequest {
-
     #[serde(with = "http_serde::method")]
-    pub method: HttpMethod,
+    pub method: http::Method,
 
     #[serde(with = "http_serde::header_map")]
     pub headers: HeaderMap,
@@ -47,7 +94,7 @@ impl TryFrom<RequestCore> for HttpRequest {
     fn try_from(core: RequestCore) -> Result<Self, Self::Error> {
         if let Method::Http(method) = core.method {
             Ok(Self {
-                method,
+                method: method.into(),
                 headers: core.headers,
                 uri: core.uri,
                 body: core.body,

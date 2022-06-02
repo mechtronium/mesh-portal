@@ -165,14 +165,14 @@ pub mod request {
 
     #[derive(Debug, Clone, Serialize,Deserialize, Eq,PartialEq)]
     pub enum Method {
-        Cmd(Rc),
-        Http(#[serde(with = "http_serde::method")]HttpMethod),
+        Cmd(CmdMethod),
+        Http(HttpMethod),
         Msg(MsgMethod),
     }
 
     #[derive(Debug, Clone,Eq,PartialEq)]
     pub enum MethodPattern {
-        Cmd(ValuePattern<Rc>),
+        Cmd(ValuePattern<CmdMethod>),
         Http(ValuePattern<HttpMethod>),
         Msg(ValuePattern<MsgMethod>),
     }
@@ -281,14 +281,17 @@ pub mod request {
         }
     }
 
-    impl From<http::Request<Bin>> for RequestCore {
-        fn from(request: Request<Bin>) -> Self {
-            Self {
+    impl TryFrom<http::Request<Bin>> for RequestCore {
+
+        type Error = MsgErr;
+
+        fn try_from(request: Request<Bin>) -> Result<Self, Self::Error> {
+            Ok(Self {
                 headers: request.headers().clone(),
-                method: Method::Http(request.method().clone()),
+                method: Method::Http(request.method().clone().try_into()?),
                 uri: request.uri().clone(),
                 body: Payload::Bin(request.body().clone()),
-            }
+            })
         }
     }
 
@@ -373,6 +376,22 @@ pub mod request {
                 headers: Default::default(),
                 status,
                 body: Payload::Errors(errors),
+            }
+        }
+    }
+
+    #[derive(Debug, Clone,Serialize,Deserialize,Eq,PartialEq,Hash,strum_macros::Display,strum_macros::EnumString)]
+    pub enum CmdMethod {
+        Get,
+        Update
+    }
+
+    impl ValueMatcher<CmdMethod> for CmdMethod {
+        fn is_match(&self, x: &CmdMethod) -> Result<(), ()> {
+            if *x == *self {
+                Ok(())
+            } else {
+                Err(())
             }
         }
     }

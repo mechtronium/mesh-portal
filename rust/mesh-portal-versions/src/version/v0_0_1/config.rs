@@ -94,9 +94,7 @@ pub mod config {
         use crate::version::v0_0_1::id::id::{Point, PointCtx, PointVar};
         use crate::version::v0_0_1::payload::payload::{Call, CallDef};
         use crate::version::v0_0_1::payload::payload::{Payload, PayloadPattern};
-        use crate::version::v0_0_1::selector::selector::{
-            PipelineSelector, HttpPipelineSelector, MsgPipelineSelector, RcPipelineSelector,
-        };
+
         use crate::version::v0_0_1::util::{ToResolved, ValueMatcher, ValuePattern};
         use serde::{Deserialize, Serialize};
         use std::convert::TryInto;
@@ -170,28 +168,6 @@ pub mod config {
                     scope_type,
                     elements,
                 }
-            }
-        }
-
-        impl<T> ConfigScope<T, Selector<HttpPipelineSelector>> {
-            pub fn find_match(&self, m: &RequestCore) -> Result<Selector<HttpPipelineSelector>, MsgErr> {
-                for e in &self.elements {
-                    if e.is_match(m).is_ok() {
-                        return Ok(e.clone());
-                    }
-                }
-                Err("no match".into())
-            }
-        }
-
-        impl<T> ConfigScope<T, Selector<MsgPipelineSelector>> {
-            pub fn find_match(&self, m: &RequestCore) -> Result<Selector<MsgPipelineSelector>, MsgErr> {
-                for e in &self.elements {
-                    if e.is_match(m).is_ok() {
-                        return Ok(e.clone());
-                    }
-                }
-                Err("no match".into())
             }
         }
 
@@ -361,41 +337,6 @@ pub mod config {
 
          */
 
-        #[derive(Debug, Clone )]
-        pub struct Selector<P> {
-            pub pattern: P,
-            pub pipeline: Pipeline,
-        }
-
-        impl<P> Selector<P> {
-            pub fn new(pattern: P, pipeline: Pipeline) -> Self {
-                Selector { pattern, pipeline }
-            }
-        }
-
-        impl Selector<PipelineSelector> {
-            pub fn is_match(&self, m: &RequestCore) -> Result<(), ()> {
-                self.pattern.is_match(m)
-            }
-        }
-
-        impl Selector<MsgPipelineSelector> {
-            pub fn is_match(&self, m: &RequestCore) -> Result<(), ()> {
-                self.pattern.is_match(m)
-            }
-        }
-
-        impl Selector<RcPipelineSelector> {
-            pub fn is_match(&self, m: &RequestCore) -> Result<(), ()> {
-                self.pattern.is_match(m)
-            }
-        }
-
-        impl Selector<HttpPipelineSelector> {
-            pub fn is_match(&self, m: &RequestCore) -> Result<(), ()> {
-                self.pattern.is_match(m)
-            }
-        }
 
         pub enum Whitelist {
             Any,
@@ -415,17 +356,5 @@ pub mod config {
             Response,
         }
 
-        pub enum PipelinesSubScope {
-            Msg(ConfigScope<MethodKind, Selector<MsgPipelineSelector>>),
-            Http(ConfigScope<MethodKind, Selector<HttpPipelineSelector>>),
-            Rc(ConfigScope<MethodKind, Selector<RcPipelineSelector>>),
-        }
-
-        pub enum ScopeType {
-            Bind,
-            Msg,
-            Http,
-            Rc,
-        }
     }
 }

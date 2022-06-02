@@ -724,7 +724,6 @@ pub mod payload {
     pub struct HttpCall {
         pub path: Subst<Tw<String>>,
 
-        #[serde(with = "http_serde::method")]
         pub method: HttpMethod,
     }
 
@@ -737,45 +736,6 @@ pub mod payload {
     impl ToString for HttpCall {
         fn to_string(&self) -> String {
             format!("Http<{}>{}", self.method.to_string(), self.path.to_string())
-        }
-    }
-
-    #[derive(
-        Debug,
-        Clone,
-        Eq,
-        PartialEq,
-        Serialize,
-        Deserialize,
-        Hash,
-        strum_macros::Display,
-        strum_macros::EnumString,
-    )]
-    pub enum HttpMethodType {
-        Get,
-        Post,
-        Put,
-        Delete,
-        Patch,
-        Head,
-        Connect,
-        Options,
-        Trace,
-    }
-
-    impl HttpMethodType {
-        pub fn to_method(self) -> HttpMethod {
-            match self {
-                HttpMethodType::Get => HttpMethod::GET,
-                HttpMethodType::Post => HttpMethod::POST,
-                HttpMethodType::Put => HttpMethod::PUT,
-                HttpMethodType::Delete => HttpMethod::DELETE,
-                HttpMethodType::Patch => HttpMethod::PATCH,
-                HttpMethodType::Head => HttpMethod::HEAD,
-                HttpMethodType::Connect => HttpMethod::CONNECT,
-                HttpMethodType::Options => HttpMethod::OPTIONS,
-                HttpMethodType::Trace => HttpMethod::TRACE,
-            }
         }
     }
 

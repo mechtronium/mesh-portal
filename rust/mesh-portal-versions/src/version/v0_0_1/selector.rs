@@ -24,7 +24,7 @@ pub mod selector {
     use crate::version::v0_0_1::command::request::{Method, Rc, RcCommandType, RequestCore};
     use crate::version::v0_0_1::id::id::{GenericKind, GenericKindBase, Point, PointCtx, PointSeg, PointVar, RouteSeg, Specific, Tks, Variable, VarVal, Version};
     use crate::version::v0_0_1::parse::{camel_case, camel_case_to_string_matcher, consume_hierarchy, Env, file_chars, path, path_regex, point_segment_selector, point_selector, Res};
-    use crate::version::v0_0_1::payload::payload::{Call, CallKind, CallWithConfig, CallWithConfigDef, HttpCall, HttpMethodType, ListPattern, MapPattern, MsgCall, NumRange, Payload, PayloadFormat, PayloadPattern, PayloadPatternDef, PayloadType, PayloadTypePatternDef };
+    use crate::version::v0_0_1::payload::payload::{Call, CallKind, CallWithConfig, CallWithConfigDef, HttpCall,  ListPattern, MapPattern, MsgCall, NumRange, Payload, PayloadFormat, PayloadPattern, PayloadPatternDef, PayloadType, PayloadTypePatternDef };
     use crate::version::v0_0_1::selector::selector::specific::{
         ProductSelector, VariantSelector, VendorSelector,
     };
@@ -616,134 +616,6 @@ pub mod selector {
 
     }
 
-    pub enum PipelineSelector {
-        Rc(RcPipelineSelector),
-        Msg(MsgPipelineSelector),
-        Http(HttpPipelineSelector),
-    }
-
-    impl ValueMatcher<RequestCore> for PipelineSelector {
-        fn is_match(&self, core: &RequestCore) -> Result<(), ()> {
-            match &core.method {
-                Method::Cmd(found) => {
-                    if let PipelineSelector::Rc(pattern) = self {
-                        pattern.is_match(core)
-                    } else {
-                        Err(())
-                    }
-                }
-                Method::Msg(found) => {
-                    if let PipelineSelector::Msg(pattern) = self {
-                        pattern.is_match(core)
-                    } else {
-                        Err(())
-                    }
-                }
-                Method::Http(found) => {
-                    if let PipelineSelector::Http(pattern) = self {
-                        pattern.is_match(core)
-                    } else {
-                        Err(())
-                    }
-                }
-            }
-        }
-    }
-
-    impl ToString for PipelineSelector {
-        fn to_string(&self) -> String {
-            match self {
-                PipelineSelector::Rc(rc) => rc.to_string(),
-                PipelineSelector::Msg(msg) => msg.to_string(),
-                PipelineSelector::Http(http) => http.to_string(),
-            }
-        }
-    }
-
-    #[derive(Debug, Clone, Serialize, Deserialize)]
-    pub struct RcPipelineSelector {
-        pub command: Pattern<RcCommandType>,
-    }
-
-    impl ValueMatcher<RequestCore> for RcPipelineSelector {
-        fn is_match(&self, core: &RequestCore) -> Result<(), ()> {
-            if let Method::Cmd(rc) = &core.method {
-                if self.command.matches(&rc.get_type()) {
-                    Ok(())
-                } else {
-                    Err(())
-                }
-            } else {
-                Err(())
-            }
-        }
-    }
-
-    impl ToString for RcPipelineSelector {
-        fn to_string(&self) -> String {
-            format!("Rc<{}>", self.command.to_string())
-        }
-    }
-
-
-
-    #[derive(Debug, Clone, Serialize, Deserialize)]
-    pub struct MsgPipelineSelector {
-        pub action: ValuePattern<StringMatcher>,
-        pub path_regex: String,
-    }
-
-    impl ToString for MsgPipelineSelector {
-        fn to_string(&self) -> String {
-            format!("Msg<{}>{}", self.action.to_string(), self.path_regex)
-        }
-    }
-
-    impl ValueMatcher<RequestCore> for MsgPipelineSelector {
-        fn is_match(&self, core: &RequestCore) -> Result<(), ()> {
-            if let Method::Msg(action) = &core.method {
-                self.action.is_match(action)?;
-                let matches = core.uri.path().matches(&self.path_regex);
-                if matches.count() > 0 {
-                    Ok(())
-                } else {
-                    Err(())
-                }
-            } else {
-                Err(())
-            }
-        }
-    }
-
-    #[derive(Debug, Clone, Serialize, Deserialize)]
-    pub struct HttpPipelineSelector {
-        pub method: HttpMethodPattern,
-        pub path_regex: String,
-    }
-
-    impl ToString for HttpPipelineSelector {
-        fn to_string(&self) -> String {
-            format!("Http<{}>{}", self.method.to_string(), self.path_regex)
-        }
-    }
-
-    impl ValueMatcher<RequestCore> for HttpPipelineSelector {
-        fn is_match(&self, found: &RequestCore) -> Result<(), ()> {
-            if let Method::Http(method) = &found.method {
-                self.method.is_match(&method)?;
-
-                let regex = Regex::new(self.path_regex.as_str()).map_err(|e|())?;
-
-                if regex.is_match(found.uri.to_string().as_str()) {
-                    Ok(())
-                } else {
-                    Err(())
-                }
-            } else {
-                Err(())
-            }
-        }
-    }
 
     /*    pub fn primitive(input: Span) -> Res<Span, PrimitiveType> {
            let (next,primitive_type) = recognize(alpha1)(input)?;

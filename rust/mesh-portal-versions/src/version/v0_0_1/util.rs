@@ -16,7 +16,7 @@ use serde::{Serialize,Deserialize};
 pub enum HttpMethodPattern {
     Any,
     None,
-    Pattern(#[serde(with = "http_serde::method")] HttpMethod),
+    Pattern(HttpMethod),
 }
 
 impl HttpMethodPattern {
