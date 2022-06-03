@@ -129,7 +129,7 @@ pub mod bin {
 pub mod parse {
     use mesh_portal_versions::version::v0_0_1 as current;
 
-    pub type Res<I, O> = current::parse::Res<I, O>;
+    pub type Res<I, O> = cosmic_nom::Res<I, O>;
     pub type Env = current::parse::Env;
 
     pub mod model {
@@ -260,9 +260,9 @@ pub mod config {
 
 pub mod entity {
     use mesh_portal_versions::version::v0_0_1 as current;
-    use mesh_portal_versions::version::v0_0_1::entity;
+    use mesh_portal_versions::version::v0_0_1::{entity, messaging};
 
-    pub type EntityType = entity::MethodKind;
+    pub type EntityType = messaging::MethodKind;
 
     pub mod request {
         use mesh_portal_versions::version::v0_0_1 as current;
@@ -332,10 +332,10 @@ pub mod entity {
     }
 
     pub mod response {
-        use mesh_portal_versions::version::v0_0_1 as current;
+        use mesh_portal_versions::version::{v0_0_1 as current, v0_0_1};
         use mesh_portal_versions::version::v0_0_1::entity;
 
-        pub type ResponseCore = entity::response::ResponseCore;
+        pub type ResponseCore = v0_0_1::messaging::ResponseCore;
     }
 }
 
@@ -487,11 +487,11 @@ pub mod cli {
 
 
 pub mod service {
-    use mesh_portal_versions::version::v0_0_1 as current;
+    use mesh_portal_versions::version::{v0_0_1 as current, v0_0_1};
 
     #[feature(trait_alias)]
-    pub type RequestHandler<E>=dyn current::service::RequestHandler<E>;
-    pub type Router=dyn current::service::Router;
+    pub type RequestHandler<E>=dyn v0_0_1::messaging::RequestHandler<E>;
+    pub type Router=dyn v0_0_1::messaging::Router;
     pub type Global=dyn current::service::Global;
     pub type AccessProvider=dyn current::service::AccessProvider;
     pub type AllAccessProvider=current::service::AllAccessProvider;

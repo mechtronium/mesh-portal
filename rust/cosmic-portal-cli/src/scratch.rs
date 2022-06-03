@@ -5,7 +5,7 @@ use mesh_portal::version::latest::messaging::MessageCtx;
 use mesh_portal::version::latest::payload::Payload;
 use crate::test::Obj;
 
-impl<E> mesh_portal_versions::version::v0_0_1::service::RequestHandler<E> for Obj<E> {
+impl<E> mesh_portal_versions::version::v0_0_1::messaging::RequestHandler<E> for Obj<E> {
     fn handle(
         &self,
         ctx: mesh_portal::version::latest::messaging::RootMessageCtx<

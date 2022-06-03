@@ -12,7 +12,7 @@ use std::ops;
 use std::ops::{Deref, DerefMut};
 use std::str::FromStr;
 use crate::version::v0_0_1::messaging::messaging::ScopeGrantAspect::Priv;
-use crate::version::v0_0_1::parsex::new_span;
+use cosmic_nom::new_span;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Access {

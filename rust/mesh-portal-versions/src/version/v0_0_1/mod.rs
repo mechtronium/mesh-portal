@@ -63,7 +63,7 @@ pub mod artifact {
 pub mod path {
     use crate::error::MsgErr;
     use crate::version::v0_0_1::parse::consume_path;
-    use crate::version::v0_0_1::parsex::new_span;
+    use cosmic_nom::new_span;
     use alloc::format;
     use alloc::string::{String, ToString};
     use alloc::vec::Vec;

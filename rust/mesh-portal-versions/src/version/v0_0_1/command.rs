@@ -8,7 +8,7 @@ use crate::version::v0_0_1::command::request::select::{Select, SelectCtx, Select
 use crate::version::v0_0_1::command::request::set::{Set, SetCtx, SetVar};
 use crate::version::v0_0_1::parse::{command_line, Env};
 use crate::version::v0_0_1::parse::error::result;
-use crate::version::v0_0_1::parsex::new_span;
+use cosmic_nom::new_span;
 use crate::version::v0_0_1::util::ToResolved;
 use serde::{Serialize,Deserialize};
 
@@ -149,7 +149,7 @@ pub mod request {
     use crate::version::v0_0_1::command::request::select::Select;
     use crate::version::v0_0_1::command::request::set::Set;
     use crate::version::v0_0_1::command::request::update::Update;
-    use crate::version::v0_0_1::entity::response::ResponseCore;
+    use crate::version::v0_0_1::messaging::ResponseCore;
     use crate::version::v0_0_1::fail;
     use crate::version::v0_0_1::fail::{BadRequest, Fail, NotFound};
     use crate::version::v0_0_1::id::id::{GenericKind, GenericKindBase, Meta, Point};
@@ -159,7 +159,7 @@ pub mod request {
     use http::status::InvalidStatusCode;
     use http::{HeaderMap, Request, StatusCode, Uri};
     use serde::{Deserialize, Serialize};
-    use crate::version::v0_0_1::entity::MethodKind;
+    use crate::version::v0_0_1::messaging::MethodKind;
     use crate::version::v0_0_1::http::HttpMethod;
     use crate::version::v0_0_1::messaging::messaging;
     use crate::version::v0_0_1::msg::MsgMethod;

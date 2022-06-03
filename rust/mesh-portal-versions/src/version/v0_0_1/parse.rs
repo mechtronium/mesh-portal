@@ -25,7 +25,7 @@ use crate::version::v0_0_1::command::request::select::{
 };
 use crate::version::v0_0_1::command::request::set::{Set, SetVar};
 use crate::version::v0_0_1::id::id::{
-    Point, PointCtx, PointKindVar, PointSegCtx, PointSegDelim, PointSegVar, PointSegment, PointVar,
+    Point, PointCtx, PointKindVar, PointSegCtx, PointSegDelim, PointSegment, PointSegVar, PointVar,
     RouteSeg, RouteSegVar, Topic, Variable, Version,
 };
 use crate::version::v0_0_1::security::{
@@ -57,8 +57,6 @@ impl Parser {
     }
 }
  */
-
-pub type Res<I: Span, O> = IResult<I, O, ErrorTree<I>>;
 
 fn any_resource_path_segment<T>(i: T) -> Res<T, T>
 where
@@ -3040,17 +3038,16 @@ pub mod model {
         BindConfig, MessageKind, PipelineStepCtx, PipelineStepDef, PipelineStepVar,
         PipelineStopCtx, PipelineStopDef, PipelineStopVar,
     };
-    use crate::version::v0_0_1::entity::MethodKind;
+    use crate::version::v0_0_1::messaging::MethodKind;
     use crate::version::v0_0_1::http::HttpMethod;
     use crate::version::v0_0_1::id::id::{Point, PointCtx, PointVar, Version};
     use crate::version::v0_0_1::messaging::messaging::{Agent, Request};
     use crate::version::v0_0_1::parse::error::result;
     use crate::version::v0_0_1::parse::{
-        camel_case, filepath_chars, http_method, lex_child_scopes, method_kind, pipeline,
-        rc_command_type, value_pattern, wrapped_http_method, wrapped_msg_method, CtxResolver, Env,
-        Res, SubstParser, VarResolverErr,
+        camel_case, CtxResolver, Env, filepath_chars, http_method, lex_child_scopes,
+        method_kind, pipeline, rc_command_type, SubstParser, value_pattern,
+        VarResolverErr, wrapped_http_method, wrapped_msg_method,
     };
-    use crate::version::v0_0_1::parsex::{new_span, Span, Trace, Tw};
     use crate::version::v0_0_1::util::{
         HttpMethodPattern, StringMatcher, ToResolved, ValueMatcher, ValuePattern,
     };
@@ -3068,6 +3065,7 @@ pub mod model {
     use std::rc::Rc;
     use std::str::FromStr;
     use nom::sequence::delimited;
+    use cosmic_nom::{new_span, Res, Span, Trace, Tw};
 
     #[derive(Clone)]
     pub struct ScopeSelectorAndFiltersDef<S, I> {
@@ -3662,33 +3660,6 @@ pub mod model {
 
      */
 
-    pub fn wrap<I, F, O>(mut f: F) -> impl FnMut(I) -> Res<I, O>
-    where
-        I: Span,
-        F: FnMut(I) -> Res<I, O> + Copy,
-    {
-        move |input: I| f(input)
-    }
-
-    pub fn len<I, F, O>(f: F) -> impl FnMut(I) -> usize
-    where
-        I: Span,
-        F: FnMut(I) -> Res<I, O> + Copy,
-    {
-        move |input: I| match recognize(wrap(f))(input) {
-            Ok((_, span)) => span.len(),
-            Err(_) => 0,
-        }
-    }
-
-    pub fn trim<I, F, O>(f: F) -> impl FnMut(I) -> Res<I,O>
-        where
-            I: Span,
-            F: FnMut(I) -> Res<I, O> + Copy,
-    {
-        move |input: I| delimited(multispace0,f,multispace0)(input)
-    }
-
 
     /*
     #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -4282,9 +4253,9 @@ pub mod model {
 
 pub mod error {
     use crate::error::{MsgErr, ParseErrs};
-    use crate::version::v0_0_1::parse::model::{len, NestedBlockKind};
+    use crate::version::v0_0_1::parse::model::NestedBlockKind;
     use crate::version::v0_0_1::parse::{nospace1, skewer};
-    use crate::version::v0_0_1::parsex::Span;
+    use cosmic_nom::{len, Span};
     use ariadne::Report;
     use ariadne::{Label, ReportKind, Source};
     use nom::branch::alt;
@@ -4538,13 +4509,13 @@ use crate::version::v0_0_1::config::config::bind::{
     PipelineStop, PipelineStopCtx, PipelineStopVar, RouteSelector,
 };
 use crate::version::v0_0_1::config::config::Document;
-use crate::version::v0_0_1::entity::MethodKind;
+use crate::version::v0_0_1::messaging::MethodKind;
 use crate::version::v0_0_1::http::HttpMethod;
 use crate::version::v0_0_1::id::id::{GenericKind, GenericKindBase, PointKind, PointSeg, Specific};
 use crate::version::v0_0_1::msg::MsgMethod;
 use crate::version::v0_0_1::parse::error::{find_parse_err, result};
-use crate::version::v0_0_1::parse::model::{BindScope, BindScopeKind, Block, BlockKind, Chunk, DelimitedBlockKind, LexBlock, LexParentScope, LexRootScope, LexScope, LexScopeSelector, LexScopeSelectorAndFilters, MessageScopeSelectorAndFilters, NestedBlockKind, PipelineCtx, PipelineSegment, PipelineSegmentCtx, PipelineSegmentVar, PipelineVar, RootScopeSelector, RouteScope, ScopeFilterDef, ScopeFilters, ScopeFiltersDef, ScopeSelectorAndFiltersDef, Spanned, Subst, TerminatedBlockKind, TextType, trim, Var, VarParser};
-use crate::version::v0_0_1::parsex::{new_span, span_with_extra, Span, Trace, Wrap};
+use crate::version::v0_0_1::parse::model::{BindScope, BindScopeKind, Block, BlockKind, Chunk, DelimitedBlockKind, LexBlock, LexParentScope, LexRootScope, LexScope, LexScopeSelector, LexScopeSelectorAndFilters, MessageScopeSelectorAndFilters, NestedBlockKind, PipelineCtx, PipelineSegment, PipelineSegmentCtx, PipelineSegmentVar, PipelineVar, RootScopeSelector, RouteScope, ScopeFilterDef, ScopeFilters, ScopeFiltersDef, ScopeSelectorAndFiltersDef, Spanned, Subst, TerminatedBlockKind, TextType, Var, VarParser};
+use cosmic_nom::{Res, trim, Wrap};
 use crate::version::v0_0_1::payload::payload::{
     Call, CallCtx, CallKind, CallVar, CallWithConfig, CallWithConfigCtx, CallWithConfigVar,
     HttpCall, ListPattern, MapPattern, MapPatternCtx, MapPatternVar, MsgCall, NumRange,
@@ -4566,6 +4537,7 @@ use crate::version::v0_0_1::selector::{
 use nom_supreme::error::ErrorTree;
 use nom_supreme::parser_ext::MapRes;
 use nom_supreme::{parse_from_str, ParserExt};
+use cosmic_nom::{new_span, Span, span_with_extra, Trace};
 
 fn inclusive_any_segment<I: Span>(input: I) -> Res<I, PointSegSelector> {
     alt((tag("+*"), tag("ROOT+*")))(input).map(|(next, _)| (next, PointSegSelector::InclusiveAny))
@@ -6387,18 +6359,17 @@ pub mod test {
     };
     use crate::version::v0_0_1::parse::{
         args, base_point_segment, comment, consume_point_var, ctx_seg, doc,
-        expected_block_terminator_or_non_terminator, lex_block, lex_child_scopes, lex_nested_block,
-        lex_scope, lex_scope_pipeline_step_and_block, lex_scope_selector,
-        lex_scope_selector_and_filters, lex_scopes, lowercase1, mesh_eos, nested_block,
-        nested_block_content, next_stacked_name, no_comment, parse_bind_config,
-        parse_include_blocks, parse_inner_block, path_regex, pipeline, pipeline_segment,
-        pipeline_step_var, pipeline_stop_var, point_non_root_var, point_template, point_var, pop,
-        rec_version, root_scope, root_scope_selector, route_attribute, route_selector,
-        scope_filter, scope_filters, skewer_case, skewer_dot, space_chars, space_no_dupe_dots,
-        space_point_segment, strip_comments, subst, var_seg, variable_name, version,
-        version_point_segment, wrapper, Env, MapResolver, Res, SubstParser, VarResolver,
+        Env, expected_block_terminator_or_non_terminator, lex_block, lex_child_scopes,
+        lex_nested_block, lex_scope, lex_scope_pipeline_step_and_block,
+        lex_scope_selector, lex_scope_selector_and_filters, lex_scopes, lowercase1, MapResolver,
+        mesh_eos, nested_block, nested_block_content, next_stacked_name,
+        no_comment, parse_bind_config, parse_include_blocks, parse_inner_block, path_regex,
+        pipeline, pipeline_segment, pipeline_step_var, pipeline_stop_var, point_non_root_var, point_template,
+        point_var, pop, rec_version, root_scope,
+        root_scope_selector, route_attribute, route_selector, scope_filter, scope_filters, skewer_case,
+        skewer_dot, space_chars, space_no_dupe_dots, space_point_segment, strip_comments, subst,
+        SubstParser, var_seg, variable_name, VarResolver, version, version_point_segment, wrapper,
     };
-    use crate::version::v0_0_1::parsex::{new_span, span_with_extra};
     use crate::version::v0_0_1::util;
     use crate::version::v0_0_1::util::ToResolved;
     use bincode::config;
@@ -6416,6 +6387,7 @@ pub mod test {
     use std::rc::Rc;
     use std::str::FromStr;
     use std::sync::Arc;
+    use cosmic_nom::{new_span, Res, span_with_extra};
 
     #[test]
     pub fn test_message_selector() {
@@ -7440,10 +7412,10 @@ pub fn rec_script_line<I: Span>(input: I) -> Res<I, I> {
 pub mod cmd_test {
     use crate::error::MsgErr;
     use crate::version::v0_0_1::command::{Command, CommandVar};
-    use crate::version::v0_0_1::parse::{command, script, Res};
-    use crate::version::v0_0_1::parsex::new_span;
+    use crate::version::v0_0_1::parse::{command, script};
+    use cosmic_nom::{new_span, Res};
     use nom::error::{VerboseError, VerboseErrorKind};
-    use nom_supreme::final_parser::{final_parser, ExtractContext};
+    use nom_supreme::final_parser::{ExtractContext, final_parser};
 
     /*
     #[test]

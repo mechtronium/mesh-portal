@@ -17,8 +17,8 @@ use std::rc::Rc;
 use std::sync::{Arc, PoisonError};
 use ariadne::{Label, Report, ReportBuilder, ReportKind, Source};
 use crate::version::v0_0_1::parse::error::find_parse_err;
-use crate::version::v0_0_1::parsex::SpanExtra;
-use crate::version::v0_0_1::parsex::Span;
+use cosmic_nom::SpanExtra;
+use cosmic_nom::Span;
 
 pub enum MsgErr {
     Status {
@@ -234,14 +234,7 @@ impl From<nom::Err<VerboseError<&str>>> for MsgErr {
     }
 }
 
-impl From<nom::Err<ErrorTree<&str>>> for MsgErr {
-    fn from(error: nom::Err<ErrorTree<&str>>) -> Self {
-        Self::Status  {
-            status: 500,
-            message: error.to_string(),
-        }
-    }
-}
+
 
 impl From<ErrorTree<&str>> for MsgErr {
     fn from(error: ErrorTree<&str>) -> Self {
@@ -370,6 +363,7 @@ impl <I:Span> From<nom::Err<ErrorTree<I>>> for MsgErr {
         }
     }
 }
+
 
 impl Into<String> for MsgErr {
     fn into(self) -> String {

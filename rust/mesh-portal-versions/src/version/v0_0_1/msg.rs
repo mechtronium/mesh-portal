@@ -1,7 +1,7 @@
 use std::ops::Deref;
 use crate::error::MsgErr;
 use crate::version::v0_0_1::command::request::{Method, RequestCore};
-use crate::version::v0_0_1::entity::response::ResponseCore;
+use crate::version::v0_0_1::messaging::ResponseCore;
 use crate::version::v0_0_1::id::id::Meta;
 use crate::version::v0_0_1::payload::payload::{Errors, Payload};
 use http::{HeaderMap, StatusCode, Uri};
@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use crate::version::v0_0_1::parse::camel_case;
 use crate::version::v0_0_1::parse::error::result;
 use crate::version::v0_0_1::parse::model::MethodScopeSelector;
-use crate::version::v0_0_1::parsex::new_span;
+use cosmic_nom::new_span;
 use crate::version::v0_0_1::util::{ValueMatcher, ValuePattern};
 
 #[derive(Debug, Clone, Serialize, Deserialize,Eq,PartialEq,Hash)]

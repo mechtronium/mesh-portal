@@ -1,3 +1,14 @@
+use std::sync::Arc;
+use http::{HeaderMap, StatusCode};
+use crate::error::{MsgErr, StatusErr};
+use crate::version::v0_0_1::bin::Bin;
+use crate::version::v0_0_1::config::config::bind::RouteSelector;
+use crate::version::v0_0_1::id::id::ToPort;
+use crate::version::v0_0_1::messaging::messaging::{Message, Request, Response, RootRequestCtx};
+use crate::version::v0_0_1::payload::payload::{Errors, Payload};
+use crate::version::v0_0_1::util::{uuid, ValueMatcher};
+use serde::{Serialize,Deserialize};
+
 pub mod messaging {
     use http::status::InvalidStatusCode;
     use std::collections::HashMap;
@@ -10,16 +21,16 @@ pub mod messaging {
 
     use crate::error::{MsgErr, StatusErr};
     use crate::version::v0_0_1::command::request::RequestCore;
-    use crate::version::v0_0_1::entity::response::ResponseCore;
+    use crate::version::v0_0_1::messaging::ResponseCore;
     use crate::version::v0_0_1::id::id::{Point, Port, ToPort, Uuid};
     use crate::version::v0_0_1::log::{PointLogger, SpanLogger};
+    use crate::version::v0_0_1::messaging::{AsyncMessenger, AsyncMessengerRelay, Router, SyncMessenger, SyncMessengerRelay};
     use crate::version::v0_0_1::payload::payload::{Errors, MsgCall, Payload};
     use crate::version::v0_0_1::security::{
         Access, AccessGrant, EnumeratedAccess, EnumeratedPrivileges, Permissions, Privilege,
         Privileges,
     };
     use crate::version::v0_0_1::selector::selector::{PointKindHierarchy, PointSelector};
-    use crate::version::v0_0_1::service::{AsyncMessengerRelay, SyncMessengerRelay, Router, AsyncMessenger, SyncMessenger};
     use crate::version::v0_0_1::util::uuid;
 
     pub struct RootRequestCtx<I> {
@@ -825,5 +836,288 @@ pub mod messaging {
         fn default() -> Self {
             Self::High
         }
+    }
+}
+
+pub trait Router: Send + Sync {
+    fn route(&self, message: Message);
+}
+
+pub struct AsyncMessengerRelay {
+    pub proxy: Arc<dyn AsyncMessenger>
+}
+
+#[async_trait]
+impl AsyncMessenger for AsyncMessengerRelay {
+    async fn send(&self, request: Request) -> Response{
+        self.proxy.send(request).await
+    }
+}
+
+
+pub struct SyncMessengerRelay {
+    pub proxy: Arc<dyn SyncMessenger>
+}
+
+impl SyncMessenger for SyncMessengerRelay {
+    fn send(&self, request: Request) -> Response{
+        self.proxy.send(request)
+    }
+}
+
+
+#[async_trait]
+pub trait AsyncMessenger: Send + Sync {
+    async fn send(&self, request: Request) -> Response;
+}
+
+pub trait SyncMessenger: Send + Sync {
+    fn send(&self, request: Request) -> Response;
+}
+
+pub struct InternalPipeline<H>
+{
+    pub selector: RouteSelector,
+    pub handler: H,
+}
+
+impl<H> InternalPipeline<H>
+{
+    pub fn new(selector: RouteSelector, mut handler: H) -> Self {
+        Self {
+            selector,
+            handler,
+        }
+    }
+}
+
+pub trait RequestHandler {
+    fn handle(&self, ctx: RootRequestCtx<Request>) -> Result<ResponseCore, MsgErr>;
+}
+
+#[async_trait]
+pub trait AsyncRequestHandler: Sync+Send  {
+    async fn handle(&self, ctx: RootRequestCtx<Request>) -> Result<ResponseCore, MsgErr>;
+}
+
+impl RequestHandler for RequestHandlerRelay {
+    fn handle(&self, ctx: RootRequestCtx<Request>) -> Result<ResponseCore, MsgErr> {
+        self.relay.handle(ctx)
+    }
+}
+
+pub struct AsyncRequestHandlerRelay {
+    pub relay: Box<dyn AsyncRequestHandler>
+}
+
+#[async_trait]
+impl AsyncRequestHandler for AsyncRequestHandlerRelay {
+    async fn handle(&self, ctx: RootRequestCtx<Request>) -> Result<ResponseCore, MsgErr> {
+        self.relay.handle(ctx).await
+    }
+}
+
+pub struct InternalRequestHandler<H> {
+    pipelines: Vec<InternalPipeline<H>>,
+}
+
+impl<H> InternalRequestHandler<H> {
+    pub fn new() -> Self {
+        Self {
+            pipelines: vec![],
+        }
+    }
+
+    pub fn add(&mut self, selector: RouteSelector, handler: H) {
+        let pipeline = InternalPipeline { selector, handler };
+        self.pipelines.push(pipeline);
+    }
+
+    pub fn select(&self, request: &Request ) -> Result<&H,()> {
+        for pipeline in self.pipelines.iter() {
+            if pipeline.selector.is_match(&request).is_ok() {
+                return Ok(&pipeline.handler);
+            }
+        }
+        Err(())
+    }
+}
+
+impl InternalRequestHandler<RequestHandlerRelay> {
+    pub fn handle(&self, ctx: RootRequestCtx<Request>) -> Result<ResponseCore, MsgErr> {
+        for pipeline in self.pipelines.iter() {
+            if pipeline.selector.is_match(&ctx.request).is_ok() {
+                let handler = &pipeline.handler;
+                return handler.handle(ctx);
+            }
+        }
+        Ok(ResponseCore::not_found())
+    }
+}
+
+impl InternalRequestHandler<AsyncRequestHandlerRelay> {
+    pub async fn handle(&self, ctx: RootRequestCtx<Request>) -> Result<ResponseCore, MsgErr> {
+        for pipeline in self.pipelines.iter() {
+            if pipeline.selector.is_match(&ctx.request).is_ok() {
+                return pipeline.handler.handle(ctx).await;
+            }
+        }
+        Ok(ResponseCore::not_found())
+    }
+}
+
+pub struct RequestHandlerRelay {
+   pub relay: Box<dyn RequestHandler>
+}
+
+#[derive(
+    Debug, Clone, Serialize, Deserialize, strum_macros::Display, strum_macros::EnumString,Eq,PartialEq
+)]
+pub enum MethodKind {
+    Cmd,
+    Msg,
+    Http,
+}
+
+impl ValueMatcher<MethodKind> for MethodKind {
+    fn is_match(&self, x: &MethodKind) -> Result<(), ()> {
+        if self == x {
+            Ok(())
+        } else {
+            Err(())
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize,Eq,PartialEq)]
+pub struct ResponseCore {
+    #[serde(with = "http_serde::header_map")]
+    pub headers: HeaderMap,
+
+    #[serde(with = "http_serde::status_code")]
+    pub status: StatusCode,
+
+    pub body: Payload,
+}
+
+impl ResponseCore {
+    pub fn ok_html(html: &str) -> Self {
+        let bin = Arc::new(html.to_string().into_bytes());
+        ResponseCore::ok(Payload::Bin(bin))
+    }
+
+    pub fn new() -> Self {
+        ResponseCore {
+            headers: HeaderMap::new(),
+            status: StatusCode::from_u16(200u16).unwrap(),
+            body: Payload::Empty,
+        }
+    }
+
+    pub fn ok(body: Payload) -> Self {
+        Self {
+            headers: HeaderMap::new(),
+            status: StatusCode::from_u16(200u16).unwrap(),
+            body,
+        }
+    }
+
+    pub fn server_error() -> Self {
+        Self {
+            headers: HeaderMap::new(),
+            status: StatusCode::from_u16(500u16).unwrap(),
+            body: Payload::Empty,
+        }
+    }
+
+
+    pub fn not_found() -> Self {
+        Self {
+            headers: HeaderMap::new(),
+            status: StatusCode::from_u16(404u16).unwrap(),
+            body: Payload::Empty,
+        }
+    }
+
+    pub fn fail(message: &str) -> Self {
+        let errors = Errors::default(message.clone());
+        Self {
+            headers: HeaderMap::new(),
+            status: StatusCode::from_u16(500u16).unwrap(),
+            body: Payload::Errors(errors),
+        }
+    }
+
+    pub fn err(err: MsgErr) -> Self {
+        let errors = Errors::default(err.to_string().as_str() );
+        Self {
+            headers: HeaderMap::new(),
+            status: StatusCode::from_u16(err.status()).unwrap_or(StatusCode::from_u16(500u16).unwrap()),
+            body: Payload::Errors(errors),
+        }
+    }
+
+    pub fn with_new_payload(self, payload: Payload) -> Self {
+        Self {
+            headers: self.headers,
+            status: self.status,
+            body: payload,
+        }
+    }
+
+    pub fn is_ok(&self) -> bool {
+        return self.status.is_success();
+    }
+
+    pub fn into_response<P>(self, from: P, to: P, response_to: String) -> Response where P: ToPort{
+        Response {
+            id: uuid(),
+            from: from.to_port(),
+            to: to.to_port(),
+            core: self,
+            response_to,
+        }
+    }
+}
+
+
+impl TryInto<http::response::Builder> for ResponseCore {
+    type Error = MsgErr;
+
+    fn try_into(self) -> Result<http::response::Builder, Self::Error> {
+        let mut builder = http::response::Builder::new();
+
+        for (name, value) in self.headers {
+            match name {
+                Some(name) => {
+                    builder =
+                        builder.header(name.as_str(), value.to_str()?.to_string().as_str());
+                }
+                None => {}
+            }
+        }
+
+        Ok(builder.status(self.status))
+    }
+}
+
+impl TryInto<http::Response<Bin>> for ResponseCore {
+    type Error = MsgErr;
+
+    fn try_into(self) -> Result<http::Response<Bin>, Self::Error> {
+        let mut builder = http::response::Builder::new();
+
+        for (name, value) in self.headers {
+            match name {
+                Some(name) => {
+                    builder =
+                        builder.header(name.as_str(), value.to_str()?.to_string().as_str());
+                }
+                None => {}
+            }
+        }
+
+        let response = builder.status(self.status).body(self.body.to_bin()?)?;
+        Ok(response)
     }
 }

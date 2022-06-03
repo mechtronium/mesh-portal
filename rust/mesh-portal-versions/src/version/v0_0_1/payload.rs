@@ -15,13 +15,13 @@ pub mod payload {
     use std::sync::Arc;
     use crate::version::v0_0_1::cli::RawCommand;
     use crate::version::v0_0_1::command::Command;
-    use crate::version::v0_0_1::entity::response::ResponseCore;
+    use crate::version::v0_0_1::messaging::ResponseCore;
     use crate::version::v0_0_1::http::HttpMethod;
     use crate::version::v0_0_1::messaging::messaging::Response;
     use crate::version::v0_0_1::msg::MsgMethod;
     use crate::version::v0_0_1::parse::{CtxResolver, Env};
     use crate::version::v0_0_1::parse::model::Subst;
-    use crate::version::v0_0_1::parsex::Tw;
+    use cosmic_nom::Tw;
 
     #[derive(
         Debug,
