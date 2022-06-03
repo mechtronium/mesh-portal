@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use crate::version::v0_0_1::parse::camel_case;
 use crate::version::v0_0_1::parse::error::result;
 use crate::version::v0_0_1::parse::model::MethodScopeSelector;
-use crate::version::v0_0_1::span::new_span;
+use crate::version::v0_0_1::parsex::new_span;
 use crate::version::v0_0_1::util::{ValueMatcher, ValuePattern};
 
 #[derive(Debug, Clone, Serialize, Deserialize,Eq,PartialEq,Hash)]

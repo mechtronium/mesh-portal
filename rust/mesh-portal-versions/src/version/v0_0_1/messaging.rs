@@ -19,56 +19,53 @@ pub mod messaging {
         Privileges,
     };
     use crate::version::v0_0_1::selector::selector::{PointKindHierarchy, PointSelector};
-    use crate::version::v0_0_1::service::{AsyncMessenger, AsyncMessengerProxy, Messenger, MessengerProxy, Router};
+    use crate::version::v0_0_1::service::{AsyncMessengerRelay, SyncMessengerRelay, Router, AsyncMessenger, SyncMessenger};
     use crate::version::v0_0_1::util::uuid;
 
-    pub struct RootMessageCtx<I, E> {
+    pub struct RootRequestCtx<I> {
         pub input: I,
         pub request: Request,
         session: Option<Session>,
         logger: SpanLogger,
-        pub messenger: E,
     }
 
-    impl<E> RootMessageCtx<Request, E> {
-        pub fn new(request: Request, messenger: E, logger: SpanLogger) -> Self {
+    impl RootRequestCtx<Request> {
+        pub fn new(request: Request, logger: SpanLogger) -> Self {
             Self {
                 request: request.clone(),
                 input: request.clone(),
                 logger,
-                messenger,
                 session: None,
             }
         }
     }
 
-    impl<I, E> RootMessageCtx<I, E> {
-        pub fn transform_input<I2>(self) -> Result<RootMessageCtx<I2, E>, MsgErr>
+    impl<I> RootRequestCtx<I> {
+        pub fn transform_input<I2>(self) -> Result<RootRequestCtx<I2>, MsgErr>
         where
             I2: TryFrom<I,Error=MsgErr>,
         {
-            Ok(RootMessageCtx {
+            Ok(RootRequestCtx {
                 logger: self.logger,
                 request: self.request,
                 input: I2::try_from(self.input)?,
-                messenger: self.messenger,
                 session: self.session,
             })
         }
 
-        pub fn push<'a>(&'a self) -> MessageCtx<'a, I, E> {
-            MessageCtx::new(self, &self.input, self.logger.clone())
+        pub fn push<'a>(&'a self) -> RequestCtx<'a, I> {
+            RequestCtx::new(self, &self.input, self.logger.clone())
         }
     }
 
-    pub struct MessageCtx<'a, I, E> {
-        root: &'a RootMessageCtx<I, E>,
-        parent: Option<Box<MessageCtx<'a, I, E>>>,
+    pub struct RequestCtx<'a, I> {
+        root: &'a RootRequestCtx<I>,
+        parent: Option<Box<RequestCtx<'a, I>>>,
         pub input: &'a I,
         pub logger: SpanLogger,
     }
 
-    impl<'a, I, E> Deref for MessageCtx<'a, I, E> {
+    impl<'a, I> Deref for RequestCtx<'a, I> {
         type Target = I;
 
         fn deref(&self) -> &Self::Target {
@@ -76,8 +73,8 @@ pub mod messaging {
         }
     }
 
-    impl<'a, I, E> MessageCtx<'a, I, E> {
-        pub fn new(root: &'a RootMessageCtx<I, E>, input: &'a I, logger: SpanLogger) -> Self {
+    impl<'a, I> RequestCtx<'a, I> {
+        pub fn new(root: &'a RootRequestCtx<I>, input: &'a I, logger: SpanLogger) -> Self {
             Self {
                 root,
                 parent: None,
@@ -86,8 +83,8 @@ pub mod messaging {
             }
         }
 
-        pub fn push(self) -> MessageCtx<'a, I, E> {
-            MessageCtx {
+        pub fn push(self) -> RequestCtx<'a, I> {
+            RequestCtx {
                 root: self.root,
                 input: self.input,
                 logger: self.logger.span(),
@@ -95,7 +92,7 @@ pub mod messaging {
             }
         }
 
-        pub fn pop(self) -> Option<MessageCtx<'a, I, E>> {
+        pub fn pop(self) -> Option<RequestCtx<'a, I>> {
             match self.parent {
                 None => None,
                 Some(parent) => Some(*parent)
@@ -103,21 +100,7 @@ pub mod messaging {
         }
     }
 
-    impl<'a, I, R> MessageCtx<'a, I, MessengerProxy<R>>
-    {
-        pub fn send(&self, request: RequestCtx<R> ) -> Response {
-            self.root.messenger.send(request)
-        }
-    }
-
-    impl<'a, I, R> MessageCtx<'a, I,AsyncMessengerProxy<R>> where R:Send+Sync
-    {
-        pub async fn send(&self, request: RequestCtx<R> ) -> ResponseCtx<Response> {
-            self.root.messenger.send(request).await
-        }
-    }
-
-    impl<'a, E> MessageCtx<'a, &mut Request, E> {
+    impl<'a> RequestCtx<'a, &mut Request> {
         pub fn ok_payload(self, payload: Payload) -> ResponseCore {
             self.input.core.ok(payload)
         }
@@ -131,7 +114,7 @@ pub mod messaging {
         }
     }
 
-    impl<'a, E> MessageCtx<'a, Response, E> {
+    impl<'a> RequestCtx<'a, Response> {
         pub fn pass(self) -> ResponseCore {
             self.input.core.clone()
         }
@@ -158,50 +141,6 @@ pub mod messaging {
     pub trait ToMessage {
         fn to_message_in(self) -> MessageIn;
         fn to_message_out(self, reply_to: Uuid) -> MessageOut;
-    }
-
-    #[derive(Debug, Clone, Serialize, Deserialize)]
-    pub struct RequestCtx<R> {
-        pub request: R,
-        pub data: Payload
-    }
-
-    impl <R> RequestCtx<R> {
-        pub fn new( request: R ) -> Self {
-            Self {
-                request,
-                data: Payload::Empty
-            }
-        }
-
-        pub fn new_with_data( request: R, data: Payload ) -> Self {
-            Self {
-                request,
-                data
-            }
-        }
-    }
-
-    #[derive(Debug, Clone, Serialize, Deserialize)]
-    pub struct ResponseCtx<R> {
-        pub response: R,
-        pub data: Payload
-    }
-
-    impl <R> ResponseCtx<R> {
-        pub fn new( response: R ) -> Self {
-            Self {
-                response,
-                data: Payload::Empty
-            }
-        }
-
-        pub fn new_with_data( response: R, data: Payload ) -> Self {
-            Self {
-                response,
-                data
-            }
-        }
     }
 
     #[derive(Debug, Clone, Serialize, Deserialize)]

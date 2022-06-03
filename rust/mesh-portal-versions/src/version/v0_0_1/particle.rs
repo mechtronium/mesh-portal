@@ -20,7 +20,7 @@ pub mod particle {
     use crate::version::v0_0_1::payload::payload::{Payload, PayloadMap};
     use crate::version::v0_0_1::parse::parse_alpha1_str;
     use crate::version::v0_0_1::security::Permissions;
-    use crate::version::v0_0_1::wrap::Span;
+    use crate::version::v0_0_1::parsex::Span;
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct StatusUpdate {

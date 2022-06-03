@@ -21,7 +21,7 @@ pub mod payload {
     use crate::version::v0_0_1::msg::MsgMethod;
     use crate::version::v0_0_1::parse::{CtxResolver, Env};
     use crate::version::v0_0_1::parse::model::Subst;
-    use crate::version::v0_0_1::wrap::Tw;
+    use crate::version::v0_0_1::parsex::Tw;
 
     #[derive(
         Debug,

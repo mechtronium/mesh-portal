@@ -8,7 +8,7 @@ use crate::version::v0_0_1::command::request::select::{Select, SelectCtx, Select
 use crate::version::v0_0_1::command::request::set::{Set, SetCtx, SetVar};
 use crate::version::v0_0_1::parse::{command_line, Env};
 use crate::version::v0_0_1::parse::error::result;
-use crate::version::v0_0_1::span::new_span;
+use crate::version::v0_0_1::parsex::new_span;
 use crate::version::v0_0_1::util::ToResolved;
 use serde::{Serialize,Deserialize};
 

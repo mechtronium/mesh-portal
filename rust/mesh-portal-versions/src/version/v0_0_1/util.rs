@@ -10,7 +10,7 @@ use crate::error::MsgErr;
 use crate::version::v0_0_1::http::HttpMethod;
 use crate::version::v0_0_1::{mesh_portal_timestamp, mesh_portal_uuid};
 use crate::version::v0_0_1::parse::Env;
-use serde::{Serialize,Deserialize};
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
 pub enum HttpMethodPattern {
@@ -214,4 +214,14 @@ where
     }
 
     fn to_resolved(self, env: &Env) -> Result<R, MsgErr>;
+}
+
+pub fn log<R>(result: Result<R, MsgErr>) -> Result<R, MsgErr> {
+    match result {
+        Ok(r) => Ok(r),
+        Err(err) => {
+            err.print();
+            Err(err)
+        }
+    }
 }

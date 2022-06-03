@@ -19,13 +19,13 @@ use mesh_portal::version::latest::payload::{Payload, PayloadType};
 use mesh_portal::version::latest::Port;
 use mesh_portal::version::latest::util::uuid;
 use mesh_portal_versions::version::v0_0_1::id::id::{ToPoint, ToPort};
-use mesh_portal_versions::version::v0_0_1::messaging::messaging::{MessageCtx, RootMessageCtx};
+use mesh_portal_versions::version::v0_0_1::messaging::messaging::{RequestCtx, RootRequestCtx};
 use mesh_portal_versions::version::v0_0_1::msg::MsgMethod;
 use mesh_portal_versions::version::v0_0_1::parse::{command, command_line, Env};
 use mesh_portal_versions::version::v0_0_1::parse::error::result;
 use mesh_portal_versions::version::v0_0_1::parse::model::MethodScopeSelector;
-use mesh_portal_versions::version::v0_0_1::service::{Handlers, Handler, Router, MessengerProxy, AsyncMessenger, AsyncMessengerProxy, HandlerPair, IntPipelineSelector};
-use mesh_portal_versions::version::v0_0_1::span::new_span;
+use mesh_portal_versions::version::v0_0_1::service::{Handlers, RequestHandler, Router, SyncMessenger, AsyncMessengerRelay, AsyncMessenger, InternalPipeline, IntPipelineSelector};
+use mesh_portal_versions::version::v0_0_1::parsex::new_span;
 use mesh_portal_versions::version::v0_0_1::util::{ToResolved, ValuePattern};
 use starlane_core::particle::KindBase;
 use starlane_core::starlane::api::StarlaneApi;
@@ -43,12 +43,12 @@ mod tests {
 pub struct CliRelay {
   pub port: Port,
   pub router: Arc<dyn Router>,
-  pub handlers: Arc<Handlers<AsyncMessengerProxy<Request>,dyn FnMut(RootMessageCtx<Request,AsyncMessengerProxy<Request>>)->Result<ResponseCore,MsgErr>>>,
+  pub handlers: Arc<Handlers<AsyncMessenger<Request>,dyn FnMut(RootRequestCtx<Request, AsyncMessenger<Request>>)->Result<ResponseCore,MsgErr>>>,
 }
 
 impl CliRelay {
 
-    fn new(port: Port, router: Arc<dyn Router>, handlers: Arc<Handlers<AsyncMessengerProxy<Request>,dyn FnMut(RootMessageCtx<Request,AsyncMessengerProxy<Request>>)->Result<ResponseCore,MsgErr>>>)-> Self {
+    fn new(port: Port, router: Arc<dyn Router>, handlers: Arc<Handlers<AsyncMessenger<Request>,dyn FnMut(RootRequestCtx<Request, AsyncMessenger<Request>>)->Result<ResponseCore,MsgErr>>>) -> Self {
 
         let selector = IntPipelineSelector::Request(MsgMethod::new("NewSession").unwrap().into());
 
@@ -57,11 +57,11 @@ impl CliRelay {
             router,
             handlers,
         };
-        let pair = HandlerPair::new( selector, rtn.new_session );
+        let pair = InternalPipeline::new(selector, rtn.new_session );
         rtn
     }
 
-    fn new_session(&mut self, ctx: MessageCtx<Request,AsyncMessengerProxy<Request>> ) -> Port {
+    fn new_session(&mut self, ctx: RequestCtx<Request, AsyncMessenger<Request>> ) -> Port {
         let mut port = self.port.clone();
         port.layer = TargetLayer::Shell;
         port.topic = Topic::Uuid(uuid());
@@ -74,7 +74,7 @@ impl CliRelay {
             source
         };
 
-        let pair = HandlerPair::new(IntPipelineSelector::Topic(port.topic.clone()), session );
+        let pair = InternalPipeline::new(IntPipelineSelector::Topic(port.topic.clone()), session );
 
         self.handlers.add( pair );
 

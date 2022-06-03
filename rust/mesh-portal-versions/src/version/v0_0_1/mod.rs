@@ -1,9 +1,8 @@
 use alloc::string::String;
+use std::collections::HashMap;
 use chrono::{DateTime, Utc};
 use nom_locate::LocatedSpan;
 
-use nom::lib::std::collections::HashMap;
-use nom::{Offset, Slice};
 
 pub mod command;
 pub mod config;
@@ -20,8 +19,7 @@ pub mod payload;
 pub mod portal;
 pub mod security;
 pub mod selector;
-pub mod span;
-pub mod wrap;
+pub mod parsex;
 pub mod cli;
 pub mod service;
 pub mod util;
@@ -65,7 +63,7 @@ pub mod artifact {
 pub mod path {
     use crate::error::MsgErr;
     use crate::version::v0_0_1::parse::consume_path;
-    use crate::version::v0_0_1::span::new_span;
+    use crate::version::v0_0_1::parsex::new_span;
     use alloc::format;
     use alloc::string::{String, ToString};
     use alloc::vec::Vec;

@@ -4,7 +4,7 @@ use crate::version::v0_0_1::util::{ToResolved, ValuePattern};
 use serde::{Deserialize, Serialize};
 use crate::error::MsgErr;
 use crate::version::v0_0_1::id::id::{Point, PointCtx, PointVar};
-use crate::version::v0_0_1::parse::{CtxResolver, Env };
+use crate::version::v0_0_1::parse::{CtxResolver, Env};
 
 pub mod selector {
     use alloc::format;
@@ -24,7 +24,7 @@ pub mod selector {
     use crate::version::v0_0_1::command::request::{Method, Rc, RcCommandType, RequestCore};
     use crate::version::v0_0_1::id::id::{GenericKind, GenericKindBase, Point, PointCtx, PointSeg, PointVar, RouteSeg, Specific, Tks, Variable, VarVal, Version};
     use crate::version::v0_0_1::parse::{camel_case, camel_case_to_string_matcher, consume_hierarchy, Env, file_chars, path, path_regex, point_segment_selector, point_selector, Res};
-    use crate::version::v0_0_1::payload::payload::{Call, CallKind, CallWithConfig, CallWithConfigDef, HttpCall,  ListPattern, MapPattern, MsgCall, NumRange, Payload, PayloadFormat, PayloadPattern, PayloadPatternDef, PayloadType, PayloadTypePatternDef };
+    use crate::version::v0_0_1::payload::payload::{Call, CallKind, CallWithConfig, CallWithConfigDef, HttpCall, ListPattern, MapPattern, MsgCall, NumRange, Payload, PayloadFormat, PayloadPattern, PayloadPatternDef, PayloadType, PayloadTypePatternDef};
     use crate::version::v0_0_1::selector::selector::specific::{
         ProductSelector, VariantSelector, VendorSelector,
     };
@@ -47,8 +47,7 @@ pub mod selector {
     use std::collections::HashMap;
     use crate::version::v0_0_1::parse::error::result;
     use crate::version::v0_0_1::parse::model::Var;
-    use crate::version::v0_0_1::span::{new_span, Trace};
-    use crate::version::v0_0_1::wrap::Span;
+    use crate::version::v0_0_1::parsex::{new_span, Span, Trace};
 
     pub type KindSelector =KindSelectorDef<GenericKindSelector,GenericSubKindSelector,SpecificSelector>;
     pub type KindSelectorVar =KindSelectorDef<VarVal<GenericKindSelector>,VarVal<GenericSubKindSelector>,VarVal<SpecificSelector>>;

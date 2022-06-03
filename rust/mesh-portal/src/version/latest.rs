@@ -94,8 +94,8 @@ pub mod messaging {
     use mesh_portal_versions::version::v0_0_1 as current;
     use mesh_portal_versions::version::v0_0_1::messaging;
 
-    pub type MessageCtx<'a,R,E> = messaging::messaging::MessageCtx<'a,R,E>;
-    pub type RootMessageCtx<R,E> = messaging::messaging::RootMessageCtx<R,E>;
+    pub type MessageCtx<'a,R,E> = messaging::messaging::RequestCtx<'a,R,E>;
+    pub type RootMessageCtx<R,E> = messaging::messaging::RootRequestCtx<R,E>;
     pub type Request = messaging::messaging::Request;
     pub type Response= messaging::messaging::Response;
     pub type RequestBuilder = messaging::messaging::RequestBuilder;
@@ -128,8 +128,26 @@ pub mod bin {
 
 pub mod parse {
     use mesh_portal_versions::version::v0_0_1 as current;
-    pub type Res<I,O> = current::parse::Res<I,O>;
+
+    pub type Res<I, O> = current::parse::Res<I, O>;
     pub type Env = current::parse::Env;
+
+    pub mod model {
+        use mesh_portal_versions::version::v0_0_1 as current;
+        pub type ScopeFilter = current::parse::model::ScopeFilter;
+        pub type ScopeFilters = current::parse::model::ScopeFilters;
+    }
+    use mesh_portal_versions::error::MsgErr;
+    use mesh_portal_versions::version::v0_0_1::config::config::bind::RouteSelector;
+
+    pub fn route_attribute(s: &str ) -> Result<RouteSelector, MsgErr> {
+        current::parse::route_attribute(s)
+    }
+
+    pub fn route_attribute_value(s: &str ) -> Result<RouteSelector, MsgErr> {
+        current::parse::route_attribute_value(s)
+    }
+
 }
 
 pub mod payload {
@@ -156,6 +174,15 @@ pub mod payload {
 pub mod command {
     use mesh_portal_versions::version::v0_0_1 as current;
     use mesh_portal_versions::version::v0_0_1::command;
+
+    pub mod request {
+        use mesh_portal_versions::version::v0_0_1 as current;
+
+        pub type CmdMethod = current::command::request::CmdMethod;
+        pub type Method = current::command::request::Method;
+        pub type MethodPattern = current::command::request::MethodPattern;
+
+    }
 
     pub mod common {
         use mesh_portal_versions::version::v0_0_1 as current;
@@ -218,6 +245,7 @@ pub mod config {
         use mesh_portal_versions::version::v0_0_1 as current;
         use mesh_portal_versions::version::v0_0_1::config;
 
+        pub type RouteSelector = config::config::bind::RouteSelector;
         pub type BindConfig = config::config::bind::BindConfig;
         pub type ConfigScope<T,E>= config::config::bind::ConfigScope<T,E>;
         pub type Pipeline= config::config::bind::Pipeline;
@@ -367,6 +395,7 @@ pub mod portal {
 
 pub mod util {
     use mesh_portal_versions::version::v0_0_1 as current;
+    use crate::error::MsgErr;
 
     pub type ValuePattern<T> = current::util::ValuePattern<T>;
     pub type ValueMatcher<T> = dyn current::util::ValueMatcher<T>;
@@ -377,6 +406,10 @@ pub mod util {
 
     pub fn uuid() -> String {
         current::util::uuid()
+    }
+
+    pub fn log<R>(result: Result<R, MsgErr>) -> Result<R, MsgErr> {
+        current::util::log(result)
     }
 }
 
@@ -455,6 +488,9 @@ pub mod cli {
 
 pub mod service {
     use mesh_portal_versions::version::v0_0_1 as current;
+
+    #[feature(trait_alias)]
+    pub type RequestHandler<E>=dyn current::service::RequestHandler<E>;
     pub type Router=dyn current::service::Router;
     pub type Global=dyn current::service::Global;
     pub type AccessProvider=dyn current::service::AccessProvider;

@@ -10,9 +10,9 @@ use crate::version::v0_0_1::command::request::set::{Set, SetCtx, SetVar};
 use crate::version::v0_0_1::parse::{command_line, Env};
 use crate::version::v0_0_1::parse::error::result;
 use crate::version::v0_0_1::payload::payload::Payload;
-use crate::version::v0_0_1::span::{new_span, Trace};
 use crate::version::v0_0_1::util::ToResolved;
 use serde::{Deserialize, Serialize};
+use crate::version::v0_0_1::parsex::{new_span, Trace};
 
 #[derive(Debug, Clone, Serialize, Deserialize )]
 pub struct CommandTemplate {

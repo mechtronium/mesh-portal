@@ -17,8 +17,8 @@ use std::rc::Rc;
 use std::sync::{Arc, PoisonError};
 use ariadne::{Label, Report, ReportBuilder, ReportKind, Source};
 use crate::version::v0_0_1::parse::error::find_parse_err;
-use crate::version::v0_0_1::span::SpanExtra;
-use crate::version::v0_0_1::wrap::Span;
+use crate::version::v0_0_1::parsex::SpanExtra;
+use crate::version::v0_0_1::parsex::Span;
 
 pub enum MsgErr {
     Status {

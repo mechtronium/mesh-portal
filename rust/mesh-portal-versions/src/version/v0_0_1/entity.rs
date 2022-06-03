@@ -77,6 +77,15 @@
                 }
             }
 
+
+            pub fn not_found() -> Self {
+                Self {
+                    headers: HeaderMap::new(),
+                    status: StatusCode::from_u16(404u16).unwrap(),
+                    body: Payload::Empty,
+                }
+            }
+
             pub fn fail(message: &str) -> Self {
                 let errors = Errors::default(message.clone());
                 Self {
