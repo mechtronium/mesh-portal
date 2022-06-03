@@ -21,7 +21,7 @@ pub mod selector {
 
     use crate::error::MsgErr;
 
-    use crate::version::v0_0_1::command::request::{Method, Rc, RcCommandType, RequestCore};
+    use crate::version::v0_0_1::command::request::{Rc, RcCommandType};
     use crate::version::v0_0_1::id::id::{GenericKind, GenericKindBase, Point, PointCtx, PointSeg, PointVar, RouteSeg, Specific, Tks, Variable, VarVal, Version};
     use crate::version::v0_0_1::parse::{camel_case, camel_case_to_string_matcher, consume_hierarchy, Env, file_chars, path, path_regex, point_segment_selector, point_selector};
     use crate::version::v0_0_1::payload::payload::{Call, CallKind, CallWithConfig, CallWithConfigDef, HttpCall, ListPattern, MapPattern, MsgCall, NumRange, Payload, PayloadFormat, PayloadPattern, PayloadPatternDef, PayloadType, PayloadTypePatternDef};
@@ -46,6 +46,7 @@ pub mod selector {
     use regex::Regex;
     use std::collections::HashMap;
     use cosmic_nom::{new_span, Res, Span, Trace};
+    use crate::version::v0_0_1::messaging::{Method, RequestCore};
     use crate::version::v0_0_1::parse::error::result;
     use crate::version::v0_0_1::parse::model::Var;
 

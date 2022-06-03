@@ -3,7 +3,7 @@ mod scratch;
 
 use mesh_portal::version::latest::cli::{RawCommand, Transfer};
 use mesh_portal::version::latest::messaging::Response;
-use mesh_portal::version::latest::service::RequestHandler;
+use mesh_portal_versions::version::v0_0_1::messaging::RequestHandler;
 
 #[macro_use]
 extern crate cosmic_macros;
@@ -32,39 +32,37 @@ pub mod test {
     use mesh_portal::error::MsgErr;
     use mesh_portal::version::latest::entity::request::RequestCore;
     use mesh_portal::version::latest::entity::response::ResponseCore;
-    use mesh_portal::version::latest::messaging::{MessageCtx, Request, RootMessageCtx};
-    use mesh_portal::version::latest::service::RequestHandler;
+    use mesh_portal::version::latest::messaging::{Request, RootRequestCtx};
     use mesh_portal::version::latest::payload::Payload;
     use std::marker::PhantomData;
+    use mesh_portal_versions::version::v0_0_1::messaging::{RequestCtx, RequestHandler};
 
-    //#[derive(RequestHandler)]
-    pub struct Obj<E> {
-        pub phantom: PhantomData<E>,
+    #[derive(RequestHandler)]
+    pub struct Obj {
     }
 
-    //#[routes]
-    impl<E> Obj<E> {
+    #[routes]
+    impl Obj {
         pub fn new() -> Self {
             let rtn = Self {
-                phantom: Default::default(),
             };
             rtn
         }
 
-     //   #[route("Msg<NewSession>")]
-        fn something(&self, ctx: MessageCtx<RequestCore, String>) -> Result<ResponseCore, MsgErr> {
+        //#[route("Msg<NewSession>")]
+        fn something(&self, ctx: RequestCtx<RequestCore>) -> Result<ResponseCore, MsgErr> {
             Ok(ctx.ok(Payload::Empty))
         }
 
-      //  #[route("Http<Get>/users")]
-        fn user(&self, ctx: MessageCtx<RequestCore, String>) -> Result<ResponseCore, MsgErr> {
+        #[route("[blah]::Http<Get>/users")]
+        fn user(&self, ctx: RequestCtx<RequestCore>) -> Result<ResponseCore, MsgErr> {
             Ok(ctx.ok(Payload::Empty))
         }
     }
 
     #[test]
     pub fn test() {
-        let mut obj: Obj<String> = Obj::new();
+        let mut obj: Obj = Obj::new();
         //        router.pipelines.push(IntPipeline)
     }
 

@@ -38,7 +38,6 @@ pub mod portal {
         use crate::version::v0_0_1::artifact::ArtifactRequest;
         use crate::version::v0_0_1::frame::frame::{CloseReason, PrimitiveFrame};
         use crate::version::v0_0_1::id::id::{GenericKind, GenericKindBase, Point, ToPoint};
-        use crate::version::v0_0_1::messaging::messaging::{Request, Response, Session};
         use crate::version::v0_0_1::particle::particle::StatusUpdate;
         use crate::version::v0_0_1::payload::payload::Payload;
         use crate::version::v0_0_1::portal::portal;
@@ -47,6 +46,7 @@ pub mod portal {
         use crate::version::v0_0_1::util::uuid;
         use serde::{Deserialize, Serialize};
         use crate::version::v0_0_1::log::{AuditLog, Log, LogSpanEvent, PointlessLog};
+        use crate::version::v0_0_1::messaging::{Request, Response};
 
         #[derive(Debug, Clone, Serialize, Deserialize, strum_macros::Display)]
         pub enum Frame {
@@ -117,11 +117,10 @@ pub mod portal {
         use crate::version::v0_0_1::config::config::{Assign, PointConfig, Document};
         use crate::version::v0_0_1::frame::frame::{CloseReason, PrimitiveFrame};
         use crate::version::v0_0_1::id::id::{GenericKind, GenericKindBase, Point, ToPoint};
-        use crate::version::v0_0_1::messaging::messaging::{Request, Response, Session};
-        use crate::version::v0_0_1::payload::payload::Payload;
         use crate::version::v0_0_1::portal::portal::Exchanger;
         use serde::{Deserialize, Serialize};
         use crate::version::v0_0_1::log::LogSpanEvent;
+        use crate::version::v0_0_1::messaging::{Request, Response, Session};
 
         #[derive(Debug, Clone, Serialize, Deserialize, strum_macros::Display)]
         pub enum Frame {

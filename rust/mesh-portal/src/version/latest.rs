@@ -94,21 +94,22 @@ pub mod messaging {
     use mesh_portal_versions::version::v0_0_1 as current;
     use mesh_portal_versions::version::v0_0_1::messaging;
 
-    pub type MessageCtx<'a,R,E> = messaging::messaging::RequestCtx<'a,R,E>;
-    pub type RootMessageCtx<R,E> = messaging::messaging::RootRequestCtx<R,E>;
-    pub type Request = messaging::messaging::Request;
-    pub type Response= messaging::messaging::Response;
-    pub type RequestBuilder = messaging::messaging::RequestBuilder;
-    pub type ProtoRequest= messaging::messaging::ProtoRequest;
-    pub type Message = messaging::messaging::Message;
-    pub type Agent = messaging::messaging::Agent;
-    pub type AuthedAgent = messaging::messaging::AuthedAgent;
-    pub type Session = messaging::messaging::Session;
-    pub type Scope = messaging::messaging::Scope;
-    pub type Priority = messaging::messaging::Priority;
-    pub type Karma = messaging::messaging::Karma;
-    pub type Handling = messaging::messaging::Handling;
-    pub type HandlingKind = messaging::messaging::HandlingKind;
+    pub type RequestHandler=dyn messaging::RequestHandler;
+    pub type RequestCtx<'a,R> = messaging::RequestCtx<'a,R>;
+    pub type RootRequestCtx<R> = messaging::RootRequestCtx<R>;
+    pub type Request = messaging::Request;
+    pub type Response= messaging::Response;
+    pub type RequestBuilder = messaging::RequestBuilder;
+    pub type ProtoRequest= messaging::ProtoRequest;
+    pub type Message = messaging::Message;
+    pub type Agent = messaging::Agent;
+    pub type AuthedAgent = messaging::AuthedAgent;
+    pub type Session = messaging::Session;
+    pub type Scope = messaging::Scope;
+    pub type Priority = messaging::Priority;
+    pub type Karma = messaging::Karma;
+    pub type Handling = messaging::Handling;
+    pub type HandlingKind = messaging::HandlingKind;
 }
 
 
@@ -176,11 +177,12 @@ pub mod command {
     use mesh_portal_versions::version::v0_0_1::command;
 
     pub mod request {
+        use mesh_portal_versions::version;
         use mesh_portal_versions::version::v0_0_1 as current;
 
-        pub type CmdMethod = current::command::request::CmdMethod;
-        pub type Method = current::command::request::Method;
-        pub type MethodPattern = current::command::request::MethodPattern;
+        pub type CmdMethod = version::v0_0_1::messaging::CmdMethod;
+        pub type Method = version::v0_0_1::messaging::Method;
+        pub type MethodPattern = version::v0_0_1::messaging::MethodPattern;
 
     }
 
@@ -265,11 +267,11 @@ pub mod entity {
     pub type EntityType = messaging::MethodKind;
 
     pub mod request {
-        use mesh_portal_versions::version::v0_0_1 as current;
+        use mesh_portal_versions::version::{v0_0_1 as current, v0_0_1};
         use mesh_portal_versions::version::v0_0_1::{command, entity};
 
-        pub type Method = command::request::Method;
-        pub type RequestCore= command::request::RequestCore;
+        pub type Method = v0_0_1::messaging::Method;
+        pub type RequestCore= v0_0_1::messaging::RequestCore;
         pub type Rc = command::request::Rc;
         pub type RcCommandType = command::request::RcCommandType;
 
@@ -489,8 +491,6 @@ pub mod cli {
 pub mod service {
     use mesh_portal_versions::version::{v0_0_1 as current, v0_0_1};
 
-    #[feature(trait_alias)]
-    pub type RequestHandler<E>=dyn v0_0_1::messaging::RequestHandler<E>;
     pub type Router=dyn v0_0_1::messaging::Router;
     pub type Global=dyn current::service::Global;
     pub type AccessProvider=dyn current::service::AccessProvider;

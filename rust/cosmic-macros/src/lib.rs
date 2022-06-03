@@ -66,7 +66,7 @@ pub fn routes(attr: TokenStream, item: TokenStream ) -> TokenStream {
                 let route_selector = attr.to_token_stream().to_string();
                 static_selector_keys.push(selector_ident.clone());
                 let static_selector= quote!{
-                    static ref #selector_ident : &'static mesh_portal::version::latest::config::bind::RouteSelector = mesh_portal::version::latest::parse::route_attribute(#route_selector).unwrap();
+                    static ref #selector_ident : mesh_portal::version::latest::config::bind::RouteSelector = mesh_portal::version::latest::parse::route_attribute(#route_selector).unwrap();
                 };
                 static_selectors.push(static_selector );
 //println!(" ~~ ROUTE {}", attr.tokens.to_string() );
@@ -91,10 +91,10 @@ pub fn routes(attr: TokenStream, item: TokenStream ) -> TokenStream {
 
     let rtn = quote!{
 
-        impl <E> mesh_portal_versions::version::v0_0_1::service::RequestHandler<E> for #self_ty {
-            fn handle( &self, ctx: mesh_portal::version::latest::messaging::RootMessageCtx<mesh_portal::version::latest::messaging::Request,E>) -> Result<ResponseCore,MsgErr> {
+        impl RequestHandler for #self_ty {
+            fn handle( &self, ctx: mesh_portal::version::latest::messaging::RootRequestCtx<mesh_portal::version::latest::messaging::Request>) -> Result<ResponseCore,MsgErr> {
                 #(
-                    if #static_selector_keys.is_match(&ctx.request.core).is_ok() {
+                    if #static_selector_keys.is_match(&ctx.request).is_ok() {
                        return self.#idents( ctx );
                     }
                 )*
@@ -161,21 +161,19 @@ pub fn route(attr: TokenStream, item: TokenStream ) -> TokenStream {
   //log(wrapped_route_selector(attr.tokens.to_string().as_str())).expect("properly formatted route selector");
 
   let params :Vec<FnArg> = item.sig.inputs.clone().into_iter().collect();
-  let ctx = params.get(1).expect("route expected MessageCtx<I,M> as first parameter");
-  let ctx = messsage_ctx(ctx).expect("route expected MessageCtx<I,M> as first parameter");
+  let ctx = params.get(1).expect("route expected RequestCtx<I,M> as first parameter");
+  let ctx = messsage_ctx(ctx).expect("route expected RequestCtx<I,M> as first parameter");
 
   let ident = format_ident!("_{}", item.sig.ident);
-  let messenger = ctx.messenger;
   let rtn_type = rtn_type( &item.sig.output );
   let item = ctx.item;
 
-
   let expanded = quote! {
-      fn #ident( &self, mut ctx: mesh_portal::version::latest::messaging::RootMessageCtx<mesh_portal::version::latest::messaging::Request,#messenger> ) -> Result<mesh_portal::version::latest::entity::response::ResponseCore,MsgErr> {
-          let mut ctx : mesh_portal::version::latest::messaging::RootMessageCtx<#item,#messenger> = ctx.transform_input()?;
+      fn #ident( &self, mut ctx: mesh_portal::version::latest::messaging::RootRequestCtx<mesh_portal::version::latest::messaging::Request> ) -> Result<mesh_portal::version::latest::entity::response::ResponseCore,MsgErr> {
+          let mut ctx : mesh_portal::version::latest::messaging::RootRequestCtx<#item> = ctx.transform_input()?;
           let ctx = ctx.push();
 
-          fn inner( ctx: MessageCtx<#item,#messenger>) -> Result<#rtn_type,MsgErr>
+          fn inner( ctx: RequestCtx<#item>) -> Result<#rtn_type,MsgErr>
               #block
 
           match inner(ctx) {
@@ -208,30 +206,27 @@ impl FromStr for Item {
     }
 }
 
-pub(crate) struct MessageCtx {
+pub(crate) struct RequestCtx {
     pub item: GenericArgument,
-    pub messenger: GenericArgument
 }
 
-fn messsage_ctx( input: &FnArg )  -> Result<MessageCtx,String>{
+fn messsage_ctx( input: &FnArg )  -> Result<RequestCtx,String>{
    if let FnArg::Typed(i) = input {
             if let Type::Path(path) = &*i.ty {
                 if let PathArguments::AngleBracketed(generics) = &path.path.segments.last().expect("expected last segment").arguments
                 {
                     let mut args = generics.args.clone();
-                    let messenger = args.pop().expect("expecting a generic for Messenger").into_value();
                     let item = args.pop().expect("expecting a generic for Context Item").into_value();
 
-                    let ctx = MessageCtx {
+                    let ctx = RequestCtx {
                         item,
-                        messenger
                     };
 
                     return Ok(ctx);
                 }
             }
     }
-    Err("Parameter is not a MessageCtx".to_string())
+    Err("Parameter is not a RequestCtx".to_string())
 }
 
 fn rtn_type( output: &ReturnType ) -> GenericArgument {

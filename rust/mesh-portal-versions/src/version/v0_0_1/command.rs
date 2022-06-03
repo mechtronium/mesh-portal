@@ -10,7 +10,7 @@ use crate::version::v0_0_1::parse::{command_line, Env};
 use crate::version::v0_0_1::parse::error::result;
 use cosmic_nom::new_span;
 use crate::version::v0_0_1::util::ToResolved;
-use serde::{Serialize,Deserialize};
+use serde::{Deserialize, Serialize};
 
 pub mod command {
     use serde::{Deserialize, Serialize};
@@ -161,249 +161,7 @@ pub mod request {
     use serde::{Deserialize, Serialize};
     use crate::version::v0_0_1::messaging::MethodKind;
     use crate::version::v0_0_1::http::HttpMethod;
-    use crate::version::v0_0_1::messaging::messaging;
     use crate::version::v0_0_1::msg::MsgMethod;
-
-    #[derive(Debug, Clone, Serialize,Deserialize, Eq,PartialEq)]
-    pub enum Method {
-        Cmd(CmdMethod),
-        Http(HttpMethod),
-        Msg(MsgMethod),
-    }
-
-    #[derive(Debug, Clone,Eq,PartialEq)]
-    pub enum MethodPattern {
-        Cmd(ValuePattern<CmdMethod>),
-        Http(ValuePattern<HttpMethod>),
-        Msg(ValuePattern<MsgMethod>),
-    }
-
-    impl ToString for MethodPattern {
-        fn to_string(&self) -> String {
-            match self {
-                MethodPattern::Cmd(c) => {
-                    format!("Cmd<{}>",c.to_string())
-                }
-                MethodPattern::Http(c) => {
-                    format!("Http<{}>",c.to_string())
-                }
-                MethodPattern::Msg(c) => {
-                    format!("Msg<{}>",c.to_string())
-                }
-            }
-        }
-    }
-
-    impl ValueMatcher<Method> for MethodPattern {
-        fn is_match(&self, x: &Method) -> Result<(), ()> {
-            match self {
-                MethodPattern::Cmd(pattern) => {
-                    if let Method::Cmd(v) = x {
-                        pattern.is_match(v)
-                    } else {
-                        Err(())
-                    }
-                }
-                MethodPattern::Http(pattern) => {
-                    if let Method::Http(v) = x {
-                        pattern.is_match(v)
-                    }else {
-                        Err(())
-                    }
-                }
-                MethodPattern::Msg(pattern) => {
-                    if let Method::Msg(v) = x {
-                        pattern.is_match(v)
-                    }else {
-                        Err(())
-                    }
-                }
-            }
-        }
-    }
-
-
-    impl ValueMatcher<Method> for Method {
-        fn is_match(&self, x: &Method) -> Result<(), ()> {
-            if x == self {
-                Ok(())
-            } else {
-                Err(())
-            }
-        }
-    }
-
-
-    impl Method {
-
-        pub fn kind(&self) -> MethodKind {
-            match self {
-                Method::Cmd(_) => MethodKind::Cmd,
-                Method::Http(_) => MethodKind::Http,
-                Method::Msg(_) => MethodKind::Msg
-            }
-        }
-    }
-
-    impl ToString for Method {
-        fn to_string(&self) -> String {
-            match self {
-                Method::Cmd(_) => "Rc".to_string(),
-                Method::Http(method) => method.to_string(),
-                Method::Msg(msg) => msg.to_string(),
-            }
-        }
-    }
-
-    impl Into<RequestCore> for Method {
-        fn into(self) -> RequestCore {
-            RequestCore {
-                headers: Default::default(),
-                method: self,
-                uri: Uri::from_static("/"),
-                body: Payload::Empty,
-            }
-        }
-    }
-
-    #[derive(Debug, Clone, Serialize,Deserialize,Eq,PartialEq)]
-    pub struct RequestCore {
-        #[serde(with = "http_serde::header_map")]
-        pub headers: HeaderMap,
-        pub method: Method,
-        #[serde(with = "http_serde::uri")]
-        pub uri: Uri,
-        pub body: Payload,
-    }
-
-    impl TryFrom<messaging::Request> for RequestCore {
-        type Error = MsgErr;
-
-        fn try_from(request: messaging::Request) -> Result<Self, Self::Error> {
-            Ok(request.core)
-        }
-    }
-
-    impl RequestCore {
-        pub fn kind(&self) -> MethodKind {
-            self.method.kind()
-        }
-    }
-
-    impl TryFrom<http::Request<Bin>> for RequestCore {
-
-        type Error = MsgErr;
-
-        fn try_from(request: Request<Bin>) -> Result<Self, Self::Error> {
-            Ok(Self {
-                headers: request.headers().clone(),
-                method: Method::Http(request.method().clone().try_into()?),
-                uri: request.uri().clone(),
-                body: Payload::Bin(request.body().clone()),
-            })
-        }
-    }
-
-    impl TryInto<http::Request<Bin>> for RequestCore {
-        type Error = MsgErr;
-
-        fn try_into(self) -> Result<http::Request<Bin>, MsgErr> {
-            let mut builder = http::Request::builder();
-            for (name, value) in self.headers {
-                match name {
-                    Some(name) => {
-                        builder =
-                            builder.header(name.as_str(), value.to_str()?.to_string().as_str());
-                    }
-                    None => {}
-                }
-            }
-            match self.method {
-                Method::Http(method) => {
-                    builder = builder.method(method).uri(self.uri);
-                    Ok(builder.body(self.body.to_bin()?)?)
-                }
-                _ => Err("cannot convert to http response".into()),
-            }
-        }
-    }
-
-    impl Default for RequestCore {
-        fn default() -> Self {
-            Self {
-                headers: Default::default(),
-                method: Method::Msg(Default::default()),
-                uri: Uri::from_static("/"),
-                body: Payload::Empty,
-            }
-        }
-    }
-
-    impl RequestCore {
-        pub fn with_new_payload(self, payload: Payload) -> Self {
-            Self {
-                headers: self.headers,
-                uri: self.uri,
-                method: self.method,
-                body: payload,
-            }
-        }
-
-        pub fn not_found(&self) -> ResponseCore {
-            ResponseCore {
-                headers: Default::default(),
-                status: StatusCode::from_u16(404u16).unwrap(),
-                body: Payload::Empty,
-            }
-        }
-
-        pub fn ok(&self, payload: Payload) -> ResponseCore {
-            ResponseCore {
-                headers: Default::default(),
-                status: StatusCode::from_u16(200u16).unwrap(),
-                body: payload,
-            }
-        }
-
-        pub fn fail(&self, error: &str) -> ResponseCore {
-            let errors = Errors::default(error);
-            ResponseCore {
-                headers: Default::default(),
-                status: StatusCode::from_u16(500u16).unwrap(),
-                body: Payload::Errors(errors),
-            }
-        }
-
-        pub fn err<E: StatusErr>(&self, error: E) -> ResponseCore {
-            let errors = Errors::default(error.message().as_str());
-            let status = match StatusCode::from_u16(error.status()) {
-                Ok(status) => status,
-                Err(_) => StatusCode::from_u16(500u16).unwrap(),
-            };
-            println!("----->   returning STATUS of {}", status.as_str());
-            ResponseCore {
-                headers: Default::default(),
-                status,
-                body: Payload::Errors(errors),
-            }
-        }
-    }
-
-    #[derive(Debug, Clone,Serialize,Deserialize,Eq,PartialEq,Hash,strum_macros::Display,strum_macros::EnumString)]
-    pub enum CmdMethod {
-        Get,
-        Update
-    }
-
-    impl ValueMatcher<CmdMethod> for CmdMethod {
-        fn is_match(&self, x: &CmdMethod) -> Result<(), ()> {
-            if *x == *self {
-                Ok(())
-            } else {
-                Err(())
-            }
-        }
-    }
 
     #[derive(Debug, Clone,Serialize,Deserialize)]
     pub enum Rc {
@@ -595,7 +353,7 @@ pub mod request {
             GenericKind, HostKey, Point, PointCtx, PointSeg, PointVar,
         };
         use crate::version::v0_0_1::parse::Env;
-        use crate::version::v0_0_1::payload::payload::{Payload, };
+        use crate::version::v0_0_1::payload::payload::Payload;
         use crate::version::v0_0_1::selector::selector::SpecificSelector;
         use crate::version::v0_0_1::util::{ConvertFrom, ToResolved};
 
@@ -996,7 +754,7 @@ pub mod request {
         use crate::version::v0_0_1::parse::Env;
         use crate::version::v0_0_1::selector::selector::{Hop, PointSelectorDef};
         use crate::version::v0_0_1::util::ToResolved;
-        use serde::{Serialize,Deserialize};
+        use serde::{Deserialize, Serialize};
 
         pub type Delete = DeleteDef<Hop>;
         pub type DeleteCtx = DeleteDef<Hop>;

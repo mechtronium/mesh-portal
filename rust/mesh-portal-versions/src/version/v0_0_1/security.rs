@@ -1,6 +1,5 @@
 use crate::error::MsgErr;
 use crate::version::v0_0_1::id::id::Point;
-use crate::version::v0_0_1::messaging::messaging::ScopeGrant;
 use crate::version::v0_0_1::parse::error::result;
 use crate::version::v0_0_1::parse::{MapResolver, particle_perms, permissions, permissions_mask, privilege};
 use crate::version::v0_0_1::selector::selector::{PointKindHierarchy, PointSelector};
@@ -11,8 +10,8 @@ use std::collections::{HashMap, HashSet};
 use std::ops;
 use std::ops::{Deref, DerefMut};
 use std::str::FromStr;
-use crate::version::v0_0_1::messaging::messaging::ScopeGrantAspect::Priv;
 use cosmic_nom::new_span;
+use crate::version::v0_0_1::messaging::ScopeGrant;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Access {

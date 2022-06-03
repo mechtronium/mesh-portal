@@ -1,39 +1,22 @@
+use std::collections::HashMap;
+use std::ops::Deref;
 use std::sync::Arc;
-use http::{HeaderMap, StatusCode};
+use http::{HeaderMap, StatusCode, Uri};
 use crate::error::{MsgErr, StatusErr};
 use crate::version::v0_0_1::bin::Bin;
 use crate::version::v0_0_1::config::config::bind::RouteSelector;
-use crate::version::v0_0_1::id::id::ToPort;
-use crate::version::v0_0_1::messaging::messaging::{Message, Request, Response, RootRequestCtx};
+use crate::version::v0_0_1::id::id::{Point, Port, ToPort, Uuid};
 use crate::version::v0_0_1::payload::payload::{Errors, Payload};
-use crate::version::v0_0_1::util::{uuid, ValueMatcher};
-use serde::{Serialize,Deserialize};
+use crate::version::v0_0_1::util::{uuid, ValueMatcher, ValuePattern};
+use serde::{Deserialize, Serialize};
+use crate::version::v0_0_1::http::HttpMethod;
+use crate::version::v0_0_1::log::SpanLogger;
+use crate::version::v0_0_1::msg::MsgMethod;
+use crate::version::v0_0_1::security::{Permissions, Privilege, Privileges};
+use crate::version::v0_0_1::selector::selector::PointSelector;
 
-pub mod messaging {
-    use http::status::InvalidStatusCode;
-    use std::collections::HashMap;
-    use std::convert::TryInto;
-    use std::ops::Deref;
-    use std::sync::Arc;
 
-    use http::{StatusCode, Uri};
-    use serde::{Deserialize, Serialize};
-
-    use crate::error::{MsgErr, StatusErr};
-    use crate::version::v0_0_1::command::request::RequestCore;
-    use crate::version::v0_0_1::messaging::ResponseCore;
-    use crate::version::v0_0_1::id::id::{Point, Port, ToPort, Uuid};
-    use crate::version::v0_0_1::log::{PointLogger, SpanLogger};
-    use crate::version::v0_0_1::messaging::{AsyncMessenger, AsyncMessengerRelay, Router, SyncMessenger, SyncMessengerRelay};
-    use crate::version::v0_0_1::payload::payload::{Errors, MsgCall, Payload};
-    use crate::version::v0_0_1::security::{
-        Access, AccessGrant, EnumeratedAccess, EnumeratedPrivileges, Permissions, Privilege,
-        Privileges,
-    };
-    use crate::version::v0_0_1::selector::selector::{PointKindHierarchy, PointSelector};
-    use crate::version::v0_0_1::util::uuid;
-
-    pub struct RootRequestCtx<I> {
+pub struct RootRequestCtx<I> {
         pub input: I,
         pub request: Request,
         session: Option<Session>,
@@ -837,7 +820,7 @@ pub mod messaging {
             Self::High
         }
     }
-}
+
 
 pub trait Router: Send + Sync {
     fn route(&self, message: Message);
@@ -1119,5 +1102,246 @@ impl TryInto<http::Response<Bin>> for ResponseCore {
 
         let response = builder.status(self.status).body(self.body.to_bin()?)?;
         Ok(response)
+    }
+}
+
+#[derive(Debug, Clone, Serialize,Deserialize, Eq,PartialEq)]
+pub enum Method {
+    Cmd(CmdMethod),
+    Http(HttpMethod),
+    Msg(MsgMethod),
+}
+
+#[derive(Debug, Clone,Eq,PartialEq)]
+pub enum MethodPattern {
+    Cmd(ValuePattern<CmdMethod>),
+    Http(ValuePattern<HttpMethod>),
+    Msg(ValuePattern<MsgMethod>),
+}
+
+impl ToString for MethodPattern {
+    fn to_string(&self) -> String {
+        match self {
+            MethodPattern::Cmd(c) => {
+                format!("Cmd<{}>",c.to_string())
+            }
+            MethodPattern::Http(c) => {
+                format!("Http<{}>",c.to_string())
+            }
+            MethodPattern::Msg(c) => {
+                format!("Msg<{}>",c.to_string())
+            }
+        }
+    }
+}
+
+impl ValueMatcher<Method> for MethodPattern {
+    fn is_match(&self, x: &Method) -> Result<(), ()> {
+        match self {
+            MethodPattern::Cmd(pattern) => {
+                if let Method::Cmd(v) = x {
+                    pattern.is_match(v)
+                } else {
+                    Err(())
+                }
+            }
+            MethodPattern::Http(pattern) => {
+                if let Method::Http(v) = x {
+                    pattern.is_match(v)
+                }else {
+                    Err(())
+                }
+            }
+            MethodPattern::Msg(pattern) => {
+                if let Method::Msg(v) = x {
+                    pattern.is_match(v)
+                }else {
+                    Err(())
+                }
+            }
+        }
+    }
+}
+
+
+impl ValueMatcher<Method> for Method {
+    fn is_match(&self, x: &Method) -> Result<(), ()> {
+        if x == self {
+            Ok(())
+        } else {
+            Err(())
+        }
+    }
+}
+
+
+impl Method {
+
+    pub fn kind(&self) -> MethodKind {
+        match self {
+            Method::Cmd(_) => MethodKind::Cmd,
+            Method::Http(_) => MethodKind::Http,
+            Method::Msg(_) => MethodKind::Msg
+        }
+    }
+}
+
+impl ToString for Method {
+    fn to_string(&self) -> String {
+        match self {
+            Method::Cmd(_) => "Rc".to_string(),
+            Method::Http(method) => method.to_string(),
+            Method::Msg(msg) => msg.to_string(),
+        }
+    }
+}
+
+impl Into<RequestCore> for Method {
+    fn into(self) -> RequestCore {
+        RequestCore {
+            headers: Default::default(),
+            method: self,
+            uri: Uri::from_static("/"),
+            body: Payload::Empty,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize,Deserialize,Eq,PartialEq)]
+pub struct RequestCore {
+    #[serde(with = "http_serde::header_map")]
+    pub headers: HeaderMap,
+    pub method: Method,
+    #[serde(with = "http_serde::uri")]
+    pub uri: Uri,
+    pub body: Payload,
+}
+
+impl TryFrom<Request> for RequestCore {
+    type Error = MsgErr;
+
+    fn try_from(request: Request) -> Result<Self, Self::Error> {
+        Ok(request.core)
+    }
+}
+
+impl RequestCore {
+    pub fn kind(&self) -> MethodKind {
+        self.method.kind()
+    }
+}
+
+impl TryFrom<http::Request<Bin>> for RequestCore {
+
+    type Error = MsgErr;
+
+    fn try_from(request: http::Request<Bin>) -> Result<Self, Self::Error> {
+        Ok(Self {
+            headers: request.headers().clone(),
+            method: Method::Http(request.method().clone().try_into()?),
+            uri: request.uri().clone(),
+            body: Payload::Bin(request.body().clone()),
+        })
+    }
+}
+
+impl TryInto<http::Request<Bin>> for RequestCore {
+    type Error = MsgErr;
+
+    fn try_into(self) -> Result<http::Request<Bin>, MsgErr> {
+        let mut builder = http::Request::builder();
+        for (name, value) in self.headers {
+            match name {
+                Some(name) => {
+                    builder =
+                        builder.header(name.as_str(), value.to_str()?.to_string().as_str());
+                }
+                None => {}
+            }
+        }
+        match self.method {
+            Method::Http(method) => {
+                builder = builder.method(method).uri(self.uri);
+                Ok(builder.body(self.body.to_bin()?)?)
+            }
+            _ => Err("cannot convert to http response".into()),
+        }
+    }
+}
+
+impl Default for RequestCore {
+    fn default() -> Self {
+        Self {
+            headers: Default::default(),
+            method: Method::Msg(Default::default()),
+            uri: Uri::from_static("/"),
+            body: Payload::Empty,
+        }
+    }
+}
+
+impl RequestCore {
+    pub fn with_new_payload(self, payload: Payload) -> Self {
+        Self {
+            headers: self.headers,
+            uri: self.uri,
+            method: self.method,
+            body: payload,
+        }
+    }
+
+    pub fn not_found(&self) -> ResponseCore {
+        ResponseCore {
+            headers: Default::default(),
+            status: StatusCode::from_u16(404u16).unwrap(),
+            body: Payload::Empty,
+        }
+    }
+
+    pub fn ok(&self, payload: Payload) -> ResponseCore {
+        ResponseCore {
+            headers: Default::default(),
+            status: StatusCode::from_u16(200u16).unwrap(),
+            body: payload,
+        }
+    }
+
+    pub fn fail(&self, error: &str) -> ResponseCore {
+        let errors = Errors::default(error);
+        ResponseCore {
+            headers: Default::default(),
+            status: StatusCode::from_u16(500u16).unwrap(),
+            body: Payload::Errors(errors),
+        }
+    }
+
+    pub fn err<E: StatusErr>(&self, error: E) -> ResponseCore {
+        let errors = Errors::default(error.message().as_str());
+        let status = match StatusCode::from_u16(error.status()) {
+            Ok(status) => status,
+            Err(_) => StatusCode::from_u16(500u16).unwrap(),
+        };
+        println!("----->   returning STATUS of {}", status.as_str());
+        ResponseCore {
+            headers: Default::default(),
+            status,
+            body: Payload::Errors(errors),
+        }
+    }
+}
+
+#[derive(Debug, Clone,Serialize,Deserialize,Eq,PartialEq,Hash,strum_macros::Display,strum_macros::EnumString)]
+pub enum CmdMethod {
+    Get,
+    Update
+}
+
+impl ValueMatcher<CmdMethod> for CmdMethod {
+    fn is_match(&self, x: &CmdMethod) -> Result<(), ()> {
+        if *x == *self {
+            Ok(())
+        } else {
+            Err(())
+        }
     }
 }

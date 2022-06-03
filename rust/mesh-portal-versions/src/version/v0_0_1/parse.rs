@@ -3033,15 +3033,14 @@ pub fn method_kind<I: Span>(input: I) -> Res<I, MethodKind> {
 
 pub mod model {
     use crate::error::{MsgErr, ParseErrs};
-    use crate::version::v0_0_1::command::request::{Method, RcCommandType, RequestCore};
+    use crate::version::v0_0_1::command::request::RcCommandType;
     use crate::version::v0_0_1::config::config::bind::{
         BindConfig, MessageKind, PipelineStepCtx, PipelineStepDef, PipelineStepVar,
         PipelineStopCtx, PipelineStopDef, PipelineStopVar,
     };
-    use crate::version::v0_0_1::messaging::MethodKind;
+    use crate::version::v0_0_1::messaging::{Method, MethodKind, Request, RequestCore};
     use crate::version::v0_0_1::http::HttpMethod;
     use crate::version::v0_0_1::id::id::{Point, PointCtx, PointVar, Version};
-    use crate::version::v0_0_1::messaging::messaging::{Agent, Request};
     use crate::version::v0_0_1::parse::error::result;
     use crate::version::v0_0_1::parse::{
         camel_case, CtxResolver, Env, filepath_chars, http_method, lex_child_scopes,
@@ -4502,14 +4501,14 @@ use nom_locate::LocatedSpan;
 
 use crate::version::v0_0_1::cli;
 use crate::version::v0_0_1::cli::RawCommand;
-use crate::version::v0_0_1::command::request::{Method, MethodPattern, RcCommandType};
+use crate::version::v0_0_1::command::request::RcCommandType;
 use crate::version::v0_0_1::command::CommandVar;
 use crate::version::v0_0_1::config::config::bind::{
     BindConfig, MessageKind, Pipeline, PipelineStep, PipelineStepCtx, PipelineStepVar,
     PipelineStop, PipelineStopCtx, PipelineStopVar, RouteSelector,
 };
 use crate::version::v0_0_1::config::config::Document;
-use crate::version::v0_0_1::messaging::MethodKind;
+use crate::version::v0_0_1::messaging::{Method, MethodKind, MethodPattern};
 use crate::version::v0_0_1::http::HttpMethod;
 use crate::version::v0_0_1::id::id::{GenericKind, GenericKindBase, PointKind, PointSeg, Specific};
 use crate::version::v0_0_1::msg::MsgMethod;

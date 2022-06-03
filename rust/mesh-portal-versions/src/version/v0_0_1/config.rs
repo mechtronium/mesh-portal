@@ -7,7 +7,6 @@ pub mod config {
 
     use crate::version::v0_0_1::config::config::bind::BindConfig;
     use crate::version::v0_0_1::id::id::{GenericKind, Point};
-    use crate::version::v0_0_1::messaging::messaging::Request;
     use crate::version::v0_0_1::parse::model::{MessageScope, MethodScope, RouteScope};
     use crate::version::v0_0_1::particle::particle;
     use crate::version::v0_0_1::particle::particle::Stub;
@@ -86,13 +85,12 @@ pub mod config {
 
     pub mod bind {
         use crate::error::{MsgErr, ParseErrs};
-        use crate::version::v0_0_1::command::request::{MethodPattern, Rc, RequestCore};
-        use crate::version::v0_0_1::messaging::MethodKind;
+        use crate::version::v0_0_1::command::request::Rc;
+        use crate::version::v0_0_1::messaging::{MethodKind, MethodPattern, Request, RequestCore};
         use crate::version::v0_0_1::id::id::{Point, PointCtx, PointVar, Topic};
         use crate::version::v0_0_1::payload::payload::{Call, CallDef};
         use crate::version::v0_0_1::payload::payload::{Payload, PayloadPattern};
 
-        use crate::version::v0_0_1::messaging::messaging::Request;
         use crate::version::v0_0_1::parse::model::{
             BindScope, MessageScope, MethodScope, PipelineSegment, PipelineSegmentDef, PipelineVar,
             RouteScope, ScopeFilters,

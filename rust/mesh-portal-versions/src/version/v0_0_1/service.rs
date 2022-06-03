@@ -1,11 +1,7 @@
 use crate::error::MsgErr;
-use crate::version::v0_0_1::command::request::{Method, RequestCore};
-use crate::version::v0_0_1::messaging::ResponseCore;
+use crate::version::v0_0_1::messaging::{Agent, Method, Request, RequestCore, Response, ResponseCore};
 use crate::version::v0_0_1::id::id::{Point, Topic};
-use crate::version::v0_0_1::messaging::messaging::{
-    Agent, Message, MessageIn, MessageOut, Request, RequestCtx, Response,
-    RootRequestCtx,
-};
+
 use crate::version::v0_0_1::parse::model::MethodScopeSelector;
 use crate::version::v0_0_1::security::Access;
 use crate::version::v0_0_1::util::ValueMatcher;
