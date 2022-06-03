@@ -1438,7 +1438,7 @@ pub fn create<I: Span>(input: I) -> Res<I, CreateVar> {
         };
         let create = CreateVar {
             template,
-            state: StateSrc::Stateless,
+            state: StateSrc::None,
             properties,
             strategy,
             registry: Default::default(),
@@ -1521,7 +1521,7 @@ pub fn publish<I: Span>(input: I) -> Res<I, CreateVar> {
 
     let create = CreateVar {
         template,
-        state: StateSrc::Stateless,
+        state: StateSrc::None,
         properties: Default::default(),
         strategy: Strategy::Commit,
         registry: Default::default(),
@@ -1545,10 +1545,51 @@ impl ToString for Ctx {
     }
 }
 
+#[derive(Clone,Serialize,Deserialize)]
+pub struct File {
+   pub name: String,
+   pub content: Bin
+}
+
+impl File {
+    pub fn new<S:ToString>( name: S, content: Bin )-> Self {
+        Self {
+            name: name.to_string(),
+            content
+        }
+    }
+}
+
+pub struct FileResolver {
+    pub files: HashMap<String,Bin>
+}
+
+
+impl FileResolver {
+    pub fn new() -> Self {
+        Self {
+            files: HashMap::new()
+        }
+    }
+
+    pub fn file<N: ToString>( &self, name: N ) -> Result<File, ResolverErr> {
+        if let Some(content) = self.files.get(&name.to_string()) {
+            Ok(File::new(name,content.clone()))
+        } else {
+            Err(ResolverErr::NotFound)
+        }
+    }
+
+    pub fn singleton(&self) -> Result<File,ResolverErr> {
+
+    }
+}
+
 #[derive(Clone)]
 pub struct Env {
-    pub point: Option<Point>,
-    pub var_resolver: Option<CompositeResolver>,
+    point: Option<Point>,
+    var_resolver: Option<CompositeResolver>,
+    file_resolver: Option<FileResolver>
 }
 
 impl Env {
@@ -1556,6 +1597,7 @@ impl Env {
         Self {
             point: None,
             var_resolver: Some(CompositeResolver::new()),
+            file_resolver: None
         }
     }
 
@@ -1563,6 +1605,7 @@ impl Env {
         Self {
             point: None,
             var_resolver: None,
+            file_resolver: None
         }
     }
 
@@ -1570,6 +1613,7 @@ impl Env {
         Self {
             point: Some(point),
             var_resolver: Some(CompositeResolver::new()),
+            file_resolver: Some(FileResolver::new())
         }
     }
 
@@ -1577,6 +1621,7 @@ impl Env {
         Self {
             point: Some(point),
             var_resolver: None,
+            file_resolver: None
         }
     }
 
@@ -1586,9 +1631,9 @@ impl Env {
             .ok_or("cannot reference working point in this context".into())
     }
 
-    pub fn val(&self, var: &str) -> Result<String, VarResolverErr> {
+    pub fn val(&self, var: &str) -> Result<String, ResolverErr> {
         if let None = self.var_resolver {
-            Err(VarResolverErr::NotAvailable)
+            Err(ResolverErr::NotAvailable)
         } else {
             self.var_resolver.as_ref().unwrap().val(var)
         }
@@ -1600,9 +1645,33 @@ impl Env {
 
     pub fn set_var<V: ToString>(&mut self, key: V, value: V) {
         match self.var_resolver.as_mut() {
-            None => {}
+            None => {
+                let mut var_resolver = CompositeResolver::new();
+                var_resolver.set(key,value);
+                self.var_resolver.replace(var_resolver);
+            }
             Some(var_resolver) => {
                 var_resolver.set(key, value);
+            }
+        }
+    }
+
+    pub fn file<N:ToString>( &self, name: N) -> Result<File,ResolverErr> {
+        match &self.file_resolver {
+            None => Err(ResolverErr::NotAvailable),
+            Some(file_resolver) => file_resolver.file(name)
+        }
+    }
+
+    pub fn set_file<N: ToString>(&mut self, name: N, content: Bin ) {
+        match self.file_resolver.as_mut() {
+            None => {
+                let mut file_resolver = FileResolver::new();
+                file_resolver.insert( name.to_string(), content );
+                self.file_resolver.replace(file_resolver);
+            }
+            Some(file_resolver) => {
+                file_resolver.files.insert(name.to_string(), content);
             }
         }
     }
@@ -1634,7 +1703,7 @@ impl CompositeResolver {
 }
 
 impl VarResolver for CompositeResolver {
-    fn val(&self, var: &str) -> Result<String, VarResolverErr> {
+    fn val(&self, var: &str) -> Result<String, ResolverErr> {
         if let Ok(val) = self.scope_resolver.val(var) {
             Ok(val)
         } else if let Ok(val) = self.scope_resolver.val(var) {
@@ -1642,7 +1711,7 @@ impl VarResolver for CompositeResolver {
         } else if let Ok(val) = self.other_resolver.val(var) {
             Ok(val)
         } else {
-            Err(VarResolverErr::NotFound)
+            Err(ResolverErr::NotFound)
         }
     }
 }
@@ -1659,14 +1728,14 @@ impl CtxResolver for PointCtxResolver {
     }
 }
 
-pub enum VarResolverErr {
+pub enum ResolverErr {
     NotAvailable,
     NotFound,
 }
 
 pub trait VarResolver: Send + Sync {
-    fn val(&self, var: &str) -> Result<String, VarResolverErr> {
-        Err(VarResolverErr::NotFound)
+    fn val(&self, var: &str) -> Result<String, ResolverErr> {
+        Err(ResolverErr::NotFound)
     }
 }
 
@@ -1699,8 +1768,8 @@ impl MapResolver {
 }
 
 impl VarResolver for MapResolver {
-    fn val(&self, id: &str) -> Result<String, VarResolverErr> {
-        self.map.get(id).cloned().ok_or(VarResolverErr::NotFound)
+    fn val(&self, id: &str) -> Result<String, ResolverErr> {
+        self.map.get(id).cloned().ok_or(ResolverErr::NotFound)
     }
 }
 
@@ -1718,13 +1787,13 @@ impl RegexCapturesResolver {
 }
 
 impl VarResolver for RegexCapturesResolver {
-    fn val(&self, id: &str) -> Result<String, VarResolverErr> {
+    fn val(&self, id: &str) -> Result<String, ResolverErr> {
         let captures = self
             .regex
             .captures(self.text.as_str())
             .expect("expected captures");
         match captures.name(id) {
-            None => Err(VarResolverErr::NotFound),
+            None => Err(ResolverErr::NotFound),
             Some(m) => Ok(m.as_str().to_string()),
         }
     }
@@ -1747,14 +1816,14 @@ impl MultiVarResolver {
 }
 
 impl VarResolver for MultiVarResolver {
-    fn val(&self, id: &str) -> Result<String, VarResolverErr> {
+    fn val(&self, id: &str) -> Result<String, ResolverErr> {
         for resolver in &self.0 {
             match resolver.val(id) {
                 Ok(ok) => return Ok(ok),
                 Err(_) => {}
             }
         }
-        Err(VarResolverErr::NotFound)
+        Err(ResolverErr::NotFound)
     }
 }
 
@@ -3045,7 +3114,7 @@ pub mod model {
     use crate::version::v0_0_1::parse::{
         camel_case, CtxResolver, Env, filepath_chars, http_method, lex_child_scopes,
         method_kind, pipeline, rc_command_type, SubstParser, value_pattern,
-        VarResolverErr, wrapped_http_method, wrapped_msg_method,
+        ResolverErr, wrapped_http_method, wrapped_msg_method,
     };
     use crate::version::v0_0_1::util::{
         HttpMethodPattern, StringMatcher, ToResolved, ValueMatcher, ValuePattern,
@@ -4537,6 +4606,7 @@ use nom_supreme::error::ErrorTree;
 use nom_supreme::parser_ext::MapRes;
 use nom_supreme::{parse_from_str, ParserExt};
 use cosmic_nom::{new_span, Span, span_with_extra, Trace};
+use crate::version::v0_0_1::bin::Bin;
 
 fn inclusive_any_segment<I: Span>(input: I) -> Res<I, PointSegSelector> {
     alt((tag("+*"), tag("ROOT+*")))(input).map(|(next, _)| (next, PointSegSelector::InclusiveAny))

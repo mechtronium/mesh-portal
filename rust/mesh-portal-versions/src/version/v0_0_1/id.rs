@@ -18,7 +18,8 @@ pub mod id {
     use crate::error::{MsgErr, ParseErrs};
     use crate::version::v0_0_1::id::id::TargetLayer::Unspecified;
     use crate::version::v0_0_1::id::id::PointSegCtx::Working;
-    use crate::version::v0_0_1::parse::{camel_case, consume_point, consume_point_ctx, Ctx, CtxResolver, Env, kind, point_and_kind, point_route_segment, VarResolver, VarResolverErr};
+    use crate::version::v0_0_1::mesh_portal_uuid;
+    use crate::version::v0_0_1::parse::{camel_case, consume_point, consume_point_ctx, Ctx, CtxResolver, Env, kind, point_and_kind, point_route_segment, VarResolver, ResolverErr};
 
     use crate::version::v0_0_1::parse::error::result;
     use crate::version::v0_0_1::selector::selector::{
@@ -480,7 +481,7 @@ pub mod id {
                         Err(err) => {
                             let trace = var.trace;
                             match err {
-                                VarResolverErr::NotAvailable => {
+                                ResolverErr::NotAvailable => {
                                     Err(ParseErrs::from_range(
                                         "variables not available in this context",
                                         "variables not available",
@@ -488,7 +489,7 @@ pub mod id {
                                         trace.extra,
                                     ))
                                 }
-                                VarResolverErr::NotFound => {
+                                ResolverErr::NotFound => {
                                     Err(ParseErrs::from_range(
                                         format!("variable '{}' not found", var.name ).as_str(),
                                         "not found",
@@ -927,7 +928,14 @@ pub mod id {
     pub enum Topic {
         None,
         Uuid(Uuid),
-        Tag(String)
+        Tag(String),
+        Cli
+    }
+
+    impl Topic {
+        pub fn uuid() -> Self {
+            Self::Uuid(unsafe{mesh_portal_uuid()})
+        }
     }
 
     impl ValueMatcher<Topic> for Topic {
@@ -942,9 +950,20 @@ pub mod id {
 
     #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
     pub enum TargetLayer {
-        Unspecified,
         Shell,
         Core
+    }
+
+    impl Default for TargetLayer {
+        fn default() -> Self {
+            TargetLayer::Core
+        }
+    }
+
+    impl Default for Topic {
+        fn default() -> Self {
+            Topic::None
+        }
     }
 
     #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
@@ -952,6 +971,16 @@ pub mod id {
        pub point: Point,
        pub layer: TargetLayer,
        pub topic: Topic
+    }
+
+    impl Port {
+        pub fn with_topic( &self, topic: Topic ) -> Self {
+            Self {
+                point: self.point.clone(),
+                layer: self.layer.clone(),
+                topic
+            }
+        }
     }
 
     impl Deref for Port {
@@ -986,8 +1015,8 @@ pub mod id {
         fn into(self) -> Port {
             Port {
                 point: self,
-                topic: Topic::None,
-                layer: TargetLayer::Unspecified
+                topic: Default::default(),
+                layer: Default::default()
             }
         }
     }
@@ -1054,7 +1083,7 @@ pub mod id {
                     }
                     Err(err) => {
                         match err {
-                            VarResolverErr::NotAvailable => {
+                            ResolverErr::NotAvailable => {
                                 errs.push(ParseErrs::from_range(
                                     format!("variables not available in this context '{}'", var.name.clone())
                                         .as_str(),
@@ -1063,7 +1092,7 @@ pub mod id {
                                     var.trace.extra.clone(),
                                 ));
                             }
-                            VarResolverErr::NotFound => {
+                            ResolverErr::NotFound => {
                                 errs.push(ParseErrs::from_range(
                                     format!("variable could not be resolved '{}'", var.name.clone())
                                         .as_str(),
@@ -1109,7 +1138,7 @@ pub mod id {
                         Err(err) => {
 
                             match err {
-                                VarResolverErr::NotAvailable => {
+                                ResolverErr::NotAvailable => {
                                     errs.push(ParseErrs::from_range(
                                         format!("variables not available in this context '{}'", var.name.clone())
                                             .as_str(),
@@ -1118,7 +1147,7 @@ pub mod id {
                                         var.trace.extra.clone(),
                                     ));
                                 }
-                                VarResolverErr::NotFound => {
+                                ResolverErr::NotFound => {
                                     errs.push(ParseErrs::from_range(
                                         format!("variable could not be resolved '{}'", var.name.clone())
                                             .as_str(),

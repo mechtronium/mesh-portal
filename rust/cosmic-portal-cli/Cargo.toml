@@ -12,3 +12,4 @@ mesh-portal-versions = { path="../mesh-portal-versions"}
 
 serde = { version="1.0.69", features=['derive','rc'] }
 lazy_static = "1.4.0"
+async-trait = "0.1.48"

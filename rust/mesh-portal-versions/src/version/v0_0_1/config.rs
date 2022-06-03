@@ -343,6 +343,7 @@ pub mod config {
             Response,
         }
 
+        #[derive(Clone,Eq,PartialEq)]
         pub struct RouteSelector {
             pub topic: Option<ValuePattern<Topic>>,
             pub method: ValuePattern<MethodPattern>,
@@ -364,6 +365,36 @@ pub mod config {
                     filters,
                 }
             }
+
+            pub fn any() -> Self {
+                Self {
+                    topic: None,
+                    method: ValuePattern::Any,
+                    path: Regex::new("/.*").unwrap(),
+                    filters: Default::default()
+                }
+            }
+
+            pub fn from_method(
+                method: ValuePattern<MethodPattern>,
+            ) -> Self {
+                Self {
+                    topic: None,
+                    method,
+                    path: Regex::new("/.*").unwrap(),
+                    filters: Default::default(),
+                }
+            }
+
+            pub fn with_topic( self, topic: Topic ) -> Self {
+                Self {
+                    topic: Some(ValuePattern::Pattern(topic)),
+                    method: self.method,
+                    path: self.path,
+                    filters: self.filters
+                }
+            }
+
 
             pub fn is_match(&self, request: &Request) -> Result<(), ()> {
                 if let Some(topic) = &self.topic {

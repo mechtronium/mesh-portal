@@ -19,6 +19,7 @@ use syn::__private::TokenStream2;
 use syn::parse::{Parse, ParseBuffer, ParseStream};
 use syn::parse_quote::ParseQuote;
 use syn::spanned::Spanned;
+use syn::token::Async;
 use mesh_portal::version::latest::config::bind::{BindConfig, RouteSelector};
 use mesh_portal::version::latest::id::Uuid;
 use mesh_portal::version::latest::command::request::{CmdMethod, MethodPattern};
@@ -44,8 +45,23 @@ pub fn request_handler(item: TokenStream) -> TokenStream {
     TokenStream::from(quote!{})
 }
 
+#[proc_macro_derive(AsyncRequestHandler)]
+pub fn async_request_handler(item: TokenStream) -> TokenStream {
+    TokenStream::from(quote!{})
+}
+
+#[proc_macro_attribute]
+pub fn routes_async(attr: TokenStream, item: TokenStream ) -> TokenStream {
+    _routes(attr, item, true)
+}
+
 #[proc_macro_attribute]
 pub fn routes(attr: TokenStream, item: TokenStream ) -> TokenStream {
+    _routes(attr, item, false)
+}
+
+fn _routes(attr: TokenStream, item: TokenStream, _async: bool  ) -> TokenStream {
+    println!("ROUTES '{}'",attr.to_string());
 
     let item_cp = item.clone();
     let mut impl_item = parse_macro_input!(item_cp as syn::ItemImpl );
@@ -89,17 +105,65 @@ pub fn routes(attr: TokenStream, item: TokenStream ) -> TokenStream {
 
     let input = LocatedSpan::new("blah");
 
-    let rtn = quote!{
 
-        impl RequestHandler for #self_ty {
-            fn handle( &self, ctx: mesh_portal::version::latest::messaging::RootRequestCtx<mesh_portal::version::latest::messaging::Request>) -> Result<ResponseCore,MsgErr> {
-                #(
-                    if #static_selector_keys.is_match(&ctx.request).is_ok() {
-                       return self.#idents( ctx );
+
+    let select = if attr.is_empty() {
+        let rtn:TokenStream2 = "Err(())".parse().unwrap();
+        rtn
+    } else {
+        let rtn:TokenStream2 = quote!{ #attr.select(request) };
+        rtn
+    };
+
+
+    let rtn = if attr.is_empty() {
+        let rtn:TokenStream2 = "Ok(ResponseCore::not_found())".parse().unwrap();
+        rtn
+    } else {
+        let rtn:TokenStream2 = quote!{ #attr.handle(request) };
+        rtn
+    };
+
+    let request_handler = match _async {
+        true => Ident::new("AsyncRequestHandler", impl_name.span() ),
+        false => Ident::new( "RequestHandler", impl_name.span() )
+    };
+
+    let __async = match _async {
+        true => quote!{async},
+        false => quote!{}
+    };
+
+    let __await = match _async {
+        true => quote!{.await},
+        false => quote!{}
+    };
+
+    let __async_trait = match _async {
+        true => quote!{#[async_trait]},
+        false => quote!{}
+    };
+
+    let rtn = quote!{
+        #__async_trait
+        impl #request_handler for #self_ty {
+
+            fn select( &self, request: & mesh_portal::version::latest::messaging::Request ) -> Result<(),()> {
+                 #(
+                    if #static_selector_keys.is_match(&request.request).is_ok() {
+                        return Ok(());
                     }
                 )*
+                #select
+            }
 
-                Ok(ResponseCore::not_found())
+            #__async fn handle( &self, request: mesh_portal::version::latest::messaging::RootRequestCtx<mesh_portal::version::latest::messaging::Request>) -> Result<ResponseCore,MsgErr> {
+                #(
+                    if #static_selector_keys.is_match(&request.request).is_ok() {
+                       return self.#idents( request )#__await;
+                    }
+                )*
+                #rtn
              }
         }
 
@@ -146,10 +210,7 @@ pub fn route(attr: TokenStream, item: TokenStream ) -> TokenStream {
 //  let combined = TokenStream::from_iter( vec![attr,item]);
 
   let item = parse_macro_input!(item as syn::ImplItemMethod);
-  match &item.vis {
-      Visibility::Inherited => {}
-      _ => {panic!("handlers must not have public visibilty")}
-  }
+
 //  let attr = find_route_attr(&item.attrs).unwrap();
   let block = item.block;
 
@@ -164,19 +225,27 @@ pub fn route(attr: TokenStream, item: TokenStream ) -> TokenStream {
   let ctx = params.get(1).expect("route expected RequestCtx<I,M> as first parameter");
   let ctx = messsage_ctx(ctx).expect("route expected RequestCtx<I,M> as first parameter");
 
+  let __await= match item.sig.asyncness {
+      None => quote!{},
+      Some(_) => quote!{.await}
+  };
+
+    let __async= match item.sig.asyncness {
+        None => quote!{},
+        Some(_) => quote!{async}
+    };
+  let orig=  item.sig.ident.clone();
   let ident = format_ident!("_{}", item.sig.ident);
   let rtn_type = rtn_type( &item.sig.output );
   let item = ctx.item;
 
+
   let expanded = quote! {
-      fn #ident( &self, mut ctx: mesh_portal::version::latest::messaging::RootRequestCtx<mesh_portal::version::latest::messaging::Request> ) -> Result<mesh_portal::version::latest::entity::response::ResponseCore,MsgErr> {
+      #__async fn #ident( &self, mut ctx: mesh_portal::version::latest::messaging::RootRequestCtx<mesh_portal::version::latest::messaging::Request> ) -> Result<mesh_portal::version::latest::entity::response::ResponseCore,MsgErr> {
           let mut ctx : mesh_portal::version::latest::messaging::RootRequestCtx<#item> = ctx.transform_input()?;
           let ctx = ctx.push();
 
-          fn inner( ctx: RequestCtx<#item>) -> Result<#rtn_type,MsgErr>
-              #block
-
-          match inner(ctx) {
+          match self.#orig(ctx)#__await {
               Ok(rtn) => Ok(mesh_portal::version::latest::entity::response::ResponseCore::from(rtn)),
               Err(err) => Err(err)
           }

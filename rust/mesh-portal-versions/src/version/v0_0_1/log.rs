@@ -9,7 +9,7 @@ use std::sync::Arc;
 use chrono::{DateTime, Utc};
 use serde::{Serialize,Deserialize};
 use serde;
-use crate::version::v0_0_1::command::command::common::StateSrc::StatefulDirect;
+use crate::version::v0_0_1::command::command::common::StateSrc::Payload;
 use chrono::serde::ts_milliseconds;
 
 #[derive(Debug, Clone, Serialize, Deserialize, strum_macros::Display)]

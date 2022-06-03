@@ -25,12 +25,23 @@ pub mod command {
         use serde::{Deserialize, Serialize};
 
         use crate::error::MsgErr;
+        use crate::version::v0_0_1::id::id::Variable;
+        use crate::version::v0_0_1::parse::model::Var;
         use crate::version::v0_0_1::payload::payload::{Payload, PayloadMap};
+
+
+        #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, strum_macros::Display)]
+        pub enum StateSrcVar {
+            Stateless,
+            FileRef(String),
+            Var(Variable)
+        }
+
 
         #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, strum_macros::Display)]
         pub enum StateSrc {
-            Stateless,
-            StatefulDirect(Payload),
+            None,
+            Payload(Payload),
         }
 
         #[derive(Debug, Clone, Serialize, Deserialize,Eq,PartialEq)]
@@ -346,9 +357,7 @@ pub mod request {
 
         use crate::error::MsgErr;
         use crate::version::v0_0_1::bin::Bin;
-        use crate::version::v0_0_1::command::command::common::{
-            SetProperties, SetRegistry, StateSrc,
-        };
+        use crate::version::v0_0_1::command::command::common::{SetProperties, SetRegistry, StateSrc, StateSrcVar};
         use crate::version::v0_0_1::id::id::{
             GenericKind, HostKey, Point, PointCtx, PointSeg, PointVar,
         };
@@ -459,9 +468,9 @@ pub mod request {
             Complete,
         }
 
-        pub type Create = CreateDef<Point>;
-        pub type CreateVar = CreateDef<PointVar>;
-        pub type CreateCtx = CreateDef<PointCtx>;
+        pub type Create = CreateDef<Point,StateSrc>;
+        pub type CreateVar = CreateDef<PointVar,StateSrcVar>;
+        pub type CreateCtx = CreateDef<PointCtx,StateSrc>;
 
         impl ToResolved<Create> for CreateVar {
             fn to_resolved(self, env: &Env) -> Result<Create, MsgErr> {
@@ -474,12 +483,20 @@ pub mod request {
         impl ToResolved<CreateCtx> for CreateVar {
             fn to_resolved(self, env: &Env) -> Result<CreateCtx, MsgErr> {
                 let template = self.template.to_resolved(env)?;
+                let state = match self.state {
+                    StateSrcVar::Stateless => StateSrc::Stateless,
+                    StateSrcVar::FileRef(name) => StateSrc::Payload(Payload::Bin(env.file(name)?.content)),
+                    StateSrcVar::Var(var) => {
+                        let val = env.val(var.name.as_str() )?;
+                        StateSrc::Payload(Payload::Bin(env.file(val)?.content))
+                    }
+                };
                 Ok(CreateCtx {
                     template,
                     properties: self.properties,
                     strategy: self.strategy,
                     registry: self.registry,
-                    state: self.state,
+                    state,
                 })
             }
         }
@@ -501,7 +518,7 @@ pub mod request {
 
 
         #[derive(Debug, Clone,Serialize,Deserialize,Eq,PartialEq)]
-        pub struct CreateDef<Pnt> {
+        pub struct CreateDef<Pnt,StateSrc> {
             pub template: TemplateDef<PointTemplateDef<Pnt>>,
             pub properties: SetProperties,
             pub strategy: Strategy,
@@ -513,7 +530,7 @@ pub mod request {
             pub fn fulfillment(mut self, bin: Bin) -> Create {
                 Create {
                     template: self.template,
-                    state: StateSrc::StatefulDirect(Payload::Bin(bin)),
+                    state: StateSrc::Payload(Payload::Bin(bin)),
                     properties: self.properties,
                     strategy: self.strategy,
                     registry: self.registry,

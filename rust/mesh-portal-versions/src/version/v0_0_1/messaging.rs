@@ -1,14 +1,17 @@
 use std::collections::HashMap;
 use std::ops::Deref;
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
+use ariadne::Color::Default;
 use http::{HeaderMap, StatusCode, Uri};
 use crate::error::{MsgErr, StatusErr};
 use crate::version::v0_0_1::bin::Bin;
 use crate::version::v0_0_1::config::config::bind::RouteSelector;
-use crate::version::v0_0_1::id::id::{Point, Port, ToPort, Uuid};
+use crate::version::v0_0_1::id::id::{Point, Port, TargetLayer, Topic, ToPort, Uuid};
 use crate::version::v0_0_1::payload::payload::{Errors, Payload};
 use crate::version::v0_0_1::util::{uuid, ValueMatcher, ValuePattern};
 use serde::{Deserialize, Serialize};
+use crate::version::v0_0_1::cli::RawCommand;
+use crate::version::v0_0_1::command::Command;
 use crate::version::v0_0_1::http::HttpMethod;
 use crate::version::v0_0_1::log::SpanLogger;
 use crate::version::v0_0_1::msg::MsgMethod;
@@ -92,6 +95,10 @@ pub struct RootRequestCtx<I> {
                 Some(parent) => Some(*parent)
             }
         }
+
+        pub fn request(&self) -> &Request {
+            &self.root.request
+        }
     }
 
     impl<'a> RequestCtx<'a, &mut Request> {
@@ -147,6 +154,38 @@ pub struct RootRequestCtx<I> {
         pub to: Port,
         pub core: RequestCore,
     }
+
+    impl TryInto<RequestCore> for Request {
+        type Error = MsgErr;
+
+        fn try_into(self) -> Result<RequestCore, Self::Error> {
+            Ok(self.core)
+        }
+    }
+
+impl TryInto<RawCommand> for Request {
+    type Error = MsgErr;
+
+    fn try_into(self) -> Result<RawCommand, Self::Error> {
+        match self.core.body {
+            Payload::RawCommand(raw) => Ok(raw),
+            payload => Err(format!("expected body RawCommand received {}", payload.payload_type().to_string() ).into())
+        }
+    }
+}
+
+impl Into<RequestCore> for RawCommand{
+    fn into(self) -> RequestCore {
+        RequestCore::payload(MsgMethod::new("ExecCommand").unwrap().into(), Payload::RawCommand(self))
+    }
+}
+
+    impl Into<RequestCore> for Command  {
+        fn into(self) -> RequestCore {
+            RequestCore::new_with_payload(Payload::Command(Box::new(self)))
+        }
+    }
+
 
 
     impl ToMessage for Request {
@@ -211,7 +250,7 @@ pub struct RootRequestCtx<I> {
     }
 
     impl Request {
-        pub fn new(core: RequestCore, from: Point, to: Point) -> Self {
+        pub fn new(core: RequestCore, from: Port, to: Port) -> Self {
             Self {
                 id: uuid(),
                 agent: Agent::Anonymous,
@@ -827,26 +866,79 @@ pub trait Router: Send + Sync {
 }
 
 pub struct AsyncMessengerRelay {
-    pub proxy: Arc<dyn AsyncMessenger>
+    pub replay: Arc<dyn AsyncMessenger>
 }
 
 #[async_trait]
 impl AsyncMessenger for AsyncMessengerRelay {
     async fn send(&self, request: Request) -> Response{
-        self.proxy.send(request).await
+        self.replay.send(request).await
     }
 }
 
 
+#[derive(Clone)]
 pub struct SyncMessengerRelay {
-    pub proxy: Arc<dyn SyncMessenger>
+    pub topic: Option<Topic>,
+    pub layer: Option<TargetLayer>,
+    pub point: Option<Point>,
+    pub relay: Arc<dyn SyncMessenger>
 }
 
 impl SyncMessenger for SyncMessengerRelay {
     fn send(&self, request: Request) -> Response{
-        self.proxy.send(request)
+        let mut request = request;
+        if let Some(topic) = &self.topic {
+            request.from.topic = topic.clone();
+        }
+        if let Some(layer) = &self.layer{
+            request.from.layer = layer.clone();
+        }
+        if let Some(point) = &self.point{
+            request.from.point = point.clone();
+        }
+        self.relay.send(request)
     }
 }
+
+impl SyncMessengerRelay {
+    pub fn with_point( self, point: Point) -> Self {
+        Self {
+            topic: self.topic,
+            layer: self.layer,
+            point: Some(point),
+            relay: self.relay
+        }
+    }
+
+    pub fn with_topic( self, topic: Topic) -> Self {
+        Self {
+            topic: Some(topic),
+            layer: self.layer,
+            point: self.point,
+            relay: self.relay
+        }
+    }
+
+    pub fn with_layer( self, layer: TargetLayer) -> Self {
+        Self {
+            topic: self.topic,
+            layer: Some(layer),
+            point: self.point,
+            relay: self.relay
+        }
+    }
+
+    pub fn with_port( self, port: Port ) -> Self {
+        Self {
+            topic: Some(port.topic),
+            layer: Some(port.layer),
+            point: Some(port.point),
+            relay: self.relay
+        }
+    }
+}
+
 
 
 #[async_trait]
@@ -875,17 +967,22 @@ impl<H> InternalPipeline<H>
 }
 
 pub trait RequestHandler {
-    fn handle(&self, ctx: RootRequestCtx<Request>) -> Result<ResponseCore, MsgErr>;
+    fn select(&self, request: &Request) -> Result<(), ()>;
+    fn handle(&self, request: RootRequestCtx<Request>) -> Result<ResponseCore, MsgErr>;
 }
 
 #[async_trait]
 pub trait AsyncRequestHandler: Sync+Send  {
-    async fn handle(&self, ctx: RootRequestCtx<Request>) -> Result<ResponseCore, MsgErr>;
+    async fn handle(&self, request: RootRequestCtx<Request>) -> Result<ResponseCore, MsgErr>;
 }
 
 impl RequestHandler for RequestHandlerRelay {
-    fn handle(&self, ctx: RootRequestCtx<Request>) -> Result<ResponseCore, MsgErr> {
-        self.relay.handle(ctx)
+    fn select(&self, request: &Request) -> Result<(), ()> {
+        self.relay.select(request)
+    }
+
+    fn handle(&self, request: RootRequestCtx<Request>) -> Result<ResponseCore, MsgErr> {
+        self.relay.handle(request)
     }
 }
 
@@ -900,11 +997,11 @@ impl AsyncRequestHandler for AsyncRequestHandlerRelay {
     }
 }
 
-pub struct InternalRequestHandler<H> {
+pub struct InternalRequestHandlers<H> {
     pipelines: Vec<InternalPipeline<H>>,
 }
 
-impl<H> InternalRequestHandler<H> {
+impl<H> InternalRequestHandlers<H> {
     pub fn new() -> Self {
         Self {
             pipelines: vec![],
@@ -916,6 +1013,12 @@ impl<H> InternalRequestHandler<H> {
         self.pipelines.push(pipeline);
     }
 
+    pub fn remove_topic(&mut self, topic: Option<ValuePattern<Topic>>) {
+       self.pipelines.retain(|p|p.selector.topic != topic)
+    }
+
+
+
     pub fn select(&self, request: &Request ) -> Result<&H,()> {
         for pipeline in self.pipelines.iter() {
             if pipeline.selector.is_match(&request).is_ok() {
@@ -926,7 +1029,7 @@ impl<H> InternalRequestHandler<H> {
     }
 }
 
-impl InternalRequestHandler<RequestHandlerRelay> {
+impl InternalRequestHandlers<RequestHandlerRelay> {
     pub fn handle(&self, ctx: RootRequestCtx<Request>) -> Result<ResponseCore, MsgErr> {
         for pipeline in self.pipelines.iter() {
             if pipeline.selector.is_match(&ctx.request).is_ok() {
@@ -938,7 +1041,7 @@ impl InternalRequestHandler<RequestHandlerRelay> {
     }
 }
 
-impl InternalRequestHandler<AsyncRequestHandlerRelay> {
+impl InternalRequestHandlers<AsyncRequestHandlerRelay> {
     pub async fn handle(&self, ctx: RootRequestCtx<Request>) -> Result<ResponseCore, MsgErr> {
         for pipeline in self.pipelines.iter() {
             if pipeline.selector.is_match(&ctx.request).is_ok() {
@@ -950,7 +1053,15 @@ impl InternalRequestHandler<AsyncRequestHandlerRelay> {
 }
 
 pub struct RequestHandlerRelay {
-   pub relay: Box<dyn RequestHandler>
+   pub relay: Box<dyn RequestHandler>,
+}
+
+impl RequestHandlerRelay {
+    pub fn new<H>( handler: H ) -> Self where H: RequestHandler {
+        Self {
+            relay: Box::new(handler)
+        }
+    }
 }
 
 #[derive(
@@ -1021,6 +1132,15 @@ impl ResponseCore {
             body: Payload::Empty,
         }
     }
+
+    pub fn forbidden() -> Self {
+        Self {
+            headers: HeaderMap::new(),
+            status: StatusCode::from_u16(403u16).unwrap(),
+            body: Payload::Empty,
+        }
+    }
+
 
     pub fn fail(message: &str) -> Self {
         let errors = Errors::default(message.clone());
@@ -1231,6 +1351,16 @@ impl RequestCore {
     }
 }
 
+impl Into<RequestCore> for Command {
+    fn into(self) -> RequestCore {
+        RequestCore {
+            body: Payload::Command(Box::new(self)),
+            method: Method::Msg(MsgMethod::new("Command").unwrap()),
+            ..Default::default()
+        }
+    }
+}
+
 impl TryFrom<http::Request<Bin>> for RequestCore {
 
     type Error = MsgErr;
@@ -1298,6 +1428,17 @@ impl RequestCore {
         }
     }
 
+
+
+    pub fn payload(method: Method, body: Payload) -> RequestCore{
+        RequestCore{
+            method,
+            body,
+            ..Default::default()
+        }
+    }
+
+
     pub fn ok(&self, payload: Payload) -> ResponseCore {
         ResponseCore {
             headers: Default::default(),
@@ -1326,6 +1467,25 @@ impl RequestCore {
             headers: Default::default(),
             status,
             body: Payload::Errors(errors),
+        }
+    }
+}
+
+impl TryFrom<ResponseCore> for Port {
+    type Error = MsgErr;
+
+    fn try_from(core: ResponseCore) -> Result<Self, Self::Error> {
+        if !core.status.is_success()  {
+            Err(MsgErr::new(core.status.as_u16(), "error"))
+        } else {
+            match core.body {
+                Payload::Port(port) => {
+                    Ok(port)
+                }
+                payload => {
+                    Err(format!("expecting Port received {}", payload.payload_type().to_string()).into() )
+                }
+            }
         }
     }
 }

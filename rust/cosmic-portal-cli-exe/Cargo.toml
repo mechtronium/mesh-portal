@@ -6,6 +6,7 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+cosmic-macros= { path="../cosmic-macros"}
 cosmic-nom= { path="../cosmic-nom"}
 mesh-portal= { path="../mesh-portal"}
 mesh-portal-versions = { path="../mesh-portal-versions"}
