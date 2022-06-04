@@ -124,7 +124,7 @@ impl CliSession {
 
     pub fn new( port: Port, relay: Port, messenger: AsyncMessengerRelay, source: Port ) -> CliSession {
         let messenger = messenger.with_port( port.clone() );
-        let env = Env::new(port.to_point() );
+        let env = Env::new(port.clone().to_point() );
         Self {
             port,
             relay,
@@ -185,13 +185,13 @@ impl CommandExecutor {
     pub async fn execute( &self, raw: RequestCtx<'_,RawCommand> ) -> Result<ResponseCore,MsgErr> {
         let command = result(command_line(new_span(raw.line.as_str())))?;
         let mut env = self.env.clone();
-        for transfer in raw.transfers {
-            env.set_file(transfer.id,transfer.content)
+        for transfer in &raw.transfers {
+            env.set_file(transfer.id.clone(),transfer.content.clone())
         }
         let command: Command = command.to_resolved(&self.env)?;
         let request: RequestCore = command.into();
         let request = Request::new(request,self.port.clone(), Point::registry().to_port() );
-        Ok(self.messenger.send(request).await.try_into()?)
+        Ok(self.messenger.send(request).await.core)
     }
 
 }

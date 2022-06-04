@@ -162,17 +162,25 @@ pub struct RootRequestCtx<I> {
         pub core: RequestCore,
     }
 
+impl TryFrom<Request> for RawCommand {
+    type Error = MsgErr;
 
-impl TryInto<RawCommand> for Request {
+    fn try_from(request: Request) -> Result<Self, Self::Error> {
+        request.core.body.try_into()
+    }
+}
+
+impl TryInto<RawCommand> for Payload{
     type Error = MsgErr;
 
     fn try_into(self) -> Result<RawCommand, Self::Error> {
-        match self.core.body {
-            Payload::RawCommand(raw) => Ok(raw),
-            payload => Err(format!("expected body RawCommand received {}", payload.payload_type().to_string() ).into())
+        match self {
+            Payload::RawCommand(command)=> Ok(command),
+            payload => Err(format!("expected RawCommand received '{}'", payload.payload_type().to_string() ).into())
         }
     }
 }
+
 
 impl Into<RequestCore> for RawCommand{
     fn into(self) -> RequestCore {
