@@ -32,7 +32,7 @@ pub mod command {
 
         #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, strum_macros::Display)]
         pub enum StateSrcVar {
-            Stateless,
+            None,
             FileRef(String),
             Var(Variable)
         }
@@ -355,13 +355,13 @@ pub mod request {
 
         use serde::{Deserialize, Serialize};
 
-        use crate::error::MsgErr;
+        use crate::error::{MsgErr, ParseErrs};
         use crate::version::v0_0_1::bin::Bin;
         use crate::version::v0_0_1::command::command::common::{SetProperties, SetRegistry, StateSrc, StateSrcVar};
         use crate::version::v0_0_1::id::id::{
             GenericKind, HostKey, Point, PointCtx, PointSeg, PointVar,
         };
-        use crate::version::v0_0_1::parse::Env;
+        use crate::version::v0_0_1::parse::{Env, ResolverErr};
         use crate::version::v0_0_1::payload::payload::Payload;
         use crate::version::v0_0_1::selector::selector::SpecificSelector;
         use crate::version::v0_0_1::util::{ConvertFrom, ToResolved};
@@ -483,12 +483,21 @@ pub mod request {
         impl ToResolved<CreateCtx> for CreateVar {
             fn to_resolved(self, env: &Env) -> Result<CreateCtx, MsgErr> {
                 let template = self.template.to_resolved(env)?;
-                let state = match self.state {
-                    StateSrcVar::Stateless => StateSrc::Stateless,
-                    StateSrcVar::FileRef(name) => StateSrc::Payload(Payload::Bin(env.file(name)?.content)),
+                let state = match &self.state {
+                    StateSrcVar::None => StateSrc::None,
+                    StateSrcVar::FileRef(name) => StateSrc::Payload(Payload::Bin(env.file(name).map_err(|e|{ match e{
+                        ResolverErr::NotAvailable => MsgErr::from_500("files are not available in this context"),
+                        ResolverErr::NotFound => MsgErr::from_500(format!("cannot find file '{}'",name))
+                    }})?.content)),
                     StateSrcVar::Var(var) => {
-                        let val = env.val(var.name.as_str() )?;
-                        StateSrc::Payload(Payload::Bin(env.file(val)?.content))
+                        let val = env.val(var.name.as_str() ).map_err(|e|match e{
+                            ResolverErr::NotAvailable => MsgErr::from_500("variable are not available in this context"),
+                            ResolverErr::NotFound => MsgErr::from_500(format!("cannot find variable '{}'", var.name ))
+                        })?;
+                        StateSrc::Payload(Payload::Bin(env.file(val.clone()).map_err(|e|{ match e{
+                            ResolverErr::NotAvailable => MsgErr::from_500("files are not available in this context"),
+                            ResolverErr::NotFound => MsgErr::from_500(format!("cannot find file '{}'",val))
+                        }})?.content))
                     }
                 };
                 Ok(CreateCtx {

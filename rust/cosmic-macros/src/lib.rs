@@ -9,6 +9,7 @@ extern crate strum_macros;
 use proc_macro::TokenStream;
 use std::str::FromStr;
 use chrono::{DateTime, Utc};
+use nom::combinator::into;
 use nom_locate::LocatedSpan;
 use proc_macro2::Ident;
 use quote::{format_ident, quote, TokenStreamExt, ToTokens};
@@ -105,22 +106,24 @@ fn _routes(attr: TokenStream, item: TokenStream, _async: bool  ) -> TokenStream 
 
     let input = LocatedSpan::new("blah");
 
-
-
+    let attr : TokenStream2 = attr.into();
     let select = if attr.is_empty() {
-        let rtn:TokenStream2 = "Err(())".parse().unwrap();
-        rtn
+        quote!{Err(())}
     } else {
-        let rtn:TokenStream2 = quote!{ #attr.select(request) };
-        rtn
+        quote!{ #attr.select(request) }
     };
 
+    let select = quote!{Err(())};
 
-    let rtn = if attr.is_empty() {
-        let rtn:TokenStream2 = "Ok(ResponseCore::not_found())".parse().unwrap();
-        rtn
+    let rtn= if attr.is_empty() {
+        quote!{Ok(ResponseCore::not_found())}
     } else {
-        let rtn:TokenStream2 = quote!{ #attr.handle(request) };
+        let rtn= match _async {
+            true => quote!{ let handler = #attr;
+                            handler.handle(request).await },
+            false=> quote!{  let handler = #attr;
+                             handler.handle(request) }
+        };
         rtn
     };
 
@@ -150,7 +153,7 @@ fn _routes(attr: TokenStream, item: TokenStream, _async: bool  ) -> TokenStream 
 
             fn select( &self, request: & mesh_portal::version::latest::messaging::Request ) -> Result<(),()> {
                  #(
-                    if #static_selector_keys.is_match(&request.request).is_ok() {
+                    if #static_selector_keys.is_match(&request).is_ok() {
                         return Ok(());
                     }
                 )*
@@ -205,40 +208,36 @@ pub fn route(attr: TokenStream, item: TokenStream ) -> TokenStream {
  */
 
 #[proc_macro_attribute]
-pub fn route(attr: TokenStream, item: TokenStream ) -> TokenStream {
+pub fn route(attr: TokenStream, input: TokenStream ) -> TokenStream {
 
 //  let combined = TokenStream::from_iter( vec![attr,item]);
 
-  let item = parse_macro_input!(item as syn::ImplItemMethod);
-
-//  let attr = find_route_attr(&item.attrs).unwrap();
-  let block = item.block;
+  let input = parse_macro_input!(input as syn::ImplItemMethod);
 
 
-    let route = log(route_attribute_value(attr.to_string().as_str())).expect("valid route selector");
+    log(route_attribute_value(attr.to_string().as_str())).expect("valid route selector");
 
 //    attr.to_tokens().next();
   // we do this just to test for a valid selector...
   //log(wrapped_route_selector(attr.tokens.to_string().as_str())).expect("properly formatted route selector");
 
-  let params :Vec<FnArg> = item.sig.inputs.clone().into_iter().collect();
+  let params :Vec<FnArg> = input.sig.inputs.clone().into_iter().collect();
   let ctx = params.get(1).expect("route expected RequestCtx<I,M> as first parameter");
   let ctx = messsage_ctx(ctx).expect("route expected RequestCtx<I,M> as first parameter");
 
-  let __await= match item.sig.asyncness {
+  let __await= match input.sig.asyncness {
       None => quote!{},
       Some(_) => quote!{.await}
   };
 
-    let __async= match item.sig.asyncness {
+    let __async= match input.sig.asyncness {
         None => quote!{},
         Some(_) => quote!{async}
     };
-  let orig=  item.sig.ident.clone();
-  let ident = format_ident!("_{}", item.sig.ident);
-  let rtn_type = rtn_type( &item.sig.output );
+  let orig=  input.sig.ident.clone();
+  let ident = format_ident!("_{}", input.sig.ident);
+  let rtn_type = rtn_type( &input.sig.output );
   let item = ctx.item;
-
 
   let expanded = quote! {
       #__async fn #ident( &self, mut ctx: mesh_portal::version::latest::messaging::RootRequestCtx<mesh_portal::version::latest::messaging::Request> ) -> Result<mesh_portal::version::latest::entity::response::ResponseCore,MsgErr> {
@@ -246,10 +245,13 @@ pub fn route(attr: TokenStream, item: TokenStream ) -> TokenStream {
           let ctx = ctx.push();
 
           match self.#orig(ctx)#__await {
-              Ok(rtn) => Ok(mesh_portal::version::latest::entity::response::ResponseCore::from(rtn)),
+              Ok(rtn) => Ok(rtn.into()),
               Err(err) => Err(err)
           }
       }
+
+      #input
+
     };
 
 println!("{}",expanded.to_string());

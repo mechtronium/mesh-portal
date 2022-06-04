@@ -14,7 +14,7 @@ use nom::character::complete::{
 use nom::combinator::{cut, eof, fail, not, peek, recognize, success, value, verify};
 
 use crate::error::{MsgErr, ParseErrs};
-use crate::version::v0_0_1::command::command::common::{PropertyMod, SetProperties, StateSrc};
+use crate::version::v0_0_1::command::command::common::{PropertyMod, SetProperties, StateSrc, StateSrcVar};
 use crate::version::v0_0_1::command::request::create::{
     Create, CreateVar, KindTemplate, PointSegFactory, PointTemplate, PointTemplateSeg,
     PointTemplateVar, Require, Strategy, Template, TemplateVar,
@@ -1438,7 +1438,7 @@ pub fn create<I: Span>(input: I) -> Res<I, CreateVar> {
         };
         let create = CreateVar {
             template,
-            state: StateSrc::None,
+            state: StateSrcVar::None,
             properties,
             strategy,
             registry: Default::default(),
@@ -1521,7 +1521,7 @@ pub fn publish<I: Span>(input: I) -> Res<I, CreateVar> {
 
     let create = CreateVar {
         template,
-        state: StateSrc::None,
+        state: StateSrcVar::None,
         properties: Default::default(),
         strategy: Strategy::Commit,
         registry: Default::default(),
@@ -1560,6 +1560,7 @@ impl File {
     }
 }
 
+#[derive(Clone)]
 pub struct FileResolver {
     pub files: HashMap<String,Bin>
 }
@@ -1580,7 +1581,18 @@ impl FileResolver {
         }
     }
 
+    /// grab the only file
     pub fn singleton(&self) -> Result<File,ResolverErr> {
+        if self.files.len() == 1 {
+            let i = & mut self.files.iter();
+            if let Some((name,content)) = i.next() {
+                Ok(File::new(name.clone(), content.clone()))
+            } else {
+                Err(ResolverErr::NotFound)
+            }
+        } else {
+            Err(ResolverErr::NotFound)
+        }
 
     }
 }
@@ -1667,7 +1679,7 @@ impl Env {
         match self.file_resolver.as_mut() {
             None => {
                 let mut file_resolver = FileResolver::new();
-                file_resolver.insert( name.to_string(), content );
+                file_resolver.files.insert( name.to_string(), content );
                 self.file_resolver.replace(file_resolver);
             }
             Some(file_resolver) => {

@@ -46,6 +46,16 @@ impl Into<ParseErrs> for MsgErr {
     }
 }
 
+impl MsgErr {
+    pub fn forbidden() -> Self {
+        MsgErr::err403()
+    }
+
+    pub fn not_found() -> Self {
+        MsgErr::err404()
+    }
+}
+
 impl Debug for MsgErr {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -89,6 +99,8 @@ impl MsgErr {
 }
 
 impl MsgErr {
+
+
     pub fn new(status: u16, message: &str) -> Self {
         Self::Status {
             status,
@@ -103,6 +115,14 @@ impl MsgErr {
         }
     }
 
+    pub fn err403() -> Self {
+        Self::Status {
+            status: 403,
+            message: "Forbidden".to_string(),
+        }
+    }
+
+
     pub fn err500() -> Self {
         Self::Status {
             status: 500,
@@ -110,7 +130,7 @@ impl MsgErr {
         }
     }
 
-    pub fn from_500(message: &str) -> Self {
+    pub fn from_500<S:ToString>(message: S) -> Self {
         Self::Status {
             status: 500,
             message: message.to_string(),

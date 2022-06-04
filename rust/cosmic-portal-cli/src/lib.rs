@@ -1,8 +1,12 @@
 #![allow(warnings)]
 
 use mesh_portal::version::latest::cli::{RawCommand, Transfer};
-use mesh_portal::version::latest::messaging::Response;
-use mesh_portal_versions::version::v0_0_1::messaging::RequestHandler;
+use mesh_portal::version::latest::entity::request::RequestCore;
+use mesh_portal::version::latest::entity::response::ResponseCore;
+use mesh_portal::version::latest::id::{Point, Port};
+use mesh_portal::version::latest::messaging::{Request, Response};
+use mesh_portal_versions::version::v0_0_1::id::id::ToPort;
+use mesh_portal_versions::version::v0_0_1::messaging::{RequestHandler, SyncMessenger, SyncMessengerRelay};
 
 #[macro_use]
 extern crate cosmic_macros;
@@ -15,18 +19,30 @@ extern crate async_trait;
 
 
 trait CliClient {
-    fn send(&self, command_line: RawCommand) -> Response;
-    //        let request = MsgRequest::new("RawCommand")?.with_body(line.into());
+    fn send(&self, raw : RawCommand) -> Response;
 
-    fn line<C>(&self, content: C, transfers: Vec<Transfer>) -> Response
+    fn send_with_transfers<C>(&self, raw: C, transfers: Vec<Transfer>) -> Response
     where
         C: ToString,
     {
-        let line = RawCommand {
-            line: content.to_string(),
+        let raw= RawCommand {
+            line: raw.to_string(),
             transfers,
         };
-        self.send(line)
+        self.send(raw)
+    }
+}
+
+pub struct CliClientMessenger {
+    pub port: Port,
+    pub messenger: SyncMessengerRelay
+}
+
+impl CliClient for CliClientMessenger {
+    fn send(&self, raw: RawCommand) -> Response{
+        let request: RequestCore = raw.into();
+        let request = Request::new(request, self.port.clone(), Point::registry().to_port() );
+        self.messenger.send(request)
     }
 }
 
@@ -44,7 +60,7 @@ pub mod test {
 
     #[test]
     pub fn test() {
-        let mut obj: Obj = Obj::new();
+        //let mut obj: Obj = Obj::new();
         //        router.pipelines.push(IntPipeline)
     }
 

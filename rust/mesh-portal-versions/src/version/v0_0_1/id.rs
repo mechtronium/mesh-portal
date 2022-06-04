@@ -16,7 +16,6 @@ pub mod id {
     use cosmic_nom::{new_span, Res, Span, SpanExtra, Trace};
 
     use crate::error::{MsgErr, ParseErrs};
-    use crate::version::v0_0_1::id::id::TargetLayer::Unspecified;
     use crate::version::v0_0_1::id::id::PointSegCtx::Working;
     use crate::version::v0_0_1::mesh_portal_uuid;
     use crate::version::v0_0_1::parse::{camel_case, consume_point, consume_point_ctx, Ctx, CtxResolver, Env, kind, point_and_kind, point_route_segment, VarResolver, ResolverErr};

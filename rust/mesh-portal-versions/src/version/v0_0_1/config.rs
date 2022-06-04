@@ -343,7 +343,7 @@ pub mod config {
             Response,
         }
 
-        #[derive(Clone,Eq,PartialEq)]
+        #[derive(Clone)]
         pub struct RouteSelector {
             pub topic: Option<ValuePattern<Topic>>,
             pub method: ValuePattern<MethodPattern>,

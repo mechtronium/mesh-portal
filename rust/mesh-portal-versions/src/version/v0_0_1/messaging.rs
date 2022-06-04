@@ -1,7 +1,6 @@
 use std::collections::HashMap;
 use std::ops::Deref;
 use std::sync::{Arc, RwLock};
-use ariadne::Color::Default;
 use http::{HeaderMap, StatusCode, Uri};
 use crate::error::{MsgErr, StatusErr};
 use crate::version::v0_0_1::bin::Bin;
@@ -38,14 +37,22 @@ pub struct RootRequestCtx<I> {
     }
 
     impl<I> RootRequestCtx<I> {
-        pub fn transform_input<I2>(self) -> Result<RootRequestCtx<I2>, MsgErr>
+
+        pub fn transform_input<I2,E>(self) -> Result<RootRequestCtx<I2>, MsgErr>
         where
-            I2: TryFrom<I,Error=MsgErr>,
+            I2: TryFrom<I,Error=E>,
+            E: Into<MsgErr>
         {
+            let input = match I2::try_from(self.input) {
+                Ok(input) => input,
+                Err(err) => {
+                    return Err(err.into())
+                }
+            };
             Ok(RootRequestCtx {
                 logger: self.logger,
                 request: self.request,
-                input: I2::try_from(self.input)?,
+                input,
                 session: self.session,
             })
         }
@@ -155,13 +162,6 @@ pub struct RootRequestCtx<I> {
         pub core: RequestCore,
     }
 
-    impl TryInto<RequestCore> for Request {
-        type Error = MsgErr;
-
-        fn try_into(self) -> Result<RequestCore, Self::Error> {
-            Ok(self.core)
-        }
-    }
 
 impl TryInto<RawCommand> for Request {
     type Error = MsgErr;
@@ -179,13 +179,6 @@ impl Into<RequestCore> for RawCommand{
         RequestCore::payload(MsgMethod::new("ExecCommand").unwrap().into(), Payload::RawCommand(self))
     }
 }
-
-    impl Into<RequestCore> for Command  {
-        fn into(self) -> RequestCore {
-            RequestCore::new_with_payload(Payload::Command(Box::new(self)))
-        }
-    }
-
 
 
     impl ToMessage for Request {
@@ -786,6 +779,7 @@ impl Into<RequestCore> for RawCommand{
         timeout: Timeout,
     }
 
+
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub enum HandlingKind {
         Durable,   // Mesh will guarantee delivery eventually once Request call has returned
@@ -865,14 +859,67 @@ pub trait Router: Send + Sync {
     fn route(&self, message: Message);
 }
 
+#[derive(Clone)]
 pub struct AsyncMessengerRelay {
-    pub replay: Arc<dyn AsyncMessenger>
+    pub topic: Option<Topic>,
+    pub layer: Option<TargetLayer>,
+    pub point: Option<Point>,
+    pub relay: Arc<dyn AsyncMessenger>
 }
 
 #[async_trait]
 impl AsyncMessenger for AsyncMessengerRelay {
+
     async fn send(&self, request: Request) -> Response{
-        self.replay.send(request).await
+        let mut request = request;
+        if let Some(topic) = &self.topic {
+            request.from.topic = topic.clone();
+        }
+        if let Some(layer) = &self.layer{
+            request.from.layer = layer.clone();
+        }
+        if let Some(point) = &self.point{
+            request.from.point = point.clone();
+        }
+        self.relay.send(request).await
+    }
+}
+
+impl AsyncMessengerRelay {
+    pub fn with_point( self, point: Point) -> Self {
+        Self {
+            topic: self.topic,
+            layer: self.layer,
+            point: Some(point),
+            relay: self.relay
+        }
+    }
+
+    pub fn with_topic( self, topic: Topic) -> Self {
+        Self {
+            topic: Some(topic),
+            layer: self.layer,
+            point: self.point,
+            relay: self.relay
+        }
+    }
+
+    pub fn with_layer( self, layer: TargetLayer) -> Self {
+        Self {
+            topic: self.topic,
+            layer: Some(layer),
+            point: self.point,
+            relay: self.relay
+        }
+    }
+
+    pub fn with_port( self, port: Port ) -> Self {
+        Self {
+            topic: Some(port.topic),
+            layer: Some(port.layer),
+            point: Some(port.point),
+            relay: self.relay
+        }
     }
 }
 
@@ -973,6 +1020,7 @@ pub trait RequestHandler {
 
 #[async_trait]
 pub trait AsyncRequestHandler: Sync+Send  {
+    fn select(&self, request: &Request) -> Result<(), ()>;
     async fn handle(&self, request: RootRequestCtx<Request>) -> Result<ResponseCore, MsgErr>;
 }
 
@@ -990,8 +1038,23 @@ pub struct AsyncRequestHandlerRelay {
     pub relay: Box<dyn AsyncRequestHandler>
 }
 
+
+impl AsyncRequestHandlerRelay {
+    pub fn new( handler: Box<dyn AsyncRequestHandler> ) -> Self  {
+        Self {
+            relay: handler
+        }
+    }
+}
+
 #[async_trait]
 impl AsyncRequestHandler for AsyncRequestHandlerRelay {
+
+    fn select(&self, request: &Request) -> Result<(), ()>
+    {
+        self.relay.select(request)
+    }
+
     async fn handle(&self, ctx: RootRequestCtx<Request>) -> Result<ResponseCore, MsgErr> {
         self.relay.handle(ctx).await
     }
@@ -1057,9 +1120,9 @@ pub struct RequestHandlerRelay {
 }
 
 impl RequestHandlerRelay {
-    pub fn new<H>( handler: H ) -> Self where H: RequestHandler {
+    pub fn new( handler: Box<dyn RequestHandler> ) -> Self {
         Self {
-            relay: Box::new(handler)
+            relay: handler
         }
     }
 }
@@ -1468,6 +1531,12 @@ impl RequestCore {
             status,
             body: Payload::Errors(errors),
         }
+    }
+}
+
+impl Into<ResponseCore> for Port {
+    fn into(self) -> ResponseCore {
+         ResponseCore::ok(Payload::Port(self))
     }
 }
 

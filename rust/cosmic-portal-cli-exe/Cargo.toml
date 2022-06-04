@@ -10,3 +10,7 @@ cosmic-macros= { path="../cosmic-macros"}
 cosmic-nom= { path="../cosmic-nom"}
 mesh-portal= { path="../mesh-portal"}
 mesh-portal-versions = { path="../mesh-portal-versions"}
+
+lazy_static = "1.4.0"
+async-trait = "0.1.48"
+tokio = { version = "1.15.0", features = ["full"] }
