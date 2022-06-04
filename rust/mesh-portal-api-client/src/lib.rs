@@ -356,7 +356,7 @@ pub mod example {
 
     use crate::{InletApi, PortalSkel, inlet, ParticleCtrl};
     use std::collections::HashMap;
-    use mesh_portal::version::latest::payload::{Payload, Primitive};
+    use mesh_portal::version::latest::payload::Payload;
     use mesh_portal::version::latest::entity;
 
     pub struct HelloCtrl {

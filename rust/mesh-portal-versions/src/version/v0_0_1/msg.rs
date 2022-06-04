@@ -28,6 +28,12 @@ impl MsgMethod {
     }
 }
 
+impl Into<Method> for MsgMethod {
+    fn into(self) -> Method {
+        Method::Msg(self)
+    }
+}
+
 impl ToString for MsgMethod {
     fn to_string(&self) -> String {
         self.string.clone()
@@ -44,11 +50,7 @@ impl ValueMatcher<MsgMethod> for MsgMethod {
     }
 }
 
-impl Into<Method> for MsgMethod {
-    fn into(self) -> Method {
-        Method::Msg(self)
-    }
-}
+
 
 impl Into<MethodScopeSelector> for MsgMethod {
     fn into(self) -> MethodScopeSelector{

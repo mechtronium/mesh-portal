@@ -251,14 +251,14 @@ impl Into<RequestCore> for RawCommand{
     }
 
     impl Request {
-        pub fn new(core: RequestCore, from: Port, to: Port) -> Self {
+        pub fn new<P:ToPort>(core: RequestCore, from: P, to: P) -> Self {
             Self {
                 id: uuid(),
                 agent: Agent::Anonymous,
                 scope: Scope::Full,
                 handling: Default::default(),
-                from: from.into(),
-                to: to.into(),
+                from: from.to_port(),
+                to: to.to_port(),
                 core,
             }
         }
@@ -500,54 +500,53 @@ impl Into<RequestCore> for RawCommand{
     #[derive(Debug, Clone)]
     pub struct ProtoRequest {
         pub id: String,
-        pub to: Option<Port>,
-        pub core: Option<RequestCore>,
+        pub to: Port,
+        pub core: RequestCore,
     }
 
     impl ProtoRequest {
-        pub fn new() -> Self {
-            Self {
-                id: uuid(),
-                to: Option::None,
-                core: Option::None,
-            }
-        }
-
-        pub fn validate(&self) -> Result<(), MsgErr> {
-            self.to.as_ref().ok_or("request.to must be set")?;
-            Ok(())
-        }
-
-        pub fn to<P>(&mut self, to: P)
+        pub fn into_request<P>(self, from: P, agent: Agent, scope: Scope ) -> Request
         where
             P: ToPort,
         {
-            self.to = Option::Some(to.to_port());
-        }
-
-        pub fn core(&mut self, core: RequestCore) {
-            self.core = Option::Some(core);
-        }
-
-        pub fn into_request<P>(self, from: P, agent: Agent, scope: Scope) -> Result<Request, MsgErr>
-        where
-            P: ToPort,
-        {
-            self.validate()?;
-            let core = self
-                .core
-                .or(Option::Some(Default::default()))
-                .expect("expected RequestCore");
             let request = Request {
                 id: self.id,
                 from: from.to_port(),
-                to: self.to.expect("expected to point"),
-                core,
+                to: self.to,
+                core: self.core,
                 agent,
                 handling: Default::default(),
-                scope,
+                scope
             };
-            Ok(request)
+            request
+        }
+    }
+
+    impl ProtoRequest {
+        pub fn new<P:ToPort>(to: P, method: Method) -> Self {
+            Self {
+                id: uuid(),
+                to: to.to_port(),
+                core: RequestCore::new(method)
+            }
+        }
+
+        pub fn msg<M: Into<MsgMethod>, P:ToPort>( to: P, method: M ) -> Self {
+            let method: MsgMethod = method.into();
+            let method: Method = method.into();
+            Self::new(to, method)
+        }
+
+        pub fn http<M: Into<HttpMethod>, P:ToPort>( to: P, method: M ) -> Self {
+            let method: HttpMethod = method.into();
+            let method: Method = method.into();
+            Self::new(to, method)
+        }
+
+        pub fn cmd<M: Into<CmdMethod>,P:ToPort>( to: P, method: M ) -> Self {
+            let method: CmdMethod = method.into();
+            let method: Method = method.into();
+            Self::new(to, method)
         }
     }
 
@@ -558,6 +557,12 @@ impl Into<RequestCore> for RawCommand{
         pub to: Port,
         pub core: ResponseCore,
         pub response_to: String,
+    }
+
+    impl Response {
+        pub fn as_result<P:TryFrom<Payload,Error=MsgErr>>(self) -> Result<P,MsgErr> {
+            self.core.as_result()
+        }
     }
 
     impl ToMessage for Response {
@@ -868,66 +873,40 @@ pub trait Router: Send + Sync {
 }
 
 #[derive(Clone)]
-pub struct AsyncMessengerRelay {
-    pub topic: Option<Topic>,
-    pub layer: Option<TargetLayer>,
-    pub point: Option<Point>,
+pub struct AsyncMessengerAgent {
+    pub agent: Agent,
+    pub from: Port,
     pub relay: Arc<dyn AsyncMessenger>
 }
 
-#[async_trait]
-impl AsyncMessenger for AsyncMessengerRelay {
+impl AsyncMessengerAgent {
+    pub fn new(agent: Agent, from: Port, relay: Arc<dyn AsyncMessenger>) -> Self {
+        Self {
+            agent,
+            from,
+            relay,
+        }
+    }
+}
 
-    async fn send(&self, request: Request) -> Response{
-        let mut request = request;
-        if let Some(topic) = &self.topic {
-            request.from.topic = topic.clone();
-        }
-        if let Some(layer) = &self.layer{
-            request.from.layer = layer.clone();
-        }
-        if let Some(point) = &self.point{
-            request.from.point = point.clone();
-        }
+impl AsyncMessengerAgent {
+    pub async fn send(&self, request: ProtoRequest) -> Response{
+        let request = request.into_request(self.from.clone(), self.agent.clone(), Scope::None );
         self.relay.send(request).await
     }
 }
 
-impl AsyncMessengerRelay {
-    pub fn with_point( self, point: Point) -> Self {
-        Self {
-            topic: self.topic,
-            layer: self.layer,
-            point: Some(point),
-            relay: self.relay
-        }
+impl AsyncMessengerAgent {
+    pub fn with_from(self, from: Port ) -> Self {
+        let mut rtn = self.clone();
+        rtn.from = from;
+        rtn
     }
 
-    pub fn with_topic( self, topic: Topic) -> Self {
-        Self {
-            topic: Some(topic),
-            layer: self.layer,
-            point: self.point,
-            relay: self.relay
-        }
-    }
-
-    pub fn with_layer( self, layer: TargetLayer) -> Self {
-        Self {
-            topic: self.topic,
-            layer: Some(layer),
-            point: self.point,
-            relay: self.relay
-        }
-    }
-
-    pub fn with_port( self, port: Port ) -> Self {
-        Self {
-            topic: Some(port.topic),
-            layer: Some(port.layer),
-            point: Some(port.point),
-            relay: self.relay
-        }
+    pub fn with_agent(self, agent: Agent) -> Self {
+        let mut rtn = self.clone();
+        rtn.agent = agent;
+        rtn
     }
 }
 
@@ -1254,6 +1233,17 @@ impl ResponseCore {
     }
 }
 
+impl ResponseCore {
+    pub fn as_result<P:TryFrom<Payload,Error=MsgErr>>(self) -> Result<P,MsgErr> {
+        if self.status.is_success() {
+            Ok(P::try_from(self.body)?)
+        } else {
+            Err(MsgErr::new(self.status.as_u16(), "error"))
+        }
+    }
+}
+
+
 
 impl TryInto<http::response::Builder> for ResponseCore {
     type Error = MsgErr;
@@ -1406,6 +1396,36 @@ pub struct RequestCore {
     #[serde(with = "http_serde::uri")]
     pub uri: Uri,
     pub body: Payload,
+}
+
+impl RequestCore {
+
+    pub fn new( method: Method ) -> Self {
+        Self {
+            method,
+            headers: HeaderMap::new(),
+            uri: Default::default(),
+            body: Default::default()
+        }
+    }
+
+    pub fn msg<M: Into<MsgMethod>>( method: M ) -> Self {
+        let method: MsgMethod = method.into();
+        let method: Method = method.into();
+        Self::new(method)
+    }
+
+    pub fn http<M: Into<HttpMethod>>( method: M ) -> Self {
+        let method: HttpMethod = method.into();
+        let method: Method = method.into();
+        Self::new(method)
+    }
+
+    pub fn cmd<M: Into<CmdMethod>>( method: M ) -> Self {
+        let method: CmdMethod = method.into();
+        let method: Method = method.into();
+        Self::new(method)
+    }
 }
 
 impl TryFrom<Request> for RequestCore {
@@ -1572,6 +1592,13 @@ pub enum CmdMethod {
     Get,
     Update
 }
+
+impl Into<Method> for CmdMethod {
+    fn into(self) -> Method {
+        Method::Cmd(self)
+    }
+}
+
 
 impl ValueMatcher<CmdMethod> for CmdMethod {
     fn is_match(&self, x: &CmdMethod) -> Result<(), ()> {

@@ -972,6 +972,7 @@ pub mod id {
        pub topic: Topic
     }
 
+
     impl Port {
         pub fn with_topic( &self, topic: Topic ) -> Self {
             Self {

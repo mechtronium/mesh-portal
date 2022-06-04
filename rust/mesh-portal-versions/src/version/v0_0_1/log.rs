@@ -1,5 +1,5 @@
 use crate::error::MsgErr;
-use crate::version::v0_0_1::id::id::Point;
+use crate::version::v0_0_1::id::id::{Point, ToPoint};
 use crate::version::v0_0_1::util::{timestamp, uuid};
 use crate::version::v0_0_1::{mesh_portal_timestamp};
 use serde_json::Value;
@@ -308,10 +308,10 @@ impl RootLogger {
         self.appender.pointless(log);
     }
 
-    pub fn point(&self, point: Point) -> PointLogger {
+    pub fn point<P:ToPoint>(&self, point: P) -> PointLogger {
         PointLogger {
             logger: self.clone(),
-            point
+            point: point.to_point()
         }
     }
 }

@@ -37,3 +37,12 @@ pub struct Transfer {
     pub id: String,
     pub content: Bin
 }
+
+impl Transfer {
+    pub fn new<N:ToString>( id: N, content: Bin ) -> Self {
+        Self {
+            id: id.to_string(),
+            content
+        }
+    }
+}

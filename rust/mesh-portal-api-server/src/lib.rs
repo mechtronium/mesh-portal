@@ -34,6 +34,7 @@ use mesh_portal::version::latest::messaging::{Request, Response};
 use mesh_portal::version::latest::portal::inlet::AssignRequest;
 use mesh_portal::version::latest::portal::outlet::{Frame, RequestFrame};
 use mesh_portal::version::latest::particle::Stub;
+use mesh_portal_versions::version::v0_0_1::id::id::ToPoint;
 
 #[derive(Debug,Clone)]
 pub struct PortalApi {
@@ -276,7 +277,7 @@ impl Portal {
         let (tx,rx) = oneshot::channel();
         self.exchanges.insert( request.id.clone(), tx );
 
-        let logger = self.logger.point(request.to.clone());
+        let logger = self.logger.point(request.to.clone().to_point());
         let logger = logger.span();
 
         let request_frame = RequestFrame {

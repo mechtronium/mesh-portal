@@ -22,7 +22,7 @@ use mesh_portal::version::latest::payload::{Payload, PayloadType};
 use mesh_portal::version::latest::id::Port;
 use mesh_portal::version::latest::util::uuid;
 use mesh_portal_versions::version::v0_0_1::id::id::{ToPoint, ToPort};
-use mesh_portal_versions::version::v0_0_1::messaging::{AsyncMessenger, AsyncRequestHandler, AsyncMessengerRelay, AsyncRequestHandlerRelay, InternalPipeline, InternalRequestHandlers, RequestHandler, RequestHandlerRelay, Router, SyncMessenger, SyncMessengerRelay};
+use mesh_portal_versions::version::v0_0_1::messaging::{AsyncMessenger, AsyncRequestHandler, AsyncMessengerAgent, AsyncRequestHandlerRelay, InternalPipeline, InternalRequestHandlers, RequestHandler, RequestHandlerRelay, Router, SyncMessenger, SyncMessengerRelay};
 use mesh_portal_versions::version::v0_0_1::msg::MsgMethod;
 use mesh_portal_versions::version::v0_0_1::parse::{command, command_line, Env};
 use mesh_portal_versions::version::v0_0_1::parse::error::result;
@@ -45,13 +45,13 @@ extern crate async_trait;
 #[derive(AsyncRequestHandler)]
 pub struct CliRelay {
   pub port: Port,
-  pub messenger: AsyncMessengerRelay,
+  pub messenger: AsyncMessengerAgent,
   pub handlers: RwLock<InternalRequestHandlers<AsyncRequestHandlerRelay>>
 }
 
 #[routes_async(self.handlers.read().await)]
 impl CliRelay {
-    fn new(port: Port, messenger: AsyncMessengerRelay) -> Self {
+    fn new(port: Port, messenger: AsyncMessengerAgent) -> Self {
 
         let handlers = RwLock::new(InternalRequestHandlers::new());
 
@@ -77,7 +77,7 @@ impl CliRelay {
         let mut session_port = self.port.clone().with_topic(Topic::uuid());
         let mut source = ctx.request().from.clone();
 
-        let messenger = self.messenger.clone().with_port(session_port.clone());
+        let messenger = self.messenger.clone().with_from(session_port.clone());
 
         let session = CliSession {
             port: session_port.clone(),
@@ -114,7 +114,7 @@ pub struct CliSession {
     pub relay: Port,
     pub port: Port,
     pub env: Env,
-    pub messenger: AsyncMessengerRelay,
+    pub messenger: AsyncMessengerAgent,
     // will only handle requests from THIS port
     pub source: Port
 }
@@ -122,8 +122,8 @@ pub struct CliSession {
 #[routes_async]
 impl CliSession {
 
-    pub fn new( port: Port, relay: Port, messenger: AsyncMessengerRelay, source: Port ) -> CliSession {
-        let messenger = messenger.with_port( port.clone() );
+    pub fn new(port: Port, relay: Port, messenger: AsyncMessengerAgent, source: Port ) -> CliSession {
+        let messenger = messenger.with_from( port.clone() );
         let env = Env::new(port.clone().to_point() );
         Self {
             port,
@@ -159,7 +159,7 @@ impl CliSession {
 
 #[derive(AsyncRequestHandler)]
 pub struct CommandExecutor {
-    messenger: AsyncMessengerRelay,
+    messenger: AsyncMessengerAgent,
     port: Port,
     source: Port,
     env: Env
@@ -170,7 +170,7 @@ impl CommandExecutor {
     pub fn new(
         port: Port,
         source: Port,
-        messenger: AsyncMessengerRelay,
+        messenger: AsyncMessengerAgent,
         env: Env
     ) -> Self {
 
