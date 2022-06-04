@@ -130,6 +130,14 @@ impl MsgErr {
         }
     }
 
+    pub fn err400() -> Self {
+        Self::Status {
+            status: 400,
+            message: "Bad Data".to_string(),
+        }
+    }
+
+
     pub fn from_500<S:ToString>(message: S) -> Self {
         Self::Status {
             status: 500,

@@ -11,6 +11,7 @@ use crate::version::v0_0_1::parse::error::result;
 use cosmic_nom::new_span;
 use crate::version::v0_0_1::util::ToResolved;
 use serde::{Deserialize, Serialize};
+use crate::version::v0_0_1::command::request::update::Update;
 
 pub mod command {
     use serde::{Deserialize, Serialize};
@@ -357,10 +358,11 @@ pub mod request {
 
         use crate::error::{MsgErr, ParseErrs};
         use crate::version::v0_0_1::bin::Bin;
+        use crate::version::v0_0_1::command::Command;
         use crate::version::v0_0_1::command::command::common::{SetProperties, SetRegistry, StateSrc, StateSrcVar};
-        use crate::version::v0_0_1::id::id::{
-            GenericKind, HostKey, Point, PointCtx, PointSeg, PointVar,
-        };
+        use crate::version::v0_0_1::id::id::{GenericKind, HostKey, Point, PointCtx, PointSeg, PointVar, ToPort};
+        use crate::version::v0_0_1::messaging::{CmdMethod, ProtoRequest, RequestCore};
+        use crate::version::v0_0_1::msg::MsgMethod;
         use crate::version::v0_0_1::parse::{Env, ResolverErr};
         use crate::version::v0_0_1::payload::payload::Payload;
         use crate::version::v0_0_1::selector::selector::SpecificSelector;
@@ -544,6 +546,23 @@ pub mod request {
                     strategy: self.strategy,
                     registry: self.registry,
                 }
+            }
+        }
+
+        impl Into<RequestCore> for Create {
+            fn into(self) -> RequestCore{
+                let mut request = RequestCore::msg(MsgMethod::new("Command").unwrap() );
+                request.body = Payload::Command(Box::new(Command::Create(self)));
+                request
+            }
+        }
+
+
+        impl Into<ProtoRequest> for Create {
+            fn into(self) -> ProtoRequest {
+                let mut request = ProtoRequest::msg(Point::registry().to_port(),MsgMethod::new("Command").unwrap());
+                request.core.body = Payload::Command(Box::new(Command::Create(self)));
+                request
             }
         }
 
@@ -817,10 +836,11 @@ pub mod request {
         use crate::version::v0_0_1::id::id::Point;
         use crate::version::v0_0_1::payload::payload::Payload;
 
-        #[derive(Debug, Clone, Serialize, Deserialize)]
+        #[derive(Debug, Clone, Serialize, Deserialize,Eq,PartialEq)]
         pub struct Update {
             pub payload: Payload,
         }
+
     }
 
     pub mod query {
@@ -871,6 +891,8 @@ pub enum Command{
     Publish(Create),
     Set(Set),
     Get(Get),
+    Update(Update),
+    Read,
 }
 
 pub enum CommandCtx{
@@ -880,6 +902,8 @@ pub enum CommandCtx{
     Publish(CreateCtx),
     Set(SetCtx),
     Get(GetCtx),
+    Update(Update),
+    Read,
 }
 
 pub enum CommandVar {
@@ -889,6 +913,8 @@ pub enum CommandVar {
     Publish(CreateVar),
     Set(SetVar),
     Get(GetVar),
+    Update(Update),
+    Read
 }
 
 
@@ -917,6 +943,8 @@ impl ToResolved<CommandCtx> for CommandVar {
             CommandVar::Set(i) => CommandCtx::Set(i.to_resolved(env)?),
             CommandVar::Get(i) => CommandCtx::Get(i.to_resolved(env)?),
             CommandVar::Delete(i) => CommandCtx::Delete(i.to_resolved(env)?),
+            CommandVar::Update(update) => CommandCtx::Update(update),
+            CommandVar::Read => CommandCtx::Read
         })
     }
 }
@@ -930,6 +958,8 @@ impl ToResolved<Command> for CommandCtx {
             CommandCtx::Set(i) => Command::Set(i.to_resolved(env)?),
             CommandCtx::Get(i) => Command::Get(i.to_resolved(env)?),
             CommandCtx::Delete(i) => Command::Delete(i.to_resolved(env)?),
+            CommandCtx::Update(update) => Command::Update(update),
+            CommandCtx::Read => Command::Read
         })
     }
 }

@@ -170,6 +170,25 @@ impl TryFrom<Request> for RawCommand {
     }
 }
 
+impl TryFrom<Response> for Payload{
+    type Error = MsgErr;
+
+    fn try_from(response: Response) -> Result<Self, Self::Error> {
+        Ok(response.core.body)
+    }
+}
+
+impl TryInto<Bin> for Response{
+    type Error = MsgErr;
+
+    fn try_into(self) -> Result<Bin, Self::Error> {
+        match self.core.body {
+            Payload::Bin(bin) => Ok(bin),
+            _  => Err(MsgErr::err400())
+        }
+    }
+}
+
 impl TryInto<RawCommand> for Payload{
     type Error = MsgErr;
 
@@ -560,7 +579,7 @@ impl Into<RequestCore> for RawCommand{
     }
 
     impl Response {
-        pub fn as_result<P:TryFrom<Payload,Error=MsgErr>>(self) -> Result<P,MsgErr> {
+        pub fn as_result<E:From<&'static str>,P:TryFrom<Payload>>(self) -> Result<P,E> {
             self.core.as_result()
         }
     }
@@ -1234,11 +1253,15 @@ impl ResponseCore {
 }
 
 impl ResponseCore {
-    pub fn as_result<P:TryFrom<Payload,Error=MsgErr>>(self) -> Result<P,MsgErr> {
+
+    pub fn as_result<E:From<&'static str>,P:TryFrom<Payload>>(self) -> Result<P,E> {
         if self.status.is_success() {
-            Ok(P::try_from(self.body)?)
+            match P::try_from(self.body) {
+                Ok(payload) => Ok(payload),
+                Err(err) => Err(E::from("error"))
+            }
         } else {
-            Err(MsgErr::new(self.status.as_u16(), "error"))
+            Err(E::from("error"))
         }
     }
 }
@@ -1589,7 +1612,7 @@ impl TryFrom<ResponseCore> for Port {
 
 #[derive(Debug, Clone,Serialize,Deserialize,Eq,PartialEq,Hash,strum_macros::Display,strum_macros::EnumString)]
 pub enum CmdMethod {
-    Get,
+    Read,
     Update
 }
 

@@ -1605,6 +1605,13 @@ pub struct Env {
 }
 
 impl Env {
+
+    pub fn add_var_resolver( &mut self, resolver: Arc<dyn VarResolver> ) {
+        if let Some(r) = self.var_resolver.as_mut() {
+            r.other_resolver.push(resolver)
+        }
+    }
+
     pub fn no_point() -> Self {
         Self {
             point: None,
@@ -1819,11 +1826,9 @@ impl MultiVarResolver {
         Self(vec![])
     }
 
-    pub fn push<R>(&mut self, resolver: R)
-    where
-        R: VarResolver + 'static,
+    pub fn push(&mut self, resolver: Arc<dyn VarResolver>)
     {
-        self.0.push(Arc::new(resolver));
+        self.0.push(resolver);
     }
 }
 
