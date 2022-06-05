@@ -12,6 +12,7 @@ description = "The raw data types for mesh-portal-api serde."
 
 [dependencies]
 cosmic-nom = { path="../cosmic-nom" }
+cosmic-macros-primitive = { path="../cosmic-macros-primitive" }
 async-trait = "0.1.48"
 lazy_static = "1.4.0"
 serde = { version="1.0.69", features=['derive','rc'] }

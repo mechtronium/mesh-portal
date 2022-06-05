@@ -26,6 +26,11 @@ pub mod id {
     };
     use crate::version::v0_0_1::util::{ToResolved, ValueMatcher};
 
+    lazy_static! {
+        pub static ref GLOBAL_EXEC: Point = Point::from_str("GLOBAL::executor").unwrap();
+        pub static ref LOCAL_PORTAL: Point = Point::from_str("LOCAL::portal").unwrap();
+    }
+
     pub type Uuid = String;
 
     pub type GenericKindBase = String;
@@ -227,6 +232,7 @@ pub mod id {
 
     #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
     pub enum RouteSeg {
+        This,
         Local,
         Global,
         Domain(String),
@@ -237,7 +243,7 @@ pub mod id {
     impl RouteSegQuery for RouteSeg {
         fn is_local(&self) -> bool {
             match self {
-                RouteSeg::Local => true,
+                RouteSeg::This => true,
                 _ => false,
             }
         }
@@ -252,6 +258,7 @@ pub mod id {
 
     #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
     pub enum RouteSegVar {
+        This,
         Local,
         Global,
         Domain(String),
@@ -263,7 +270,7 @@ pub mod id {
     impl RouteSegQuery for RouteSegVar {
         fn is_local(&self) -> bool {
             match self {
-                RouteSegVar::Local => true,
+                RouteSegVar::This => true,
                 _ => false,
             }
         }
@@ -282,6 +289,7 @@ pub mod id {
 
         fn try_into(self) -> Result<RouteSeg, Self::Error> {
             match self {
+                RouteSegVar::This => Ok(RouteSeg::This),
                 RouteSegVar::Local => Ok(RouteSeg::Local),
                 RouteSegVar::Global => Ok(RouteSeg::Global),
                 RouteSegVar::Domain(domain) => Ok(RouteSeg::Domain(domain)),
@@ -300,6 +308,7 @@ pub mod id {
     impl Into<RouteSegVar> for RouteSeg {
         fn into(self) -> RouteSegVar {
             match self {
+                RouteSeg::This => RouteSegVar::This,
                 RouteSeg::Local => RouteSegVar::Local,
                 RouteSeg::Global => RouteSegVar::Global,
                 RouteSeg::Domain(domain) => RouteSegVar::Domain(domain),
@@ -312,7 +321,8 @@ pub mod id {
     impl ToString for RouteSegVar {
         fn to_string(&self) -> String {
             match self {
-                Self::Local => ".".to_string(),
+                Self::This => ".".to_string(),
+                Self::Local => "LOCAL".to_string(),
                 Self::Global => "GLOBAL".to_string(),
                 Self::Domain(domain) => domain.clone(),
                 Self::Tag(tag) => {
@@ -341,7 +351,7 @@ pub mod id {
     impl ToString for RouteSeg {
         fn to_string(&self) -> String {
             match self {
-                RouteSeg::Local => ".".to_string(),
+                RouteSeg::This => ".".to_string(),
                 RouteSeg::Domain(domain) => domain.clone(),
                 RouteSeg::Tag(tag) => {
                     format!("[{}]", tag)
@@ -349,7 +359,8 @@ pub mod id {
                 RouteSeg::Mesh(mesh) => {
                     format!("<<{}>>", mesh)
                 }
-                RouteSeg::Global => "GLOBAL".to_string()
+                RouteSeg::Global => "GLOBAL".to_string(),
+                RouteSeg::Local => "LOCAL".to_string()
             }
         }
     }
@@ -981,6 +992,14 @@ pub mod id {
                 topic
             }
         }
+
+        pub fn with_layer( &self, layer: TargetLayer ) -> Self {
+            Self {
+                point: self.point.clone(),
+                layer,
+                topic: self.topic.clone()
+            }
+        }
     }
 
     impl Deref for Port {
@@ -1106,7 +1125,7 @@ pub mod id {
                     }
                 },
 
-                RouteSegVar::Local => {}
+                RouteSegVar::This => {}
                 RouteSegVar::Domain(domain) => {
                     rtn.push_str(format!("{}::", domain).as_str());
                 }
@@ -1118,6 +1137,9 @@ pub mod id {
                 }
                 RouteSegVar::Global => {
                     rtn.push_str("GLOBAL");
+                }
+                RouteSegVar::Local => {
+                    rtn.push_str("LOCAL");
                 }
             };
 
@@ -1338,11 +1360,12 @@ pub mod id {
 
     impl Point {
 
-        pub fn registry() -> Self {
-            Self {
-                route: RouteSeg::Mesh("GLOBAL".to_string()),
-                segments: vec![PointSeg::Space("registry".to_string())]
-            }
+        pub fn global_executor() -> Self {
+            GLOBAL_EXEC.clone()
+        }
+
+        pub fn local_portal() -> Self {
+            LOCAL_PORTAL.clone()
         }
 
         pub fn normalize(self) -> Result<Point, MsgErr> {
@@ -1606,7 +1629,7 @@ pub mod id {
 
         pub fn root() -> Self {
             Self {
-                route: RouteSeg::Local,
+                route: RouteSeg::This,
                 segments: vec![],
             }
         }
@@ -1676,7 +1699,7 @@ pub mod id {
             let mut rtn = String::new();
 
             match &self.route {
-                RouteSeg::Local => {}
+                RouteSeg::This => {}
                 RouteSeg::Domain(domain) => {
                     rtn.push_str(format!("{}::", domain).as_str());
                 }

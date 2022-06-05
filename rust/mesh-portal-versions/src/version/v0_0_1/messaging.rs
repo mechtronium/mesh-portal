@@ -11,11 +11,13 @@ use crate::version::v0_0_1::util::{uuid, ValueMatcher, ValuePattern};
 use serde::{Deserialize, Serialize};
 use crate::version::v0_0_1::cli::RawCommand;
 use crate::version::v0_0_1::command::Command;
+use crate::version::v0_0_1::config::config::Assign;
 use crate::version::v0_0_1::http::HttpMethod;
 use crate::version::v0_0_1::log::SpanLogger;
 use crate::version::v0_0_1::msg::MsgMethod;
 use crate::version::v0_0_1::security::{Permissions, Privilege, Privileges};
 use crate::version::v0_0_1::selector::selector::PointSelector;
+use cosmic_macros_primitive::Autobox;
 
 
 pub struct RootRequestCtx<I> {
@@ -188,18 +190,6 @@ impl TryInto<Bin> for Response{
         }
     }
 }
-
-impl TryInto<RawCommand> for Payload{
-    type Error = MsgErr;
-
-    fn try_into(self) -> Result<RawCommand, Self::Error> {
-        match self {
-            Payload::RawCommand(command)=> Ok(command),
-            payload => Err(format!("expected RawCommand received '{}'", payload.payload_type().to_string() ).into())
-        }
-    }
-}
-
 
 impl Into<RequestCore> for RawCommand{
     fn into(self) -> RequestCore {
@@ -549,6 +539,13 @@ impl Into<RequestCore> for RawCommand{
                 core: RequestCore::new(method)
             }
         }
+
+        pub fn sys<M: Into<SysMethod>, P:ToPort>( to: P, method: M ) -> Self {
+            let method: SysMethod = method.into();
+            let method: Method = method.into();
+            Self::new(to, method)
+        }
+
 
         pub fn msg<M: Into<MsgMethod>, P:ToPort>( to: P, method: M ) -> Self {
             let method: MsgMethod = method.into();
@@ -913,6 +910,12 @@ impl AsyncMessengerAgent {
         let request = request.into_request(self.from.clone(), self.agent.clone(), Scope::None );
         self.relay.send(request).await
     }
+
+    pub fn send_sync(&self, request: ProtoRequest) -> Response{
+        let request = request.into_request(self.from.clone(), self.agent.clone(), Scope::None );
+        self.relay.send_sync(request)
+    }
+
 }
 
 impl AsyncMessengerAgent {
@@ -997,6 +1000,7 @@ impl SyncMessengerRelay {
 #[async_trait]
 pub trait AsyncMessenger: Send + Sync {
     async fn send(&self, request: Request) -> Response;
+    fn send_sync(&self, request: Request) -> Response;
 }
 
 pub trait SyncMessenger: Send + Sync {
@@ -1137,6 +1141,7 @@ impl RequestHandlerRelay {
     Debug, Clone, Serialize, Deserialize, strum_macros::Display, strum_macros::EnumString,Eq,PartialEq
 )]
 pub enum MethodKind {
+    Sys,
     Cmd,
     Msg,
     Http,
@@ -1311,6 +1316,7 @@ impl TryInto<http::Response<Bin>> for ResponseCore {
 
 #[derive(Debug, Clone, Serialize,Deserialize, Eq,PartialEq)]
 pub enum Method {
+    Sys(SysMethod),
     Cmd(CmdMethod),
     Http(HttpMethod),
     Msg(MsgMethod),
@@ -1318,6 +1324,7 @@ pub enum Method {
 
 #[derive(Debug, Clone,Eq,PartialEq)]
 pub enum MethodPattern {
+    Sys(ValuePattern<SysMethod>),
     Cmd(ValuePattern<CmdMethod>),
     Http(ValuePattern<HttpMethod>),
     Msg(ValuePattern<MsgMethod>),
@@ -1335,6 +1342,9 @@ impl ToString for MethodPattern {
             MethodPattern::Msg(c) => {
                 format!("Msg<{}>",c.to_string())
             }
+            MethodPattern::Sys(c) => {
+                format!("Sys<{}>",c.to_string())
+            }
         }
     }
 }
@@ -1342,6 +1352,13 @@ impl ToString for MethodPattern {
 impl ValueMatcher<Method> for MethodPattern {
     fn is_match(&self, x: &Method) -> Result<(), ()> {
         match self {
+            MethodPattern::Sys(pattern) => {
+                if let Method::Sys(v) = x {
+                    pattern.is_match(v)
+                } else {
+                    Err(())
+                }
+            }
             MethodPattern::Cmd(pattern) => {
                 if let Method::Cmd(v) = x {
                     pattern.is_match(v)
@@ -1385,7 +1402,8 @@ impl Method {
         match self {
             Method::Cmd(_) => MethodKind::Cmd,
             Method::Http(_) => MethodKind::Http,
-            Method::Msg(_) => MethodKind::Msg
+            Method::Msg(_) => MethodKind::Msg,
+            Method::Sys(_) => MethodKind::Sys
         }
     }
 }
@@ -1393,9 +1411,10 @@ impl Method {
 impl ToString for Method {
     fn to_string(&self) -> String {
         match self {
-            Method::Cmd(_) => "Rc".to_string(),
-            Method::Http(method) => method.to_string(),
-            Method::Msg(msg) => msg.to_string(),
+            Method::Cmd(cmd) => format!("Cmd<{}>",cmd.to_string()),
+            Method::Http(method) => format!("Http<{}>",method.to_string()),
+            Method::Msg(msg) => format!("Msg<{}>",msg.to_string()),
+            Method::Sys(sys) => format!("Sys<{}>",sys.to_string()),
         }
     }
 }
@@ -1603,7 +1622,7 @@ impl TryFrom<ResponseCore> for Port {
                     Ok(port)
                 }
                 payload => {
-                    Err(format!("expecting Port received {}", payload.payload_type().to_string()).into() )
+                    Err(format!("expecting Port received {}", payload.kind().to_string()).into() )
                 }
             }
         }
@@ -1632,3 +1651,37 @@ impl ValueMatcher<CmdMethod> for CmdMethod {
         }
     }
 }
+
+
+
+
+#[derive(Debug, Clone,Serialize,Deserialize,Eq,PartialEq,Hash,strum_macros::Display,strum_macros::EnumString)]
+pub enum SysMethod {
+    Command,
+    Assign,
+    Authenticate
+}
+
+impl Into<Method> for SysMethod {
+    fn into(self) -> Method {
+        Method::Sys(self)
+    }
+}
+
+
+impl ValueMatcher<SysMethod> for SysMethod {
+    fn is_match(&self, x: &SysMethod) -> Result<(), ()> {
+        if *x == *self {
+            Ok(())
+        } else {
+            Err(())
+        }
+    }
+}
+
+
+#[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, strum_macros::Display, Autobox)]
+pub enum Sys {
+    Assign(Assign)
+}
+

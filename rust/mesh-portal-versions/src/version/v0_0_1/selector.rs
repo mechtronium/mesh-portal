@@ -24,7 +24,7 @@ pub mod selector {
     use crate::version::v0_0_1::command::request::{Rc, RcCommandType};
     use crate::version::v0_0_1::id::id::{GenericKind, GenericKindBase, Point, PointCtx, PointSeg, PointVar, RouteSeg, Specific, Tks, Variable, VarVal, Version};
     use crate::version::v0_0_1::parse::{camel_case, camel_case_to_string_matcher, consume_hierarchy, Env, file_chars, path, path_regex, point_segment_selector, point_selector};
-    use crate::version::v0_0_1::payload::payload::{Call, CallKind, CallWithConfig, CallWithConfigDef, HttpCall, ListPattern, MapPattern, MsgCall, NumRange, Payload, PayloadFormat, PayloadPattern, PayloadPatternDef, PayloadType, PayloadTypePatternDef};
+    use crate::version::v0_0_1::payload::payload::{Call, CallKind, CallWithConfig, CallWithConfigDef, HttpCall, ListPattern, MapPattern, MsgCall, NumRange, Payload, PayloadFormat, PayloadPattern, PayloadPatternDef, PayloadKind, PayloadTypePatternDef};
     use crate::version::v0_0_1::selector::selector::specific::{
         ProductSelector, VariantSelector, VendorSelector,
     };
@@ -189,7 +189,7 @@ pub mod selector {
             }
 
             Point {
-                route: RouteSeg::Local,
+                route: RouteSeg::This,
                 segments,
             }
         }
@@ -590,7 +590,7 @@ pub mod selector {
     pub type PayloadType2Var = PayloadType2Def<PointVar>;
 
     pub struct PayloadType2Def<Pnt> {
-        pub primitive: PayloadType,
+        pub primitive: PayloadKind,
         pub format: Option<PayloadFormat>,
         pub verifier: Option<CallWithConfigDef<Pnt>>,
     }
@@ -1042,7 +1042,7 @@ pub mod selector {
         fn to_string(&self) -> String {
             let mut rtn = String::new();
             match &self.route {
-                RouteSeg::Local => {}
+                RouteSeg::This => {}
                 route => {
                     rtn.push_str(route.to_string().as_str());
                     rtn.push_str("::");

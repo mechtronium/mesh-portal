@@ -26,11 +26,6 @@ pub struct RawCommand {
    pub transfers: Vec<Transfer>
 }
 
-impl Into<Payload> for RawCommand {
-    fn into(self) -> Payload {
-        Payload::RawCommand(self)
-    }
-}
 
 #[derive(Debug,Clone,Serialize,Deserialize,Eq,PartialEq)]
 pub struct Transfer {

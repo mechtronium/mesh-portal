@@ -11,7 +11,10 @@ use crate::version::v0_0_1::parse::error::result;
 use cosmic_nom::new_span;
 use crate::version::v0_0_1::util::ToResolved;
 use serde::{Deserialize, Serialize};
-use crate::version::v0_0_1::command::request::update::Update;
+use crate::version::v0_0_1::command::request::read::{Read, ReadCtx, ReadVar};
+use crate::version::v0_0_1::command::request::update::{Update, UpdateCtx, UpdateVar};
+use crate::version::v0_0_1::messaging::CmdMethod;
+use cosmic_macros_primitive::Autobox;
 
 pub mod command {
     use serde::{Deserialize, Serialize};
@@ -361,7 +364,7 @@ pub mod request {
         use crate::version::v0_0_1::command::Command;
         use crate::version::v0_0_1::command::command::common::{SetProperties, SetRegistry, StateSrc, StateSrcVar};
         use crate::version::v0_0_1::id::id::{GenericKind, HostKey, Point, PointCtx, PointSeg, PointVar, ToPort};
-        use crate::version::v0_0_1::messaging::{CmdMethod, ProtoRequest, RequestCore};
+        use crate::version::v0_0_1::messaging::{CmdMethod, ProtoRequest, RequestCore, SysMethod};
         use crate::version::v0_0_1::msg::MsgMethod;
         use crate::version::v0_0_1::parse::{Env, ResolverErr};
         use crate::version::v0_0_1::payload::payload::Payload;
@@ -560,7 +563,7 @@ pub mod request {
 
         impl Into<ProtoRequest> for Create {
             fn into(self) -> ProtoRequest {
-                let mut request = ProtoRequest::msg(Point::registry().to_port(),MsgMethod::new("Command").unwrap());
+                let mut request = ProtoRequest::sys(Point::global_executor().to_port(),SysMethod::Command);
                 request.core.body = Payload::Command(Box::new(Command::Create(self)));
                 request
             }
@@ -833,12 +836,76 @@ pub mod request {
 
         use crate::error::MsgErr;
         use crate::version::v0_0_1::command::command::common::SetProperties;
-        use crate::version::v0_0_1::id::id::Point;
+        use crate::version::v0_0_1::id::id::{Point, PointCtx, PointVar};
+        use crate::version::v0_0_1::parse::Env;
         use crate::version::v0_0_1::payload::payload::Payload;
+        use crate::version::v0_0_1::util::ToResolved;
+
+        pub type Update = UpdateDef<Point>;
+        pub type UpdateCtx = UpdateDef<PointCtx>;
+        pub type UpdateVar = UpdateDef<PointVar>;
 
         #[derive(Debug, Clone, Serialize, Deserialize,Eq,PartialEq)]
-        pub struct Update {
+        pub struct UpdateDef<Pnt> {
+            pub point: Pnt,
             pub payload: Payload,
+        }
+
+        impl ToResolved<UpdateCtx> for UpdateVar {
+            fn to_resolved(self, env: &Env) -> Result<UpdateCtx, MsgErr> {
+                Ok(UpdateCtx {
+                    point: self.point.to_resolved(env)?,
+                    payload: self.payload
+                })
+            }
+        }
+
+        impl ToResolved<Update> for UpdateCtx {
+            fn to_resolved(self, env: &Env) -> Result<Update, MsgErr> {
+                Ok(Update {
+                    point: self.point.to_resolved(env)?,
+                    payload: self.payload
+                })
+            }
+        }
+
+
+    }
+
+    pub mod read {
+        use crate::error::MsgErr;
+        use crate::version::v0_0_1::id::id::{Point, PointCtx, PointVar};
+        use crate::version::v0_0_1::parse::Env;
+        use crate::version::v0_0_1::payload::payload::Payload;
+        use crate::version::v0_0_1::util::ToResolved;
+        use serde::{Serialize,Deserialize};
+
+        pub type Read = ReadDef<Point>;
+        pub type ReadCtx = ReadDef<PointCtx>;
+        pub type ReadVar = ReadDef<PointVar>;
+
+        #[derive(Debug, Clone, Serialize, Deserialize,Eq,PartialEq)]
+        pub struct ReadDef<Pnt> {
+            pub point: Pnt,
+            pub payload: Payload,
+        }
+
+        impl ToResolved<ReadCtx> for ReadVar {
+            fn to_resolved(self, env: &Env) -> Result<ReadCtx, MsgErr> {
+                Ok(ReadCtx {
+                    point: self.point.to_resolved(env)?,
+                    payload: self.payload
+                })
+            }
+        }
+
+        impl ToResolved<Read> for ReadCtx {
+            fn to_resolved(self, env: &Env) -> Result<Read, MsgErr> {
+                Ok(Read {
+                    point: self.point.to_resolved(env)?,
+                    payload: self.payload
+                })
+            }
         }
 
     }
@@ -883,38 +950,49 @@ pub mod request {
 }
 
 
-#[derive(Debug, Clone,Serialize,Deserialize,Eq,PartialEq)]
+#[derive(Debug, Clone,Serialize,Deserialize,Eq,PartialEq,Autobox)]
 pub enum Command{
     Create(Create),
     Delete(Delete),
     Select(Select),
-    Publish(Create),
     Set(Set),
     Get(Get),
     Update(Update),
-    Read,
+    Read(Read),
+}
+
+impl Command {
+    pub fn matches( &self, method: &CmdMethod ) -> Result<(),()>{
+        if match self {
+            Command::Update(_) => *method == CmdMethod::Update,
+            Command::Read(_) => *method == CmdMethod::Read,
+            _ => false
+        } {
+          Ok(())
+        } else {
+          Err(())
+        }
+    }
 }
 
 pub enum CommandCtx{
     Create(CreateCtx),
     Delete(DeleteCtx),
     Select(SelectCtx),
-    Publish(CreateCtx),
     Set(SetCtx),
     Get(GetCtx),
-    Update(Update),
-    Read,
+    Update(UpdateCtx),
+    Read(ReadCtx),
 }
 
 pub enum CommandVar {
     Create(CreateVar),
     Delete(DeleteVar),
     Select(SelectVar),
-    Publish(CreateVar),
     Set(SetVar),
     Get(GetVar),
-    Update(Update),
-    Read
+    Update(UpdateVar),
+    Read(ReadVar)
 }
 
 
@@ -939,12 +1017,11 @@ impl ToResolved<CommandCtx> for CommandVar {
         Ok(match self {
             CommandVar::Create(i) => CommandCtx::Create(i.to_resolved(env)?),
             CommandVar::Select(i) => CommandCtx::Select(i.to_resolved(env)?),
-            CommandVar::Publish(i) => CommandCtx::Publish(i.to_resolved(env)?),
             CommandVar::Set(i) => CommandCtx::Set(i.to_resolved(env)?),
             CommandVar::Get(i) => CommandCtx::Get(i.to_resolved(env)?),
             CommandVar::Delete(i) => CommandCtx::Delete(i.to_resolved(env)?),
-            CommandVar::Update(update) => CommandCtx::Update(update),
-            CommandVar::Read => CommandCtx::Read
+            CommandVar::Update(update) => CommandCtx::Update(update.to_resolved(env)?),
+            CommandVar::Read(read) => CommandCtx::Read(read.to_resolved(env)?)
         })
     }
 }
@@ -954,12 +1031,11 @@ impl ToResolved<Command> for CommandCtx {
         Ok(match self {
             CommandCtx::Create(i) => Command::Create(i.to_resolved(env)?),
             CommandCtx::Select(i) => Command::Select(i.to_resolved(env)?),
-            CommandCtx::Publish(i) => Command::Publish(i.to_resolved(env)?),
             CommandCtx::Set(i) => Command::Set(i.to_resolved(env)?),
             CommandCtx::Get(i) => Command::Get(i.to_resolved(env)?),
             CommandCtx::Delete(i) => Command::Delete(i.to_resolved(env)?),
-            CommandCtx::Update(update) => Command::Update(update),
-            CommandCtx::Read => Command::Read
+            CommandCtx::Update(update) => Command::Update(update.to_resolved(env)?),
+            CommandCtx::Read(read) => Command::Read(read.to_resolved(env)?)
         })
     }
 }

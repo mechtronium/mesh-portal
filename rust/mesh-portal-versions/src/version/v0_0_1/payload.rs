@@ -13,14 +13,17 @@ pub mod payload {
     use http::Uri;
     use std::str::FromStr;
     use std::sync::Arc;
+    use serde_json::Value;
     use crate::version::v0_0_1::cli::RawCommand;
     use crate::version::v0_0_1::command::Command;
-    use crate::version::v0_0_1::messaging::{Method, RequestCore, ResponseCore};
+    use crate::version::v0_0_1::messaging::{Method, RequestCore, ResponseCore, Sys};
     use crate::version::v0_0_1::http::HttpMethod;
     use crate::version::v0_0_1::msg::MsgMethod;
     use crate::version::v0_0_1::parse::{CtxResolver, Env};
     use crate::version::v0_0_1::parse::model::Subst;
     use cosmic_nom::Tw;
+    use cosmic_macros_primitive::Autobox;
+
 
     #[derive(
         Debug,
@@ -32,7 +35,7 @@ pub mod payload {
         strum_macros::Display,
         strum_macros::EnumString,
     )]
-    pub enum PayloadType {
+    pub enum PayloadKind {
         Empty,
         List,
         Map,
@@ -51,10 +54,11 @@ pub mod payload {
         RawCommand,
         Command,
         Request,
-        Response
+        Response,
+        Sys
     }
 
-    #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, strum_macros::Display)]
+    #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, strum_macros::Display,Autobox)]
     pub enum Payload {
         Empty,
         List(PayloadList),
@@ -72,9 +76,10 @@ pub mod payload {
         RawCommand(RawCommand),
         Command(Box<Command>),
         Errors(Errors),
-        Json(serde_json::Value),
+        Json(Value),
         Request(Box<RequestCore>),
         Response(Box<ResponseCore>),
+        Sys(Sys)
     }
 
 
@@ -105,27 +110,28 @@ pub mod payload {
             Self::Bin(bin)
         }
 
-        pub fn payload_type(&self) -> PayloadType {
+        pub fn kind(&self) -> PayloadKind {
             match self {
-                Payload::Empty => PayloadType::Empty,
-                Payload::List(list) => PayloadType::List,
-                Payload::Map(map) => PayloadType::Map,
-                Payload::Point(_) => PayloadType::Point,
-                Payload::Text(_) => PayloadType::Text,
-                Payload::Stub(_) => PayloadType::Stub,
-                Payload::Meta(_) => PayloadType::Meta,
-                Payload::Bin(_) => PayloadType::Bin,
-                Payload::Boolean(_) => PayloadType::Boolean,
-                Payload::Int(_) => PayloadType::Int,
-                Payload::Status(_) => PayloadType::Status,
-                Payload::Particle(_) => PayloadType::Particle,
-                Payload::Errors(_) => PayloadType::Errors,
-                Payload::Json(_) => PayloadType::Json,
-                Payload::RawCommand(_) => PayloadType::RawCommand,
-                Payload::Port(_) => PayloadType::Port,
-                Payload::Command(_) => PayloadType::Command,
-                Payload::Request(_) => PayloadType::Request,
-                Payload::Response(_) => PayloadType::Response
+                Payload::Empty => PayloadKind::Empty,
+                Payload::List(list) => PayloadKind::List,
+                Payload::Map(map) => PayloadKind::Map,
+                Payload::Point(_) => PayloadKind::Point,
+                Payload::Text(_) => PayloadKind::Text,
+                Payload::Stub(_) => PayloadKind::Stub,
+                Payload::Meta(_) => PayloadKind::Meta,
+                Payload::Bin(_) => PayloadKind::Bin,
+                Payload::Boolean(_) => PayloadKind::Boolean,
+                Payload::Int(_) => PayloadKind::Int,
+                Payload::Status(_) => PayloadKind::Status,
+                Payload::Particle(_) => PayloadKind::Particle,
+                Payload::Errors(_) => PayloadKind::Errors,
+                Payload::Json(_) => PayloadKind::Json,
+                Payload::RawCommand(_) => PayloadKind::RawCommand,
+                Payload::Port(_) => PayloadKind::Port,
+                Payload::Command(_) => PayloadKind::Command,
+                Payload::Request(_) => PayloadKind::Request,
+                Payload::Response(_) => PayloadKind::Response,
+                Payload::Sys(_) => PayloadKind::Sys
             }
         }
 
@@ -139,6 +145,7 @@ pub mod payload {
         }
     }
 
+
     impl TryInto<HashMap<String, Payload>> for Payload {
         type Error = MsgErr;
 
@@ -150,39 +157,12 @@ pub mod payload {
         }
     }
 
-    impl TryInto<String> for Payload {
-        type Error = MsgErr;
-
-        fn try_into(self) -> Result<String, Self::Error> {
-            match self {
-                Payload::Text(text) => Ok(text),
-                Payload::Bin(bin) => Ok(String::from_utf8(bin.to_vec())?),
-                _ => Err("Payload type must an Text".into()),
-            }
-        }
-    }
-
-    impl TryInto<Point> for Payload {
-        type Error = MsgErr;
-
-        fn try_into(self) -> Result<Point, Self::Error> {
-            match self {
-                Payload::Point(point) => Ok(point),
-                _ => Err("Payload type must an Address".into()),
-            }
-        }
-    }
 
     #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
     pub struct PayloadMap {
         pub map: HashMap<String, Payload>,
     }
 
-    impl Into<Payload> for PayloadMap {
-        fn into(self) -> Payload {
-            Payload::Map(self)
-        }
-    }
 
     impl Deref for PayloadMap {
         type Target = HashMap<String, Payload>;
@@ -320,7 +300,7 @@ pub mod payload {
 
     #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
     pub struct ListPattern {
-        pub primitive: PayloadType,
+        pub primitive: PayloadKind,
         pub range: NumRange,
     }
 
@@ -357,7 +337,7 @@ pub mod payload {
     #[derive(Debug, Clone, Serialize, Deserialize,Eq,PartialEq)]
     pub enum PayloadTypePatternDef<Pnt> {
         Empty,
-        Primitive(PayloadType),
+        Primitive(PayloadKind),
         List(ListPattern),
         Map(Box<MapPatternDef<Pnt>>),
     }
@@ -993,4 +973,19 @@ pub mod payload {
         }
     }
      */
+
+
+
+
+
+
+
+
+
 }
+
+
+
+
+
+

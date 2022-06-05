@@ -101,7 +101,7 @@ where
 
 pub fn local_route_segment<I: Span>(input: I) -> Res<I, RouteSeg> {
     alt((recognize(tag(".")), recognize(not(other_route_segment))))(input)
-        .map(|(next, _)| (next, RouteSeg::Local))
+        .map(|(next, _)| (next, RouteSeg::This))
 }
 
 pub fn global_route_segment<I: Span>(input: I) -> Res<I, RouteSeg> {
@@ -381,7 +381,7 @@ pub fn root_point_var<I: Span>(input: I) -> Res<I, PointVar> {
         )),
     )(input)
     .map(|(next, (route, _))| {
-        let route = route.unwrap_or(RouteSegVar::Local);
+        let route = route.unwrap_or(RouteSegVar::This);
         let point = PointVar {
             route,
             segments: vec![],
@@ -412,7 +412,7 @@ pub fn point_non_root_var<I: Span>(input: I) -> Res<I, PointVar> {
     )(input)
     .map(
         |(next, (route, space, mut bases, version, filesystem, _))| {
-            let route = route.unwrap_or(RouteSegVar::Local);
+            let route = route.unwrap_or(RouteSegVar::This);
             let mut segments = vec![];
             let mut bases: Vec<PointSegVar> = bases;
             segments.push(space);
@@ -3474,6 +3474,13 @@ pub mod model {
                 ValuePattern::Any => ValuePattern::Any,
                 ValuePattern::None => ValuePattern::None,
                 ValuePattern::Pattern(message_kind) => match message_kind {
+                    MethodKind::Sys=> {
+                        return Err(ParseErrs::from_loc_span(
+                            format!("Sys not implemented '{}'", selector.name.to_string()).as_str(),
+                            "Sys not implemented",
+                            selector.name,
+                        ))
+                    }
                     MethodKind::Cmd => {
                         return Err(ParseErrs::from_loc_span(
                             format!("Cmd not implemented '{}'", selector.name.to_string()).as_str(),
@@ -4604,7 +4611,7 @@ use cosmic_nom::{Res, trim, Wrap};
 use crate::version::v0_0_1::payload::payload::{
     Call, CallCtx, CallKind, CallVar, CallWithConfig, CallWithConfigCtx, CallWithConfigVar,
     HttpCall, ListPattern, MapPattern, MapPatternCtx, MapPatternVar, MsgCall, NumRange,
-    PayloadFormat, PayloadPattern, PayloadPatternCtx, PayloadPatternVar, PayloadType,
+    PayloadFormat, PayloadPattern, PayloadPatternCtx, PayloadPatternVar, PayloadKind,
     PayloadTypePatternCtx, PayloadTypePatternDef, PayloadTypePatternVar,
 };
 use crate::version::v0_0_1::selector::selector::specific::{
@@ -5382,7 +5389,7 @@ pub fn primitive_def<I: Span>(input: I) -> Res<I, PayloadType2Def<PointVar>> {
     })
 }
 
-pub fn payload<I: Span>(input: I) -> Res<I, PayloadType> {
+pub fn payload<I: Span>(input: I) -> Res<I, PayloadKind> {
     parse_camel_case_str(input)
 }
 
@@ -6375,6 +6382,14 @@ pub fn route_selector<I: Span>(input: I) -> Result<RouteSelector, MsgErr> {
         ValuePattern::Any => ValuePattern::Any,
         ValuePattern::None => ValuePattern::None,
         ValuePattern::Pattern(method_kind) => match method_kind {
+            MethodKind::Sys=> {
+                return Err(ParseErrs::from_loc_span(
+                    "Sys not supported yet",
+                    "not supported (yet)",
+                    method_kind_span,
+                )
+                    .into());
+            }
             MethodKind::Cmd => {
                 return Err(ParseErrs::from_loc_span(
                     "Cmd not supported yet",
@@ -7429,7 +7444,7 @@ fn create_command<I: Span>(input: I) -> Res<I, CommandVar> {
 
 fn publish_command<I: Span>(input: I) -> Res<I, CommandVar> {
     tuple((tag("publish"), space1, publish))(input)
-        .map(|(next, (_, _, create))| (next, CommandVar::Publish(create)))
+        .map(|(next, (_, _, create))| (next, CommandVar::Create(create)))
 }
 
 fn select_command<I: Span>(input: I) -> Res<I, CommandVar> {

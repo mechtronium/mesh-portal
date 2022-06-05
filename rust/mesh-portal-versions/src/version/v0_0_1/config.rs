@@ -52,13 +52,13 @@ pub mod config {
         }
     }
 
-    #[derive(Debug, Clone, Serialize, Deserialize)]
+    #[derive(Debug, Clone, Serialize, Deserialize,Eq,PartialEq)]
     pub struct Assign {
         pub config: PointConfig<ParticleConfigBody>,
         pub details: particle::ParticleDetails,
     }
 
-    #[derive(Debug, Clone, Serialize, Deserialize)]
+    #[derive(Debug, Clone, Serialize, Deserialize,Eq,PartialEq)]
     pub struct PointConfig<Body> {
         pub point: Point,
         pub body: Body,
@@ -77,7 +77,7 @@ pub mod config {
         BindConfig(BindConfig),
     }
 
-    #[derive(Debug, Clone, Serialize, Deserialize)]
+    #[derive(Debug, Clone, Serialize, Deserialize,Eq,PartialEq)]
     pub enum ParticleConfigBody {
         Control,
         Named(String),

@@ -158,7 +158,7 @@ pub mod payload {
     pub type Payload = payload::payload::Payload;
     pub type PayloadMap = payload::payload::PayloadMap;
     pub type PrimitiveList = payload::payload::PayloadList;
-    pub type PayloadType = payload::payload::PayloadType;
+    pub type PayloadType = payload::payload::PayloadKind;
     pub type Errors = payload::payload::Errors;
     pub type ListPattern = payload::payload::ListPattern;
     pub type Range = payload::payload::NumRange;
