@@ -117,6 +117,22 @@ impl <W> Deref for Tw<W> {
     }
 }
 
+pub fn tw<I, F, O>(mut f: F) -> impl FnMut(I) -> Res<I, Tw<O>>
+    where
+        I: Span,
+        F: FnMut(I) -> Res<I, O> + Copy,
+{
+    move |input: I| {
+        let (next,output) = f(input.clone())?;
+
+        let span = input.slice( 0..next.len() );
+        let tw = Tw::new( span, output);
+
+        Ok((next,tw))
+    }
+}
+
+
 //pub type OwnedSpan<'a> = LocatedSpan<&'a str, SpanExtra>;
 pub type SpanExtra = Arc<String>;
 

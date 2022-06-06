@@ -11,6 +11,7 @@ use crate::version::v0_0_1::http::HttpMethod;
 use crate::version::v0_0_1::{mesh_portal_timestamp, mesh_portal_uuid};
 use crate::version::v0_0_1::parse::Env;
 use serde::{Deserialize, Serialize};
+use crate::version::v0_0_1::id::id::Uuid;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
 pub enum HttpMethodPattern {
@@ -197,7 +198,7 @@ where
     fn convert_from(a: A) -> Result<Self, MsgErr>;
 }
 
-pub fn uuid() -> String {
+pub fn uuid() -> Uuid {
     unsafe { mesh_portal_uuid() }
 }
 

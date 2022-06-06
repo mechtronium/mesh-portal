@@ -8,7 +8,7 @@ use mesh_portal::version::latest::entity::response::ResponseCore;
 use mesh_portal::version::latest::id::{Point, Port, Topic};
 use mesh_portal::version::latest::messaging::{ProtoRequest, Request, Response};
 use mesh_portal::version::latest::msg::MsgMethod;
-use mesh_portal_versions::version::v0_0_1::id::id::{TargetLayer, ToPort};
+use mesh_portal_versions::version::v0_0_1::id::id::{Layer, ToPort};
 use mesh_portal_versions::version::v0_0_1::messaging::{AsyncMessengerAgent, RequestHandler, SyncMessenger, SyncMessengerRelay};
 
 #[macro_use]
@@ -30,12 +30,12 @@ impl Cli{
     }
 
     pub async fn session(&self) -> Result<CliSession<'_>,MsgErr> {
-        let to = self.messenger.from.with_layer(TargetLayer::Shell).with_topic(Topic::Cli );
+        let to = self.messenger.from.with_layer(Layer::Shell).with_topic(Topic::Cli );
         let request = ProtoRequest::msg( to, MsgMethod::new( "NewSession").unwrap() );
         let response = self.messenger.send( request ).await;
         if response.core.is_ok() {
             let session:Port = response.core.body.try_into()?;
-           Ok(CliSession::new(self,session.clone(), self.messenger.clone().with_from(response.to.with_layer(TargetLayer::Core).with_topic(session.topic))))
+           Ok(CliSession::new(self,session.clone(), self.messenger.clone().with_from(response.to.with_layer(Layer::Core).with_topic(session.topic))))
         } else {
             Err("could not create cli".into())
         }

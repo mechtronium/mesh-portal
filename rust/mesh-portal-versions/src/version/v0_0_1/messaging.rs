@@ -4,7 +4,7 @@ use crate::version::v0_0_1::cli::RawCommand;
 use crate::version::v0_0_1::command::Command;
 use crate::version::v0_0_1::config::config::bind::RouteSelector;
 use crate::version::v0_0_1::http::HttpMethod;
-use crate::version::v0_0_1::id::id::{Point, Port, TargetLayer, ToPort, Topic, Uuid, ToPoint};
+use crate::version::v0_0_1::id::id::{Point, Port, Layer, ToPort, Topic, Uuid, ToPoint};
 use crate::version::v0_0_1::log::{LogSpan, LogSpanEvent, SpanLogger};
 use crate::version::v0_0_1::msg::MsgMethod;
 use crate::version::v0_0_1::particle::particle::Details;
@@ -25,6 +25,44 @@ use std::sync::Arc;
 use ariadne::Color::Default;
 use dashmap::DashMap;
 use tokio::sync::RwLock;
+
+
+
+
+#[derive(Serialize, Deserialize,Eq,PartialEq,Hash,strum_macros::Display,strum_macros::EnumString)]
+pub enum WaveKind {
+    Req,
+    Res
+}
+
+#[derive(Serialize, Deserialize,Eq,PartialEq,Hash)]
+pub struct WaveId {
+    port: Port,
+    uuid: Uuid,
+    kind: WaveKind
+}
+
+impl WaveId {
+
+    pub fn new( port: Port, kind: WaveKind ) -> Self {
+        let uuid = uuid();
+        Self::with_uuid(port,kind,uuid)
+    }
+
+    pub fn with_uuid( port: Port, kind: WaveKind, uuid: Uuid  ) -> Self {
+        Self {
+            port,
+            uuid,
+            kind
+        }
+    }
+}
+
+impl ToString for WaveId {
+    fn to_string(&self) -> String {
+        format!("{}<Wave<{}>>/{}",self.port.to_string(),self.kind.to_string(),self.uuid)
+    }
+}
 
 #[derive(Serialize, Deserialize, Autobox)]
 pub enum WaveFrame {
@@ -1327,7 +1365,7 @@ impl AsyncMessengerAgent {
 #[derive(Clone)]
 pub struct SyncMessengerRelay {
     pub topic: Option<Topic>,
-    pub layer: Option<TargetLayer>,
+    pub layer: Option<Layer>,
     pub point: Option<Point>,
     pub relay: Arc<dyn SyncMessenger>,
 }
@@ -1367,7 +1405,7 @@ impl SyncMessengerRelay {
         }
     }
 
-    pub fn with_layer(self, layer: TargetLayer) -> Self {
+    pub fn with_layer(self, layer: Layer) -> Self {
         Self {
             topic: self.topic,
             layer: Some(layer),

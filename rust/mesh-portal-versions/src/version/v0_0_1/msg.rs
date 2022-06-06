@@ -7,7 +7,7 @@ use http::{HeaderMap, StatusCode, Uri};
 use nom::combinator::all_consuming;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
-use crate::version::v0_0_1::parse::camel_case;
+use crate::version::v0_0_1::parse::camel_case_chars;
 use crate::version::v0_0_1::parse::error::result;
 use crate::version::v0_0_1::parse::model::MethodScopeSelector;
 use cosmic_nom::new_span;
@@ -21,7 +21,7 @@ pub struct MsgMethod {
 impl MsgMethod {
     pub fn new<S:ToString>( string: S) -> Result<Self,MsgErr> {
         let tmp = string.to_string();
-        let string = result(all_consuming(camel_case)(new_span(tmp.as_str())))?.to_string();
+        let string = result(all_consuming(camel_case_chars)(new_span(tmp.as_str())))?.to_string();
         Ok(Self {
             string
         })

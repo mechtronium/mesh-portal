@@ -24,24 +24,19 @@ use crate::version::v0_0_1::command::request::select::{
     Select, SelectIntoPayload, SelectKind, SelectVar,
 };
 use crate::version::v0_0_1::command::request::set::{Set, SetVar};
-use crate::version::v0_0_1::id::id::{
-    Point, PointCtx, PointKindVar, PointSegCtx, PointSegDelim, PointSegment, PointSegVar, PointVar,
-    RouteSeg, RouteSegVar, Topic, Variable, Version,
-};
+use crate::version::v0_0_1::id::id::{Layer, Point, PointCtx, PointKindVar, PointSegCtx, PointSegDelim, PointSegment, PointSegVar, PointVar, Port, RouteSeg, RouteSegVar, Topic, Uuid, Variable, Version};
 use crate::version::v0_0_1::security::{
     AccessGrantKind, AccessGrantKindDef, ChildPerms, ParticlePerms, Permissions, PermissionsMask,
     PermissionsMaskKind, Privilege,
 };
-use crate::version::v0_0_1::selector::selector::{
-    MapEntryPatternCtx, MapEntryPatternVar, PointKindHierarchy, PointKindSeg,
-};
+use crate::version::v0_0_1::selector::selector::{MapEntryPatternCtx, MapEntryPatternVar, PointKindHierarchy, PointKindHierarchyFuzzy, PointKindSeg, PointKindSegFuzzy};
 use crate::version::v0_0_1::util::{HttpMethodPattern, StringMatcher, ToResolved, ValuePattern};
 use nom::bytes::complete::take;
 use nom::character::is_space;
 use nom_supreme::final_parser::ExtractContext;
 use regex::internal::Input;
 use regex::{Captures, Error, Match, Regex};
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 /*
 pub struct Parser {}
@@ -325,7 +320,7 @@ where
         let offset = input.location_offset();
         let result = pair(
             peek(tag("$")),
-            context("var", cut(delimited(tag("${"), skewer_case, tag("}")))),
+            context("var", cut(delimited(tag("${"), skewer_case_chars, tag("}")))),
         )(input.clone());
 
         match result {
@@ -358,7 +353,7 @@ where
         let offset = input.location_offset();
         let result = pair(
             peek(tag("$")),
-            context("var", cut(delimited(tag("${"), skewer_case, tag("}")))),
+            context("var", cut(delimited(tag("${"), skewer_case_chars, tag("}")))),
         )(input.clone());
         match result {
             Ok((next, (_, var))) => {
@@ -546,11 +541,11 @@ pub fn file_point_capture_segment(input: Span) -> Res<Span, PointSeg> {
 }
  */
 
-pub fn space_point_kind_segment<I: Span>(input: I) -> Res<I, PointKindSeg> {
-    tuple((space_point_segment, delim_kind))(input).map(|(next, (point_segment, kind))| {
+pub fn space_point_kind_segment_fuzzy<I: Span>(input: I) -> Res<I, PointKindSegFuzzy> {
+    tuple((space_point_segment, delim_kind_fuzzy))(input).map(|(next, (point_segment, kind))| {
         (
             next,
-            PointKindSeg {
+            PointKindSegFuzzy {
                 segment: point_segment,
                 kind,
             },
@@ -558,11 +553,11 @@ pub fn space_point_kind_segment<I: Span>(input: I) -> Res<I, PointKindSeg> {
     })
 }
 
-pub fn base_point_kind_segment<I: Span>(input: I) -> Res<I, PointKindSeg> {
-    tuple((base_point_segment, delim_kind))(input).map(|(next, (point_segment, kind))| {
+pub fn base_point_kind_segment_fuzzy<I: Span>(input: I) -> Res<I, PointKindSegFuzzy> {
+    tuple((base_point_segment, delim_kind_fuzzy))(input).map(|(next, (point_segment, kind))| {
         (
             next,
-            PointKindSeg {
+            PointKindSegFuzzy {
                 segment: point_segment,
                 kind,
             },
@@ -570,14 +565,14 @@ pub fn base_point_kind_segment<I: Span>(input: I) -> Res<I, PointKindSeg> {
     })
 }
 
-pub fn filepath_point_kind_segment<I: Span>(input: I) -> Res<I, PointKindSeg> {
-    alt((file_point_kind_segment, dir_point_kind_segment))(input)
+pub fn filepath_point_kind_segment_fuzzy<I: Span>(input: I) -> Res<I, PointKindSegFuzzy> {
+    alt((file_point_kind_segment_fuzzy, dir_point_kind_segment_fuzzy))(input)
 }
-pub fn dir_point_kind_segment<I: Span>(input: I) -> Res<I, PointKindSeg> {
-    tuple((dir_point_segment, delim_kind))(input).map(|(next, (point_segment, kind))| {
+pub fn dir_point_kind_segment_fuzzy<I: Span>(input: I) -> Res<I, PointKindSegFuzzy> {
+    tuple((dir_point_segment, delim_kind_fuzzy))(input).map(|(next, (point_segment, kind))| {
         (
             next,
-            PointKindSeg {
+            PointKindSegFuzzy {
                 segment: point_segment,
                 kind,
             },
@@ -585,11 +580,11 @@ pub fn dir_point_kind_segment<I: Span>(input: I) -> Res<I, PointKindSeg> {
     })
 }
 
-pub fn file_point_kind_segment<I: Span>(input: I) -> Res<I, PointKindSeg> {
-    tuple((file_point_segment, delim_kind))(input).map(|(next, (point_segment, kind))| {
+pub fn file_point_kind_segment_fuzzy<I: Span>(input: I) -> Res<I, PointKindSegFuzzy> {
+    tuple((file_point_segment, delim_kind_fuzzy))(input).map(|(next, (point_segment, kind))| {
         (
             next,
-            PointKindSeg {
+            PointKindSegFuzzy {
                 segment: point_segment,
                 kind,
             },
@@ -597,11 +592,11 @@ pub fn file_point_kind_segment<I: Span>(input: I) -> Res<I, PointKindSeg> {
     })
 }
 
-pub fn version_point_kind_segment<I: Span>(input: I) -> Res<I, PointKindSeg> {
-    tuple((version_point_segment, delim_kind))(input).map(|(next, (point_segment, kind))| {
+pub fn version_point_kind_segment_fuzzy<I: Span>(input: I) -> Res<I, PointKindSegFuzzy> {
+    tuple((version_point_segment, delim_kind_fuzzy))(input).map(|(next, (point_segment, kind))| {
         (
             next,
-            PointKindSeg {
+            PointKindSegFuzzy {
                 segment: point_segment,
                 kind,
             },
@@ -614,12 +609,21 @@ pub fn consume_hierarchy<I: Span>(input: I) -> Result<PointKindHierarchy, MsgErr
     Ok(rtn)
 }
 
+pub fn consume_hierarchy_fuzzy<I: Span>(input: I) -> Result<PointKindHierarchyFuzzy, MsgErr> {
+    let (_, rtn) = all_consuming(point_kind_hierarchy_fuzzy)(input)?;
+    Ok(rtn)
+}
+
+
 pub fn point_kind_hierarchy<I: Span>(input: I) -> Res<I, PointKindHierarchy> {
+    point_kind_hierarchy_fuzzy(input)
+}
+pub fn point_kind_hierarchy_fuzzy<I: Span>(input: I) -> Res<I, PointKindHierarchyFuzzy> {
     tuple((
-        tuple((point_route_segment, space_point_kind_segment)),
-        many0(base_point_kind_segment),
-        opt(version_point_kind_segment),
-        many0(file_point_kind_segment),
+        tuple((point_route_segment, space_point_kind_segment_fuzzy)),
+        many0(base_point_kind_segment_fuzzy),
+        opt(version_point_kind_segment_fuzzy),
+        many0(file_point_kind_segment_fuzzy),
     ))(input)
     .map(|(next, ((hub, space), mut bases, version, mut files))| {
         let mut segments = vec![];
@@ -840,6 +844,20 @@ where
     )
 }
 
+pub fn parse_uuid<I:Span>(i:I) -> Res<I,Uuid> {
+    uuid_chars(i).map(|(next,uuid)|(next,uuid.to_string()))
+}
+
+
+pub fn uuid_chars<T: Span>(i: T) -> Res<T, T>
+    where
+        T: InputTakeAtPosition + nom::InputLength,
+        <T as InputTakeAtPosition>::Item: AsChar,
+{
+    // same as skewer_chars
+    skewer_chars(i)
+}
+
 pub fn skewer_chars_plus_capture<T: Span>(i: T) -> Res<T, T>
 where
     T: InputTakeAtPosition + nom::InputLength,
@@ -1045,15 +1063,105 @@ pub fn subst_path<I: Span>(input: I) -> Res<I, Subst<I>> {
 pub fn consume_path<I: Span>(input: I) -> Res<I, I> {
     all_consuming(path)(input)
 }
-
-pub fn camel_case<I: Span>(input: I) -> Res<I, I> {
-    recognize(tuple((is_a("ABCDEFGHIJKLMNOPQRSTUVWXYZ"), alphanumeric0)))(input)
-    //recognize(alpha1)(input)
+pub struct CamelCase {
+    string: String
 }
 
-pub fn skewer_case<I: Span>(input: I) -> Res<I, I> {
-    rec_skewer(input)
-    //recognize(alpha1)(input)
+impl FromStr for CamelCase {
+    type Err=MsgErr;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(Self {
+            string:result(camel_case_chars(new_span(s)))?.to_string()
+        })
+    }
+}
+
+impl Serialize for CamelCase {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error> where S: Serializer {
+        serializer.serialize_str(self.string.as_str())
+    }
+}
+
+impl <'de> Deserialize<'de> for CamelCase {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error> where D: Deserializer<'de> {
+        let string = String::deserialize(deserializer)?;
+
+        Ok(result(camel_case(new_span(string.as_str())))?)
+    }
+}
+
+impl ToString for CamelCase {
+    fn to_string(&self) -> String {
+        self.string.clone()
+    }
+}
+
+impl Deref for CamelCase {
+    type Target = String;
+
+    fn deref(&self) -> &Self::Target {
+        &self.string
+    }
+}
+
+#[derive(Clone,Eq,PartialEq,Hash)]
+pub struct SkewerCase {
+    string: String
+}
+
+impl Serialize for SkewerCase {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error> where S: Serializer {
+        serializer.serialize_str(self.string.as_str())
+    }
+}
+
+impl <'de> Deserialize<'de> for SkewerCase {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error> where D: Deserializer<'de> {
+        let string = String::deserialize(deserializer)?;
+
+        Ok(result(skewer_case(new_span(string.as_str())))?)
+    }
+}
+
+impl FromStr for SkewerCase {
+    type Err=MsgErr;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(Self {
+            string:result(skewer_case_chars(new_span(s)))?.to_string()
+        })
+    }
+}
+
+impl ToString for SkewerCase {
+    fn to_string(&self) -> String {
+        self.string.clone()
+    }
+}
+
+impl Deref for SkewerCase {
+    type Target = String;
+
+    fn deref(&self) -> &Self::Target {
+        &self.string
+    }
+}
+
+pub fn camel_case<I: Span>(input: I) -> Res<I, CamelCase> {
+    camel_case_chars(input).map(|(next,camel_case_chars)|{(next,CamelCase{string:camel_case_chars.to_string()})})
+}
+
+pub fn skewer_case<I: Span>(input: I) -> Res<I, SkewerCase> {
+    skewer_case_chars(input).map(|(next,skewer_case_chars)|{(next,SkewerCase{string:skewer_case_chars.to_string()})})
+}
+
+pub fn camel_case_chars<I: Span>(input: I) -> Res<I, I> {
+    recognize(tuple((is_a("ABCDEFGHIJKLMNOPQRSTUVWXYZ"), alphanumeric0)))(input)
+}
+
+pub fn skewer_case_chars<I: Span>(input: I) -> Res<I, I> {
+    recognize(tuple((is_a("abcdefghijklmnopqrstuvwxyz"), many0(alt((alphanumeric1,tag("-")))))))(input)
 }
 
 pub fn lowercase_alphanumeric<I: Span>(input: I) -> Res<I, I> {
@@ -1081,7 +1189,7 @@ pub fn single_digit<I: Span>(input: I) -> Res<I, I> {
 }
 
 pub fn camel_case_to_string_matcher<I: Span>(input: I) -> Res<I, StringMatcher> {
-    camel_case(input).map(|(next, camel)| (next, StringMatcher::new(camel.to_string())))
+    camel_case_chars(input).map(|(next, camel)| (next, StringMatcher::new(camel.to_string())))
 }
 
 fn parse_version_major_minor_patch<I: Span>(input: I) -> Res<I, (I, I, I)> {
@@ -1315,7 +1423,7 @@ pub fn kind_template<I: Span>(input: I) -> Res<I, KindTemplate> {
         opt(delimited(
             tag("<"),
             tuple((
-                camel_case,
+                camel_case_chars,
                 opt(delimited(tag("<"), specific_selector, tag(">"))),
             )),
             tag(">"),
@@ -3032,7 +3140,7 @@ pub fn scope_name<I>(input: I) -> Res<I, I>
 where
     I: Span,
 {
-    recognize(pair(skewer_case, peek(alt((eof, multispace1, tag(")"))))))(input)
+    recognize(pair(skewer_case_chars, peek(alt((eof, multispace1, tag(")"))))))(input)
 }
 
 pub fn root_scope_selector<I: Span>(input: I) -> Res<I, RootScopeSelector<I, Spanned<I, Version>>> {
@@ -3134,9 +3242,9 @@ pub mod model {
     use crate::version::v0_0_1::id::id::{Point, PointCtx, PointVar, Version};
     use crate::version::v0_0_1::parse::error::result;
     use crate::version::v0_0_1::parse::{
-        camel_case, CtxResolver, Env, filepath_chars, http_method, lex_child_scopes,
-        method_kind, pipeline, rc_command_type, SubstParser, value_pattern,
-        ResolverErr, wrapped_http_method, wrapped_msg_method,
+        camel_case_chars, CtxResolver, Env, filepath_chars, http_method, lex_child_scopes,
+        method_kind, pipeline, rc_command_type, ResolverErr, SubstParser,
+        value_pattern, wrapped_http_method, wrapped_msg_method,
     };
     use crate::version::v0_0_1::util::{
         HttpMethodPattern, StringMatcher, ToResolved, ValueMatcher, ValuePattern,
@@ -4415,8 +4523,18 @@ pub mod error {
                     builder.with_message("Invalid Point").with_label(Label::new(loc.location_offset()..loc.location_offset()).with_message("Invalid Point"))
                 },
 
+            "resolver-not-available" => {
+                builder.with_message("Var & Working Point resolution are not available in this context").with_label(Label::new(span.location_offset()..span.location_offset()+span.len()).with_message("resolution not available"))
+            }
+            "var-resolver-not-available" => {
+                builder.with_message("Variable resolution is not available in this context").with_label(Label::new(span.location_offset()..span.location_offset()+span.len()).with_message("var resolution not available"))
+            }
+            "ctx-resolver-not-available" => {
+                builder.with_message("WorkingPoint resolution is not available in this context").with_label(Label::new(span.location_offset()..span.location_offset()+span.len()).with_message("working point resolution not available"))
+            }
+
             "regex" => {
-                        let span = result(nospace1(loc.clone()));
+                let span = result(nospace1(loc.clone()));
                         match span {
                             Ok(span) => {
                                 match Regex::new(loc.to_string().as_str()) {
@@ -4582,6 +4700,7 @@ pub mod error {
 use ariadne::{Label, Report, ReportKind};
 use std::convert::{TryFrom, TryInto};
 use std::marker::PhantomData;
+use std::ops;
 use std::sync::Arc;
 
 use nom::branch::alt;
@@ -4612,11 +4731,11 @@ use crate::version::v0_0_1::id::id::{GenericKind, GenericKindBase, PointKind, Po
 use crate::version::v0_0_1::msg::MsgMethod;
 use crate::version::v0_0_1::parse::error::{find_parse_err, result};
 use crate::version::v0_0_1::parse::model::{BindScope, BindScopeKind, Block, BlockKind, Chunk, DelimitedBlockKind, LexBlock, LexParentScope, LexRootScope, LexScope, LexScopeSelector, LexScopeSelectorAndFilters, MessageScopeSelectorAndFilters, NestedBlockKind, PipelineCtx, PipelineSegment, PipelineSegmentCtx, PipelineSegmentVar, PipelineVar, RootScopeSelector, RouteScope, ScopeFilterDef, ScopeFilters, ScopeFiltersDef, ScopeSelectorAndFiltersDef, Spanned, Subst, TerminatedBlockKind, TextType, Var, VarParser};
-use cosmic_nom::{Res, trim, Wrap};
+use cosmic_nom::{Res, trim, tw, Wrap};
 use crate::version::v0_0_1::payload::payload::{
     Call, CallCtx, CallKind, CallVar, CallWithConfig, CallWithConfigCtx, CallWithConfigVar,
     HttpCall, ListPattern, MapPattern, MapPatternCtx, MapPatternVar, MsgCall, NumRange,
-    PayloadFormat, PayloadPattern, PayloadPatternCtx, PayloadPatternVar, PayloadKind,
+    PayloadFormat, PayloadKind, PayloadPattern, PayloadPatternCtx, PayloadPatternVar,
     PayloadTypePatternCtx, PayloadTypePatternDef, PayloadTypePatternVar,
 };
 use crate::version::v0_0_1::selector::selector::specific::{
@@ -4950,7 +5069,7 @@ fn kind_parts<I: Span>(input: I) -> Res<I, GenericKind> {
         generic_kind_base,
         opt(delimited(
             tag("<"),
-            tuple((camel_case, opt(delimited(tag("<"), specific, tag(">"))))),
+            tuple((camel_case_chars, opt(delimited(tag("<"), specific, tag(">"))))),
             tag(">"),
         )),
     ))(input)
@@ -5014,6 +5133,11 @@ pub fn delim_kind<I: Span>(input: I) -> Res<I, GenericKind> {
     delimited(tag("<"), kind, tag(">"))(input)
 }
 
+pub fn delim_kind_fuzzy<I: Span>(input: I) -> Res<I, Option<GenericKind>> {
+    delimited(tag("<"), alt((opt(kind),value(None,tag("?")))), tag(">"))(input)
+}
+
+
 pub fn consume_kind<I: Span>(input: I) -> Result<GenericKind, MsgErr> {
     let (_, kind_parts) = all_consuming(kind_parts)(input)?;
 
@@ -5031,11 +5155,11 @@ where
 }
 
 pub fn generic_kind_selector<I: Span>(input: I) -> Res<I, GenericSubKindSelector> {
-    pattern(to_string(camel_case))(input).map(|(next, kind)| (next, kind))
+    pattern(to_string(camel_case_chars))(input).map(|(next, kind)| (next, kind))
 }
 
 pub fn generic_kind_base<I: Span>(input: I) -> Res<I, GenericKindBase> {
-    let (next,kind) = camel_case(input)?;
+    let (next,kind) = camel_case_chars(input)?;
     // unwrapping because we already know string is CamelCase
     Ok((next,kind.to_string().try_into().unwrap()))
 }
@@ -5651,7 +5775,7 @@ pub fn msg_action<I: Span>(input: I) -> Res<I, ValuePattern<StringMatcher>> {
 }
 
 pub fn parse_camel_case_str<I: Span, O: FromStr>(input: I) -> Res<I, O> {
-    let (next, rtn) = recognize(camel_case)(input)?;
+    let (next, rtn) = recognize(camel_case_chars)(input)?;
     match O::from_str(rtn.to_string().as_str()) {
         Ok(rtn) => Ok((next, rtn)),
         Err(err) => Err(nom::Err::Error(ErrorTree::from_error_kind(
@@ -5686,7 +5810,7 @@ where
 }
 
 pub fn msg_method<I: Span>(input: I) -> Res<I, MsgMethod> {
-    let (next, msg_method) = camel_case(input.clone())?;
+    let (next, msg_method) = camel_case_chars(input.clone())?;
 
     match MsgMethod::new(msg_method.to_string()) {
         Ok(method) => Ok((next, method)),
@@ -6350,7 +6474,7 @@ pub fn route_attribute_value(input: &str) -> Result<RouteSelector, MsgErr> {
 pub fn topic<I: Span>(input: I) -> Res<I, ValuePattern<Topic>> {
     context(
         "topic",
-        delimited(tag("["), value_pattern(skewer_case), tag("]::")),
+        delimited(tag("["), value_pattern(skewer_case_chars), tag("]::")),
     )(input)
     .map(|(next, topic)| {
         let topic = match topic {
@@ -6474,7 +6598,7 @@ pub mod test {
         no_comment, parse_bind_config, parse_include_blocks, parse_inner_block, path_regex,
         pipeline, pipeline_segment, pipeline_step_var, pipeline_stop_var, point_non_root_var, point_template,
         point_var, pop, rec_version, root_scope,
-        root_scope_selector, route_attribute, route_selector, scope_filter, scope_filters, skewer_case,
+        root_scope_selector, route_attribute, route_selector, scope_filter, scope_filters, skewer_case_chars,
         skewer_dot, space_chars, space_no_dupe_dots, space_point_segment, strip_comments, subst,
         SubstParser, var_seg, variable_name, VarResolver, version, version_point_segment, wrapper,
     };
@@ -7070,7 +7194,7 @@ Hello my friend
             .unwrap()
             .print();
 
-        assert!(skewer_case(new_span("3x")).is_err());
+        assert!(skewer_case_chars(new_span("3x")).is_err());
 
         Ok(())
     }
@@ -7585,5 +7709,54 @@ pub mod cmd_test {
 
         crate::version::v0_0_1::parse::script(new_span(input))?;
         Ok(())
+    }
+}
+
+pub fn layer<I:Span>(input: I) -> Res<I,Layer> {
+    alt((value(Layer::Shell,tag("Shell")),value(Layer::Core,tag("Core"))))(input)
+}
+
+fn topic_uuid<I:Span>(input:I) -> Res<I,Topic> {
+    delimited( tag("Uuid("), parse_uuid, tag(")"))(input).map(|(next,uuid)|{
+        ((next,Topic::Uuid(uuid)))
+    })
+}
+
+fn topic_tag<I:Span>(input:I) -> Res<I,Topic> {
+    delimited(tag("Tag("), camel_case, tag(")"))(input).map(|(next,tag)|{
+        ((next,Topic::Tag(tag)))
+    })
+}
+
+fn topic_cli<I:Span>(input:I) -> Res<I,Topic> {
+    value(Topic::Cli,tag("Cli"))(input)
+}
+
+pub fn topic_none<I:Span>(input:I) -> Res<I,Topic> {
+    Ok((input,Topic::None))
+}
+
+pub fn topic<I:Span>(input: I ) -> Res<I,Topic> {
+    context("topic",alt((topic_tag,topic_uuid,topic_cli)))(input)
+}
+
+pub fn topic_or_none<I:Span>(input: I ) -> Res<I,Topic> {
+    context("topic_or_none",alt((topic,topic_none)))(input)
+}
+
+pub fn plus_topic_or_none<I:Span>(input: I ) -> Res<I,Topic> {
+    context("plus_topic_or_none",alt((preceded(tag("+"),topic),topic_none) ))(input)
+}
+
+pub fn port<I:Span>(input: I) -> Res<I,Port> {
+    let (next,(point,layer,topic)) = context("port",tuple((terminated(tw(point_var),tag("@")),layer,plus_topic_or_none)))(input.clone())?;
+
+    match point.clone().collapse() {
+        Ok(point) => Ok((next,Port::new(point,layer,topic))),
+        Err(err) => {
+            let err = ErrorTree::from_error_kind(input, ErrorKind::Alpha );
+            let loc = input.slice(point.trace.range);
+            Err(nom::Err::Error(ErrorTree::add_context(loc, "resolver-not-available",err)))
+        }
     }
 }

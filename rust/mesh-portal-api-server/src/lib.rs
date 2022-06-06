@@ -37,7 +37,7 @@ use mesh_portal::version::latest::portal::outlet::{Frame, RequestFrame};
 use mesh_portal::version::latest::portal::{inlet, outlet, Exchanger};
 use mesh_portal::version::latest::sys::{Assign, Sys};
 use mesh_portal_versions::error::MsgErr;
-use mesh_portal_versions::version::v0_0_1::id::id::{TargetLayer, ToPoint, ToPort};
+use mesh_portal_versions::version::v0_0_1::id::id::{Layer, ToPoint, ToPort};
 use mesh_portal_versions::version::v0_0_1::messaging::{
     AsyncMessenger, AsyncRequestHandler, MethodKind, ResponseCore, RootInputCtx, AsyncRouter, Wave,
     WaveFrame,
@@ -163,7 +163,7 @@ impl Portal {
             ProtoRequest::sys(Point::local_portal().clone().to_port(), SysMethod::Assign);
         request.body = assign;
         let request = request.to_request(
-            point.clone().to_port().with_layer(TargetLayer::Shell),
+            point.clone().to_port().with_layer(Layer::Shell),
             Agent::Anonymous,
             Scope::Full,
         );
@@ -194,7 +194,7 @@ impl Portal {
     }
 
     pub fn has_core_port(&self, port: &Port) -> Result<(), ()> {
-        if let TargetLayer::Shell = port.layer {
+        if let Layer::Shell = port.layer {
             return Err(());
         }
 

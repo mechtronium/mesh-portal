@@ -22,8 +22,8 @@ pub mod selector {
     use crate::error::MsgErr;
 
     use crate::version::v0_0_1::command::request::{Rc, RcCommandType};
-    use crate::version::v0_0_1::id::id::{GenericKind, GenericKindBase, Point, PointCtx, PointSeg, PointVar, RouteSeg, Specific, Tks, Variable, VarVal, Version};
-    use crate::version::v0_0_1::parse::{camel_case, camel_case_to_string_matcher, consume_hierarchy, Env, file_chars, path, path_regex, point_segment_selector, point_selector};
+    use crate::version::v0_0_1::id::id::{GenericKind, GenericKindBase, Point, PointCtx, PointSeg, PointSegKind, PointVar, RouteSeg, Specific, Tks, Variable, VarVal, Version};
+    use crate::version::v0_0_1::parse::{camel_case_chars, camel_case_to_string_matcher, consume_hierarchy, Env, file_chars, path, path_regex, point_segment_selector, point_selector};
     use crate::version::v0_0_1::payload::payload::{Call, CallKind, CallWithConfig, CallWithConfigDef, HttpCall, ListPattern, MapPattern, MsgCall, NumRange, Payload, PayloadFormat, PayloadPattern, PayloadPatternDef, PayloadKind, PayloadTypePatternDef};
     use crate::version::v0_0_1::selector::selector::specific::{
         ProductSelector, VariantSelector, VendorSelector,
@@ -203,11 +203,14 @@ pub mod selector {
             hops
         }
 
-        pub fn matches(&self, hierarchy: &PointKindHierarchy) -> bool
+        pub fn matches<H>(&self, hierarchy: H) -> bool
         where
+            H: Into<&PointKindHierarchyFuzzyRef>,
             GenericKindBase: Clone,
             GenericKind: Clone,
         {
+
+            let hierarchy = hierarchy.into();
             if hierarchy.is_root() && self.is_root() {
                 return true;
             }
@@ -990,21 +993,68 @@ pub mod selector {
 
     pub type GenericKindSelector = Pattern<GenericKindBase>;
 
+
+    pub type PointKindHierarchy = PointKindHierarchyDef<'_,RouteSeg,PointKindSeg>;
+    pub type PointKindHierarchyFuzzy = PointKindHierarchyDef<'_,RouteSeg,PointKindSegFuzzy>;
+    pub type PointKindHierarchyFuzzyRef<'a> = PointKindHierarchyDef<'a,&'a RouteSeg,Option<&'a PointSegKind>>;
+
+    impl TryInto<PointKindHierarchy> for PointKindHierarchyFuzzy {
+        type Error = MsgErr;
+
+        fn try_into(self) -> Result<PointKindHierarchy, Self::Error> {
+            let mut segments = vec![];
+            for segment in self.segments {
+                let segment: PointKindSeg = match segment {
+                    None => {return Err(MsgErr::new(500u16,"expected to be able to convert Fuzzy Seg into Seg"));}
+                    Some(segment) => {segment.try_into()?}
+                };
+                segments.push(segment);
+            }
+
+            Ok(PointKindHierarchy{
+                route,
+                segments
+            })
+
+        }
+    }
+
     #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
-    pub struct PointKindHierarchy {
-        pub route: RouteSeg,
-        pub segments: Vec<PointKindSeg>,
+    pub struct PointKindHierarchyDef<'a,R,S> {
+        pub route: R,
+        pub segments: Vec<S>,
+    }
+
+    impl Into<PointKindHierarchyFuzzy> for PointKindHierarchy {
+        fn into(self) -> PointKindHierarchyFuzzy {
+            PointKindHierarchyFuzzy {
+                route: self.route,
+                segments: self.segments.into_iter().map(|s|s.into()).collect()
+            }
+        }
+    }
+
+
+    impl <'a> Into<PointKindHierarchyFuzzyRef<'a>> for &'a PointKindHierarchy {
+        fn into(self) -> PointKindHierarchyFuzzyRef<'a> {
+            PointKindHierarchyFuzzyRef {
+                route: &self.route,
+                segments: self.segments.iter().map(|s|s.into()).collect()
+            }
+        }
+    }
+
+    impl <'a,R,S> PointKindHierarchyDef<'a,R,S> {
+        pub fn new(route: R, segments: Vec<S>) -> Self {
+            Self { route, segments }
+        }
     }
 
     impl PointKindHierarchy {
-        pub fn new(route: RouteSeg, segments: Vec<PointKindSeg>) -> Self {
-            Self { route, segments }
-        }
-
         pub fn push(&self, segment: PointKindSeg) -> PointKindHierarchy
-        where
-            GenericKind: Clone,
-            GenericKindBase: Clone,
+            where
+                GenericKind: Clone,
+                GenericKindBase: Clone,
         {
             if let PointSeg::Root = segment.segment {
                 println!("pushing ROOT");
@@ -1016,14 +1066,16 @@ pub mod selector {
                 segments,
             }
         }
+    }
 
-        pub fn consume(&self) -> Option<PointKindHierarchy> {
+    impl <'a,R,S> PointKindHierarchyDef<'a,R,S> where R:Clone, S:Clone {
+        pub fn consume(&self) -> Option<PointKindHierarchyDef<'_,R,S>> {
             if self.segments.len() <= 1 {
                 return Option::None;
             }
             let mut segments = self.segments.clone();
             segments.remove(0);
-            Option::Some(PointKindHierarchy {
+            Option::Some(PointKindHierarchyDef {
                 route: self.route.clone(),
                 segments,
             })
@@ -1062,10 +1114,91 @@ pub mod selector {
         }
     }
 
+    impl <'a> ToString for PointKindHierarchyDef<'a,RouteSeg,PointKindSegFuzzy> {
+        fn to_string(&self) -> String {
+            let mut rtn = String::new();
+            match &self.route {
+                RouteSeg::This => {}
+                route => {
+                    rtn.push_str(route.to_string().as_str());
+                    rtn.push_str("::");
+                }
+            }
+
+            let mut post_fileroot = false;
+            for (index, segment) in self.segments.iter().enumerate() {
+                if let PointSeg::FilesystemRootDir = segment.segment {
+                    post_fileroot = true;
+                }
+                rtn.push_str(segment.segment.preceding_delim(post_fileroot));
+                rtn.push_str(segment.to_string().as_str());
+            }
+
+            rtn
+        }
+    }
+
+    pub type PointKindSeg = PointKindSegDef<'_,PointSeg,GenericKind>;
+    pub type PointKindSegFuzzy = PointKindSegDef<'_,PointSeg,Option<GenericKind>>;
+    pub type PointKindSegFuzzyRef<'a> = PointKindSegDef<'a,&'a PointSeg,Option<&'a GenericKind>>;
+
     #[derive(Debug, Eq, PartialEq, Clone, Serialize, Deserialize)]
-    pub struct PointKindSeg {
-        pub segment: PointSeg,
-        pub kind: GenericKind,
+    pub struct PointKindSegDef<'a, S, K> {
+        pub segment: S,
+        pub kind: K,
+    }
+
+    impl <'a,S,K> PointKindHierarchyFuzzyDef<'a,S,K> {
+        pub fn is_root(&self) -> bool {
+            self.segments.is_empty()
+        }
+
+        pub fn is_final(&self) -> bool {
+            self.segments.len() == 1
+        }
+    }
+
+    impl ToString for PointKindSegFuzzy {
+        fn to_string(&self) -> String {
+            match &self.kind {
+                None => {
+                    format!("{}<?>", self.segment.to_string())
+                }
+                Some(kind) => {
+                    format!("{}<{}>", self.segment.to_string(), kind.to_string())
+                }
+            }
+        }
+    }
+
+    impl TryInto<PointKindSeg> for PointKindSegFuzzy {
+        type Error=MsgErr;
+        fn try_into(self) -> Result<PointKindSeg,Self::Error> {
+            Ok(PointKindSeg{
+                segment: self.segment,
+                kind: self.kind.ok_or("cannot convert PointKindSegFuzzy to PointKindSeg because kind is not defined".into())?
+            })
+        }
+    }
+
+
+    impl <'a> Into<&'a PointKindSegFuzzyRef<'a>> for &'a PointKindSeg {
+        fn into(self) -> PointKindSegFuzzyRef<'a> {
+            PointKindSegFuzzyRef {
+                segment: &self.segment,
+                kind: None
+            }
+        }
+    }
+
+
+    impl Into<PointKindSegFuzzy> for PointKindSeg {
+        fn into(self) -> PointKindSegFuzzy {
+            PointKindSegFuzzy {
+                segment: self.segment,
+                kind: None
+            }
+        }
     }
 
     impl ToString for PointKindSeg {

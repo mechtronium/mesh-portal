@@ -4,8 +4,8 @@ use crate::version::v0_0_1::payload::payload::Payload;
 
 pub mod id {
     use nom::bytes::complete::tag;
-    use nom::combinator::{all_consuming, opt};
-    use nom::sequence::{delimited, tuple};
+    use nom::combinator::{all_consuming, opt, success, value};
+    use nom::sequence::{delimited, pair, preceded, terminated, tuple};
     use regex::Captures;
     use std::collections::HashMap;
     use std::convert::TryInto;
@@ -13,22 +13,23 @@ pub mod id {
     use std::ops::{Deref, Range};
     use std::str::FromStr;
     use std::sync::Arc;
+    use nom::branch::alt;
+    use nom::error::{context, ContextError, ErrorKind, ParseError};
+    use nom_supreme::error::ErrorTree;
 
     use semver::SemVerError;
     use serde::de::Visitor;
     use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
-    use cosmic_nom::{new_span, Res, Span, SpanExtra, Trace};
+    use cosmic_nom::{new_span, Res, Span, SpanExtra, Trace, tw};
 
     use crate::error::{MsgErr, ParseErrs};
     use crate::version::v0_0_1::config::config::bind::RouteSelector;
     use crate::version::v0_0_1::id::id::PointSegCtx::Working;
-    use crate::version::v0_0_1::mesh_portal_uuid;
-    use crate::version::v0_0_1::parse::{camel_case, consume_point, consume_point_ctx, Ctx, CtxResolver, Env, kind, point_and_kind, point_route_segment, ResolverErr, VarResolver};
+    use crate::version::v0_0_1::{mesh_portal_uuid, parse};
+    use crate::version::v0_0_1::parse::{camel_case, camel_case_chars, CamelCase, consume_point, consume_point_ctx, Ctx, CtxResolver, Env, kind, parse_uuid, point_and_kind, point_route_segment, point_var, ResolverErr, uuid_chars, VarResolver};
 
     use crate::version::v0_0_1::parse::error::result;
-    use crate::version::v0_0_1::selector::selector::{
-        Pattern, PointSelector, SpecificSelector, VersionReq,
-    };
+    use crate::version::v0_0_1::selector::selector::{Pattern, PointKindHierarchyFuzzy, PointKindSegFuzzy, PointSelector, SpecificSelector, VersionReq};
     use crate::version::v0_0_1::sys::Location::Central;
     use crate::version::v0_0_1::util::{ToResolved, ValueMatcher, ValuePattern};
 
@@ -48,7 +49,7 @@ pub mod id {
         ArtifactBundle,
         File,
         Dir,
-        Ext(String)
+        Ext(CamelCase)
     }
 
     impl TryFrom<String> for GenericKindBase {
@@ -94,8 +95,8 @@ pub mod id {
             } else if "ArtifactBundle" == s {
                 Ok(Self::ArtifactBundle)
             } else {
-                let kind = result(camel_case(new_span(s)))?.to_string();
-                Ok(Self::Ext(kind))
+                let kind = result(camel_case_chars(new_span(s)))?.to_string();
+                Ok(Self::Ext(result(all_consuming(camel_case )(new_span(kind.as_str())))?))
             }
         }
     }
@@ -1018,7 +1019,7 @@ pub mod id {
     pub enum Topic {
         None,
         Uuid(Uuid),
-        Tag(String),
+        Tag(CamelCase),
         Cli
     }
 
@@ -1038,15 +1039,15 @@ pub mod id {
         }
     }
 
-    #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
-    pub enum TargetLayer {
+    #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash,strum_macros::Display,strum_macros::EnumString)]
+    pub enum Layer {
         Shell,
         Core
     }
 
-    impl Default for TargetLayer {
+    impl Default for Layer {
         fn default() -> Self {
-            TargetLayer::Core
+            Layer::Core
         }
     }
 
@@ -1059,9 +1060,51 @@ pub mod id {
     #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
     pub struct Port {
        pub point: Point,
-       pub layer: TargetLayer,
+       pub layer: Layer,
        pub topic: Topic
     }
+
+    impl Port {
+        pub fn new( point: Point, layer: Layer, topic: Topic ) -> Self {
+            Self {
+                point,
+                layer,
+                topic
+            }
+        }
+    }
+
+    impl ToString for Port {
+        fn to_string(&self) -> String {
+            match &self.topic {
+                Topic::None => {
+                    format!("{}@{}", point.to_string(), parse::layer.to_string())
+                }
+                Topic::Uuid(uuid) => {
+                    format!("{}@{}+Uuid({})", point.to_string(), parse::layer.to_string(), uuid)
+                }
+                Topic::Tag(tag) => {
+                    format!("{}@{}+Tag({})", point.to_string(), parse::layer.to_string(), tag)
+                }
+                Topic::Cli => {
+                    format!("{}@{}+Cli", point.to_string(), parse::layer.to_string())
+                }
+            }
+        }
+    }
+
+    pub struct PortSelector {
+        pub point: PointSelector,
+        pub topic: ValuePattern<Topic>,
+        pub layer: ValuePattern<Layer>
+    }
+
+    impl ValueMatcher<Port> for PortSelector {
+        fn is_match(&self, port: &Port) -> Result<(), ()> {
+            self.point.matches(&port.to_point().to_point_kind_hierarchy_fuzzy())
+        }
+    }
+
 
 
     impl Port {
@@ -1073,7 +1116,7 @@ pub mod id {
             }
         }
 
-        pub fn with_layer( &self, layer: TargetLayer ) -> Self {
+        pub fn with_layer(&self, layer: Layer) -> Self {
             Self {
                 point: self.point.clone(),
                 layer,
@@ -1150,6 +1193,19 @@ pub mod id {
         fn to_resolved(self, env: &Env) -> Result<Point, MsgErr> {
             let point_ctx : PointCtx = self.to_resolved(env)?;
             point_ctx.to_resolved(env)
+        }
+    }
+
+    impl Point {
+        pub fn to_point_kind_hierarchy_fuzzy(self) -> PointKindHierarchyFuzzy {
+            let mut segments = vec![];
+            for segment in self.segments {
+                segments.push(PointKindSegFuzzy{ segment, kind: None});
+            }
+            PointKindHierarchyFuzzy{
+                route: self.route,
+                segments
+            }
         }
     }
 

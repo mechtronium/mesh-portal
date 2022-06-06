@@ -10,7 +10,7 @@ use dashmap::{DashMap, DashSet};
 use mesh_portal::error::MsgErr;
 use mesh_portal::version::latest::id::{Point, Port, Uuid};
 use mesh_portal::version::latest::messaging::{Agent, RequestCtx, SysMethod};
-use mesh_portal_versions::version::v0_0_1::id::id::{TargetLayer, ToPoint, ToPort};
+use mesh_portal_versions::version::v0_0_1::id::id::{Layer, ToPoint, ToPort};
 use mesh_portal_versions::version::v0_0_1::messaging::{
     AsyncInternalRequestHandlers, AsyncMessenger, AsyncMessengerAgent, AsyncRequestHandler,
     AsyncRequestHandlerRelay, AsyncRouter, Request, RequestFrame, RequestHandlerRelay, Requestable,
@@ -68,7 +68,7 @@ impl Portal {
 
         let handlers = AsyncInternalRequestHandlers::new();
 
-       let mut port= point.to_port().with_layer(TargetLayer::Core);
+       let mut port= point.to_port().with_layer(Layer::Core);
 
        {
           let handlers = handlers.clone();
@@ -189,7 +189,7 @@ impl PortalRequestHandler {
 
    #[route_async(Sys<Assign>)]
    pub async fn assign( &self, request: RequestCtx<Assign>) -> Result<ResponseCore,MsgErr> {
-      let messenger = AsyncMessengerAgent::new(Agent::Anonymous, request.details.stub.point.to_port().with_layer(TargetLayer::Core), self.messenger.clone() );
+      let messenger = AsyncMessengerAgent::new(Agent::Anonymous, request.details.stub.point.to_port().with_layer(Layer::Core), self.messenger.clone() );
       self.handlers.insert( request.details.stub.point.clone(), self.factory.create(request.input.clone(),messenger)?);
       Ok(ResponseCore::ok(Payload::Empty))
    }

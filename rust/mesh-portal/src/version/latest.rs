@@ -40,7 +40,7 @@ pub mod id {
     pub type Port = id::id::Port;
     pub type ToPort = dyn id::id::ToPort;
     pub type ToPoint = dyn id::id::ToPoint;
-    pub type TargetLayer = id::id::TargetLayer;
+    pub type TargetLayer = id::id::Layer;
     pub type Topic = id::id::Topic;
     pub type KindParts = id::id::GenericKind;
 }
@@ -358,43 +358,7 @@ pub mod particle {
     pub type Property = particle::particle::Property;
 }
 
-pub mod portal {
-    use mesh_portal_versions::version::v0_0_1 as current;
-    use mesh_portal_versions::version::v0_0_1::portal;
 
-    pub type Exchanger<T> = portal::portal::Exchanger<T>;
-
-    pub mod inlet {
-        use mesh_portal_versions::version::v0_0_1 as current;
-        use mesh_portal_versions::version::v0_0_1::portal;
-
-        pub type Frame = portal::portal::inlet::Frame;
-        pub type AssignRequest = portal::portal::inlet::AssignRequest;
-    }
-
-    pub mod outlet {
-        use mesh_portal_versions::version::v0_0_1 as current;
-        use mesh_portal_versions::version::v0_0_1::portal;
-
-        pub type Frame = portal::portal::outlet::Frame;
-        pub type RequestFrame = portal::portal::outlet::RequestFrame;
-    }
-
-    pub mod initin {
-        use mesh_portal_versions::version::v0_0_1 as current;
-        use mesh_portal_versions::version::v0_0_1::portal;
-
-        pub type Frame = portal::portal::initin::Frame;
-        pub type PortalAuth = portal::portal::initin::PortalAuth;
-    }
-
-    pub mod initout{
-        use mesh_portal_versions::version::v0_0_1 as current;
-        use mesh_portal_versions::version::v0_0_1::portal;
-
-        pub type Frame = portal::portal::initout::Frame;
-    }
-}
 
 
 pub mod util {
