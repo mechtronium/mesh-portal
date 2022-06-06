@@ -5,7 +5,7 @@ use crate::version::v0_0_1::command::Command;
 use crate::version::v0_0_1::config::config::bind::RouteSelector;
 use crate::version::v0_0_1::http::HttpMethod;
 use crate::version::v0_0_1::id::id::{Point, Port, TargetLayer, ToPort, Topic, Uuid, ToPoint};
-use crate::version::v0_0_1::log::{LogSpanEvent, SpanLogger};
+use crate::version::v0_0_1::log::{LogSpan, LogSpanEvent, SpanLogger};
 use crate::version::v0_0_1::msg::MsgMethod;
 use crate::version::v0_0_1::particle::particle::Details;
 use crate::version::v0_0_1::payload::payload::{Errors, MultipartFormBuilder, Payload, Token, ToRequestCore};
@@ -15,7 +15,7 @@ use crate::version::v0_0_1::sys::AssignmentKind;
 use crate::version::v0_0_1::util::{uuid, ValueMatcher, ValuePattern};
 use cosmic_macros_primitive::Autobox;
 use cosmic_nom::{Res, SpanExtra};
-use http::{HeaderMap, StatusCode, Uri};
+use http::{HeaderMap,  StatusCode, Uri};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::convert::Infallible;
@@ -55,14 +55,14 @@ impl WaveFrame {
     }
 }
 
-pub struct RootRequestCtx<I> {
+pub struct RootInputCtx<I> {
     pub input: I,
     pub request: Request,
     session: Option<Session>,
     logger: SpanLogger,
 }
 
-impl <I> Deref for RootRequestCtx<I> {
+impl <I> Deref for RootInputCtx<I> {
     type Target = I;
 
     fn deref(&self) -> &Self::Target {
@@ -70,7 +70,7 @@ impl <I> Deref for RootRequestCtx<I> {
     }
 }
 
-impl RootRequestCtx<Request> {
+impl RootInputCtx<Request> {
     pub fn new(request: Request, logger: SpanLogger) -> Self {
         Self {
             request: request.clone(),
@@ -81,8 +81,8 @@ impl RootRequestCtx<Request> {
     }
 }
 
-impl<I> RootRequestCtx<I> {
-    pub fn transform_input<I2, E>(self) -> Result<RootRequestCtx<I2>, MsgErr>
+impl<I> RootInputCtx<I> {
+    pub fn transform_input<I2, E>(self) -> Result<RootInputCtx<I2>, MsgErr>
     where
         I2: TryFrom<I, Error = E>,
         E: Into<MsgErr>,
@@ -91,7 +91,7 @@ impl<I> RootRequestCtx<I> {
             Ok(input) => input,
             Err(err) => return Err(err.into()),
         };
-        Ok(RootRequestCtx {
+        Ok(RootInputCtx {
             logger: self.logger,
             request: self.request,
             input,
@@ -99,20 +99,20 @@ impl<I> RootRequestCtx<I> {
         })
     }
 
-    pub fn push<'a>(&'a self) -> RequestCtx<'a, I> {
-        RequestCtx::new(self, &self.input, self.logger.clone())
+    pub fn push<'a>(&'a self, messenger: &'a AsyncMessengerAgent) -> InputCtx<'a, I> {
+        InputCtx::new(self, &self.input, messenger, self.logger.clone())
     }
 }
 
-pub struct RequestCtx<'a, I> {
-    root: &'a RootRequestCtx<I>,
+pub struct InputCtx<'a, I> {
+    root: &'a RootInputCtx<I>,
     messenger: &'a AsyncMessengerAgent,
-    parent: Option<Box<RequestCtx<'a, I>>>,
+    parent: Option<Box<InputCtx<'a, I>>>,
     pub input: &'a I,
     pub logger: SpanLogger,
 }
 
-impl<'a, I> Deref for RequestCtx<'a, I> {
+impl<'a, I> Deref for InputCtx<'a, I> {
     type Target = I;
 
     fn deref(&self) -> &Self::Target {
@@ -120,26 +120,28 @@ impl<'a, I> Deref for RequestCtx<'a, I> {
     }
 }
 
-impl<'a, I> RequestCtx<'a, I> {
-    pub fn new(root: &'a RootRequestCtx<I>, input: &'a I, logger: SpanLogger) -> Self {
+impl<'a, I> InputCtx<'a, I> {
+    pub fn new(root: &'a RootInputCtx<I>, input: &'a I, messenger: &'a AsyncMessengerAgent, logger: SpanLogger) -> Self {
         Self {
             root,
             parent: None,
             input,
             logger,
+            messenger
         }
     }
 
-    pub fn push(self) -> RequestCtx<'a, I> {
-        RequestCtx {
+    pub fn push(self) -> InputCtx<'a, I> {
+        InputCtx {
             root: self.root,
             input: self.input,
             logger: self.logger.span(),
             parent: Some(Box::new(self)),
+            messenger: & self.messenger
         }
     }
 
-    pub fn pop(self) -> Option<RequestCtx<'a, I>> {
+    pub fn pop(self) -> Option<InputCtx<'a, I>> {
         match self.parent {
             None => None,
             Some(parent) => Some(*parent),
@@ -151,7 +153,7 @@ impl<'a, I> RequestCtx<'a, I> {
     }
 }
 
-impl<'a> RequestCtx<'a, &mut Request> {
+impl<'a> InputCtx<'a, &mut Request> {
     pub fn ok_payload(self, payload: Payload) -> ResponseCore {
         self.input.core.ok(payload)
     }
@@ -165,7 +167,7 @@ impl<'a> RequestCtx<'a, &mut Request> {
     }
 }
 
-impl<'a> RequestCtx<'a, Response> {
+impl<'a> InputCtx<'a, Response> {
     pub fn pass(self) -> ResponseCore {
         self.input.core.clone()
     }
@@ -217,6 +219,15 @@ pub trait Requestable<R> {
     fn ok(self) -> R;
 
     fn body(self, body: Payload) -> R;
+
+    fn core(self, core: ResponseCore) -> R;
+
+    fn result<C:Into<ResponseCore>>(self, result: Result<C,MsgErr>) -> R {
+        match result {
+            Ok(core) => self.core(core.into()),
+            Err(err) => self.core(err.into())
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -226,6 +237,7 @@ pub struct RequestStub {
     pub handling: Handling,
     pub from: Port,
     pub to: Port,
+    pub span: Option<LogSpan>
 }
 
 impl Requestable<Response> for RequestStub {
@@ -268,6 +280,16 @@ impl Requestable<Response> for RequestStub {
             response_to: self.id,
         }
     }
+
+    fn core(self, core: ResponseCore) -> Response {
+        Response {
+            id: uuid(),
+            to: self.from,
+            from: self.to,
+            core,
+            response_to: self.id,
+        }
+    }
 }
 
 impl Requestable<ResponseFrame> for RequestStub {
@@ -279,7 +301,7 @@ impl Requestable<ResponseFrame> for RequestStub {
             core: ResponseCore::status(status),
             response_to: self.id,
         }
-        .to_frame()
+        .to_frame(self.span)
     }
 
     fn err(self, err: MsgErr) -> ResponseFrame {
@@ -290,7 +312,7 @@ impl Requestable<ResponseFrame> for RequestStub {
             core: ResponseCore::err(err),
             response_to: self.id,
         }
-        .to_frame()
+        .to_frame(self.span)
     }
 
     fn ok(self) -> ResponseFrame {
@@ -301,7 +323,7 @@ impl Requestable<ResponseFrame> for RequestStub {
             core: ResponseCore::ok(Payload::Empty),
             response_to: self.id,
         }
-        .to_frame()
+        .to_frame(self.span)
     }
 
     fn body(self, body: Payload) -> ResponseFrame {
@@ -312,7 +334,18 @@ impl Requestable<ResponseFrame> for RequestStub {
             core: ResponseCore::ok(body),
             response_to: self.id,
         }
-        .to_frame()
+        .to_frame(self.span)
+    }
+
+    fn core(self, core: ResponseCore) -> ResponseFrame {
+        Response {
+            id: uuid(),
+            to: self.from,
+            from: self.to,
+            core,
+            response_to: self.id,
+        }
+            .to_frame(self.span)
     }
 }
 
@@ -325,6 +358,18 @@ pub struct Request {
     pub from: Port,
     pub to: Port,
     pub core: RequestCore,
+}
+
+impl Into<ProtoRequest> for Request {
+    fn into(self) -> ProtoRequest {
+        ProtoRequest {
+            id: self.id,
+            to: self.to,
+            core: self.core,
+            handling: self.handling,
+            scope: self.scope,
+        }
+    }
 }
 
 impl Into<&WaitTime> for &Request {
@@ -434,28 +479,21 @@ impl Request {
         self.as_stub().status(status)
     }
 
-    pub fn to_frame(self) -> RequestFrame {
+    pub fn to_frame(self, span: Option<LogSpan>) -> RequestFrame {
         RequestFrame {
             session: None,
             request: self,
-            span: None,
+            span
         }
     }
 
-    pub fn to_span_frame(self, span: LogSpanEvent) -> RequestFrame {
-        RequestFrame {
-            session: None,
-            request: self,
-            span: Some(span),
-        }
-    }
 }
 
 #[derive(Serialize, Deserialize)]
 pub struct RequestFrame {
-    session: Option<Session>,
-    request: Request,
-    span: Option<LogSpanEvent>,
+    pub session: Option<Session>,
+    pub request: Request,
+    pub span: Option<LogSpan>,
 }
 
 impl RequestFrame {
@@ -474,7 +512,9 @@ impl RequestFrame {
     }
 
     pub fn as_stub(&self) -> RequestStub {
-        self.request.as_stub()
+        let mut stub = self.request.as_stub();
+        stub.span = self.span.clone();
+        stub
     }
 }
 
@@ -516,13 +556,22 @@ impl Requestable<ResponseFrame> for RequestFrame {
             span: self.span,
         }
     }
+
+    fn core(self, core: ResponseCore) -> ResponseFrame {
+        let response = Response::new(core, self.to, self.from, self.id);
+        ResponseFrame {
+            session: None,
+            response,
+            span: self.span
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize)]
 pub struct ResponseFrame {
     session: Option<Session>,
     response: Response,
-    span: Option<LogSpanEvent>,
+    span: Option<LogSpan>,
 }
 
 impl ResponseFrame {
@@ -530,12 +579,12 @@ impl ResponseFrame {
         &self.response.id
     }
     pub fn from(&self) -> &Port {
-        &response.from
+        &self.response.from
     }
-
     pub fn to(&self) -> &Port {
-        &response.to
+        &self.response.to
     }
+    pub fn response_to(&self) -> &Uuid { &self.resonse.response_to }
 }
 
 impl TryFrom<Request> for RawCommand {
@@ -873,19 +922,19 @@ impl ProtoRequest {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Response {
-    pub id: String,
+    pub id: Uuid,
     pub from: Port,
     pub to: Port,
     pub core: ResponseCore,
-    pub response_to: String,
+    pub response_to: Uuid,
 }
 
 impl Response {
-    pub fn to_frame(self) -> ResponseFrame {
+    pub fn to_frame(self, span: Option<LogSpan>) -> ResponseFrame {
         ResponseFrame {
             session: None,
             response: self,
-            span: None,
+            span,
         }
     }
 
@@ -933,12 +982,6 @@ pub enum Wave {
 }
 
 impl Wave {
-    pub fn to_frame(self) -> WaveFrame {
-        match self {
-            Wave::Request(request) => WaveFrame::Request(request.to_frame()),
-            Wave::Response(response) => WaveFrame::Response(response.to_frame()),
-        }
-    }
 
     pub fn id(&self) -> Uuid {
         match self {
@@ -1123,10 +1166,10 @@ pub enum Roles {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Handling {
-    kind: HandlingKind,
-    priority: Priority,
-    retries: Retries,
-    wait: WaitTime,
+    pub kind: HandlingKind,
+    pub priority: Priority,
+    pub retries: Retries,
+    pub wait: WaitTime,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1204,7 +1247,7 @@ impl Default for Karma {
 
 #[async_trait]
 pub trait AsyncRouter: Send + Sync {
-    async fn route(&self, message: Wave);
+    async fn route(&self, wave: Wave);
 }
 
 #[derive(Clone)]
@@ -1212,6 +1255,7 @@ pub struct AsyncPointRequestHandlers{
     pub handlers: Arc<DashMap<Point,AsyncRequestHandlerRelay>>
 }
 
+#[async_trait]
 impl AsyncRequestHandler for  AsyncPointRequestHandlers {
 
     fn select(&self, request: &Request) -> Result<(), ()> {
@@ -1222,7 +1266,7 @@ impl AsyncRequestHandler for  AsyncPointRequestHandlers {
         }
     }
 
-    async fn handle(&self, request: RootRequestCtx<Request>) -> Result<ResponseCore, MsgErr> {
+    async fn handle(&self, request: RootInputCtx<Request>) -> Result<ResponseCore, MsgErr> {
         if let Some(handler) = self.handlers.get( &request.to ) {
             handler.handle(request).await
         } else {
@@ -1259,6 +1303,10 @@ impl AsyncMessengerAgent {
     pub fn send_sync<R>(&self, request: ProtoRequest) ->  Result<R,MsgErr> where R: TryFrom<Response,Error=MsgErr>{
         let request = request.to_request(self.from.clone(), self.agent.clone(), Scope::None);
         R::try_from(self.relay.send_sync(request))
+    }
+
+    pub async fn route(&self, wave: Wave )  {
+        self.relay.route(wave).await;
     }
 }
 
@@ -1365,13 +1413,13 @@ impl<H> InternalPipeline<H> {
 
 pub trait RequestHandler {
     fn select(&self, request: &Request) -> Result<(), ()>;
-    fn handle(&self, request: RootRequestCtx<Request>) -> Result<ResponseCore, MsgErr>;
+    fn handle(&self, request: RootInputCtx<Request>) -> Result<ResponseCore, MsgErr>;
 }
 
 #[async_trait]
 pub trait AsyncRequestHandler: Sync + Send {
     fn select(&self, request: &Request) -> Result<(), ()>;
-    async fn handle(&self, request: RootRequestCtx<Request>) -> Result<ResponseCore, MsgErr>;
+    async fn handle(&self, request: RootInputCtx<Request>) -> Result<ResponseCore, MsgErr>;
 }
 
 impl RequestHandler for RequestHandlerRelay {
@@ -1379,7 +1427,7 @@ impl RequestHandler for RequestHandlerRelay {
         self.relay.select(request)
     }
 
-    fn handle(&self, request: RootRequestCtx<Request>) -> Result<ResponseCore, MsgErr> {
+    fn handle(&self, request: RootInputCtx<Request>) -> Result<ResponseCore, MsgErr> {
         self.relay.handle(request)
     }
 }
@@ -1436,7 +1484,7 @@ pub struct AsyncRefreshTokenAuthorizationRequester {
 
 impl AsyncAuthorizationRequester for AsyncRefreshTokenAuthorizationRequester {
     async fn authorize(self, messenger: AsyncMessengerAgent) -> Result<AuthResponse, MsgErr> {
-        let core = Token.to
+        unimplemented!()
     }
 }
 
@@ -1457,7 +1505,7 @@ impl AsyncRequestHandler for AsyncRequestHandlerRelay {
         self.relay.select(request)
     }
 
-    async fn handle(&self, ctx: RootRequestCtx<Request>) -> Result<ResponseCore, MsgErr> {
+    async fn handle(&self, ctx: RootInputCtx<Request>) -> Result<ResponseCore, MsgErr> {
         self.relay.handle(ctx).await
     }
 }
@@ -1491,13 +1539,13 @@ impl AsyncRequestHandler for AsyncInternalRequestHandlers<AsyncRequestHandlerRel
         let read = self.pipelines.read().await;
         for pipeline in read.iter() {
             if pipeline.selector.is_match(&request).is_ok() {
-                return Ok(());
+                return pipeline.handler.select(request)
             }
         }
         Err(())
     }
 
-    async fn handle(&self, ctx: RootRequestCtx<Request>) -> Result<ResponseCore, MsgErr> {
+    async fn handle(&self, ctx: RootInputCtx<Request>) -> Result<ResponseCore, MsgErr> {
         let read = self.pipelines.read().await;
         for pipeline in read.iter() {
             if pipeline.selector.is_match(&ctx.request).is_ok() {
@@ -1541,6 +1589,17 @@ impl ValueMatcher<MethodKind> for MethodKind {
             Ok(())
         } else {
             Err(())
+        }
+    }
+}
+
+impl From<Result<ResponseCore,MsgErr>> for ResponseCore {
+    fn from(result: Result<ResponseCore, MsgErr>) -> Self {
+        match result {
+            Ok(response) => response,
+            Err(err) => {
+                err.into()
+            }
         }
     }
 }

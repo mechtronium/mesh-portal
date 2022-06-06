@@ -16,9 +16,12 @@ use std::ops::Range;
 use std::rc::Rc;
 use std::sync::{Arc, PoisonError};
 use ariadne::{Label, Report, ReportBuilder, ReportKind, Source};
+use http::StatusCode;
 use crate::version::v0_0_1::parse::error::find_parse_err;
 use cosmic_nom::SpanExtra;
 use cosmic_nom::Span;
+use crate::version::v0_0_1::messaging::ResponseCore;
+use crate::version::v0_0_1::payload::payload::{Errors, Payload};
 
 pub enum MsgErr {
     Status {
@@ -27,6 +30,28 @@ pub enum MsgErr {
     },
     ParseErrs(ParseErrs),
 //    SubstErr(SubstErr)
+}
+
+impl Into<ResponseCore> for MsgErr {
+    fn into(self) -> ResponseCore {
+        match self {
+            MsgErr::Status { status, message } => {
+                ResponseCore {
+                    headers: Default::default(),
+                    status: StatusCode::from_u16(status).unwrap_or(StatusCode::from_u16(500).unwrap()),
+                    body: Payload::Errors(Errors::default(message.as_str()))
+                }
+            }
+            MsgErr::ParseErrs(_) => {
+                ResponseCore {
+                    headers: Default::default(),
+                    status: StatusCode::from_u16(500u16).unwrap_or(StatusCode::from_u16(500).unwrap()),
+                    body: Payload::Errors(Errors::default("parsing error..."))
+                }
+            }
+        }
+
+    }
 }
 
 impl MsgErr {

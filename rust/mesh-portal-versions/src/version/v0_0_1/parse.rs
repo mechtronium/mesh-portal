@@ -76,7 +76,7 @@ where
     )
 }
 
-fn mesh_route_chars<T>(i: T) -> Res<T, T>
+fn sys_route_chars<T>(i: T) -> Res<T, T>
 where
     T: InputTakeAtPosition + nom::InputLength,
     <T as InputTakeAtPosition>::Item: AsChar,
@@ -99,9 +99,13 @@ where
     )
 }
 
-pub fn local_route_segment<I: Span>(input: I) -> Res<I, RouteSeg> {
+pub fn this_route_segment<I: Span>(input: I) -> Res<I, RouteSeg> {
     alt((recognize(tag(".")), recognize(not(other_route_segment))))(input)
         .map(|(next, _)| (next, RouteSeg::This))
+}
+
+pub fn local_route_segment<I: Span>(input: I) -> Res<I, RouteSeg> {
+    tag("LOCAL")(input).map(|(next, _)| (next, RouteSeg::Local))
 }
 
 pub fn global_route_segment<I: Span>(input: I) -> Res<I, RouteSeg> {
@@ -117,22 +121,23 @@ pub fn tag_route_segment<I: Span>(input: I) -> Res<I, RouteSeg> {
         .map(|(next, tag)| (next, RouteSeg::Tag(tag.to_string())))
 }
 
-pub fn mesh_route_segment<I: Span>(input: I) -> Res<I, RouteSeg> {
-    delimited(tag("<<"), mesh_route_chars, tag(">>"))(input)
+pub fn sys_route_segment<I: Span>(input: I) -> Res<I, RouteSeg> {
+    delimited(tag("[<"), sys_route_chars, tag(">]"))(input)
         .map(|(next, tag)| (next, RouteSeg::Tag(tag.to_string())))
 }
 
 pub fn other_route_segment<I: Span>(input: I) -> Res<I, RouteSeg> {
     alt((
+        sys_route_segment,
         tag_route_segment,
         domain_route_segment,
-        mesh_route_segment,
         global_route_segment,
+        local_route_segment,
     ))(input)
 }
 
 pub fn point_route_segment<I: Span>(input: I) -> Res<I, RouteSeg> {
-    alt((local_route_segment, other_route_segment))(input)
+    alt((this_route_segment, other_route_segment))(input)
 }
 
 /*

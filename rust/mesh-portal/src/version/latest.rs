@@ -95,8 +95,8 @@ pub mod messaging {
     use mesh_portal_versions::version::v0_0_1::messaging;
 
     pub type RequestHandler=dyn messaging::RequestHandler;
-    pub type RequestCtx<'a,R> = messaging::RequestCtx<'a,R>;
-    pub type RootRequestCtx<R> = messaging::RootRequestCtx<R>;
+    pub type RequestCtx<'a,R> = messaging::InputCtx<'a,R>;
+    pub type RootRequestCtx<R> = messaging::RootInputCtx<R>;
     pub type Request = messaging::Request;
     pub type Response= messaging::Response;
     pub type RequestBuilder = messaging::RequestBuilder;

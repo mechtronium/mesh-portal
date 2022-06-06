@@ -409,7 +409,7 @@ pub mod id {
                     format!("[{}]", tag)
                 }
                 Self::Mesh(mesh) => {
-                    format!("<<{}>>", mesh)
+                    format!("[<{}>]", mesh)
                 }
                 Self::Var(var) => {
                     format!("${{{}}}",var.name)
@@ -437,7 +437,7 @@ pub mod id {
                     format!("[{}]", tag)
                 }
                 RouteSeg::Mesh(mesh) => {
-                    format!("<<{}>>", mesh)
+                    format!("[<{}>]", mesh)
                 }
                 RouteSeg::Global => "GLOBAL".to_string(),
                 RouteSeg::Local => "LOCAL".to_string()
@@ -1806,7 +1806,7 @@ pub mod id {
                     rtn.push_str(format!("[{}]::", tag).as_str());
                 }
                 RouteSeg::Mesh(mesh) => {
-                    rtn.push_str(format!("<<{}>>::", mesh).as_str());
+                    rtn.push_str(format!("[<{}>]::", mesh).as_str());
                 }
             }
 

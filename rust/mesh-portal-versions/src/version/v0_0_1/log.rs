@@ -1,11 +1,12 @@
 use crate::error::MsgErr;
-use crate::version::v0_0_1::id::id::{Point, ToPoint};
+use crate::version::v0_0_1::id::id::{Point, ToPoint, Uuid};
 use crate::version::v0_0_1::util::{timestamp, uuid};
 use crate::version::v0_0_1::{mesh_portal_timestamp};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::ops::Deref;
 use std::sync::Arc;
+use ariadne::Color::Default;
 use chrono::{DateTime, Utc};
 use serde::{Serialize,Deserialize};
 use serde;
@@ -31,7 +32,7 @@ impl Default for Level {
 pub struct Log {
     pub point: Point,
     pub source: LogSource,
-    pub span: Option<String>,
+    pub span: Option<Uuid>,
     pub timestamp: i64,
     pub payload: LogPayload,
     pub level: Level,
@@ -62,18 +63,72 @@ pub enum LogSpanEventKind {
 }
 
 
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LogSpanEvent {
-    pub point: Point,
+    pub span: Uuid,
     pub kind: LogSpanEventKind,
-    pub uuid: String,
-    pub parent: Option<String>,
     pub attributes: HashMap<String,String>,
 
     #[serde(with= "ts_milliseconds")]
     pub timestamp: DateTime<Utc>,
 }
+
+impl LogSpanEvent {
+    pub fn new( span: &LogSpan, kind: LogSpanEventKind, attributes: HashMap<String,String> ) -> LogSpanEvent {
+        LogSpanEvent {
+            span: span.uuid.clone(),
+            kind,
+            attributes,
+            timestamp: Utc::now()
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LogSpan{
+    pub uuid: Uuid,
+    pub point: Point,
+    pub parent: Option<String>,
+    pub attributes: HashMap<String,String>,
+    #[serde(with= "ts_milliseconds")]
+    pub entry_timestamp: DateTime<Utc>,
+}
+
+impl LogSpan {
+    pub fn new( point: Point ) -> Self {
+        Self {
+            uuid: uuid(),
+            point,
+            parent: None,
+            attributes: Default::default(),
+            entry_timestamp: Utc::now()
+        }
+    }
+
+    pub fn parent( point: Point, parent: Uuid ) -> Self {
+        Self {
+            uuid: uuid(),
+            point,
+            parent: Some(parent),
+            attributes: Default::default(),
+            entry_timestamp: Utc::now()
+        }
+    }
+
+    pub fn opt(point: Point, span: Option<Self>) -> Self {
+        let mut span = span.unwrap_or(
+        Self {
+            uuid: uuid(),
+            point: point.clone(),
+            parent: None,
+            attributes: Default::default(),
+            entry_timestamp: Utc::now()
+        });
+        span.point = point;
+        span
+    }
+}
+
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PointlessLog {
@@ -259,7 +314,7 @@ pub trait LogAppender: Send+Sync{
 
     fn audit(&self, log: AuditLog);
 
-    fn span(&self, log: LogSpanEvent);
+    fn span_event(&self, log: LogSpanEvent);
 
     /// PointlessLog is used for error diagnosis of the logging system itself, particularly
     /// where there is parsing error due to a bad point
@@ -301,8 +356,8 @@ impl RootLogger {
         self.appender.audit(log);
     }
 
-    fn span(&self, log: LogSpanEvent) {
-        self.appender.span(log);
+    fn span_event(&self, log: LogSpanEvent) {
+        self.appender.span_event(log);
     }
 
     /// PointlessLog is used for error diagnosis of the logging system itself, particularly
@@ -330,7 +385,7 @@ impl LogAppender for StdOutAppender {
         println!("audit log..." )
     }
 
-    fn span(&self, log: LogSpanEvent) {
+    fn span_event(&self, log: LogSpanEvent) {
         println!("span..." )
     }
 
@@ -360,19 +415,23 @@ impl PointLogger {
         self.logger.source()
     }
 
-    pub fn for_span( &self, span: LogSpanEvent) -> SpanLogger {
-        SpanLogger {
+    pub fn opt_span( &self, span: Option<LogSpan>) -> SpanLogger {
+        let new = span.is_none();
+        let span = LogSpan::opt(self.point.clone(), span );
+        let logger = SpanLogger {
             root_logger: self.logger.clone(),
-            point: self.point.clone(),
-            span: span.uuid,
-            entry_timestamp: span.timestamp,
-            attributes: span.attributes,
-            parent: span.parent,
+            span: span.clone(),
             commit_on_drop: true
+        };
+
+        if new {
+            self.logger.span_event(LogSpanEvent::new(&span, LogSpanEventKind::Entry, Default::default()));
         }
+
+        logger
     }
 
-    pub fn for_span_async(&self, span: LogSpanEvent) -> SpanLogger {
+    pub fn for_span_async(&self, span: LogSpan) -> SpanLogger {
         let mut span = self.for_span(span);
         span.commit_on_drop = false;
         span
@@ -380,15 +439,16 @@ impl PointLogger {
 
 
     pub fn span(&self) -> SpanLogger {
-        SpanLogger {
+        let span = LogSpan::new(self.point.clone());
+        let logger = SpanLogger {
             root_logger: self.logger.clone(),
-            point: self.point.clone(),
-            span: uuid(),
-            entry_timestamp: timestamp(),
-            attributes: Default::default(),
-            parent: None,
+            span: span.clone(),
             commit_on_drop: true
-        }
+        };
+
+        self.logger.span_event(LogSpanEvent::new(&span, LogSpanEventKind::Entry, Default::default()));
+
+        logger
     }
 
     pub fn span_async(&self) -> SpanLogger {
@@ -409,7 +469,6 @@ impl PointLogger {
 
 
 pub struct SpanLogBuilder {
-
     pub entry_timestamp: DateTime<Utc>,
     pub attributes: HashMap<String,String>,
 }
@@ -426,30 +485,38 @@ impl SpanLogBuilder {
 #[derive(Clone)]
 pub struct SpanLogger {
     root_logger: RootLogger,
-    point: Point,
-    span: String,
-    entry_timestamp: DateTime<Utc>,
-    attributes: HashMap<String,String>,
-    parent: Option<String>,
+    span: LogSpan,
     commit_on_drop: bool
 }
 
 impl SpanLogger {
-    pub fn span_id(&self) -> String {
-        self.span.clone()
+    pub fn span_uuid(&self) -> String {
+        self.span.uuid.clone()
+    }
+
+    pub fn point(&self) -> &Point {
+        &self.point
     }
 
     pub fn span(&self) -> SpanLogger {
+        let span = LogSpan::new(self.point().clone() );
         SpanLogger {
             root_logger: self.root_logger.clone(),
-            point: self.point.clone(),
-            span: uuid(),
-            entry_timestamp: timestamp(),
-            attributes: Default::default(),
-            parent: Some(self.span.clone()),
+            span,
             commit_on_drop: true
         }
     }
+
+    pub fn span_attr(&self, attr: HashMap<String,String>) -> SpanLogger {
+        let mut span = LogSpan::new(self.point().clone() );
+        span.attributes = attr;
+        SpanLogger {
+            root_logger: self.root_logger.clone(),
+            span,
+            commit_on_drop: true
+        }
+    }
+
 
     pub fn span_async(&self) -> SpanLogger {
         let mut span = self.span();
@@ -458,27 +525,20 @@ impl SpanLogger {
     }
 
 
-    pub fn current_span(&self) -> LogSpanEvent {
-        LogSpanEvent {
-            kind: LogSpanEventKind::Entry,
-            point: self.point.clone(),
-            uuid: self.span.clone(),
-            parent: self.parent.clone(),
-            attributes: self.attributes.clone(),
-            timestamp: self.entry_timestamp.clone()
-        }
+    pub fn current_span(&self) -> &LogSpan{
+        &self.span
     }
 
     pub fn entry_timestamp(&self) -> DateTime<Utc>{
-        self.entry_timestamp.clone()
+        self.span.entry_timestamp.clone()
     }
 
     pub fn set_span_attr<K,V>( &mut self, key: K, value: V) where K: ToString, V: ToString {
-        self.attributes.insert( key.to_string(), value.to_string() );
+        self.span.attributes.insert( key.to_string(), value.to_string() );
     }
 
     pub fn get_span_attr<K>( &self, key: K) -> Option<String> where K: ToString {
-        self.attributes.get( &key.to_string() ).cloned()
+        self.span.attributes.get( &key.to_string() ).cloned()
     }
 
     pub fn msg<M>(&self, level: Level, message :M ) where M: ToString {
@@ -487,7 +547,7 @@ impl SpanLogger {
             level,
             timestamp: timestamp().timestamp_millis(),
             payload: LogPayload::Message(message.to_string()),
-            span: None,
+            span:  Some(self.span_uuid()),
             source: self.root_logger.source()
         })
     }
@@ -519,7 +579,7 @@ impl SpanLogger {
         AuditLogBuilder {
             logger: self.root_logger.clone(),
             point: self.point.clone(),
-            span: self.span.clone(),
+            span: self.span.uuid.clone(),
             attributes: HashMap::new(),
         }
     }
@@ -538,15 +598,8 @@ impl SpanLogger {
 impl Drop for SpanLogger {
     fn drop(&mut self) {
         if self.commit_on_drop {
-            let log = LogSpanEvent {
-                kind: LogSpanEventKind::Exit,
-                point: self.point.clone(),
-                uuid: self.span.clone(),
-                parent: self.parent.clone(),
-                attributes: self.attributes.clone(),
-                timestamp: timestamp()
-            };
-            self.root_logger.span(log)
+            let log = LogSpanEvent::new(&self.span, LogSpanEventKind::Exit, self.span.attributes.clone());
+            self.root_logger.span_event(log)
         }
     }
 }

@@ -89,7 +89,7 @@ pub mod payload {
         Token(Token)
     }
 
-    #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, strum_macros::Display,Autobox)]
+    #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq )]
     pub struct Token {
         data: String
     }
@@ -1023,7 +1023,7 @@ pub mod payload {
 
 
 
-    #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, strum_macros::Display)]
+    #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq )]
     pub struct MultipartForm {
         data: String
     }

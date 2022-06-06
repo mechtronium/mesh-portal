@@ -101,7 +101,7 @@ pub mod test {
     use mesh_portal::version::latest::payload::Payload;
     use std::marker::PhantomData;
     use std::sync::{Arc, RwLock};
-    use mesh_portal_versions::version::v0_0_1::messaging::{AsyncRequestHandler, RequestCtx, RequestHandler, RequestHandlerRelay};
+    use mesh_portal_versions::version::v0_0_1::messaging::{AsyncRequestHandler, InputCtx, RequestHandler, RequestHandlerRelay};
 
 
     #[test]

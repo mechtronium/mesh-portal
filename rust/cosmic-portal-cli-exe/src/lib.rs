@@ -51,7 +51,7 @@ pub struct CliRelay {
 
 #[routes_async(self.handlers.read().await)]
 impl CliRelay {
-    fn new(port: Port, messenger: AsyncMessengerAgent) -> Self {
+    pub fn new(port: Port, messenger: AsyncMessengerAgent) -> Self {
 
         let handlers = RwLock::new(AsyncInternalRequestHandlers::new());
 

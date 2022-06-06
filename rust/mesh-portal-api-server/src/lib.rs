@@ -39,7 +39,7 @@ use mesh_portal::version::latest::sys::{Assign, Sys};
 use mesh_portal_versions::error::MsgErr;
 use mesh_portal_versions::version::v0_0_1::id::id::{TargetLayer, ToPoint, ToPort};
 use mesh_portal_versions::version::v0_0_1::messaging::{
-    AsyncMessenger, AsyncRequestHandler, MethodKind, ResponseCore, RootRequestCtx, AsyncRouter, Wave,
+    AsyncMessenger, AsyncRequestHandler, MethodKind, ResponseCore, RootInputCtx, AsyncRouter, Wave,
     WaveFrame,
 };
 use std::fmt::Debug;
