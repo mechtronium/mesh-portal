@@ -1,3 +1,7 @@
+use crate::version::v0_0_1::id::id::Point;
+use crate::version::v0_0_1::particle::particle::Stub;
+use crate::version::v0_0_1::payload::payload::Payload;
+
 pub mod particle {
     use std::collections::HashMap;
     use std::str::FromStr;
@@ -39,14 +43,14 @@ pub mod particle {
     )]
     pub enum Status {
         Unknown,      // initial status or when we status cannot be determined
-        Pending,      // resource is now registered but not assigned to a host
-        Assigning,    // resource is being assigned to at least one host
-        Initializing, // assigned to a host and undergoing custom initialization...This resource can send requests but not receive requests.
+        Pending,      // particle is now registered but not assigned to a host
+        Assigning,    // particle is being assigned to at least one host
+        Initializing, // assigned to a host and undergoing custom initialization...This particle can send requests but not receive requests.
         Ready,        // ready to take requests
-        Paused, // can not receive requests (probably because it is waiting for some other resource to make updates)...
-        Resuming, // like Initializing but triggered after a pause is lifted, the resource may be doing something before it is ready to accept requests again.
+        Paused, // can not receive requests (probably because it is waiting for some other particle to make updates)...
+        Resuming, // like Initializing but triggered after a pause is lifted, the particle may be doing something before it is ready to accept requests again.
         Panic,    // something is wrong... all requests are blocked and responses are cancelled.
-        Done, // this resource had a life span and has now completed succesfully it can no longer receive requests.
+        Done, // this particle had a life span and has now completed succesfully it can no longer receive requests.
     }
 
     #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
@@ -126,12 +130,12 @@ pub mod particle {
 
 
     #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
-    pub struct ParticleDetails {
+    pub struct Details {
         pub stub: Stub,
         pub properties: Properties,
     }
 
-    impl ParticleDetails {
+    impl Details {
         pub fn new(stub: Stub, properties: Properties ) -> Self {
             Self {
                 stub,
@@ -160,5 +164,30 @@ pub mod particle {
     pub struct Particle {
         pub stub: Stub,
         pub state: Box<Payload>,
+    }
+}
+
+use serde::{Serialize,Deserialize};
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Particle {
+    pub stub: Stub,
+    pub state: Payload,
+}
+
+impl Particle {
+    pub fn new(stub: Stub, state: Payload) -> Particle {
+        Particle {
+            stub,
+            state
+        }
+    }
+
+    pub fn point(&self) -> Point {
+        self.stub.point.clone()
+    }
+
+    pub fn state_src(&self) -> Payload {
+        self.state.clone()
     }
 }

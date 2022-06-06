@@ -1,3 +1,7 @@
+use crate::version::v0_0_1::id::id::Point;
+use crate::version::v0_0_1::particle::particle::Stub;
+use crate::version::v0_0_1::payload::payload::Payload;
+
 pub mod id {
     use nom::bytes::complete::tag;
     use nom::combinator::{all_consuming, opt};
@@ -16,24 +20,100 @@ pub mod id {
     use cosmic_nom::{new_span, Res, Span, SpanExtra, Trace};
 
     use crate::error::{MsgErr, ParseErrs};
+    use crate::version::v0_0_1::config::config::bind::RouteSelector;
     use crate::version::v0_0_1::id::id::PointSegCtx::Working;
     use crate::version::v0_0_1::mesh_portal_uuid;
-    use crate::version::v0_0_1::parse::{camel_case, consume_point, consume_point_ctx, Ctx, CtxResolver, Env, kind, point_and_kind, point_route_segment, VarResolver, ResolverErr};
+    use crate::version::v0_0_1::parse::{camel_case, consume_point, consume_point_ctx, Ctx, CtxResolver, Env, kind, point_and_kind, point_route_segment, ResolverErr, VarResolver};
 
     use crate::version::v0_0_1::parse::error::result;
     use crate::version::v0_0_1::selector::selector::{
         Pattern, PointSelector, SpecificSelector, VersionReq,
     };
-    use crate::version::v0_0_1::util::{ToResolved, ValueMatcher};
+    use crate::version::v0_0_1::sys::Location::Central;
+    use crate::version::v0_0_1::util::{ToResolved, ValueMatcher, ValuePattern};
 
     lazy_static! {
+        pub static ref GLOBAL_CENTRAL: Point = Point::from_str("GLOBAL::central").unwrap();
         pub static ref GLOBAL_EXEC: Point = Point::from_str("GLOBAL::executor").unwrap();
         pub static ref LOCAL_PORTAL: Point = Point::from_str("LOCAL::portal").unwrap();
     }
 
     pub type Uuid = String;
 
-    pub type GenericKindBase = String;
+
+    #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
+    pub enum GenericKindBase {
+        Root,
+        Portal,
+        ArtifactBundle,
+        File,
+        Dir,
+        Ext(String)
+    }
+
+    impl TryFrom<String> for GenericKindBase {
+        type Error=MsgErr;
+        fn try_from(s: String) -> Result<Self,Self::Error> {
+            Self::from_str(s.as_str())
+        }
+    }
+
+    impl TryFrom<&str> for GenericKindBase {
+        type Error=MsgErr;
+        fn try_from(s: &str) -> Result<Self,Self::Error> {
+            Self::from_str(s)
+        }
+    }
+
+
+    impl ToString for GenericKindBase {
+        fn to_string(&self) -> String {
+            match self {
+                GenericKindBase::Root => "Root".to_string(),
+                GenericKindBase::Portal => "Portal".to_string(),
+                GenericKindBase::ArtifactBundle => "ArtifactBundle".to_string(),
+                GenericKindBase::File=> "File".to_string(),
+                GenericKindBase::Dir=> "Dir".to_string(),
+                GenericKindBase::Ext(ext) => ext.clone()
+            }
+        }
+    }
+
+    impl FromStr for GenericKindBase {
+        type Err = MsgErr;
+
+        fn from_str(s: &str) -> Result<Self, Self::Err> {
+            if "Root" == s {
+                Ok(Self::Root)
+            } else if "Portal" == s {
+                Ok(Self::Portal)
+            } else if "File" == s {
+                Ok(Self::File)
+            } else if "Dir" == s {
+                Ok(Self::Dir)
+            } else if "ArtifactBundle" == s {
+                Ok(Self::ArtifactBundle)
+            } else {
+                let kind = result(camel_case(new_span(s)))?.to_string();
+                Ok(Self::Ext(kind))
+            }
+        }
+    }
+
+    impl Deref for GenericKindBase {
+        type Target = str;
+
+        fn deref(&self) -> &Self::Target {
+            match self {
+                GenericKindBase::Portal => "Portal",
+                GenericKindBase::Ext(k) => k.as_str(),
+                GenericKindBase::Root => "Root",
+                GenericKindBase::ArtifactBundle => "ArtifactBundle",
+                GenericKindBase::File => "File",
+                GenericKindBase::Dir => "Dir"
+            }
+        }
+    }
 
 
     pub type PointKind = PointKindDef<Point>;
@@ -1066,7 +1146,6 @@ pub mod id {
         }
     }
 
-
     impl ToResolved<Point> for PointVar {
         fn to_resolved(self, env: &Env) -> Result<Point, MsgErr> {
             let point_ctx : PointCtx = self.to_resolved(env)?;
@@ -1360,6 +1439,8 @@ pub mod id {
 
     impl Point {
 
+        pub fn central() -> Self { GLOBAL_CENTRAL.clone() }
+
         pub fn global_executor() -> Self {
             GLOBAL_EXEC.clone()
         }
@@ -1401,6 +1482,24 @@ pub mod id {
                 route: self.route,
                 segments,
             })
+        }
+
+        pub fn is_parent(&self, child: &Point ) -> Result<(),()> {
+            if self.route != child.route {
+                return Err(());
+            }
+
+            if self.segments.len() >= child.segments.len() {
+                return Err(())
+            }
+
+            for (index,seg) in self.segments.iter().enumerate() {
+                if *seg != *child.segments.get(index).unwrap() {
+                    return Err(())
+                }
+            }
+
+            Ok(())
         }
 
         pub fn is_normalized(&self) -> bool {
@@ -1735,6 +1834,15 @@ pub mod id {
         pub specific: Option<Specific>,
     }
 
+    impl GenericKind {
+        pub fn root() -> Self {
+            Self {
+                kind: "Root".try_into().unwrap(),
+                sub_kind: None,
+                specific: None
+            }
+        }
+    }
 
 
     impl ToString for GenericKind {
@@ -1770,13 +1878,13 @@ pub mod id {
 
     impl GenericKind {
         pub fn new(
-            resource_type: GenericKindBase,
-            kind: Option<String>,
+            kind: GenericKindBase,
+            sub_kind: Option<String>,
             specific: Option<Specific>,
         ) -> Self {
             Self {
-                kind: resource_type,
-                sub_kind: kind,
+                kind,
+                sub_kind,
                 specific,
             }
         }

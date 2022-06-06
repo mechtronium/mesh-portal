@@ -101,7 +101,7 @@ pub mod messaging {
     pub type Response= messaging::Response;
     pub type RequestBuilder = messaging::RequestBuilder;
     pub type ProtoRequest= messaging::ProtoRequest;
-    pub type Message = messaging::Message;
+    pub type Message = messaging::Wave;
     pub type Agent = messaging::Agent;
     pub type AuthedAgent = messaging::AuthedAgent;
     pub type Session = messaging::Session;
@@ -110,6 +110,12 @@ pub mod messaging {
     pub type Karma = messaging::Karma;
     pub type Handling = messaging::Handling;
     pub type HandlingKind = messaging::HandlingKind;
+    pub type CmdMethod = messaging::CmdMethod;
+    pub type Method = messaging::Method;
+    pub type MethodPattern = messaging::MethodPattern;
+
+    pub type SysMethod = messaging::SysMethod;
+
 }
 
 
@@ -180,9 +186,6 @@ pub mod command {
         use mesh_portal_versions::version;
         use mesh_portal_versions::version::v0_0_1 as current;
 
-        pub type CmdMethod = version::v0_0_1::messaging::CmdMethod;
-        pub type Method = version::v0_0_1::messaging::Method;
-        pub type MethodPattern = version::v0_0_1::messaging::MethodPattern;
 
     }
 
@@ -237,7 +240,6 @@ pub mod config {
     pub type PortalKind = config::config::PortalKind;
     pub type Info = config::config::Info;
     pub type PortalConfig = config::config::PortalConfig;
-    pub type Assign = config::config::Assign;
     pub type PointConfig<BODY> = config::config::PointConfig<BODY>;
     pub type Document = config::config::Document;
     pub type ParticleConfigBody = config::config::ParticleConfigBody;
@@ -491,9 +493,16 @@ pub mod cli {
 pub mod service {
     use mesh_portal_versions::version::{v0_0_1 as current, v0_0_1};
 
-    pub type Router=dyn v0_0_1::messaging::Router;
+    pub type Router=dyn v0_0_1::messaging::AsyncRouter;
     pub type Global=dyn current::service::Global;
     pub type AccessProvider=dyn current::service::AccessProvider;
     pub type AllAccessProvider=current::service::AllAccessProvider;
+}
+
+pub mod sys {
+    use mesh_portal_versions::version::{v0_0_1 as current, v0_0_1};
+    pub type Assign = current::sys::Assign;
+    pub type AssignmentKind = current::sys::AssignmentKind;
+    pub type Sys = current::sys::Sys;
 }
 

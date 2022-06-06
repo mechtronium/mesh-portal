@@ -363,7 +363,7 @@ pub mod request {
         use crate::version::v0_0_1::bin::Bin;
         use crate::version::v0_0_1::command::Command;
         use crate::version::v0_0_1::command::command::common::{SetProperties, SetRegistry, StateSrc, StateSrcVar};
-        use crate::version::v0_0_1::id::id::{GenericKind, HostKey, Point, PointCtx, PointSeg, PointVar, ToPort};
+        use crate::version::v0_0_1::id::id::{GenericKind, GenericKindBase, HostKey, Point, PointCtx, PointSeg, PointVar, ToPort};
         use crate::version::v0_0_1::messaging::{CmdMethod, ProtoRequest, RequestCore, SysMethod};
         use crate::version::v0_0_1::msg::MsgMethod;
         use crate::version::v0_0_1::parse::{Env, ResolverErr};
@@ -409,7 +409,7 @@ pub mod request {
                 let template = TemplateCtx {
                     point,
                     kind: KindTemplate {
-                        kind: "ArtifactBundle".to_string(),
+                        kind: "ArtifactBundle".try_into().unwrap(),
                         sub_kind: None,
                         specific: None,
                     },
@@ -424,7 +424,7 @@ pub mod request {
                 let template = Template {
                     point,
                     kind: KindTemplate {
-                        kind: "ArtifactBundle".to_string(),
+                        kind: "ArtifactBundle".try_into().unwrap(),
                         sub_kind: None,
                         specific: None,
                     },
@@ -441,7 +441,7 @@ pub mod request {
 
         #[derive(Debug, Clone, Serialize, Deserialize,Eq,PartialEq)]
         pub struct KindTemplate {
-            pub kind: String,
+            pub kind: GenericKindBase,
             pub sub_kind: Option<String>,
             pub specific: Option<SpecificSelector>,
         }

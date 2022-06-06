@@ -19,13 +19,6 @@ pub enum HttpMethod {
     Patch,
 }
 
-impl Into<Method> for HttpMethod {
-    fn into(self) -> Method {
-        Method::Http(self)
-    }
-}
-
-
 impl Into<http::Method> for HttpMethod {
     fn into(self) -> http::Method {
         match self {

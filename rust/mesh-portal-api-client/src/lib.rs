@@ -5,533 +5,193 @@ extern crate async_trait;
 #[macro_use]
 extern crate anyhow;
 
-
-
-use std::sync::{Arc, RwLock};
+use std::collections::HashSet;
+use dashmap::{DashMap, DashSet};
+use mesh_portal::error::MsgErr;
+use mesh_portal::version::latest::id::{Point, Port, Uuid};
+use mesh_portal::version::latest::messaging::{Agent, RequestCtx, SysMethod};
+use mesh_portal_versions::version::v0_0_1::id::id::{TargetLayer, ToPoint, ToPort};
+use mesh_portal_versions::version::v0_0_1::messaging::{
+    AsyncInternalRequestHandlers, AsyncMessenger, AsyncMessengerAgent, AsyncRequestHandler,
+    AsyncRequestHandlerRelay, AsyncRouter, Request, RequestFrame, RequestHandlerRelay, Requestable,
+    Response, ResponseFrame, WaitTime, Wave, WaveFrame,
+};
+use mesh_portal_versions::version::v0_0_1::quota::Timeouts;
+use std::sync::Arc;
 use std::time::Duration;
-
-use anyhow::Error;
-use dashmap::DashMap;
-use tokio::sync::{oneshot, mpsc};
-use uuid::Uuid;
-
-
-use std::prelude::rust_2021::TryFrom;
-use std::ops::Deref;
-use std::collections::HashMap;
-use tokio::sync::watch::Receiver;
-use mesh_portal::version::latest::portal::{Exchanger, inlet, outlet};
-use mesh_portal::version::latest::particle::{Status};
-use mesh_portal::version::latest::{portal, entity};
-use std::convert::TryInto;
-use dashmap::mapref::one::Ref;
-use tokio::sync::oneshot::Sender;
-use tokio::task::yield_now;
-use mesh_portal::version::latest::config::{Assign, PointConfig, PortalConfig, ParticleConfigBody};
+use tokio::sync::mpsc;
+use tokio::sync::oneshot;
 use mesh_portal::version::latest::entity::response::ResponseCore;
-use mesh_portal::version::latest::id::Point;
-use mesh_portal::version::latest::messaging::{Request, Response};
-use mesh_portal::version::latest::portal::inlet::{AssignRequest};
-use mesh_portal::version::latest::portal::outlet::{Frame, RequestFrame};
-use mesh_portal::version::latest::util::uuid;
-use mesh_portal::version::latest::log::Log;
-use mesh_portal::version::latest::log::PointLogger;
-
-pub fn std_logger( log: Log ) {
-    println!("{}", log.to_string())
-}
-
-#[derive(Clone)]
-pub struct ParticleSkel {
-  pub assign: Assign,
-  pub portal: PortalSkel,
-  pub logger: PointLogger
-}
-
-pub trait ParticleCtrlFactory: Sync+Send {
-    fn matches(&self, config: PointConfig<ParticleConfigBody>) -> bool;
-    fn create(&self, skel: ParticleSkel ) -> Result<Arc<dyn ParticleCtrl>, Error>;
-}
-
-#[async_trait]
-pub trait ParticleCtrl: Sync+Send {
-    async fn init(&self) -> Result<(), Error>
-    {
-        Ok(())
-    }
-
-    async fn handle_request( &self, request: RequestFrame ) -> ResponseCore {
-        request.request.core.not_found()
-    }
-
-}
-
-pub fn log(message: &str) {
-    println!("{}",message);
-}
-
-pub trait Inlet: Sync+Send {
-    fn inlet_frame(&self, frame: inlet::Frame);
-}
-
-pub trait Outlet: Sync+Send {
-    fn receive(&mut self, frame: outlet::Frame);
-}
-
-pub struct StatusChamber {
-    pub status: Status
-}
-
-impl StatusChamber{
-    pub fn new( status: Status ) -> Self {
-        Self {
-            status
-        }
-    }
-}
-
-pub type Exchanges = Arc<DashMap<String, oneshot::Sender<Response>>>;
-
-#[derive(Clone)]
-pub struct PrePortalSkel {
-    pub config: PortalConfig,
-    pub inlet: Arc<dyn Inlet>,
-    pub logger: PointLogger,
-    pub exchanges: Exchanges,
-    pub assign_exchange: Arc<DashMap<String, oneshot::Sender<Arc<dyn ParticleCtrl >>>>,
-}
-impl PrePortalSkel {
-
-    pub fn api(&self) -> InletApi {
-        InletApi::new( self.config.clone(), self.inlet.clone(), self.exchanges.clone(), std_logger )
-    }
-
-}
-#[derive(Clone)]
-pub struct PortalSkel {
-    pub pre: PrePortalSkel,
-    pub tx: mpsc::Sender<outlet::Frame>,
-    pub ctrl_factory: Arc<dyn ParticleCtrlFactory>,
-}
-
-impl Deref for PortalSkel {
-    type Target = PrePortalSkel;
-
-    fn deref(&self) -> &Self::Target {
-        &self.pre
-    }
-}
-
-pub enum ResourceCommand {
-    Add{point: Point, resource: Arc<dyn ParticleCtrl> },
-    Remove(Point),
-    None
-}
-
+use mesh_portal::version::latest::payload::Payload;
+use mesh_portal::version::latest::sys::{Assign, Sys};
 
 pub struct Portal {
-    pub skel: PortalSkel,
+    pub port: Port,
+    pub assigned: Arc<DashSet<Point>>,
+    pub messenger: Arc<dyn AsyncMessenger<RequestFrame, ResponseFrame>>,
+    pub handlers: AsyncInternalRequestHandlers<AsyncRequestHandlerRelay>,
+    pub auth
 }
 
 impl Portal {
     pub async fn new(
-        pre: PrePortalSkel,
-        outlet_tx: mpsc::Sender<outlet::Frame>,
-        mut outlet_rx: mpsc::Receiver<outlet::Frame>,
-        ctrl_factory: Arc<dyn ParticleCtrlFactory>,
-        logger: PointLogger
-    ) -> Result<Arc<Portal>, Error> {
+        inlet_tx: mpsc::Sender<WaveFrame>,
+        outlet_rx: mpsc::Receiver<WaveFrame>,
+    ) -> Result<Self, MsgErr> {
+        let assigned = Arc::new(DashSet::new());
+        let messenger = Arc::new(PortalMessenger::new(inlet_tx, assigned.clone()));
 
-        let skel =  PortalSkel {
-            pre,
-            tx: outlet_tx,
-            ctrl_factory,
-        };
-
-        {
-println!("NEW PORTAL!" );
-            let skel = skel.clone();
-            tokio::spawn(async move {
-                let mut resources = HashMap::new();
-println!("portal listening...");
-                while let Option::Some(frame) = outlet_rx.recv().await {
-println!("Portal received frame: {}", frame.to_string());
-                    if let Frame::Close(_) = frame {
-                        println!("XXX>>> Client exiting outlet_rx loop");
-                        break;
-                    }
-                    process(skel.clone(), &mut resources, frame).await;
-
-                        async fn process(skel: PortalSkel, particles: &mut HashMap<Point,Arc<dyn ParticleCtrl>>, frame: outlet::Frame ) -> Result<(),Error> {
-println!("CLIENT PROCESS");
-
-                            match &frame {
-                                outlet::Frame::Init => {
-
-                                }
-                                outlet::Frame::Assign(assign) => {
-                                    let particle_skel = ParticleSkel{
-                                        assign: assign.item.clone(),
-                                        portal: skel.clone(),
-                                        logger: skel.logger.clone(),
-                                    };
-                                    let particle = skel.ctrl_factory.create(particle_skel)?;
-                                    particles.insert(assign.details.stub.point.clone(), particle.clone() );
-                                    let assign = assign.clone();
-                                    let skel = skel.clone();
-                                    let frame = frame.clone();
-                                    tokio::spawn( async move {
-                                        println!("CLIENT INIT");
-                                        particle.init().await;
-                                        match skel.assign_exchange.remove( &assign.id ) {
-                                            None => {
-                                                println!("could not find exchange for {}",assign.id);
-                                            }
-                                            Some((_,tx)) => {
-                                                tx.send(particle);
-                                            }
-                                        }
-                                        println!("CLIENT INIT COMPLETE");
-                                    });
-
-                                }
-                                outlet::Frame::Request(request_frame) => {
-                                    let resource = particles.get(&request_frame.request.to ).ok_or(anyhow!("expected to find resource for point '{}'", request_frame.request.to.to_string()))?;
-
-
-                                    let response = resource.handle_request(request_frame.clone()).await;
-                                    let response = Response {
-                                        id: uuid(),
-                                        from: request_frame.request.to.clone(),
-                                        to: request_frame.request.from.clone(),
-                                        core: response,
-                                        response_to: request_frame.request.id.clone()
-                                    };
-                                    skel.inlet.inlet_frame(inlet::Frame::Response(response));
-                                }
-                                outlet::Frame::Response(response) => {
-                                    if let Some((_,tx)) = skel.exchanges.remove(&response.response_to)
-                                    {
-                                        tx.send( response.clone() );
-                                    }
-                                }
-                                outlet::Frame::Artifact(_) => {
-                                    unimplemented!()
-                                }
-                                outlet::Frame::Close(_) => {
-                                }
-                            }
-
-                            Ok(())
-                        }
-
-
+        async fn listen_for_point(
+            mut outlet_rx: mpsc::Receiver<WaveFrame>
+        ) -> Result<(Point, mpsc::Receiver<WaveFrame>), MsgErr> {
+            while let Ok(frame) = tokio::time::timeout(
+                Duration::from_secs(Timeouts::default().from(&WaitTime::High)),
+                outlet_rx.recv(),
+            ).await
+            {
+                if let Ok(frame) = frame {
+                    if let Wave::Request(request) = frame.wave {
+                        let point: Point = request
+                            .require_method(SysMethod::AssignPort)?
+                            .require_body("Point")?;
+                        return Ok((point, outlet_rx));
+                    } // else do nothing...
+                } else {
+                    return Err(MsgErr::server_error());
                 }
-
-
-
-            });
-        }
-
-        let portal = Self {
-            skel: skel.clone(),
-        };
-
-        Ok(Arc::new(portal))
-    }
-
-    pub fn log( &self, log: Log ) {
-        self.skel.inlet.inlet_frame(inlet::Frame::Log(log));
-    }
-
-    pub async fn request_assign( &self, request: AssignRequest) -> Result<Arc<dyn ParticleCtrl>,Error> {
-       let (tx,rx) = oneshot::channel();
-       let request = Exchanger::new(request);
-       self.skel.assign_exchange.insert( request.id.clone(), tx );
-       self.skel.inlet.inlet_frame(inlet::Frame::AssignRequest(request) );
-       Ok(rx.await?)
-    }
-
-    pub async fn request( &self, request: Request ) -> Response {
-        self.skel.api().exchange(request).await
-    }
-}
-
-#[async_trait]
-impl Outlet for Portal {
-    fn receive(&mut self, frame: outlet::Frame) {
-        self.skel.tx.send( frame );
-    }
-}
-
-
-pub struct InletApi {
-    config: PortalConfig,
-    inlet: Arc<dyn Inlet>,
-    exchanges: Exchanges,
-    logger: fn( log: Log )
-}
-
-impl InletApi {
-    pub fn new(config: PortalConfig, inlet: Arc<dyn Inlet>, exchanges: Exchanges, logger: fn( log: Log ) ) -> Self {
-        Self {
-            config,
-            inlet,
-            exchanges,
-            logger
-        }
-    }
-
-
-    pub fn notify(&self, request: Request) {
-        self.inlet.inlet_frame(inlet::Frame::Request(request));
-    }
-
-    pub async fn exchange(
-        &mut self,
-        request: Request
-    ) -> Response {
-
-        let (tx,rx) = oneshot::channel();
-        self.exchanges.insert(request.id.clone(), tx);
-        self.inlet.inlet_frame(inlet::Frame::Request(request.clone()));
-
-        let result = tokio::time::timeout(Duration::from_secs(self.config.response_timeout.clone()),rx).await;
-        match result {
-            Ok(Ok(response)) => response,
-            Ok(Err(error)) => request.fail(error.to_string().as_str()),
-            Err(error) => request.fail(error.to_string().as_str())
-        }
-    }
-
-    pub fn send_response(&self, response: Response ) {
-        self.inlet.inlet_frame( inlet::Frame::Response(response) );
-    }
-}
-
-pub mod client {
-    use std::ops::Deref;
-    use anyhow::Error;
-    use mesh_portal::version::latest::portal::outlet;
-
-    /*
-    #[derive(Clone)]
-    pub struct RequestContext {
-        pub portal_info: Info,
-        pub logger: fn(message: &str),
-    }
-
-    impl RequestContext {
-        pub fn new(portal_info: Info, logger: fn(message: &str)) -> Self {
-            Self {
-                portal_info,
-                logger
             }
+            Err(MsgErr::timeout())
         }
+
+        let (point, mut outlet_rx) = listen_for_point(outlet_rx).await?;
+        assigned.insert(point.clone());
+
+        let handlers = AsyncInternalRequestHandlers::new();
+
+       let mut port= point.to_port().with_layer(TargetLayer::Core);
+
+       {
+          let handlers = handlers.clone();
+          tokio::spawn(async move {
+             while let Ok(frame) = outlet_rx.recv().await {}
+          });
+       }
+
+        Ok(Self {
+            port,
+           assigned,
+           messenger,
+            handlers,
+        })
     }
 
-    pub struct Request<REQUEST> {
-        pub context: RequestContext,
-        pub from: Point,
-        pub request: REQUEST
-    }
-
-    impl<REQUEST> Deref for Request<REQUEST> {
-        type Target = REQUEST;
-
-        fn deref(&self) -> &Self::Target {
-            &self.request
+    pub fn has_core(&self, point: &Point) -> Result<(), ()> {
+        if self.port.point == *point {
+            return Ok(());
         }
-    }
-
-     */
-}
-
-
-pub mod example {
-    use std::sync::Arc;
-
-    use anyhow::Error;
-
-
-    use crate::{InletApi, PortalSkel, inlet, ParticleCtrl};
-    use std::collections::HashMap;
-    use mesh_portal::version::latest::payload::Payload;
-    use mesh_portal::version::latest::entity;
-
-    pub struct HelloCtrl {
-        pub skel: Arc<PortalSkel>,
-        pub inlet_api: InletApi
-    }
-
-    impl HelloCtrl {
-        #[allow(dead_code)]
-        fn new(skel: Arc<PortalSkel>, inlet_api: InletApi) -> Box<Self> {
-            Box::new(Self { skel, inlet_api } )
-        }
-    }
-
-    #[async_trait]
-    impl ParticleCtrl for HelloCtrl {
-
-        async fn init(&self) -> Result<(), Error> {
-            unimplemented!();
-            /*
-            let mut request =
-                inlet::Request::new(entity::request::ReqEntity::Msg( Msg {
-                    action: "HelloWorld".to_string(),
-                    payload: Payload::Empty,
-
-                    path: "/".to_string()
-                }));
-
-            request.to.push(self.inlet_api.info.point.clone());
-
-            let response = self.inlet_api.exchange(request).await?;
-
-            if let entity::response::RespEntity::Ok(Payload::Primitive(Primitive::Text(text))) = response.entity {
-                println!("{}",text);
-            } else {
-                return Err(anyhow!("unexpected signal"));
-            }
-
-
-             */
+        if self.assigned.contains_key(point) {
             Ok(())
+        } else {
+            Err(())
+        }
+    }
+}
+
+pub struct PortalMessenger {
+    inlet_tx: mpsc::Sender<WaveFrame>,
+    exchanges: Arc<DashMap<Uuid, oneshot::Sender<ResponseFrame>>>,
+    assigned: Arc<DashSet<Point>>,
+    timeouts: Timeouts,
+}
+
+impl PortalMessenger {
+    pub fn new(inlet_tx: mpsc::Sender<WaveFrame>, assigned: Arc<DashSet<Point>>) -> Self {
+        Self {
+            inlet_tx,
+            exchanges: Arc::new(DashMap::new()),
+            assigned,
+            timeouts: Default::default(),
+        }
+    }
+}
+
+impl AsyncMessenger<RequestFrame, ResponseFrame> for PortalMessenger {
+    async fn send(&self, request: RequestFrame) -> ResponseFrame {
+        if !self.assigned.contains(&request.from().to_point()) {
+            return request.forbidden();
         }
 
+        let (tx, rx) = oneshot::channel();
+        self.exchanges.insert(request.id(), tx);
+        self.inlet_tx.send(request.into()).await;
 
+        if let Ok(frame) =
+            tokio::time::timeout(Duration::from_secs(self.timeouts.from(&request)), rx).await
+        {
+            if let Ok(response) = frame {
+                response
+            } else {
+                request.server_error()
+            }
+        } else {
+            request.timeout()
+        }
     }
 
+    fn send_sync(&self, request: RequestFrame) -> ResponseFrame {
+        let (tx, rx) = oneshot::channel();
+        self.exchanges.insert(request.id(), tx);
+        let response = tokio::runtime::Handle::current().block_on(async move {
+            let stub = request.as_stub();
+            self.inlet_tx.send(request.into()).await;
+            if let Ok(result) =
+                tokio::time::timeout(Duration::from_secs(self.timeouts.from(&request)), rx).await
+            {
+                if let Ok(frame) = result {
+                    frame
+                } else {
+                    stub.server_error()
+                }
+            } else {
+                stub.timeout()
+            }
+        });
+        response
+    }
 
+    async fn route(&self, wave: Wave) {
+    }
+}
+
+pub trait PortalCtrlFactory {
+   fn create(&self, Assign, AsyncMessengerAgent) -> Result<Box<dyn AsyncRequestHandler>,MsgErr>;
 }
 
 
 
+#[derive(AsyncRequestHandler)]
+pub struct PortalRequestHandler {
+    factory: Box<dyn PortalCtrlFactory>,
+    handlers: Arc<DashMap<Point,Box<dyn AsyncRequestHandler>>>,
+    messenger: Arc<dyn AsyncMessenger<Request,Response>>
+}
 
-/*                        match request.entity.clone() {
-                            ExtOperation::Http(_) => {
-                                if let Exchange::RequestResponse(exchange_id) = &kind
-                                {
-                                    let result = Request::try_from_http(request, context);
-                                    match result {
-                                        Ok(request) => {
-                                            let path = request.path.clone();
-                                            let result = ctrl.http_request(request).await;
-                                            match result {
-                                                Ok(response) => {
-                                                    let response = inlet::Response {
-                                                        to: from,
-                                                        exchange:exchange_id.clone(),
-                                                        entity: ResponseEntity::Ok(Entity::HttpResponse(response))
-                                                    };
-                                                    inlet_api.respond( response );
-                                                }
-                                                Err(err) => {
-                                                    (skel.logger)(format!("ERROR: HttpRequest.path: '{}' error: '{}' ",  path, err.to_string()).as_str());
-                                                    let response = inlet::Response {
-                                                        to: from,
-                                                        exchange:exchange_id.clone(),
-                                                        entity: ResponseEntity::Ok(Entity::HttpResponse(HttpResponse::server_side_error()))
-                                                    };
-                                                    inlet_api.respond( response );
-                                                }
-                                            }
-                                        }
-                                        Err(err) => {
-                                            (skel.logger)(format!("FATAL: could not modify HttpRequest into Request<HttpRequest>: {}", err.to_string()).as_str());
-                                        }
-                                    }
-                                } else {
-                                    (skel.logger)("FATAL: http request MUST be of ExchangeKind::RequestResponse");
-                                }
-                            }
-                            ExtOperation::Port(port_request) => {
-                                match ports.get(&port_request.port ) {
-                                    Some(port) => {
-                                        let result = Request::try_from_port(request, context );
-                                        match result {
-                                            Ok(request) => {
-                                                let request_from = request.from.clone();
-                                                let result = port.request(request).await;
-                                                match result {
-                                                    Ok(response) => {
-                                                        match response {
-                                                            Some(signal) => {
-                                                                if let Exchange::RequestResponse(exchange_id) = &kind
-                                                                {
-                                                                   let response = inlet::Response {
-                                                                       to: request_from,
-                                                                       exchange: exchange_id.clone(),
-                                                                       entity: signal
-                                                                   };
+#[routes_async(self.handlers)]
+impl PortalRequestHandler {
 
-                                                                   inlet_api.respond(response);
-                                                                } else {
-                                                                    let message = format!("WARN: PortOperation.port '{}' generated a response to a ExchangeKind::Notification", port_request.port);
-                                                                    (skel.logger)(message.as_str());
-                                                                }
-                                                            }
-                                                            None => {
-                                                                let message = format!("ERROR: PortOperation.port '{}' generated no response", port_request.port);
-                                                                (skel.logger)(message.as_str());
-                                                                if let Exchange::RequestResponse(exchange_id) = &kind
-                                                                {
-                                                                    let response = inlet::Response {
-                                                                        to: request_from,
-                                                                        exchange: exchange_id.clone(),
-                                                                        entity: ResponseEntity::Error(message)
-                                                                    };
-                                                                    inlet_api.respond(response);
-                                                                }
-                                                            }
-                                                        }
-                                                    }
-                                                    Err(err) => {
-                                                        let message = format!("ERROR: PortOperation.port '{}' message: '{}'", port_request.port, err.to_string());
-                                                        (skel.logger)(message.as_str());
-                                                        if let Exchange::RequestResponse(exchange_id) = &kind
-                                                        {
-                                                            let response = inlet::Response {
-                                                                to: request_from,
-                                                                exchange: exchange_id.clone(),
-                                                                entity: ResponseEntity::Error(message)
-                                                            };
-                                                            inlet_api.respond(response);
-                                                        }
-                                                    }
-                                                }
+   pub fn new( messenger: Arc<dyn AsyncMessenger<Request,Response>>, factory: Box<dyn PortalCtrlFactory>) -> Self {
+      Self {
+         factory,
+         handlers: Arc::new(DashMap::new()),
+         messenger
+      }
+   }
 
-                                            }
-                                            Err(err) => {
-                                                let message = format!("FATAL: could not modify PortOperation into Request<PortOperation>: {}", err.to_string());
-                                                (skel.logger)(message.as_str());
-                                                if let Exchange::RequestResponse(exchange_id) = &kind
-                                                {
-                                                    let response = inlet::Response {
-                                                        to: from,
-                                                        exchange: exchange_id.clone(),
-                                                        entity: ResponseEntity::Error(message)
-                                                    };
-                                                    inlet_api.respond(response);
-                                                }
-                                            }
-                                        }
+   #[route_async(Sys<Assign>)]
+   pub async fn assign( &self, request: RequestCtx<Assign>) -> Result<ResponseCore,MsgErr> {
+      let messenger = AsyncMessengerAgent::new(Agent::Anonymous, request.details.stub.point.to_port().with_layer(TargetLayer::Core), self.messenger.clone() );
+      self.handlers.insert( request.details.stub.point.clone(), self.factory.create(request.input.clone(),messenger)?);
+      Ok(ResponseCore::ok(Payload::Empty))
+   }
 
-                                    }
-                                    None => {
-                                        let message =format!("ERROR: message port: '{}' not defined ", port_request.port );
-                                        (skel.logger)(message.as_str());
-                                        if let Exchange::RequestResponse(exchange_id) = &kind
-                                        {
-                                            let response = inlet::Response {
-                                                to: from,
-                                                exchange: exchange_id.clone(),
-                                                entity: ResponseEntity::Error(message)
-                                            };
-                                            inlet_api.respond(response);
-                                        }
-                                    }
-                                }
-                            }
-                        }*/
+}

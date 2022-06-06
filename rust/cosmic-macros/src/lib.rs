@@ -23,7 +23,7 @@ use syn::spanned::Spanned;
 use syn::token::Async;
 use mesh_portal::version::latest::config::bind::{BindConfig, RouteSelector};
 use mesh_portal::version::latest::id::Uuid;
-use mesh_portal::version::latest::command::request::{CmdMethod, MethodPattern};
+use mesh_portal::version::latest::messaging::{CmdMethod, MethodPattern};
 use mesh_portal::version::latest::parse::{route_attribute, route_attribute_value};
 use mesh_portal::version::latest::parse::model::ScopeFilters;
 use mesh_portal::version::latest::util::{log, ValuePattern};

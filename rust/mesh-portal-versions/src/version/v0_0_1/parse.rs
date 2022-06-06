@@ -1513,7 +1513,7 @@ pub fn publish<I: Span>(input: I) -> Res<I, CreateVar> {
     let template = TemplateVar {
         point,
         kind: KindTemplate {
-            kind: "ArtifactBundle".to_string(),
+            kind: GenericKindBase::ArtifactBundle,
             sub_kind: None,
             specific: None,
         },
@@ -5030,7 +5030,9 @@ pub fn generic_kind_selector<I: Span>(input: I) -> Res<I, GenericSubKindSelector
 }
 
 pub fn generic_kind_base<I: Span>(input: I) -> Res<I, GenericKindBase> {
-    camel_case(input).map(|(next, kind)| (next, kind.to_string()))
+    let (next,kind) = camel_case(input)?;
+    // unwrapping because we already know string is CamelCase
+    Ok((next,kind.to_string().try_into().unwrap()))
 }
 
 pub fn generic_kind_base_selector<I: Span>(input: I) -> Res<I, GenericKindSelector> {
@@ -5122,7 +5124,7 @@ fn base_hop<I: Span>(input: I) -> Res<I, Hop> {
 fn file_hop<I: Span>(input: I) -> Res<I, Hop> {
     tuple((file_segment, opt(tag("+"))))(input).map(|(next, (segment, inclusive))| {
         let tks = KindSelector {
-            kind: Pattern::Exact("File".to_string()),
+            kind: Pattern::Exact(GenericKindBase::File),
             sub_kind: Pattern::Any,
             specific: ValuePattern::Any,
         };
@@ -5201,7 +5203,7 @@ pub fn point_selector<I: Span>(input: I) -> Res<I, PointSelector> {
                         PointSeg::FilesystemRootDir,
                     )),
                     kind_selector: KindSelector {
-                        kind: Pattern::Exact("Dir".to_string()),
+                        kind: Pattern::Exact(GenericKindBase::Dir),
                         sub_kind: Pattern::Any,
                         specific: ValuePattern::Any,
                     },

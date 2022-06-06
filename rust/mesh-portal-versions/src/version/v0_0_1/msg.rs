@@ -28,12 +28,6 @@ impl MsgMethod {
     }
 }
 
-impl Into<Method> for MsgMethod {
-    fn into(self) -> Method {
-        Method::Msg(self)
-    }
-}
-
 impl ToString for MsgMethod {
     fn to_string(&self) -> String {
         self.string.clone()

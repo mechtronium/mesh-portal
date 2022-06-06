@@ -12,6 +12,7 @@ description = "A client library for the Resource Mesh Portal API."
 
 [dependencies]
 mesh-portal = { path="../mesh-portal"}
+mesh-portal-versions = { path="../mesh-portal-versions"}
 tokio = { version = "1.15.0", features = ["full"] }
 uuid = { version = "0.8.2", features = ["serde", "v4", "wasm-bindgen"] }
 async-trait = "0.1.48"

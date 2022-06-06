@@ -18,63 +18,40 @@ use futures::{FutureExt, SinkExt};
 use tokio::sync::mpsc::error::{SendError, SendTimeoutError, TryRecvError};
 use tokio::sync::{broadcast, mpsc, oneshot};
 
+use dashmap::{DashMap, DashSet};
 use mesh_portal::version::latest;
+use mesh_portal::version::latest::artifact::{Artifact, ArtifactRequest, ArtifactResponse};
+use mesh_portal::version::latest::config::{Document, PointConfig, PortalConfig};
 use mesh_portal::version::latest::entity::response;
 use mesh_portal::version::latest::fail;
 use mesh_portal::version::latest::frame::CloseReason;
-use mesh_portal::version::latest::portal::{Exchanger, inlet, outlet};
-use std::fmt::Debug;
-use dashmap::DashMap;
-use tokio::task::yield_now;
-use mesh_portal::version::latest::artifact::{Artifact, ArtifactRequest, ArtifactResponse};
-use mesh_portal::version::latest::config::{Assign, PointConfig, Document, PortalConfig};
-use mesh_portal::version::latest::id::Point;
-use mesh_portal::version::latest::log::{SpanLogger, RootLogger};
-use mesh_portal::version::latest::messaging::{Request, Response};
+use mesh_portal::version::latest::id::{Point, Port};
+use mesh_portal::version::latest::log::{RootLogger, SpanLogger};
+use mesh_portal::version::latest::messaging::{
+    Agent, ProtoRequest, Request, Response, Scope, SysMethod,
+};
+use mesh_portal::version::latest::particle::Stub;
+use mesh_portal::version::latest::payload::Payload;
 use mesh_portal::version::latest::portal::inlet::AssignRequest;
 use mesh_portal::version::latest::portal::outlet::{Frame, RequestFrame};
-use mesh_portal::version::latest::particle::Stub;
-use mesh_portal_versions::version::v0_0_1::id::id::ToPoint;
+use mesh_portal::version::latest::portal::{inlet, outlet, Exchanger};
+use mesh_portal::version::latest::sys::{Assign, Sys};
+use mesh_portal_versions::error::MsgErr;
+use mesh_portal_versions::version::v0_0_1::id::id::{TargetLayer, ToPoint, ToPort};
+use mesh_portal_versions::version::v0_0_1::messaging::{
+    AsyncMessenger, AsyncRequestHandler, MethodKind, ResponseCore, RootRequestCtx, AsyncRouter, Wave,
+    WaveFrame,
+};
+use std::fmt::Debug;
+use tokio::task::yield_now;
 
-#[derive(Debug,Clone)]
-pub struct PortalApi {
-    pub info: PortalInfo,
-    tx: mpsc::Sender<PortalCall>
-}
-
-impl PortalApi {
-    pub async fn handle_request( &self, request: Request ) -> Response {
-        let (tx,rx) = oneshot::channel();
-        self.tx.send( PortalCall::Request { request: request.clone(), tx }).await;
-        match tokio::time::timeout(Duration::from_secs(60), rx ).await {
-            Ok(Ok(response)) => {
-                response
-            }
-            _ => {
-                request.fail("timeout".to_string().as_str() )
-            }
-        }
-    }
-
-    pub fn assign(&self, assign: Assign)  {
-        let tx = self.tx.clone();
-        tokio::spawn(async move  {
-            tx.send( PortalCall::Assign(assign)).await;
-        });
-    }
-}
 
 #[derive(Clone)]
 pub enum PortalEvent {
-    PortalAdded(PortalApi),
-    PortalRemoved(String),
-    ParticleAdded(PortalParticleApi),
-    ParticleRemoved(Point)
-}
-
-enum PortalCall {
-  Request{ request: Request, tx: oneshot::Sender<Response>},
-  Assign(Assign),
+    PortalAdded(Point),
+    PortalRemoved(Point),
+    ParticleAdded(Point),
+    ParticleRemoved(Point),
 }
 
 #[derive(Clone, Eq, PartialEq, Hash)]
@@ -85,162 +62,67 @@ pub enum PortalStatus {
     Panic(String),
 }
 
-#[derive(Debug,Clone)]
+#[derive(Debug, Clone)]
 pub struct PortalInfo {
-    pub portal_key: String
+    pub portal_key: String,
 }
 
 pub struct Portal {
     pub info: PortalInfo,
     pub config: PortalConfig,
-    outlet_tx: mpsc::Sender<outlet::Frame>,
-    exchanges: Arc<DashMap<String,oneshot::Sender<Response>>>,
+    outlet_tx: mpsc::Sender<WaveFrame>,
     pub logger: RootLogger,
-    tx: mpsc::Sender<PortalCall>,
     broadcast_tx: broadcast::Sender<PortalEvent>,
-    point: Point
+    point: Point,
+    messenger: Arc<dyn AsyncMessenger>,
+    assigned: Arc<DashSet<Point>>,
 }
 
 impl Portal {
     pub fn new(
         info: PortalInfo,
         config: PortalConfig,
-        outlet_tx: mpsc::Sender<outlet::Frame>,
-        request_handler: Arc<dyn PortalRequestHandler>,
+        outlet_tx: mpsc::Sender<WaveFrame>,
         broadcast_tx: broadcast::Sender<PortalEvent>,
         logger: RootLogger,
-        point: Point
-    ) -> (Self,mpsc::Sender<inlet::Frame>) {
-        let (inlet_tx,mut inlet_rx) = mpsc::channel(1024);
-        let exchanges: Arc<DashMap<String,oneshot::Sender<Response>>> = Arc::new( DashMap::new() );
-        let (tx,mut rx) = mpsc::channel(1024);
-        let portal_api = PortalApi {
-          tx: tx.clone(),
-          info: info.clone()
-        };
-        {
-            let config = config.clone();
-            let exchanges = exchanges.clone();
-            let outlet_tx = outlet_tx.clone();
-            let portal_api = portal_api.clone();
-            let broadcast_tx = broadcast_tx.clone();
-            let logger = logger.point(point.clone());
-
-            tokio::spawn(async move {
-               while let Some(call) = rx.recv().await {
-                   let logger = logger.clone();
-                   match call {
-                       PortalCall::Request { request, tx } => {
-                           let exchanges = exchanges.clone();
-                           let outlet_tx = outlet_tx.clone();
-                           let logger = logger.span();
-                           tokio::spawn( async move {
-                               exchanges.insert( request.id.clone(), tx );
-                               let request_frame = RequestFrame {
-                                   request,
-                                   session: None,
-                                   log_span: logger.current_span()
-                               };
-                               outlet_tx.send( outlet::Frame::Request(request_frame) ).await;
-                           });
-                       }
-                       PortalCall::Assign(assign) => {
-                           let portal_api = portal_api.clone();
-                           let assign = Exchanger::new(assign);
-                           let stub = assign.details.stub.clone();
-                           outlet_tx.send(outlet::Frame::Assign(assign)).await;
-                           let resource_api = PortalParticleApi {
-                               stub,
-                               portal_api: portal_api
-                           };
-                           broadcast_tx.send( PortalEvent::ParticleAdded(resource_api));
-                       }
-                   }
-               }
-            });
-        }
+        point: Point,
+        messenger: Arc<dyn AsyncMessenger>,
+    ) -> (Self, mpsc::Sender<WaveFrame>) {
+        let (inlet_tx, mut inlet_rx) = mpsc::channel(1024);
+        let (tx, mut rx) = mpsc::channel(1024);
 
         {
-            let request_handler = request_handler.clone();
-            let info = info.clone();
-            let portal_config = config.clone();
             let outlet_tx = outlet_tx.clone();
-            let exchanges = exchanges.clone();
             let logger = logger.point(point.clone());
+            let messenger = messenger.clone();
             tokio::spawn(async move {
                 loop {
-                    let logger = logger.span();
+                    let logger = logger.clone();
                     match inlet_rx.recv().await {
                         Some(frame) => {
-                            let frame:inlet::Frame = frame;
-                            match frame {
-                                inlet::Frame::Log(log) => {
-                                    // not implemented yet.
-                                }
-                                inlet::Frame::AssignRequest(request) => {
-                                    let result = request_handler.handle_assign_request(request.item.clone() ).await;
-                                    match result {
-                                        Ok(assignment) => {
-                                            let assign = request.with(assignment);
-                                            outlet_tx.send( outlet::Frame::Assign(assign) ).await;
+                            let span = frame.span;
+                            match frame.message {
+                                Wave::Request(request) => {
+                                    match tokio::time::timeout(
+                                        Duration::from_secs(config.response_timeout),
+                                        messenger.send(request),
+                                    )
+                                    .await
+                                    {
+                                        Ok(Ok(response)) => {
+                                            let frame = response.to_frame(span);
+                                            outlet_tx.send(frame)
                                         }
-                                        Err(error) => {
-                                            println!("{}",error.to_string());
+                                        _ => {
+                                            let response =
+                                                request.fail("timeout".to_string().as_str());
+                                            response
                                         }
                                     }
                                 }
-                                inlet::Frame::Request(request) => {
-                                    let request_handler = request_handler.clone();
-                                    let outlet_tx = outlet_tx.clone();
-                                    tokio::spawn(async move {
-                                        match tokio::time::timeout(Duration::from_secs(portal_config.response_timeout ), request_handler.route_to_mesh(request.clone()) ).await {
-                                            Ok(response) => {
-                                                outlet_tx.send( outlet::Frame::Response(response)).await;
-                                            }
-                                            _ => {
-                                                let response = request.fail("timeout".to_string().as_str());
-                                                outlet_tx.send( outlet::Frame::Response(response)).await;
-                                            }
-                                        }
-                                    });
-                                }
-                                inlet::Frame::Response(response) => {
-                                    if let Option::Some((_,mut tx)) = exchanges.remove(&response.response_to) {
-                                        tx.send(response);
-                                    } else {
-                                        logger.error("response had no listening request" );
-                                    }
-                                }
-                                inlet::Frame::Artifact(request) => {
-                                    let request_handler = request_handler.clone();
-                                    let outlet_tx = outlet_tx.clone();
-                                    let logger = logger.clone();
-                                    tokio::spawn( async move {
-                                        match request_handler.handle_artifact_request(request.item.clone()).await {
-                                            Ok(response ) => {
-                                                let response = request.with(response);
-                                                outlet_tx.send( outlet::Frame::Artifact(response)).await;
-                                            }
-                                            Err(err) => {
-                                                logger.error(  err.to_string().as_str() );
-                                            }
-                                        }
-                                    });
-                                }
-                                inlet::Frame::Status(_) => {
-                                    // not implemented
-                                }
-                                inlet::Frame::Close(_) => {
-                                    // not implemented
-                                }
-                                inlet::Frame::LogSpan(_) => {
-                                    // not implemented
-                                }
-                                inlet::Frame::Audit(_) => {
-                                    // not implemented
-                                }
-                                inlet::Frame::PointlessLog(_) => {
-                                    // not implemented
+                                Wave::Response(response) => {
+                                    let logger = logger.for_span_async(span);
+                                    messenger.route(Wave::Response(response)).await;
                                 }
                             }
                         }
@@ -252,113 +134,121 @@ impl Portal {
             });
         }
 
+        let assigned = Arc::new(DashSet::new());
 
-        (Self {
-            info,
-            config,
-            logger,
-            exchanges,
-            outlet_tx,
-            broadcast_tx,
-            tx,
-            point
-        },inlet_tx)
+        (
+            Self {
+                info,
+                config,
+                logger,
+                outlet_tx,
+                broadcast_tx,
+                point,
+                messenger,
+                assigned,
+            },
+            inlet_tx,
+        )
     }
 
-
-    pub fn api(&self) -> PortalApi {
-        PortalApi {
-            info: self.info.clone(),
-            tx: self.tx.clone()
-        }
-    }
-
-    pub async fn handle_request(&self, request: Request ) -> Response {
-        let (tx,rx) = oneshot::channel();
-        self.exchanges.insert( request.id.clone(), tx );
-
-        let logger = self.logger.point(request.to.clone().to_point());
+    pub async fn assign(&self, assign: Assign) {
+        let point = assign.details.stub.point.clone();
+        self.assigned.insert(point.clone());
+        let logger = self.logger.point(point.clone());
         let logger = logger.span();
+        let stub = assign.details.stub.clone();
+        let assign: Sys = assign.into();
+        let assign: Payload = assign.into();
+        let mut request =
+            ProtoRequest::sys(Point::local_portal().clone().to_port(), SysMethod::Assign);
+        request.body = assign;
+        let request = request.to_request(
+            point.clone().to_port().with_layer(TargetLayer::Shell),
+            Agent::Anonymous,
+            Scope::Full,
+        );
+        let frame = request.to_frame(logger.current_span());
+        self.outlet_tx.send(frame).await;
 
-        let request_frame = RequestFrame {
-            request: request.clone(),
-            session: None,
-            log_span: logger.current_span()
-        };
-        self.outlet_tx.send( outlet::Frame::Request(request_frame) ).await;
-        match tokio::time::timeout(Duration::from_secs(self.config.response_timeout ), rx ).await {
-            Ok(Ok(response)) => {
-                response
-            }
+        self.broadcast_tx
+            .send(PortalEvent::ParticleAdded(point));
+    }
+
+    async fn send_request(&self, request: Request) -> Response {
+        match tokio::time::timeout(
+            Duration::from_secs(self.config.response_timeout),
+            self.messenger.send(request),
+        )
+        .await
+        {
+            Ok(Ok(response)) => response,
             _ => {
-                let response = request.fail("timeout".to_string().as_str() );
+                let response = request.fail("timeout".to_string().as_str());
                 response
             }
         }
-    }
-
-    pub fn assign(&self, assign: Assign ) {
-        let outlet_tx = self.outlet_tx.clone();
-        tokio::spawn(async move {
-            let assign = Exchanger::new(assign);
-            outlet_tx.send(outlet::Frame::Assign(assign)).await;
-        });
     }
 
     pub fn shutdown(&mut self) {
-        self.outlet_tx
-            .try_send(outlet::Frame::Close(CloseReason::Done))
-            .unwrap_or(());
+
+    }
+
+    pub fn has_core_port(&self, port: &Port) -> Result<(), ()> {
+        if let TargetLayer::Shell = port.layer {
+            return Err(());
+        }
+
+        let point = port.clone().to_point();
+        if self.point.is_parent(&point).is_ok() {
+            return Ok(());
+        }
+
+        if self.assigned.contains(&point) {
+            Ok(())
+        }
+
+        Err(())
     }
 }
 
 #[async_trait]
-pub trait PortalRequestHandler: Send + Sync {
+impl AsyncRouter for Portal {
+    async fn route(&self, wave: Wave) {
+        match wave {
+            Wave::Request(request) => {
+                if self.has_core_port(&request.to).is_err() {
+                    self.messenger.route(request.not_found().into() ).await;
+                    return;
+                }
 
-    async fn route_to_mesh(&self, request: Request ) -> Response;
+                // don't allow anyone to say this request came from itself
+                if  self.has_core_port(&request.from).is_ok() {
+                    self.messenger.route(request.forbidden().into() ).await;
+                    return;
+                }
 
-    async fn default_assign(&self) -> Result<Assign, Error> {
-        Err(anyhow!("request handler does not have a default assign"))
-    }
-
-    async fn handle_assign_request(&self, request: AssignRequest ) -> Result<Assign, Error> {
-        Err(anyhow!("request handler does not assign"))
-    }
-
-    async fn handle_artifact_request(
-        &self,
-        request: ArtifactRequest,
-    ) -> Result<ArtifactResponse, Error> {
-        Err(anyhow!("request handler does not handle artifacts"))
-    }
-
-    async fn handle_config_request(
-        &self,
-        request: ArtifactRequest,
-    ) -> Result<ArtifactResponse, Error> {
-        Err(anyhow!("request handler does not handle configs"))
+                // the portal shell sends Sys messages...
+                if request.core.method.kind() == MethodKind::Sys {
+                    self.messenger.route(request.forbidden().into() ).await;
+                    return;
+                }
+                let logger = self.logger.point(request.to.clone().to_point());
+                let span = logger.span_async().current_span();
+                let frame = request.to_frame(span);
+                self.outlet_tx.send(frame).await;
+            }
+            Wave::Response(response) => {
+                // Portal only handles requests (it should be expecting the response)
+            }
+        }
     }
 }
 
 
-#[derive(Debug,Clone)]
-pub struct PortalParticleApi {
-   portal_api: PortalApi,
-   pub stub: Stub
-}
-
-impl PortalParticleApi {
-   pub async fn handle_request( &self, request: Request ) -> Response {
-       self.portal_api.handle_request(request).await
-   }
-}
 
 #[cfg(test)]
 pub mod test {
 
     #[test]
-    pub fn test(){
-
-    }
-
+    pub fn test() {}
 }

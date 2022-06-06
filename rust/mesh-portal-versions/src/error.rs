@@ -29,6 +29,20 @@ pub enum MsgErr {
 //    SubstErr(SubstErr)
 }
 
+impl MsgErr {
+    pub fn from_status(status:u16) -> MsgErr {
+        let message = match status {
+            400 => "Bad Request".to_string(),
+            404 => "Not Found".to_string(),
+            403 => "Forbidden".to_string(),
+            408 => "Timeout".to_string(),
+            500 => "Internal Server Error".to_string(),
+            status => format!("{} Error",status)
+        };
+        MsgErr::Status { status, message}
+    }
+}
+
 impl Into<ParseErrs> for MsgErr {
     fn into(self) -> ParseErrs {
         match self {
@@ -47,12 +61,23 @@ impl Into<ParseErrs> for MsgErr {
 }
 
 impl MsgErr {
+    pub fn timeout() -> Self {
+        MsgErr::from_status(408)
+    }
+
+    pub fn server_error() -> Self {
+        MsgErr::from_status(500)
+    }
     pub fn forbidden() -> Self {
         MsgErr::err403()
     }
 
     pub fn not_found() -> Self {
         MsgErr::err404()
+    }
+
+    pub fn bad_request() -> Self {
+        MsgErr::from_status(400)
     }
 }
 
@@ -133,7 +158,7 @@ impl MsgErr {
     pub fn err400() -> Self {
         Self::Status {
             status: 400,
-            message: "Bad Data".to_string(),
+            message: "Bad Request".to_string(),
         }
     }
 
@@ -147,6 +172,7 @@ impl MsgErr {
 }
 
 impl StatusErr for MsgErr {
+
     fn status(&self) -> u16 {
         match self {
             MsgErr::Status { status,message } => {

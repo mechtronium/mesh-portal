@@ -9,7 +9,7 @@ pub mod config {
     use crate::version::v0_0_1::id::id::{GenericKind, Point};
     use crate::version::v0_0_1::parse::model::{MessageScope, MethodScope, RouteScope};
     use crate::version::v0_0_1::particle::particle;
-    use crate::version::v0_0_1::particle::particle::Stub;
+    use crate::version::v0_0_1::particle::particle::{Details, Stub};
     use crate::version::v0_0_1::util::ValueMatcher;
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -53,12 +53,6 @@ pub mod config {
     }
 
     #[derive(Debug, Clone, Serialize, Deserialize,Eq,PartialEq)]
-    pub struct Assign {
-        pub config: PointConfig<ParticleConfigBody>,
-        pub details: particle::ParticleDetails,
-    }
-
-    #[derive(Debug, Clone, Serialize, Deserialize,Eq,PartialEq)]
     pub struct PointConfig<Body> {
         pub point: Point,
         pub body: Body,
@@ -78,9 +72,8 @@ pub mod config {
     }
 
     #[derive(Debug, Clone, Serialize, Deserialize,Eq,PartialEq)]
-    pub enum ParticleConfigBody {
-        Control,
-        Named(String),
+    pub struct ParticleConfigBody {
+        pub details: Details
     }
 
     pub mod bind {

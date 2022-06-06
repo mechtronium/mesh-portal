@@ -67,8 +67,8 @@ pub mod selector {
             specific: ValuePattern<SpecificSelector>,
         ) -> Self {
             Self {
-                kind: sub_kind,
-                sub_kind: kind,
+                kind,
+                sub_kind,
                 specific,
             }
         }
@@ -150,7 +150,7 @@ pub mod selector {
                 if PointSegSelector::InclusiveAny == hop.segment_selector
                     || PointSegSelector::InclusiveRecursive == hop.segment_selector
                 {
-                    let resource_kind = GenericKind::new("Root".to_string(), None, None);
+                    let resource_kind = GenericKind::new(GenericKindBase::Root, None, None);
                     hop.kind_selector.matches(&resource_kind)
                 } else {
                     false

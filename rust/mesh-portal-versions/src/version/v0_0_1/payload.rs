@@ -10,19 +10,22 @@ pub mod payload {
     use crate::version::v0_0_1::particle::particle::{Particle, Status, Stub};
     use crate::version::v0_0_1::selector::selector::{KindSelector, PointSelector};
     use crate::version::v0_0_1::util::{ToResolved, ValueMatcher, ValuePattern};
-    use http::Uri;
+    use http::{HeaderMap, HeaderValue, Uri};
     use std::str::FromStr;
     use std::sync::Arc;
+    use http::header::CONTENT_TYPE;
     use serde_json::Value;
     use crate::version::v0_0_1::cli::RawCommand;
     use crate::version::v0_0_1::command::Command;
-    use crate::version::v0_0_1::messaging::{Method, RequestCore, ResponseCore, Sys};
+    use crate::version::v0_0_1::messaging::{Method, RequestCore, ResponseCore};
     use crate::version::v0_0_1::http::HttpMethod;
     use crate::version::v0_0_1::msg::MsgMethod;
     use crate::version::v0_0_1::parse::{CtxResolver, Env};
     use crate::version::v0_0_1::parse::model::Subst;
     use cosmic_nom::Tw;
     use cosmic_macros_primitive::Autobox;
+    use crate::version::v0_0_1::log::Log;
+    use crate::version::v0_0_1::sys::Sys;
 
 
     #[derive(
@@ -51,11 +54,13 @@ pub mod payload {
         Particle,
         Errors,
         Json,
+        MultipartForm,
         RawCommand,
         Command,
         Request,
         Response,
-        Sys
+        Sys,
+        Token,
     }
 
     #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, strum_macros::Display,Autobox)]
@@ -77,11 +82,50 @@ pub mod payload {
         Command(Box<Command>),
         Errors(Errors),
         Json(Value),
+        MultipartForm(MultipartForm),
         Request(Box<RequestCore>),
         Response(Box<ResponseCore>),
-        Sys(Sys)
+        Sys(Sys),
+        Token(Token)
     }
 
+    #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, strum_macros::Display,Autobox)]
+    pub struct Token {
+        data: String
+    }
+
+    impl Token {
+        pub fn new<D:ToString>(data: D) -> Self {
+            Self{data:data.to_string()}
+        }
+    }
+
+    impl Deref for Token {
+        type Target = String;
+
+        fn deref(&self) -> &Self::Target {
+            &self.data
+        }
+    }
+
+    impl ToString for Token {
+        fn to_string(&self) -> String {
+            self.data.clone()
+        }
+    }
+
+    impl FromStr for Token {
+        type Err = MsgErr;
+
+        fn from_str(s: &str) -> Result<Self, Self::Err> {
+            Ok(Token::new(s))
+        }
+    }
+
+    pub trait ToRequestCore  {
+        type Method;
+        fn to_request_core(self) -> RequestCore;
+    }
 
     impl Default for Payload {
         fn default() -> Self {
@@ -131,7 +175,8 @@ pub mod payload {
                 Payload::Command(_) => PayloadKind::Command,
                 Payload::Request(_) => PayloadKind::Request,
                 Payload::Response(_) => PayloadKind::Response,
-                Payload::Sys(_) => PayloadKind::Sys
+                Payload::Sys(_) => PayloadKind::Sys,
+                Payload::MultipartForm(_) => PayloadKind::MultipartForm
             }
         }
 
@@ -978,6 +1023,103 @@ pub mod payload {
 
 
 
+    #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, strum_macros::Display)]
+    pub struct MultipartForm {
+        data: String
+    }
+
+    impl TryInto<HashMap<String,String>> for MultipartForm {
+        type Error = MsgErr;
+
+        fn try_into(self) -> Result<HashMap<String, String>, Self::Error> {
+            let map: HashMap<String,String> = serde_urlencoded::from_str(&self.data )?;
+            Ok(map)
+        }
+    }
+
+    impl ToRequestCore for MultipartForm {
+        type Method = HttpMethod;
+
+        fn to_request_core(self) -> RequestCore {
+            let mut headers = HeaderMap::new();
+
+            headers.insert(
+                CONTENT_TYPE,
+                HeaderValue::from_static("application/x-www-form-urlencoded"),
+            );
+
+            RequestCore {
+                headers,
+                method: HttpMethod::Post.into(),
+                uri: Default::default(),
+                body: Payload::MultipartForm(self)
+            }
+        }
+    }
+
+    impl MultipartForm {
+        pub fn data(&self) -> &str {
+            self.data.as_str()
+        }
+    }
+
+    impl Deref for MultipartForm {
+        type Target = str;
+
+        fn deref(&self) -> &Self::Target {
+            self.data()
+        }
+    }
+
+    impl ToString for MultipartForm {
+        fn to_string(&self) -> String {
+            self.data.clone()
+        }
+    }
+
+    pub struct MultipartFormBuilder {
+        map: HashMap<String,String>
+    }
+
+    impl MultipartFormBuilder {
+        pub fn new() -> Self {
+            Self {
+                map: HashMap::new()
+            }
+        }
+
+        pub fn put<S:ToString>( & mut self, key: S, value: S ) {
+            self.insert(key.to_string(),value.to_string() );
+        }
+
+        pub fn get<S:ToString>( &self, key: S ) -> Option<&String> {
+            self.map.get(&key.to_string() )
+        }
+
+    }
+
+    impl Deref for MultipartFormBuilder {
+        type Target = HashMap<String,String>;
+
+        fn deref(&self) -> &Self::Target {
+            &self.map
+        }
+    }
+
+    impl DerefMut for MultipartFormBuilder {
+        fn deref_mut(&mut self) -> &mut Self::Target {
+            & mut self.map
+        }
+    }
+
+    impl MultipartFormBuilder {
+        pub fn build(self) -> Result<MultipartForm,MsgErr> {
+            let data = serde_urlencoded::to_string(&self.map )?;
+            Ok(MultipartForm {
+                data
+            })
+        }
+    }
 
 
 
