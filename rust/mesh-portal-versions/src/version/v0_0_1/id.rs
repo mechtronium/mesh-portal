@@ -15,21 +15,22 @@ pub mod id {
     use std::sync::Arc;
     use nom::branch::alt;
     use nom::error::{context, ContextError, ErrorKind, ParseError};
+    use nom::Parser;
     use nom_supreme::error::ErrorTree;
 
     use semver::SemVerError;
     use serde::de::Visitor;
     use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
-    use cosmic_nom::{new_span, Res, Span, SpanExtra, Trace, tw};
+    use cosmic_nom::{new_span, Res, Span, SpanExtra, Trace, tw, Tw};
 
     use crate::error::{MsgErr, ParseErrs};
     use crate::version::v0_0_1::config::config::bind::RouteSelector;
     use crate::version::v0_0_1::id::id::PointSegCtx::Working;
     use crate::version::v0_0_1::{mesh_portal_uuid, parse};
-    use crate::version::v0_0_1::parse::{camel_case, camel_case_chars, CamelCase, consume_point, consume_point_ctx, Ctx, CtxResolver, Env, kind, parse_uuid, point_and_kind, point_route_segment, point_var, ResolverErr, uuid_chars, VarResolver};
+    use crate::version::v0_0_1::parse::{camel_case, camel_case_chars, CamelCase, consume_point, consume_point_ctx, Ctx, CtxResolver, Env, kind, parse_uuid, point_and_kind, point_route_segment, point_var, ResolverErr, SkewerCase, uuid_chars, VarResolver};
 
     use crate::version::v0_0_1::parse::error::result;
-    use crate::version::v0_0_1::selector::selector::{Pattern, PointKindHierarchyFuzzy, PointKindSegFuzzy, PointSelector, SpecificSelector, VersionReq};
+    use crate::version::v0_0_1::selector::selector::{Pattern, PointHierarchy, PointSelector, SpecificSelector, VersionReq};
     use crate::version::v0_0_1::sys::Location::Central;
     use crate::version::v0_0_1::util::{ToResolved, ValueMatcher, ValuePattern};
 
@@ -75,7 +76,7 @@ pub mod id {
                 GenericKindBase::ArtifactBundle => "ArtifactBundle".to_string(),
                 GenericKindBase::File=> "File".to_string(),
                 GenericKindBase::Dir=> "Dir".to_string(),
-                GenericKindBase::Ext(ext) => ext.clone()
+                GenericKindBase::Ext(ext) => ext.to_string()
             }
         }
     }
@@ -95,8 +96,7 @@ pub mod id {
             } else if "ArtifactBundle" == s {
                 Ok(Self::ArtifactBundle)
             } else {
-                let kind = result(camel_case_chars(new_span(s)))?.to_string();
-                Ok(Self::Ext(result(all_consuming(camel_case )(new_span(kind.as_str())))?))
+                Ok(Self::Ext(result(all_consuming(camel_case )(new_span(s)))?))
             }
         }
     }
@@ -559,18 +559,18 @@ pub mod id {
     }
 
     pub enum VarVal<V> {
-        Var(Variable),
-        Val(V)
+        Var(Tw<SkewerCase>),
+        Val(Tw<V>)
     }
 
     impl <V> ToResolved<V> for VarVal<V> where V: FromStr<Err=MsgErr> {
         fn to_resolved(self, env: &Env) -> Result<V, MsgErr> {
             match self {
                 VarVal::Var(var) => {
-                    match env.val(var.name.as_str()) {
+                    match env.val(var.as_str()) {
                         Ok(val) => Ok(V::from_str(val.as_str())?),
                         Err(err) => {
-                            let trace = var.trace;
+                            let trace = var.trace.clone();
                             match err {
                                 ResolverErr::NotAvailable => {
                                     Err(ParseErrs::from_range(
@@ -582,7 +582,7 @@ pub mod id {
                                 }
                                 ResolverErr::NotFound => {
                                     Err(ParseErrs::from_range(
-                                        format!("variable '{}' not found", var.name ).as_str(),
+                                        format!("variable '{}' not found", var.unwrap().to_string()).as_str(),
                                         "not found",
                                         trace.range,
                                         trace.extra,
@@ -593,7 +593,7 @@ pub mod id {
                     }
                 }
                 VarVal::Val(val) => {
-                    Ok(val)
+                    Ok(val.unwrap())
                 }
             }
         }
@@ -1018,9 +1018,34 @@ pub mod id {
     #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
     pub enum Topic {
         None,
+        Not,
+        Any,
         Uuid(Uuid),
-        Tag(CamelCase),
-        Cli
+        Path(Vec<SkewerCase>),
+        CLI
+    }
+
+    impl ToString for Topic {
+        fn to_string(&self) -> String {
+            match self {
+                Topic::None => "".to_string(),
+                Topic::Not => "Topic<!>".to_string(),
+                Topic::Any=> "Topic<*>".to_string(),
+                Topic::Uuid(uuid) => format!("Topic<Uuid>({})",uuid),
+                Topic::Path(segs) => {
+                    let segments: Vec<String> = segs.into_iter().map(|s|s.to_string()).collect();
+                        let mut rtn = String::new();
+                        for (index,segment) in segments.iter().enumerate() {
+                            rtn.push_str(segment.as_str());
+                            if index < segments.len()-1 {
+                                rtn.push_str(":")
+                            }
+                        };
+                    return format!("Topic<Path>({})",rtn)
+                },
+                Topic::CLI => "Topic<CLI>".to_string(),
+            }
+        }
     }
 
     impl Topic {
@@ -1041,7 +1066,11 @@ pub mod id {
 
     #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash,strum_macros::Display,strum_macros::EnumString)]
     pub enum Layer {
+        Surface,
         Shell,
+        Driver,
+        Host,
+        Guest,
         Core
     }
 
@@ -1076,18 +1105,13 @@ pub mod id {
 
     impl ToString for Port {
         fn to_string(&self) -> String {
+            let point = self.clone().to_point();
             match &self.topic {
                 Topic::None => {
-                    format!("{}@{}", point.to_string(), parse::layer.to_string())
+                    format!("{}@{}", self.point.to_string(), self.layer.to_string())
                 }
-                Topic::Uuid(uuid) => {
-                    format!("{}@{}+Uuid({})", point.to_string(), parse::layer.to_string(), uuid)
-                }
-                Topic::Tag(tag) => {
-                    format!("{}@{}+Tag({})", point.to_string(), parse::layer.to_string(), tag)
-                }
-                Topic::Cli => {
-                    format!("{}@{}+Cli", point.to_string(), parse::layer.to_string())
+                topic => {
+                    format!("{}@{}+{}", self.point.to_string(), self.layer.to_string(),topic.to_string())
                 }
             }
         }
@@ -1099,9 +1123,13 @@ pub mod id {
         pub layer: ValuePattern<Layer>
     }
 
-    impl ValueMatcher<Port> for PortSelector {
-        fn is_match(&self, port: &Port) -> Result<(), ()> {
-            self.point.matches(&port.to_point().to_point_kind_hierarchy_fuzzy())
+    impl ValueMatcher<PointHierarchy> for PortSelector {
+        fn is_match(&self, point: &PointHierarchy) -> Result<(), ()> {
+            if self.point.matches(&point) {
+                Ok(())
+            } else {
+                Err(())
+            }
         }
     }
 
@@ -1196,18 +1224,6 @@ pub mod id {
         }
     }
 
-    impl Point {
-        pub fn to_point_kind_hierarchy_fuzzy(self) -> PointKindHierarchyFuzzy {
-            let mut segments = vec![];
-            for segment in self.segments {
-                segments.push(PointKindSegFuzzy{ segment, kind: None});
-            }
-            PointKindHierarchyFuzzy{
-                route: self.route,
-                segments
-            }
-        }
-    }
 
     impl PointCtx{
         pub fn to_point(self) -> Result<Point,MsgErr> {

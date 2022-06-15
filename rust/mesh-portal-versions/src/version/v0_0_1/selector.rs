@@ -22,7 +22,7 @@ pub mod selector {
     use crate::error::MsgErr;
 
     use crate::version::v0_0_1::command::request::{Rc, RcCommandType};
-    use crate::version::v0_0_1::id::id::{GenericKind, GenericKindBase, Point, PointCtx, PointSeg, PointSegKind, PointVar, RouteSeg, Specific, Tks, Variable, VarVal, Version};
+    use crate::version::v0_0_1::id::id::{GenericKind, GenericKindBase, Layer, Point, PointCtx, PointSeg, PointSegKind, PointVar, Port, RouteSeg, Specific, Tks, Topic, Variable, VarVal, Version};
     use crate::version::v0_0_1::parse::{camel_case_chars, camel_case_to_string_matcher, consume_hierarchy, Env, file_chars, path, path_regex, point_segment_selector, point_selector};
     use crate::version::v0_0_1::payload::payload::{Call, CallKind, CallWithConfig, CallWithConfigDef, HttpCall, ListPattern, MapPattern, MsgCall, NumRange, Payload, PayloadFormat, PayloadPattern, PayloadPatternDef, PayloadKind, PayloadTypePatternDef};
     use crate::version::v0_0_1::selector::selector::specific::{
@@ -46,14 +46,14 @@ pub mod selector {
     use regex::Regex;
     use std::collections::HashMap;
     use cosmic_nom::{new_span, Res, Span, Trace};
-    use crate::version::v0_0_1::messaging::{Method, RequestCore};
+    use crate::version::v0_0_1::wave::{Method, RequestCore};
     use crate::version::v0_0_1::parse::error::result;
     use crate::version::v0_0_1::parse::model::Var;
 
     pub type KindSelector =KindSelectorDef<GenericKindSelector,GenericSubKindSelector,SpecificSelector>;
     pub type KindSelectorVar =KindSelectorDef<VarVal<GenericKindSelector>,VarVal<GenericSubKindSelector>,VarVal<SpecificSelector>>;
 
-    #[derive(Debug, Clone, Serialize, Deserialize,Eq,PartialEq)]
+    #[derive(Debug, Clone, Serialize, Deserialize,Eq,PartialEq,Hash)]
     pub struct KindSelectorDef<GenericKindSelector,GenericSubKindSelector,SpecificSelector> {
         pub kind: GenericKindSelector,
         pub sub_kind: GenericSubKindSelector,
@@ -107,7 +107,7 @@ pub mod selector {
 
     pub type GenericSubKindSelector = Pattern<String>;
 
-    #[derive(Debug, Clone, Serialize, Deserialize,Eq,PartialEq)]
+    #[derive(Debug, Clone, Serialize, Deserialize,Eq,PartialEq,Hash)]
     pub struct PointSelectorDef<Hop> {
         pub hops: Vec<Hop>,
     }
@@ -203,14 +203,12 @@ pub mod selector {
             hops
         }
 
-        pub fn matches<H>(&self, hierarchy: H) -> bool
+        pub fn matches(&self, hierarchy: &PointHierarchy ) -> bool
         where
-            H: Into<&PointKindHierarchyFuzzyRef>,
             GenericKindBase: Clone,
             GenericKind: Clone,
         {
 
-            let hierarchy = hierarchy.into();
             if hierarchy.is_root() && self.is_root() {
                 return true;
             }
@@ -376,7 +374,7 @@ pub mod selector {
         }
     }
 
-    #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
+    #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq,Hash)]
     pub enum PointSegSelector {
         InclusiveAny,       // +:*  // includes Root if it's the first segment
         InclusiveRecursive, // +:** // includes Root if its the first segment
@@ -386,7 +384,7 @@ pub mod selector {
         Version(VersionReq),
     }
 
-    #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
+    #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq,Hash)]
     pub enum PointSegSelectorVar {
         InclusiveAny,       // +:*  // includes Root if it's the first segment
         InclusiveRecursive, // +:** // includes Root if its the first segment
@@ -399,7 +397,7 @@ pub mod selector {
         Pop(Trace)
     }
 
-    #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
+    #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq,Hash)]
     pub enum PointSegSelectorCtx {
         InclusiveAny,       // +:*  // includes Root if it's the first segment
         InclusiveRecursive, // +:** // includes Root if its the first segment
@@ -480,7 +478,7 @@ pub mod selector {
 
     pub type KeySegment = String;
 
-    #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+    #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize,Hash)]
     pub enum ExactPointSeg {
         PointSeg(PointSeg),
         Version(Version),
@@ -511,7 +509,7 @@ pub mod selector {
     }
     pub type SpecificSelector = SpecificSelectorDef<VendorSelector,ProductSelector,VariantSelector,VersionReq>;
 
-    #[derive(Debug, Clone, Serialize, Deserialize,Eq,PartialEq)]
+    #[derive(Debug, Clone, Serialize, Deserialize,Eq,PartialEq,Hash)]
     pub struct SpecificSelectorDef<VendorSelector,ProductSelector,VariantSelector,VersionReq> {
         pub vendor: VendorSelector,
         pub product: ProductSelector,
@@ -805,7 +803,7 @@ pub mod selector {
     pub type HopCtx = HopDef<PointSegSelectorCtx, KindSelector>;
     pub type HopVar = HopDef<PointSegSelectorVar, KindSelectorVar>;
 
-    #[derive(Debug, Clone, Serialize, Deserialize,Eq,PartialEq)]
+    #[derive(Debug, Clone, Serialize, Deserialize,Eq,PartialEq,Hash)]
     pub struct HopDef<Segment, KindSelector> {
         pub inclusive: bool,
         pub segment_selector: Segment,
@@ -846,7 +844,7 @@ pub mod selector {
         }
     }
 
-    #[derive(Debug, Clone, Serialize, Deserialize,Eq,PartialEq)]
+    #[derive(Debug, Clone, Serialize, Deserialize,Eq,PartialEq,Hash)]
     pub enum Pattern<P> {
         Any,
         Exact(P),
@@ -993,65 +991,38 @@ pub mod selector {
 
     pub type GenericKindSelector = Pattern<GenericKindBase>;
 
+    #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
+    pub struct PortHierarchy {
+        pub topic: Topic,
+        pub layer: Layer,
+        pub point_hierarchy: PointHierarchy
+    }
 
-    pub type PointKindHierarchy = PointKindHierarchyDef<'_,RouteSeg,PointKindSeg>;
-    pub type PointKindHierarchyFuzzy = PointKindHierarchyDef<'_,RouteSeg,PointKindSegFuzzy>;
-    pub type PointKindHierarchyFuzzyRef<'a> = PointKindHierarchyDef<'a,&'a RouteSeg,Option<&'a PointSegKind>>;
-
-    impl TryInto<PointKindHierarchy> for PointKindHierarchyFuzzy {
-        type Error = MsgErr;
-
-        fn try_into(self) -> Result<PointKindHierarchy, Self::Error> {
-            let mut segments = vec![];
-            for segment in self.segments {
-                let segment: PointKindSeg = match segment {
-                    None => {return Err(MsgErr::new(500u16,"expected to be able to convert Fuzzy Seg into Seg"));}
-                    Some(segment) => {segment.try_into()?}
-                };
-                segments.push(segment);
+    impl PortHierarchy {
+        pub fn new( point_hierarchy: PointHierarchy, layer: Layer, topic: Topic ) -> Self {
+            Self {
+                topic,
+                layer,
+                point_hierarchy
             }
-
-            Ok(PointKindHierarchy{
-                route,
-                segments
-            })
-
         }
     }
+
 
     #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
-    pub struct PointKindHierarchyDef<'a,R,S> {
-        pub route: R,
-        pub segments: Vec<S>,
+    pub struct PointHierarchy {
+        pub route: RouteSeg,
+        pub segments: Vec<PointKindSeg>,
     }
 
-    impl Into<PointKindHierarchyFuzzy> for PointKindHierarchy {
-        fn into(self) -> PointKindHierarchyFuzzy {
-            PointKindHierarchyFuzzy {
-                route: self.route,
-                segments: self.segments.into_iter().map(|s|s.into()).collect()
-            }
-        }
-    }
-
-
-    impl <'a> Into<PointKindHierarchyFuzzyRef<'a>> for &'a PointKindHierarchy {
-        fn into(self) -> PointKindHierarchyFuzzyRef<'a> {
-            PointKindHierarchyFuzzyRef {
-                route: &self.route,
-                segments: self.segments.iter().map(|s|s.into()).collect()
-            }
-        }
-    }
-
-    impl <'a,R,S> PointKindHierarchyDef<'a,R,S> {
-        pub fn new(route: R, segments: Vec<S>) -> Self {
+    impl PointHierarchy {
+        pub fn new(route: RouteSeg, segments: Vec<PointKindSeg>) -> Self {
             Self { route, segments }
         }
     }
 
-    impl PointKindHierarchy {
-        pub fn push(&self, segment: PointKindSeg) -> PointKindHierarchy
+    impl PointHierarchy {
+        pub fn push(&self, segment: PointKindSeg) -> PointHierarchy
             where
                 GenericKind: Clone,
                 GenericKindBase: Clone,
@@ -1068,14 +1039,14 @@ pub mod selector {
         }
     }
 
-    impl <'a,R,S> PointKindHierarchyDef<'a,R,S> where R:Clone, S:Clone {
-        pub fn consume(&self) -> Option<PointKindHierarchyDef<'_,R,S>> {
+    impl PointHierarchy {
+        pub fn consume(&self) -> Option<PointHierarchy> {
             if self.segments.len() <= 1 {
                 return Option::None;
             }
             let mut segments = self.segments.clone();
             segments.remove(0);
-            Option::Some(PointKindHierarchyDef {
+            Option::Some(PointHierarchy {
                 route: self.route.clone(),
                 segments,
             })
@@ -1090,7 +1061,7 @@ pub mod selector {
         }
     }
 
-    impl ToString for PointKindHierarchy {
+    impl ToString for PointHierarchy {
         fn to_string(&self) -> String {
             let mut rtn = String::new();
             match &self.route {
@@ -1114,91 +1085,11 @@ pub mod selector {
         }
     }
 
-    impl <'a> ToString for PointKindHierarchyDef<'a,RouteSeg,PointKindSegFuzzy> {
-        fn to_string(&self) -> String {
-            let mut rtn = String::new();
-            match &self.route {
-                RouteSeg::This => {}
-                route => {
-                    rtn.push_str(route.to_string().as_str());
-                    rtn.push_str("::");
-                }
-            }
-
-            let mut post_fileroot = false;
-            for (index, segment) in self.segments.iter().enumerate() {
-                if let PointSeg::FilesystemRootDir = segment.segment {
-                    post_fileroot = true;
-                }
-                rtn.push_str(segment.segment.preceding_delim(post_fileroot));
-                rtn.push_str(segment.to_string().as_str());
-            }
-
-            rtn
-        }
-    }
-
-    pub type PointKindSeg = PointKindSegDef<'_,PointSeg,GenericKind>;
-    pub type PointKindSegFuzzy = PointKindSegDef<'_,PointSeg,Option<GenericKind>>;
-    pub type PointKindSegFuzzyRef<'a> = PointKindSegDef<'a,&'a PointSeg,Option<&'a GenericKind>>;
 
     #[derive(Debug, Eq, PartialEq, Clone, Serialize, Deserialize)]
-    pub struct PointKindSegDef<'a, S, K> {
-        pub segment: S,
-        pub kind: K,
-    }
-
-    impl <'a,S,K> PointKindHierarchyFuzzyDef<'a,S,K> {
-        pub fn is_root(&self) -> bool {
-            self.segments.is_empty()
-        }
-
-        pub fn is_final(&self) -> bool {
-            self.segments.len() == 1
-        }
-    }
-
-    impl ToString for PointKindSegFuzzy {
-        fn to_string(&self) -> String {
-            match &self.kind {
-                None => {
-                    format!("{}<?>", self.segment.to_string())
-                }
-                Some(kind) => {
-                    format!("{}<{}>", self.segment.to_string(), kind.to_string())
-                }
-            }
-        }
-    }
-
-    impl TryInto<PointKindSeg> for PointKindSegFuzzy {
-        type Error=MsgErr;
-        fn try_into(self) -> Result<PointKindSeg,Self::Error> {
-            Ok(PointKindSeg{
-                segment: self.segment,
-                kind: self.kind.ok_or("cannot convert PointKindSegFuzzy to PointKindSeg because kind is not defined".into())?
-            })
-        }
-    }
-
-
-    impl <'a> Into<&'a PointKindSegFuzzyRef<'a>> for &'a PointKindSeg {
-        fn into(self) -> PointKindSegFuzzyRef<'a> {
-            PointKindSegFuzzyRef {
-                segment: &self.segment,
-                kind: None
-            }
-        }
-    }
-
-
-    impl Into<PointKindSegFuzzy> for PointKindSeg {
-        fn into(self) -> PointKindSegFuzzy {
-            PointKindSegFuzzy {
-                segment: self.segment,
-                kind: None
-            }
-        }
+    pub struct PointKindSeg{
+        pub segment: PointSeg,
+        pub kind: GenericKind,
     }
 
     impl ToString for PointKindSeg {
@@ -1207,7 +1098,7 @@ pub mod selector {
         }
     }
 
-    impl FromStr for PointKindHierarchy {
+    impl FromStr for PointHierarchy {
         type Err = MsgErr;
 
         fn from_str(s: &str) -> Result<Self, Self::Err> {

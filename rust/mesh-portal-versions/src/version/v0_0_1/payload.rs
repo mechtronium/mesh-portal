@@ -17,7 +17,7 @@ pub mod payload {
     use serde_json::Value;
     use crate::version::v0_0_1::cli::RawCommand;
     use crate::version::v0_0_1::command::Command;
-    use crate::version::v0_0_1::messaging::{Method, RequestCore, ResponseCore};
+    use crate::version::v0_0_1::wave::{Method, RequestCore, Response, ResponseCore};
     use crate::version::v0_0_1::http::HttpMethod;
     use crate::version::v0_0_1::msg::MsgMethod;
     use crate::version::v0_0_1::parse::{CtxResolver, Env};
@@ -89,7 +89,7 @@ pub mod payload {
         Token(Token)
     }
 
-    #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq )]
+    #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq,Hash )]
     pub struct Token {
         data: String
     }
@@ -119,6 +119,14 @@ pub mod payload {
 
         fn from_str(s: &str) -> Result<Self, Self::Err> {
             Ok(Token::new(s))
+        }
+    }
+
+    impl TryFrom<Response> for Token {
+        type Error = MsgErr;
+
+        fn try_from(response: Response) -> Result<Self, Self::Error> {
+            response.core.body.try_into()
         }
     }
 
@@ -176,7 +184,8 @@ pub mod payload {
                 Payload::Request(_) => PayloadKind::Request,
                 Payload::Response(_) => PayloadKind::Response,
                 Payload::Sys(_) => PayloadKind::Sys,
-                Payload::MultipartForm(_) => PayloadKind::MultipartForm
+                Payload::MultipartForm(_) => PayloadKind::MultipartForm,
+                Payload::Token(_) => PayloadKind::Token
             }
         }
 

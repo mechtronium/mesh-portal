@@ -2,7 +2,7 @@ use crate::error::MsgErr;
 use crate::version::v0_0_1::id::id::Point;
 use crate::version::v0_0_1::parse::error::result;
 use crate::version::v0_0_1::parse::{MapResolver, particle_perms, permissions, permissions_mask, privilege};
-use crate::version::v0_0_1::selector::selector::{PointKindHierarchy, PointSelector};
+use crate::version::v0_0_1::selector::selector::{PointHierarchy, PointSelector};
 use nom::combinator::all_consuming;
 use nom_supreme::parser_ext::MapRes;
 use serde::{Deserialize, Serialize};
@@ -11,7 +11,7 @@ use std::ops;
 use std::ops::{Deref, DerefMut};
 use std::str::FromStr;
 use cosmic_nom::new_span;
-use crate::version::v0_0_1::messaging::ScopeGrant;
+use crate::version::v0_0_1::wave::ScopeGrant;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Access {
@@ -302,7 +302,7 @@ impl ToString for PermissionsMask {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq,Hash)]
 pub struct Permissions {
     pub child: ChildPerms,
     pub particle: ParticlePerms,
@@ -349,7 +349,7 @@ impl ToString for Permissions {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq,Hash)]
 pub struct ChildPerms {
     pub create: bool,
     pub select: bool,
@@ -412,7 +412,7 @@ impl ToString for ChildPerms {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq,Hash)]
 pub struct ParticlePerms {
     pub read: bool,
     pub write: bool,
@@ -505,7 +505,7 @@ pub enum GrantToDef<PointSelector> {
 }
 
 impl GrantTo {
-    pub fn is_match( &self, hierarchy: &PointKindHierarchy) -> Result<(),()> {
+    pub fn is_match(&self, hierarchy: &PointHierarchy) -> Result<(),()> {
         match self {
             GrantTo::World => Ok(()),
             GrantTo::PointSelector(selector) => {

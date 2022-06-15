@@ -38,7 +38,7 @@ use mesh_portal::version::latest::portal::{inlet, outlet, Exchanger};
 use mesh_portal::version::latest::sys::{Assign, Sys};
 use mesh_portal_versions::error::MsgErr;
 use mesh_portal_versions::version::v0_0_1::id::id::{Layer, ToPoint, ToPort};
-use mesh_portal_versions::version::v0_0_1::messaging::{
+use mesh_portal_versions::version::v0_0_1::wave::{
     AsyncMessenger, AsyncRequestHandler, MethodKind, ResponseCore, RootInputCtx, AsyncRouter, Wave,
     WaveFrame,
 };

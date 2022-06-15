@@ -6,7 +6,6 @@ use serde_json::Value;
 use std::collections::HashMap;
 use std::ops::Deref;
 use std::sync::Arc;
-use ariadne::Color::Default;
 use chrono::{DateTime, Utc};
 use serde::{Serialize,Deserialize};
 use serde;
@@ -437,6 +436,16 @@ impl PointLogger {
         span
     }
 
+    pub fn for_span(&self, span: LogSpan) -> SpanLogger {
+        let mut span = SpanLogger {
+            root_logger: self.logger.clone(),
+            span,
+            commit_on_drop: true
+        };
+        span
+    }
+
+
 
     pub fn span(&self) -> SpanLogger {
         let span = LogSpan::new(self.point.clone());
@@ -495,7 +504,7 @@ impl SpanLogger {
     }
 
     pub fn point(&self) -> &Point {
-        &self.point
+        &self.span.point
     }
 
     pub fn span(&self) -> SpanLogger {
@@ -543,7 +552,7 @@ impl SpanLogger {
 
     pub fn msg<M>(&self, level: Level, message :M ) where M: ToString {
         self.root_logger.log(Log {
-            point: self.point.clone(),
+            point: self.point().clone(),
             level,
             timestamp: timestamp().timestamp_millis(),
             payload: LogPayload::Message(message.to_string()),
@@ -578,7 +587,7 @@ impl SpanLogger {
     pub fn audit(&self) -> AuditLogBuilder {
         AuditLogBuilder {
             logger: self.root_logger.clone(),
-            point: self.point.clone(),
+            point: self.point().clone(),
             span: self.span.uuid.clone(),
             attributes: HashMap::new(),
         }

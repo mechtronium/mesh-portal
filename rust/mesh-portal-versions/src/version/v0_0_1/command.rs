@@ -13,7 +13,7 @@ use crate::version::v0_0_1::util::ToResolved;
 use serde::{Deserialize, Serialize};
 use crate::version::v0_0_1::command::request::read::{Read, ReadCtx, ReadVar};
 use crate::version::v0_0_1::command::request::update::{Update, UpdateCtx, UpdateVar};
-use crate::version::v0_0_1::messaging::CmdMethod;
+use crate::version::v0_0_1::wave::CmdMethod;
 use cosmic_macros_primitive::Autobox;
 
 pub mod command {
@@ -164,7 +164,7 @@ pub mod request {
     use crate::version::v0_0_1::command::request::select::Select;
     use crate::version::v0_0_1::command::request::set::Set;
     use crate::version::v0_0_1::command::request::update::Update;
-    use crate::version::v0_0_1::messaging::ResponseCore;
+    use crate::version::v0_0_1::wave::ResponseCore;
     use crate::version::v0_0_1::fail;
     use crate::version::v0_0_1::fail::{BadRequest, Fail, NotFound};
     use crate::version::v0_0_1::id::id::{GenericKind, GenericKindBase, Meta, Point};
@@ -174,7 +174,7 @@ pub mod request {
     use http::status::InvalidStatusCode;
     use http::{HeaderMap, Request, StatusCode, Uri};
     use serde::{Deserialize, Serialize};
-    use crate::version::v0_0_1::messaging::MethodKind;
+    use crate::version::v0_0_1::wave::MethodKind;
     use crate::version::v0_0_1::http::HttpMethod;
     use crate::version::v0_0_1::msg::MsgMethod;
 
@@ -364,7 +364,7 @@ pub mod request {
         use crate::version::v0_0_1::command::Command;
         use crate::version::v0_0_1::command::command::common::{SetProperties, SetRegistry, StateSrc, StateSrcVar};
         use crate::version::v0_0_1::id::id::{GenericKind, GenericKindBase, HostKey, Point, PointCtx, PointSeg, PointVar, ToPort};
-        use crate::version::v0_0_1::messaging::{CmdMethod, ProtoRequest, RequestCore, SysMethod};
+        use crate::version::v0_0_1::wave::{CmdMethod, ProtoRequest, RequestCore, SysMethod};
         use crate::version::v0_0_1::msg::MsgMethod;
         use crate::version::v0_0_1::parse::{Env, ResolverErr};
         use crate::version::v0_0_1::payload::payload::Payload;
@@ -637,7 +637,7 @@ pub mod request {
         use crate::version::v0_0_1::payload::payload::{
             MapPattern, Payload, PayloadList,
         };
-        use crate::version::v0_0_1::selector::selector::{Hop, HopCtx, HopVar, PointKindHierarchy, PointSelector, PointSelectorDef};
+        use crate::version::v0_0_1::selector::selector::{Hop, HopCtx, HopVar, PointHierarchy, PointSelector, PointSelectorDef};
         use crate::version::v0_0_1::util::{ConvertFrom, ToResolved};
 
         #[derive(Debug, Clone, Serialize, Deserialize,Eq,PartialEq)]
@@ -693,7 +693,7 @@ pub mod request {
             SubSelect {
                 point: Point,
                 hops: Vec<Hop>,
-                hierarchy: PointKindHierarchy,
+                hierarchy: PointHierarchy,
             },
         }
 
@@ -702,7 +702,7 @@ pub mod request {
                 self,
                 point: Point,
                 hops: Vec<Hop>,
-                hierarchy: PointKindHierarchy,
+                hierarchy: PointHierarchy,
             ) -> SubSelect {
                 SubSelect {
                     point,
@@ -746,7 +746,7 @@ pub mod request {
             pub properties: PropertiesPattern,
             pub into_payload: SelectIntoPayload,
             pub hops: Vec<Hop>,
-            pub hierarchy: PointKindHierarchy,
+            pub hierarchy: PointHierarchy,
         }
 
         impl Into<Select> for SubSelect {
@@ -769,7 +769,7 @@ pub mod request {
                 &self,
                 point: Point,
                 hops: Vec<Hop>,
-                hierarchy: PointKindHierarchy,
+                hierarchy: PointHierarchy,
             ) -> SubSelect {
                 SubSelect {
                     point,
@@ -917,7 +917,7 @@ pub mod request {
 
         use crate::error::MsgErr;
         use crate::version::v0_0_1::command::request::Rc;
-        use crate::version::v0_0_1::selector::selector::PointKindHierarchy;
+        use crate::version::v0_0_1::selector::selector::PointHierarchy;
 
         #[derive(Debug, Clone, Serialize, Deserialize,Eq,PartialEq)]
         pub enum Query {
@@ -926,13 +926,13 @@ pub mod request {
 
         #[derive(Debug, Clone, Serialize, Deserialize)]
         pub enum QueryResult {
-            PointKindHierarchy(PointKindHierarchy),
+            PointKindHierarchy(PointHierarchy),
         }
 
-        impl TryInto<PointKindHierarchy> for QueryResult {
+        impl TryInto<PointHierarchy> for QueryResult {
             type Error = MsgErr;
 
-            fn try_into(self) -> Result<PointKindHierarchy, MsgErr> {
+            fn try_into(self) -> Result<PointHierarchy, MsgErr> {
                 match self {
                     QueryResult::PointKindHierarchy(hierarchy) => Ok(hierarchy),
                 }

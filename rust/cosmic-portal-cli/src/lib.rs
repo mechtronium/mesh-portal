@@ -9,7 +9,7 @@ use mesh_portal::version::latest::id::{Point, Port, Topic};
 use mesh_portal::version::latest::messaging::{ProtoRequest, Request, Response};
 use mesh_portal::version::latest::msg::MsgMethod;
 use mesh_portal_versions::version::v0_0_1::id::id::{Layer, ToPort};
-use mesh_portal_versions::version::v0_0_1::messaging::{AsyncMessengerAgent, RequestHandler, SyncMessenger, SyncMessengerRelay};
+use mesh_portal_versions::version::v0_0_1::wave::{AsyncMessengerAgent, RequestHandler, SyncMessenger, SyncMessengerRelay};
 
 #[macro_use]
 extern crate cosmic_macros;
@@ -30,7 +30,7 @@ impl Cli{
     }
 
     pub async fn session(&self) -> Result<CliSession<'_>,MsgErr> {
-        let to = self.messenger.from.with_layer(Layer::Shell).with_topic(Topic::Cli );
+        let to = self.messenger.from.with_layer(Layer::Shell).with_topic(Topic::CLI);
         let request = ProtoRequest::msg( to, MsgMethod::new( "NewSession").unwrap() );
         let response = self.messenger.send( request ).await;
         if response.core.is_ok() {
@@ -83,7 +83,7 @@ impl <'a> CliSession<'a> {
 
 impl <'a> Drop for CliSession<'a> {
     fn drop(&mut self) {
-        let request = ProtoRequest::msg( self.to.with_topic(Topic::Cli ), MsgMethod::new("DropSession").unwrap() );
+        let request = ProtoRequest::msg(self.to.with_topic(Topic::CLI), MsgMethod::new("DropSession").unwrap() );
         self.messenger.send_sync(request);
     }
 }
@@ -101,7 +101,7 @@ pub mod test {
     use mesh_portal::version::latest::payload::Payload;
     use std::marker::PhantomData;
     use std::sync::{Arc, RwLock};
-    use mesh_portal_versions::version::v0_0_1::messaging::{AsyncRequestHandler, InputCtx, RequestHandler, RequestHandlerRelay};
+    use mesh_portal_versions::version::v0_0_1::wave::{AsyncRequestHandler, InputCtx, RequestHandler, RequestHandlerRelay};
 
 
     #[test]

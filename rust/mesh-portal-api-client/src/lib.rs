@@ -11,7 +11,7 @@ use mesh_portal::error::MsgErr;
 use mesh_portal::version::latest::id::{Point, Port, Uuid};
 use mesh_portal::version::latest::messaging::{Agent, RequestCtx, SysMethod};
 use mesh_portal_versions::version::v0_0_1::id::id::{Layer, ToPoint, ToPort};
-use mesh_portal_versions::version::v0_0_1::messaging::{
+use mesh_portal_versions::version::v0_0_1::wave::{
     AsyncInternalRequestHandlers, AsyncMessenger, AsyncMessengerAgent, AsyncRequestHandler,
     AsyncRequestHandlerRelay, AsyncRouter, Request, RequestFrame, RequestHandlerRelay, Requestable,
     Response, ResponseFrame, WaitTime, Wave, WaveFrame,

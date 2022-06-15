@@ -52,7 +52,7 @@ impl ToString for HttpMethodPattern {
 }
 
 
-#[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq,Hash)]
 pub enum ValuePattern<T> {
     Any,
     None,

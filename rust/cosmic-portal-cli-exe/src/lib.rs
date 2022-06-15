@@ -22,7 +22,7 @@ use mesh_portal::version::latest::payload::{Payload, PayloadType};
 use mesh_portal::version::latest::id::Port;
 use mesh_portal::version::latest::util::uuid;
 use mesh_portal_versions::version::v0_0_1::id::id::{ToPoint, ToPort};
-use mesh_portal_versions::version::v0_0_1::messaging::{AsyncMessenger, AsyncRequestHandler, AsyncMessengerAgent, AsyncRequestHandlerRelay, InternalPipeline, AsyncInternalRequestHandlers, RequestHandler, RequestHandlerRelay, AsyncRouter, SyncMessenger, SyncMessengerRelay};
+use mesh_portal_versions::version::v0_0_1::wave::{AsyncMessenger, AsyncRequestHandler, AsyncMessengerAgent, AsyncRequestHandlerRelay, InternalPipeline, AsyncInternalRequestHandlers, RequestHandler, RequestHandlerRelay, AsyncRouter, SyncMessenger, SyncMessengerRelay};
 use mesh_portal_versions::version::v0_0_1::msg::MsgMethod;
 use mesh_portal_versions::version::v0_0_1::parse::{command, command_line, Env};
 use mesh_portal_versions::version::v0_0_1::parse::error::result;

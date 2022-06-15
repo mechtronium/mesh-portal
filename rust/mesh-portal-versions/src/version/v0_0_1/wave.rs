@@ -17,12 +17,11 @@ use cosmic_macros_primitive::Autobox;
 use cosmic_nom::{Res, SpanExtra};
 use http::{HeaderMap,  StatusCode, Uri};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::convert::Infallible;
 use std::ops;
 use std::ops::Deref;
 use std::sync::Arc;
-use ariadne::Color::Default;
 use dashmap::DashMap;
 use tokio::sync::RwLock;
 
@@ -57,6 +56,7 @@ impl WaveId {
         }
     }
 }
+
 
 impl ToString for WaveId {
     fn to_string(&self) -> String {
@@ -144,7 +144,7 @@ impl<I> RootInputCtx<I> {
 
 pub struct InputCtx<'a, I> {
     root: &'a RootInputCtx<I>,
-    messenger: &'a AsyncMessengerAgent,
+    medium: &'a AsyncMessengerAgent,
     parent: Option<Box<InputCtx<'a, I>>>,
     pub input: &'a I,
     pub logger: SpanLogger,
@@ -165,7 +165,7 @@ impl<'a, I> InputCtx<'a, I> {
             parent: None,
             input,
             logger,
-            messenger
+            medium: messenger
         }
     }
 
@@ -175,7 +175,7 @@ impl<'a, I> InputCtx<'a, I> {
             input: self.input,
             logger: self.logger.span(),
             parent: Some(Box::new(self)),
-            messenger: & self.messenger
+            medium: &*self.medium
         }
     }
 
@@ -230,37 +230,37 @@ impl<'a> InputCtx<'a, Response> {
 }
 
 pub trait Requestable<R> {
-    fn forbidden(self) -> R {
+    fn forbidden(self) -> R where Self: Sized{
         self.status(403)
     }
 
-    fn bad_request(self) -> R {
+    fn bad_request(self) -> R  where Self: Sized{
         self.status(400)
     }
 
-    fn not_found(self) -> R {
+    fn not_found(self) -> R  where Self: Sized{
         self.status(404)
     }
 
-    fn timeout(self) -> R {
+    fn timeout(self) -> R  where Self: Sized{
         self.status(408)
     }
 
-    fn server_error(self) -> R {
+    fn server_error(self) -> R  where Self: Sized{
         self.status(500)
     }
 
-    fn status(self, status: u16) -> R;
+    fn status(self, status: u16) -> R where Self: Sized;
 
-    fn err(self, err: MsgErr) -> R;
+    fn err(self, err: MsgErr) -> R where Self: Sized;
 
-    fn ok(self) -> R;
+    fn ok(self) -> R where Self: Sized;
 
-    fn body(self, body: Payload) -> R;
+    fn body(self, body: Payload) -> R where Self: Sized;
 
-    fn core(self, core: ResponseCore) -> R;
+    fn core(self, core: ResponseCore) -> R where Self: Sized;
 
-    fn result<C:Into<ResponseCore>>(self, result: Result<C,MsgErr>) -> R {
+    fn result<C:Into<ResponseCore>>(self, result: Result<C,MsgErr>) -> R  where Self: Sized{
         match result {
             Ok(core) => self.core(core.into()),
             Err(err) => self.core(err.into())
@@ -410,9 +410,9 @@ impl Into<ProtoRequest> for Request {
     }
 }
 
-impl Into<&WaitTime> for &Request {
-    fn into(self) -> &WaitTime {
-        &self.handling.wait
+impl Into<WaitTime> for &Request {
+    fn into(self) -> WaitTime {
+        self.handling.wait.clone()
     }
 }
 
@@ -456,6 +456,16 @@ impl Requestable<Response> for Request {
             response_to: self.id,
         }
     }
+
+    fn core(self, core: ResponseCore) -> Response {
+        Response {
+            id: uuid(),
+            to: self.from,
+            from: self.to,
+            core,
+            response_to: self.id
+        }
+    }
 }
 
 impl Request {
@@ -466,10 +476,11 @@ impl Request {
             handling: self.handling.clone(),
             from: self.from.clone(),
             to: self.to.clone(),
+            span: None
         }
     }
 
-    pub fn require_method<M: Into<Method>>(self, method: M) -> Result<Request, Response> {
+    pub fn require_method<M: Into<Method>+ToString>(self, method: M) -> Result<Request, Response> {
         if self.core.method == method.into() {
             Ok(self)
         } else {
@@ -485,7 +496,7 @@ impl Request {
         B: TryFrom<Payload, Error = MsgErr>,
     {
         match B::try_from(self.core.body) {
-            Ok(body) => Ok(B),
+            Ok(body) => Ok(body),
             Err(err) => Err(self.err(MsgErr::new(
                 400,
                 format!("Bad Request: expecting body payload kind: {}", body_kind).as_str(),
@@ -536,11 +547,11 @@ pub struct RequestFrame {
 
 impl RequestFrame {
     pub fn from(&self) -> &Port {
-        &request.from
+        &self.request.from
     }
 
     pub fn to(&self) -> &Port {
-        &request.to
+        &self.request.to
     }
 }
 
@@ -556,8 +567,8 @@ impl RequestFrame {
     }
 }
 
-impl Into<&WaitTime> for &RequestFrame {
-    fn into(self) -> &WaitTime {
+impl Into<WaitTime> for &RequestFrame {
+    fn into(self) -> WaitTime {
         (&self.request).into()
     }
 }
@@ -596,7 +607,7 @@ impl Requestable<ResponseFrame> for RequestFrame {
     }
 
     fn core(self, core: ResponseCore) -> ResponseFrame {
-        let response = Response::new(core, self.to, self.from, self.id);
+        let response = Response::new(core, self.request.to, self.request.from, self.request.id);
         ResponseFrame {
             session: None,
             response,
@@ -622,7 +633,7 @@ impl ResponseFrame {
     pub fn to(&self) -> &Port {
         &self.response.to
     }
-    pub fn response_to(&self) -> &Uuid { &self.resonse.response_to }
+    pub fn response_to(&self) -> &Uuid { &self.response.response_to }
 }
 
 impl TryFrom<Request> for RawCommand {
@@ -976,10 +987,10 @@ impl Response {
         }
     }
 
-    pub fn to_span_frame(self, span: LogSpanEvent) -> RequestFrame {
-        WaveFrame {
+    pub fn to_span_frame(self, span: LogSpan ) -> ResponseFrame {
+        ResponseFrame {
             session: None,
-            request: self,
+            response: self,
             span: Some(span),
         }
     }
@@ -990,7 +1001,7 @@ impl Response {
 }
 
 impl Response {
-    pub fn new(core: ResponseCore, from: Point, to: Point, response_to: String) -> Self {
+    pub fn new(core: ResponseCore, from: Port, to: Port, response_to: String) -> Self {
         Self {
             id: uuid(),
             to: to.into(),
@@ -1113,11 +1124,38 @@ impl Session {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
 pub enum Scope {
     Full,
     None,
-    Grants(Vec<ScopeGrant>),
+    Grants(HashSet<ScopeGrant>),
+}
+
+impl Scope {
+    pub fn has_grant( &self, grant: &ScopeGrant ) -> Result<(),()> {
+       match self {
+           Scope::Full => Ok(()),
+           Scope::None => Err(()),
+           Scope::Grants(grants)  if grants.contains(grant) => {
+               Ok(())
+           }
+           _ => Err(())
+       }
+    }
+
+    pub fn enumerated_grants(&self) -> HashSet<ScopeGrant> {
+        match self {
+            Scope::Full => HashSet::new(),
+            Scope::None => HashSet::new(),
+            Scope::Grants(grants) => grants.clone()
+        }
+    }
+}
+
+impl From<HashSet<ScopeGrant>> for Scope {
+    fn from(grants: HashSet<ScopeGrant>) -> Self {
+        Scope::Grants(grants)
+    }
 }
 
 impl ops::BitAnd<Scope> for Scope{
@@ -1129,11 +1167,27 @@ impl ops::BitAnd<Scope> for Scope{
         } else if self == Self::None || rhs == Self::None {
             Self::None
         } else {
-            // merge scope grants
-            unimplemented!()
+            let mut grants = self.enumerated_grants();
+            grants.retain(|grant|{rhs.has_grant(grant).is_ok()});
+            grants.into()
         }
     }
 }
+
+impl ops::BitOr<Scope> for Scope{
+    type Output = Scope;
+
+    fn bitor(self, rhs: Scope) -> Self::Output {
+        if self == Self::Full || rhs == Scope::Full {
+            Self::Full
+        } else {
+            let left = self.enumerated_grants();
+            let right = rhs.enumerated_grants();
+            Self::Grants(left.union(&right).cloned().collect())
+        }
+    }
+}
+
 
 impl Scope {
     /*
@@ -1170,20 +1224,21 @@ impl Default for Scope {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq,Hash)]
 pub struct ScopeGrant {
     pub on: PointSelector,
     pub kind: ScopeGrantKind,
     pub aspect: ScopeGrantAspect,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+
+#[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq,Hash)]
 pub enum ScopeGrantKind {
     Or,
     And,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq,Hash)]
 pub enum ScopeGrantAspect {
     Perm(Permissions),
     Priv(Privilege),
@@ -1296,9 +1351,9 @@ pub struct AsyncPointRequestHandlers{
 #[async_trait]
 impl AsyncRequestHandler for  AsyncPointRequestHandlers {
 
-    fn select(&self, request: &Request) -> Result<(), ()> {
+    async fn select(&self, request: &Request) -> Result<(), ()> {
         if let Some(handler) = self.handlers.get( &request.to.to_point() ) {
-            handler.select(request)
+            handler.select(request).await
         } else {
             Err(())
         }
@@ -1456,7 +1511,7 @@ pub trait RequestHandler {
 
 #[async_trait]
 pub trait AsyncRequestHandler: Sync + Send {
-    fn select(&self, request: &Request) -> Result<(), ()>;
+    async fn select(&self, request: &Request) -> Result<(), ()>;
     async fn handle(&self, request: RootInputCtx<Request>) -> Result<ResponseCore, MsgErr>;
 }
 
@@ -1470,8 +1525,9 @@ impl RequestHandler for RequestHandlerRelay {
     }
 }
 
+#[async_trait]
 pub trait AsyncAuthorizationRequester {
-    async fn authorize( self, messenger: AsyncMessengerAgent ) -> Result<(),()>;
+    async fn authorize(self, messenger: AsyncMessengerAgent) -> Result<AuthResponse, MsgErr>;
 }
 
 pub struct Credentials {
@@ -1497,6 +1553,7 @@ pub struct AsyncCredsAuthorizationRequester {
     pub credentials: Credentials
 }
 
+#[async_trait]
 impl AsyncAuthorizationRequester for AsyncCredsAuthorizationRequester {
     async fn authorize(self, messenger: AsyncMessengerAgent) -> Result<AuthResponse, MsgErr> {
         let mut form = MultipartFormBuilder::new();
@@ -1520,6 +1577,7 @@ pub struct AsyncRefreshTokenAuthorizationRequester {
     pub token: Token
 }
 
+#[async_trait]
 impl AsyncAuthorizationRequester for AsyncRefreshTokenAuthorizationRequester {
     async fn authorize(self, messenger: AsyncMessengerAgent) -> Result<AuthResponse, MsgErr> {
         unimplemented!()
@@ -1539,8 +1597,8 @@ impl AsyncRequestHandlerRelay {
 
 #[async_trait]
 impl AsyncRequestHandler for AsyncRequestHandlerRelay {
-    fn select(&self, request: &Request) -> Result<(), ()> {
-        self.relay.select(request)
+    async fn select(&self, request: &Request) -> Result<(), ()> {
+        self.relay.select(request).await
     }
 
     async fn handle(&self, ctx: RootInputCtx<Request>) -> Result<ResponseCore, MsgErr> {
@@ -1572,12 +1630,13 @@ impl<H> AsyncInternalRequestHandlers<H> {
     }
 }
 
+#[async_trait]
 impl AsyncRequestHandler for AsyncInternalRequestHandlers<AsyncRequestHandlerRelay> {
-    fn select(&self, request: &Request) -> Result<(), ()> {
+    async fn select(&self, request: &Request) -> Result<(), ()> {
         let read = self.pipelines.read().await;
         for pipeline in read.iter() {
             if pipeline.selector.is_match(&request).is_ok() {
-                return pipeline.handler.select(request)
+                return pipeline.handler.select(request).await
             }
         }
         Err(())
@@ -2168,11 +2227,6 @@ pub enum SysMethod {
     AssignPort,
 }
 
-impl Into<Method> for SysMethod {
-    fn into(self) -> Method {
-        Method::Sys(self)
-    }
-}
 
 impl ValueMatcher<SysMethod> for SysMethod {
     fn is_match(&self, x: &SysMethod) -> Result<(), ()> {

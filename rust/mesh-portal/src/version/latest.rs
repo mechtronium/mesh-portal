@@ -75,7 +75,7 @@ pub mod selector {
     pub type Hop = selector::selector::Hop;
     pub type Pattern<P> = selector::selector::Pattern<P>;
     pub type EmptyPattern<P> = selector::selector::EmptyPattern<P>;
-    pub type PointKindHierarchy = selector::selector::PointKindHierarchy;
+    pub type PointKindHierarchy = selector::selector::PointHierarchy;
     pub type PointKindSeg = selector::selector::PointKindSeg;
 
     pub mod specific {
@@ -92,29 +92,29 @@ pub mod selector {
 
 pub mod messaging {
     use mesh_portal_versions::version::v0_0_1 as current;
-    use mesh_portal_versions::version::v0_0_1::messaging;
+    use mesh_portal_versions::version::v0_0_1::wave;
 
-    pub type RequestHandler=dyn messaging::RequestHandler;
-    pub type RequestCtx<'a,R> = messaging::InputCtx<'a,R>;
-    pub type RootRequestCtx<R> = messaging::RootInputCtx<R>;
-    pub type Request = messaging::Request;
-    pub type Response= messaging::Response;
-    pub type RequestBuilder = messaging::RequestBuilder;
-    pub type ProtoRequest= messaging::ProtoRequest;
-    pub type Message = messaging::Wave;
-    pub type Agent = messaging::Agent;
-    pub type AuthedAgent = messaging::AuthedAgent;
-    pub type Session = messaging::Session;
-    pub type Scope = messaging::Scope;
-    pub type Priority = messaging::Priority;
-    pub type Karma = messaging::Karma;
-    pub type Handling = messaging::Handling;
-    pub type HandlingKind = messaging::HandlingKind;
-    pub type CmdMethod = messaging::CmdMethod;
-    pub type Method = messaging::Method;
-    pub type MethodPattern = messaging::MethodPattern;
+    pub type RequestHandler=dyn wave::RequestHandler;
+    pub type RequestCtx<'a,R> = wave::InputCtx<'a,R>;
+    pub type RootRequestCtx<R> = wave::RootInputCtx<R>;
+    pub type Request = wave::Request;
+    pub type Response= wave::Response;
+    pub type RequestBuilder = wave::RequestBuilder;
+    pub type ProtoRequest= wave::ProtoRequest;
+    pub type Message = wave::Wave;
+    pub type Agent = wave::Agent;
+    pub type AuthedAgent = wave::AuthedAgent;
+    pub type Session = wave::Session;
+    pub type Scope = wave::Scope;
+    pub type Priority = wave::Priority;
+    pub type Karma = wave::Karma;
+    pub type Handling = wave::Handling;
+    pub type HandlingKind = wave::HandlingKind;
+    pub type CmdMethod = wave::CmdMethod;
+    pub type Method = wave::Method;
+    pub type MethodPattern = wave::MethodPattern;
 
-    pub type SysMethod = messaging::SysMethod;
+    pub type SysMethod = wave::SysMethod;
 
 }
 
@@ -264,16 +264,16 @@ pub mod config {
 
 pub mod entity {
     use mesh_portal_versions::version::v0_0_1 as current;
-    use mesh_portal_versions::version::v0_0_1::{entity, messaging};
+    use mesh_portal_versions::version::v0_0_1::{entity, wave};
 
-    pub type EntityType = messaging::MethodKind;
+    pub type EntityType = wave::MethodKind;
 
     pub mod request {
         use mesh_portal_versions::version::{v0_0_1 as current, v0_0_1};
         use mesh_portal_versions::version::v0_0_1::{command, entity};
 
-        pub type Method = v0_0_1::messaging::Method;
-        pub type RequestCore= v0_0_1::messaging::RequestCore;
+        pub type Method = v0_0_1::wave::Method;
+        pub type RequestCore= v0_0_1::wave::RequestCore;
         pub type Rc = command::request::Rc;
         pub type RcCommandType = command::request::RcCommandType;
 
@@ -339,7 +339,7 @@ pub mod entity {
         use mesh_portal_versions::version::{v0_0_1 as current, v0_0_1};
         use mesh_portal_versions::version::v0_0_1::entity;
 
-        pub type ResponseCore = v0_0_1::messaging::ResponseCore;
+        pub type ResponseCore = v0_0_1::wave::ResponseCore;
     }
 }
 
@@ -457,7 +457,7 @@ pub mod cli {
 pub mod service {
     use mesh_portal_versions::version::{v0_0_1 as current, v0_0_1};
 
-    pub type Router=dyn v0_0_1::messaging::AsyncRouter;
+    pub type Router=dyn v0_0_1::wave::AsyncRouter;
     pub type Global=dyn current::service::Global;
     pub type AccessProvider=dyn current::service::AccessProvider;
     pub type AllAccessProvider=current::service::AllAccessProvider;

@@ -1,4 +1,4 @@
-use crate::version::v0_0_1::messaging::{Request, WaitTime};
+use crate::version::v0_0_1::wave::{Request, WaitTime};
 
 // measured in seconds
 #[derive(Clone)]
@@ -9,11 +9,11 @@ pub struct Timeouts {
 }
 
 impl Timeouts{
-    pub fn from<W:Into<&WaitTime>>(&self, wait: W) -> u64 {
+    pub fn from<W:Into<WaitTime>>(&self, wait: W) -> u64 {
         match wait.into() {
-            &WaitTime::High => self.high,
-            &WaitTime::Med => self.med,
-            &WaitTime::Low => self.low
+            WaitTime::High => self.high,
+            WaitTime::Med => self.med,
+            WaitTime::Low => self.low
         }
     }
 }

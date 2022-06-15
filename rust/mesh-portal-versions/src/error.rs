@@ -17,10 +17,11 @@ use std::rc::Rc;
 use std::sync::{Arc, PoisonError};
 use ariadne::{Label, Report, ReportBuilder, ReportKind, Source};
 use http::StatusCode;
+use serde::de::Error;
 use crate::version::v0_0_1::parse::error::find_parse_err;
 use cosmic_nom::SpanExtra;
 use cosmic_nom::Span;
-use crate::version::v0_0_1::messaging::ResponseCore;
+use crate::version::v0_0_1::wave::ResponseCore;
 use crate::version::v0_0_1::payload::payload::{Errors, Payload};
 
 pub enum MsgErr {
@@ -568,5 +569,23 @@ impl ParseErrs {
             }
         }
         rtn
+    }
+}
+impl From<serde_urlencoded::de::Error> for MsgErr {
+    fn from(err: serde_urlencoded::de::Error) -> Self {
+        MsgErr::Status {
+            status: 500u16,
+            message: err.to_string()
+        }
+    }
+}
+
+
+impl From<serde_urlencoded::ser::Error> for MsgErr {
+    fn from(err: serde_urlencoded::ser::Error) -> Self {
+        MsgErr::Status {
+            status: 500u16,
+            message: err.to_string()
+        }
     }
 }

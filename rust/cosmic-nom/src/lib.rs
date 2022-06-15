@@ -101,6 +101,10 @@ impl <W> Tw<W> {
             w
         }
     }
+
+    pub fn unwrap(self) -> W {
+        self.w
+    }
 }
 
 impl <W> ToString for Tw<W> where W:ToString {
@@ -120,7 +124,7 @@ impl <W> Deref for Tw<W> {
 pub fn tw<I, F, O>(mut f: F) -> impl FnMut(I) -> Res<I, Tw<O>>
     where
         I: Span,
-        F: FnMut(I) -> Res<I, O> + Copy,
+        F: FnMut(I) -> Res<I, O> ,
 {
     move |input: I| {
         let (next,output) = f(input.clone())?;

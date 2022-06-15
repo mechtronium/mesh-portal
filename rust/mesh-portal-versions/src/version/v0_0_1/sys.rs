@@ -8,8 +8,7 @@ use cosmic_macros_primitive::Autobox;
 
 use serde::{Deserialize, Serialize};
 use crate::version::v0_0_1::log::Log;
-use crate::version::v0_0_1::messaging::{Request, RequestCore, SysMethod};
-use crate::version::v0_0_1::portal::portal::inlet::AssignRequest;
+use crate::version::v0_0_1::wave::{Request, RequestCore, SysMethod};
 
 
 #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq,strum_macros::Display)]
@@ -142,7 +141,7 @@ impl TryFrom<Request> for Assign {
 
 impl Into<Payload> for Assign {
     fn into(self) -> Payload {
-        Payload::Sys(Sys::Assign(assign))
+        Payload::Sys(Sys::Assign(self))
     }
 }
 

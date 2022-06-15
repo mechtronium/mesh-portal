@@ -11,7 +11,7 @@ pub mod frame;
 pub mod http;
 pub mod id;
 pub mod log;
-pub mod messaging;
+pub mod wave;
 pub mod msg;
 pub mod parse;
 pub mod particle;
