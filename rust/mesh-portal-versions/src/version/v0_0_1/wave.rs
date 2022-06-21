@@ -8,7 +8,7 @@ use crate::version::v0_0_1::id::id::{Point, Port, Layer, ToPort, Topic, Uuid, To
 use crate::version::v0_0_1::log::{LogSpan, LogSpanEvent, SpanLogger};
 use crate::version::v0_0_1::msg::MsgMethod;
 use crate::version::v0_0_1::particle::particle::Details;
-use crate::version::v0_0_1::payload::payload::{Errors, MultipartFormBuilder, Payload, Token, ToRequestCore};
+use crate::version::v0_0_1::substance::substance::{Errors, MultipartFormBuilder, Token, ToRequestCore};
 use crate::version::v0_0_1::security::{Permissions, Privilege, Privileges};
 use crate::version::v0_0_1::selector::selector::PointSelector;
 use crate::version::v0_0_1::sys::AssignmentKind;
@@ -24,8 +24,7 @@ use std::ops::Deref;
 use std::sync::Arc;
 use dashmap::DashMap;
 use tokio::sync::RwLock;
-
-
+use crate::version::v0_0_1::substance::substance::Substance;
 
 
 #[derive(Serialize, Deserialize,Eq,PartialEq,Hash,strum_macros::Display,strum_macros::EnumString)]
@@ -66,41 +65,41 @@ impl ToString for WaveId {
 
 #[derive(Serialize, Deserialize, Autobox)]
 pub enum WaveFrame {
-    Request(RequestFrame),
-    Response(ResponseFrame),
+    Req(ReqFrame),
+    Resp(RespFrame),
 }
 
 impl WaveFrame {
     pub fn id(&self) -> &Uuid {
         match self {
-            WaveFrame::Request(request) => request.id(),
-            WaveFrame::Response(response) => response.id()
+            WaveFrame::Req(request) => request.id(),
+            WaveFrame::Resp(response) => response.id()
         }
     }
 
     pub fn to(&self) -> &Port{
         match self {
-            WaveFrame::Request(request) => request.to(),
-            WaveFrame::Response(response) => response.to()
+            WaveFrame::Req(request) => request.to(),
+            WaveFrame::Resp(response) => response.to()
         }
     }
 
     pub fn from(&self) -> &Port{
         match self {
-            WaveFrame::Request(request) => request.from(),
-            WaveFrame::Response(response) => response.from()
+            WaveFrame::Req(request) => request.from(),
+            WaveFrame::Resp(response) => response.from()
         }
     }
 }
 
-pub struct RootInputCtx<I> {
+pub struct RootReqCtx<I> {
     pub input: I,
-    pub request: Request,
+    pub request: ReqShell,
     session: Option<Session>,
     logger: SpanLogger,
 }
 
-impl <I> Deref for RootInputCtx<I> {
+impl <I> Deref for RootReqCtx<I> {
     type Target = I;
 
     fn deref(&self) -> &Self::Target {
@@ -108,8 +107,8 @@ impl <I> Deref for RootInputCtx<I> {
     }
 }
 
-impl RootInputCtx<Request> {
-    pub fn new(request: Request, logger: SpanLogger) -> Self {
+impl RootReqCtx<ReqShell> {
+    pub fn new(request: ReqShell, logger: SpanLogger) -> Self {
         Self {
             request: request.clone(),
             input: request.clone(),
@@ -119,8 +118,8 @@ impl RootInputCtx<Request> {
     }
 }
 
-impl<I> RootInputCtx<I> {
-    pub fn transform_input<I2, E>(self) -> Result<RootInputCtx<I2>, MsgErr>
+impl<I> RootReqCtx<I> {
+    pub fn transform_input<I2, E>(self) -> Result<RootReqCtx<I2>, MsgErr>
     where
         I2: TryFrom<I, Error = E>,
         E: Into<MsgErr>,
@@ -129,7 +128,7 @@ impl<I> RootInputCtx<I> {
             Ok(input) => input,
             Err(err) => return Err(err.into()),
         };
-        Ok(RootInputCtx {
+        Ok(RootReqCtx {
             logger: self.logger,
             request: self.request,
             input,
@@ -137,20 +136,20 @@ impl<I> RootInputCtx<I> {
         })
     }
 
-    pub fn push<'a>(&'a self, messenger: &'a AsyncMessengerAgent) -> InputCtx<'a, I> {
-        InputCtx::new(self, &self.input, messenger, self.logger.clone())
+    pub fn push<'a>(&'a self, tx: &'a AsyncTransmitterWithAgent) -> ReqCtx<'a, I> {
+        ReqCtx::new(self, &self.input, tx, self.logger.clone())
     }
 }
 
-pub struct InputCtx<'a, I> {
-    root: &'a RootInputCtx<I>,
-    medium: &'a AsyncMessengerAgent,
-    parent: Option<Box<InputCtx<'a, I>>>,
+pub struct ReqCtx<'a, I> {
+    root: &'a RootReqCtx<I>,
+    tx: &'a AsyncTransmitterWithAgent,
+    parent: Option<Box<ReqCtx<'a, I>>>,
     pub input: &'a I,
     pub logger: SpanLogger,
 }
 
-impl<'a, I> Deref for InputCtx<'a, I> {
+impl<'a, I> Deref for ReqCtx<'a, I> {
     type Target = I;
 
     fn deref(&self) -> &Self::Target {
@@ -158,65 +157,65 @@ impl<'a, I> Deref for InputCtx<'a, I> {
     }
 }
 
-impl<'a, I> InputCtx<'a, I> {
-    pub fn new(root: &'a RootInputCtx<I>, input: &'a I, messenger: &'a AsyncMessengerAgent, logger: SpanLogger) -> Self {
+impl<'a, I> ReqCtx<'a, I> {
+    pub fn new(root: &'a RootReqCtx<I>, input: &'a I, tx: &'a AsyncTransmitterWithAgent, logger: SpanLogger) -> Self {
         Self {
             root,
             parent: None,
             input,
             logger,
-            medium: messenger
+            tx
         }
     }
 
-    pub fn push(self) -> InputCtx<'a, I> {
-        InputCtx {
+    pub fn push(self) -> ReqCtx<'a, I> {
+        ReqCtx {
             root: self.root,
             input: self.input,
             logger: self.logger.span(),
+            tx: self.tx,
             parent: Some(Box::new(self)),
-            medium: &*self.medium
         }
     }
 
-    pub fn pop(self) -> Option<InputCtx<'a, I>> {
+    pub fn pop(self) -> Option<ReqCtx<'a, I>> {
         match self.parent {
             None => None,
             Some(parent) => Some(*parent),
         }
     }
 
-    pub fn request(&self) -> &Request {
+    pub fn request(&self) -> &ReqShell {
         &self.root.request
     }
 }
 
-impl<'a> InputCtx<'a, &mut Request> {
-    pub fn ok_payload(self, payload: Payload) -> ResponseCore {
-        self.input.core.ok(payload)
+impl<'a> ReqCtx<'a, &mut ReqShell> {
+    pub fn ok_substance(self, substance: Substance) -> RespCore {
+        self.input.core.ok(substance)
     }
 
-    pub fn not_found(self) -> ResponseCore {
+    pub fn not_found(self) -> RespCore {
         self.input.core.not_found()
     }
 
-    pub fn err(self, err: MsgErr) -> ResponseCore {
+    pub fn err(self, err: MsgErr) -> RespCore {
         self.input.core.err(err)
     }
 }
 
-impl<'a> InputCtx<'a, Response> {
-    pub fn pass(self) -> ResponseCore {
+impl<'a> ReqCtx<'a, RespShell> {
+    pub fn pass(self) -> RespCore {
         self.input.core.clone()
     }
 
-    pub fn not_found(self) -> ResponseCore {
+    pub fn not_found(self) -> RespCore {
         let mut core = self.input.core.clone();
         core.status = StatusCode::from_u16(404).unwrap();
         core
     }
 
-    pub fn err(self, err: MsgErr) -> ResponseCore {
+    pub fn err(self, err: MsgErr) -> RespCore {
         let mut core = self.input.core.clone();
         let status = match StatusCode::from_u16(err.status()) {
             Ok(status) => status,
@@ -256,11 +255,11 @@ pub trait Requestable<R> {
 
     fn ok(self) -> R where Self: Sized;
 
-    fn body(self, body: Payload) -> R where Self: Sized;
+    fn body(self, body: Substance) -> R where Self: Sized;
 
-    fn core(self, core: ResponseCore) -> R where Self: Sized;
+    fn core(self, core: RespCore) -> R where Self: Sized;
 
-    fn result<C:Into<ResponseCore>>(self, result: Result<C,MsgErr>) -> R  where Self: Sized{
+    fn result<C:Into<RespCore>>(self, result: Result<C,MsgErr>) -> R  where Self: Sized{
         match result {
             Ok(core) => self.core(core.into()),
             Err(err) => self.core(err.into())
@@ -269,7 +268,7 @@ pub trait Requestable<R> {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct RequestStub {
+pub struct ReqStub {
     pub id: String,
     pub agent: Agent,
     pub handling: Handling,
@@ -278,49 +277,49 @@ pub struct RequestStub {
     pub span: Option<LogSpan>
 }
 
-impl Requestable<Response> for RequestStub {
-    fn status(self, status: u16) -> Response {
-        Response {
+impl Requestable<RespShell> for ReqStub {
+    fn status(self, status: u16) -> RespShell {
+        RespShell {
             id: uuid(),
             to: self.from,
             from: self.to,
-            core: ResponseCore::status(status),
+            core: RespCore::status(status),
             response_to: self.id,
         }
     }
 
-    fn err(self, err: MsgErr) -> Response {
-        Response {
+    fn err(self, err: MsgErr) -> RespShell {
+        RespShell {
             id: uuid(),
             to: self.from,
             from: self.to,
-            core: ResponseCore::err(err),
+            core: RespCore::err(err),
             response_to: self.id,
         }
     }
 
-    fn ok(self) -> Response {
-        Response {
+    fn ok(self) -> RespShell {
+        RespShell {
             id: uuid(),
             to: self.from,
             from: self.to,
-            core: ResponseCore::ok(Payload::Empty),
+            core: RespCore::ok(Substance::Empty),
             response_to: self.id,
         }
     }
 
-    fn body(self, body: Payload) -> Response {
-        Response {
+    fn body(self, body: Substance) -> RespShell {
+        RespShell {
             id: uuid(),
             to: self.from,
             from: self.to,
-            core: ResponseCore::ok(body),
+            core: RespCore::ok(body),
             response_to: self.id,
         }
     }
 
-    fn core(self, core: ResponseCore) -> Response {
-        Response {
+    fn core(self, core: RespCore) -> RespShell {
+        RespShell {
             id: uuid(),
             to: self.from,
             from: self.to,
@@ -330,53 +329,53 @@ impl Requestable<Response> for RequestStub {
     }
 }
 
-impl Requestable<ResponseFrame> for RequestStub {
-    fn status(self, status: u16) -> ResponseFrame {
-        Response {
+impl Requestable<RespFrame> for ReqStub {
+    fn status(self, status: u16) -> RespFrame {
+        RespShell {
             id: uuid(),
             to: self.from,
             from: self.to,
-            core: ResponseCore::status(status),
+            core: RespCore::status(status),
             response_to: self.id,
         }
         .to_frame(self.span)
     }
 
-    fn err(self, err: MsgErr) -> ResponseFrame {
-        Response {
+    fn err(self, err: MsgErr) -> RespFrame {
+        RespShell {
             id: uuid(),
             to: self.from,
             from: self.to,
-            core: ResponseCore::err(err),
+            core: RespCore::err(err),
             response_to: self.id,
         }
         .to_frame(self.span)
     }
 
-    fn ok(self) -> ResponseFrame {
-        Response {
+    fn ok(self) -> RespFrame {
+        RespShell {
             id: uuid(),
             to: self.from,
             from: self.to,
-            core: ResponseCore::ok(Payload::Empty),
+            core: RespCore::ok(Substance::Empty),
             response_to: self.id,
         }
         .to_frame(self.span)
     }
 
-    fn body(self, body: Payload) -> ResponseFrame {
-        Response {
+    fn body(self, body: Substance) -> RespFrame {
+        RespShell {
             id: uuid(),
             to: self.from,
             from: self.to,
-            core: ResponseCore::ok(body),
+            core: RespCore::ok(body),
             response_to: self.id,
         }
         .to_frame(self.span)
     }
 
-    fn core(self, core: ResponseCore) -> ResponseFrame {
-        Response {
+    fn core(self, core: RespCore) -> RespFrame {
+        RespShell {
             id: uuid(),
             to: self.from,
             from: self.to,
@@ -388,19 +387,19 @@ impl Requestable<ResponseFrame> for RequestStub {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Request {
+pub struct ReqShell {
     pub id: String,
     pub agent: Agent,
     pub scope: Scope,
     pub handling: Handling,
     pub from: Port,
     pub to: Port,
-    pub core: RequestCore,
+    pub core: ReqCore,
 }
 
-impl Into<ProtoRequest> for Request {
-    fn into(self) -> ProtoRequest {
-        ProtoRequest {
+impl Into<ReqProto> for ReqShell {
+    fn into(self) -> ReqProto {
+        ReqProto {
             id: self.id,
             to: self.to,
             core: self.core,
@@ -410,55 +409,55 @@ impl Into<ProtoRequest> for Request {
     }
 }
 
-impl Into<WaitTime> for &Request {
+impl Into<WaitTime> for &ReqShell {
     fn into(self) -> WaitTime {
         self.handling.wait.clone()
     }
 }
 
-impl Requestable<Response> for Request {
-    fn status(self, status: u16) -> Response {
-        Response {
+impl Requestable<RespShell> for ReqShell {
+    fn status(self, status: u16) -> RespShell {
+        RespShell {
             id: uuid(),
             to: self.from,
             from: self.to,
-            core: ResponseCore::status(status),
+            core: RespCore::status(status),
             response_to: self.id,
         }
     }
 
-    fn err(self, err: MsgErr) -> Response {
-        Response {
+    fn err(self, err: MsgErr) -> RespShell {
+        RespShell {
             id: uuid(),
             to: self.from,
             from: self.to,
-            core: ResponseCore::err(err),
+            core: RespCore::err(err),
             response_to: self.id,
         }
     }
 
-    fn ok(self) -> Response {
-        Response {
+    fn ok(self) -> RespShell {
+        RespShell {
             id: uuid(),
             to: self.from,
             from: self.to,
-            core: ResponseCore::ok(Payload::Empty),
+            core: RespCore::ok(Substance::Empty),
             response_to: self.id,
         }
     }
 
-    fn body(self, body: Payload) -> Response {
-        Response {
+    fn body(self, body: Substance) -> RespShell {
+        RespShell {
             id: uuid(),
             to: self.from,
             from: self.to,
-            core: ResponseCore::ok(body),
+            core: RespCore::ok(body),
             response_to: self.id,
         }
     }
 
-    fn core(self, core: ResponseCore) -> Response {
-        Response {
+    fn core(self, core: RespCore) -> RespShell {
+        RespShell {
             id: uuid(),
             to: self.from,
             from: self.to,
@@ -468,9 +467,9 @@ impl Requestable<Response> for Request {
     }
 }
 
-impl Request {
-    pub fn as_stub(&self) -> RequestStub {
-        RequestStub {
+impl ReqShell {
+    pub fn as_stub(&self) -> ReqStub {
+        ReqStub {
             id: self.id.clone(),
             agent: self.agent.clone(),
             handling: self.handling.clone(),
@@ -480,8 +479,8 @@ impl Request {
         }
     }
 
-    pub fn require_method<M: Into<Method>+ToString>(self, method: M) -> Result<Request, Response> {
-        if self.core.method == method.into() {
+    pub fn require_method<M: Into<Method>+ToString+Clone>(self, method: M) -> Result<ReqShell, RespShell> {
+        if self.core.method == method.clone().into() {
             Ok(self)
         } else {
             Err(self.err(MsgErr::new(
@@ -491,45 +490,45 @@ impl Request {
         }
     }
 
-    pub fn require_body<B>(self, body_kind: &'static str) -> Result<B, Response>
+    pub fn require_body<B>(self, body_kind: &'static str) -> Result<B, RespShell>
     where
-        B: TryFrom<Payload, Error = MsgErr>,
+        B: TryFrom<Substance, Error = MsgErr>,
     {
-        match B::try_from(self.core.body) {
+        match B::try_from(self.clone().core.body) {
             Ok(body) => Ok(body),
             Err(err) => Err(self.err(MsgErr::new(
                 400,
-                format!("Bad Request: expecting body payload kind: {}", body_kind).as_str(),
+                format!("Bad Request: expecting body substance kind: {}", body_kind).as_str(),
             ))),
         }
     }
 
-    pub fn server_error(&self) -> Response {
+    pub fn server_error(&self) -> RespShell {
         self.as_stub().server_error()
     }
 
-    pub fn timeout(&self) -> Response {
+    pub fn timeout(&self) -> RespShell {
         self.as_stub().timeout()
     }
 
-    pub fn not_found(&self) -> Response {
+    pub fn not_found(&self) -> RespShell {
         self.as_stub().not_found()
     }
 
-    pub fn forbidden(&self) -> Response {
+    pub fn forbidden(&self) -> RespShell {
         self.as_stub().forbidden()
     }
 
-    pub fn bad_request(&self) -> Response {
+    pub fn bad_request(&self) -> RespShell {
         self.as_stub().bad_request()
     }
 
-    pub fn status(&self, status: u16) -> Response {
+    pub fn status(&self, status: u16) -> RespShell {
         self.as_stub().status(status)
     }
 
-    pub fn to_frame(self, span: Option<LogSpan>) -> RequestFrame {
-        RequestFrame {
+    pub fn to_frame(self, span: Option<LogSpan>) -> ReqFrame {
+        ReqFrame {
             session: None,
             request: self,
             span
@@ -539,13 +538,13 @@ impl Request {
 }
 
 #[derive(Serialize, Deserialize)]
-pub struct RequestFrame {
+pub struct ReqFrame {
     pub session: Option<Session>,
-    pub request: Request,
+    pub request: ReqShell,
     pub span: Option<LogSpan>,
 }
 
-impl RequestFrame {
+impl ReqFrame {
     pub fn from(&self) -> &Port {
         &self.request.from
     }
@@ -555,60 +554,60 @@ impl RequestFrame {
     }
 }
 
-impl RequestFrame {
+impl ReqFrame {
     pub fn id(&self) -> &Uuid {
         &self.request.id
     }
 
-    pub fn as_stub(&self) -> RequestStub {
+    pub fn as_stub(&self) -> ReqStub {
         let mut stub = self.request.as_stub();
         stub.span = self.span.clone();
         stub
     }
 }
 
-impl Into<WaitTime> for &RequestFrame {
+impl Into<WaitTime> for &ReqFrame {
     fn into(self) -> WaitTime {
         (&self.request).into()
     }
 }
 
-impl Requestable<ResponseFrame> for RequestFrame {
-    fn status(self, status: u16) -> ResponseFrame {
-        ResponseFrame {
+impl Requestable<RespFrame> for ReqFrame {
+    fn status(self, status: u16) -> RespFrame {
+        RespFrame {
             session: None,
             response: self.request.status(status),
             span: self.span,
         }
     }
 
-    fn err(self, err: MsgErr) -> ResponseFrame {
-        ResponseFrame {
+    fn err(self, err: MsgErr) -> RespFrame {
+        RespFrame {
             session: None,
             response: self.request.err(err),
             span: self.span,
         }
     }
 
-    fn ok(self) -> ResponseFrame {
-        ResponseFrame {
+    fn ok(self) -> RespFrame {
+        RespFrame {
             session: None,
             response: self.request.ok(),
             span: self.span,
         }
     }
 
-    fn body(self, body: Payload) -> ResponseFrame {
-        ResponseFrame {
+    fn body(self, body: Substance) -> RespFrame {
+        RespFrame {
             session: None,
             response: self.request.body(body),
             span: self.span,
         }
     }
 
-    fn core(self, core: ResponseCore) -> ResponseFrame {
-        let response = Response::new(core, self.request.to, self.request.from, self.request.id);
-        ResponseFrame {
+    fn core(self, core: RespCore) -> RespFrame {
+        let response = RespShell::new(core, self.request.to, self.request.from, self.request.id);
+        RespFrame {
             session: None,
             response,
             span: self.span
@@ -617,13 +616,13 @@ impl Requestable<ResponseFrame> for RequestFrame {
 }
 
 #[derive(Serialize, Deserialize)]
-pub struct ResponseFrame {
+pub struct RespFrame {
     session: Option<Session>,
-    response: Response,
+    response: RespShell,
     span: Option<LogSpan>,
 }
 
-impl ResponseFrame {
+impl RespFrame {
     pub fn id(&self) -> &Uuid {
         &self.response.id
     }
@@ -636,46 +635,46 @@ impl ResponseFrame {
     pub fn response_to(&self) -> &Uuid { &self.response.response_to }
 }
 
-impl TryFrom<Request> for RawCommand {
+impl TryFrom<ReqShell> for RawCommand {
     type Error = MsgErr;
 
-    fn try_from(request: Request) -> Result<Self, Self::Error> {
+    fn try_from(request: ReqShell) -> Result<Self, Self::Error> {
         request.core.body.try_into()
     }
 }
 
-impl TryFrom<Response> for Payload {
+impl TryFrom<RespShell> for Substance {
     type Error = MsgErr;
 
-    fn try_from(response: Response) -> Result<Self, Self::Error> {
+    fn try_from(response: RespShell) -> Result<Self, Self::Error> {
         Ok(response.core.body)
     }
 }
 
-impl TryInto<Bin> for Response {
+impl TryInto<Bin> for RespShell {
     type Error = MsgErr;
 
     fn try_into(self) -> Result<Bin, Self::Error> {
         match self.core.body {
-            Payload::Bin(bin) => Ok(bin),
+            Substance::Bin(bin) => Ok(bin),
             _ => Err(MsgErr::err400()),
         }
     }
 }
 
-impl Into<RequestCore> for RawCommand {
-    fn into(self) -> RequestCore {
-        RequestCore::payload(
+impl Into<ReqCore> for RawCommand {
+    fn into(self) -> ReqCore {
+        ReqCore::substance(
             MsgMethod::new("ExecCommand").unwrap().into(),
-            Payload::RawCommand(self),
+            Substance::RawCommand(self),
         )
     }
 }
 
-impl Request {
-    pub fn result<E: StatusErr>(self, result: Result<ResponseCore, E>) -> Response {
+impl ReqShell {
+    pub fn result<E: StatusErr>(self, result: Result<RespCore, E>) -> RespShell {
         match result {
-            Ok(core) => Response {
+            Ok(core) => RespShell {
                 id: uuid(),
                 to: self.from,
                 from: self.to,
@@ -684,7 +683,7 @@ impl Request {
             },
             Err(err) => {
                 let core = self.core.err(err);
-                Response {
+                RespShell {
                     id: uuid(),
                     to: self.from,
                     from: self.to,
@@ -695,12 +694,12 @@ impl Request {
         }
     }
 
-    pub fn payload_result<E: StatusErr>(self, result: Result<Payload, E>) -> Response {
+    pub fn substance_result<E: StatusErr>(self, result: Result<Substance, E>) -> RespShell {
         match result {
-            Ok(payload) => self.ok_payload(payload),
+            Ok(substance) => self.ok_substance(substance),
             Err(err) => {
                 let core = self.core.err(err);
-                Response {
+                RespShell {
                     id: uuid(),
                     to: self.from,
                     from: self.to,
@@ -711,9 +710,9 @@ impl Request {
         }
     }
 
-    pub fn err(self, err: MsgErr) -> Response {
+    pub fn err(self, err: MsgErr) -> RespShell {
         let core = self.core.err(err);
-        Response {
+        RespShell {
             id: uuid(),
             to: self.from,
             from: self.to,
@@ -723,8 +722,8 @@ impl Request {
     }
 }
 
-impl Request {
-    pub fn new<P: ToPort>(core: RequestCore, from: P, to: P) -> Self {
+impl ReqShell {
+    pub fn new<P: ToPort>(core: ReqCore, from: P, to: P) -> Self {
         Self {
             id: uuid(),
             agent: Agent::Anonymous,
@@ -754,10 +753,10 @@ impl Request {
         }
     }
 
-    pub fn payload_result<E>(self, result: Result<Payload,E> ) -> Response where E: ToString {
+    pub fn substance_result<E>(self, result: Result<Payload,E> ) -> Response where E: ToString {
         match result {
-            Ok(payload) => {
-                self.ok_payload(payload)
+            Ok(substance) => {
+                self.ok_substance(substance)
             }
             Err(err) => {
                 self.fail(err.to_string().as_str())
@@ -767,13 +766,13 @@ impl Request {
 
      */
 
-    pub fn ok(self) -> Response {
-        let core = ResponseCore {
+    pub fn ok(self) -> RespShell {
+        let core = RespCore {
             headers: Default::default(),
             status: StatusCode::from_u16(200u16).unwrap(),
-            body: Payload::Empty,
+            body: Substance::Empty,
         };
-        let response = Response {
+        let response = RespShell {
             id: uuid(),
             from: self.to,
             to: self.from,
@@ -783,13 +782,13 @@ impl Request {
         response
     }
 
-    pub fn ok_payload(self, payload: Payload) -> Response {
-        let core = ResponseCore {
+    pub fn ok_substance(self, substance: Substance) -> RespShell {
+        let core = RespCore {
             headers: Default::default(),
             status: StatusCode::from_u16(200u16).unwrap(),
-            body: payload,
+            body: substance,
         };
-        let response = Response {
+        let response = RespShell {
             id: uuid(),
             from: self.to,
             to: self.from,
@@ -799,13 +798,13 @@ impl Request {
         response
     }
 
-    pub fn fail(self, error: &str) -> Response {
-        let core = ResponseCore {
+    pub fn fail(self, error: &str) -> RespShell {
+        let core = RespCore {
             headers: Default::default(),
             status: StatusCode::from_u16(500u16).unwrap(),
-            body: Payload::Errors(Errors::default(error.to_string().as_str())),
+            body: Substance::Errors(Errors::default(error.to_string().as_str())),
         };
-        let response = Response {
+        let response = RespShell {
             id: uuid(),
             from: self.to,
             to: self.from,
@@ -816,17 +815,17 @@ impl Request {
     }
 }
 
-pub struct RequestBuilder {
+pub struct ReqBuilder {
     pub to: Option<Port>,
     pub from: Option<Port>,
-    pub core: Option<RequestCore>,
+    pub core: Option<ReqCore>,
     pub agent: Agent,
     pub session: Option<Session>,
     pub scope: Scope,
     pub handling: Handling,
 }
 
-impl RequestBuilder {
+impl ReqBuilder {
     pub fn new() -> Self {
         Self {
             ..Default::default()
@@ -843,7 +842,7 @@ impl RequestBuilder {
         self
     }
 
-    pub fn core(mut self, core: RequestCore) -> Self {
+    pub fn core(mut self, core: ReqCore) -> Self {
         self.core = Some(core);
         self
     }
@@ -868,8 +867,8 @@ impl RequestBuilder {
         self
     }
 
-    pub fn build(self) -> Result<Request, MsgErr> {
-        Ok(Request {
+    pub fn build(self) -> Result<ReqShell, MsgErr> {
+        Ok(ReqShell {
             id: uuid(),
             to: self.to.ok_or("RequestBuilder: 'to' must be set")?,
             from: self.from.ok_or("RequestBuilder: 'from' must be set")?,
@@ -881,7 +880,7 @@ impl RequestBuilder {
     }
 }
 
-impl Default for RequestBuilder {
+impl Default for ReqBuilder {
     fn default() -> Self {
         Self {
             to: None,
@@ -896,21 +895,21 @@ impl Default for RequestBuilder {
 }
 
 #[derive(Debug, Clone)]
-pub struct ProtoRequest {
+pub struct ReqProto {
     pub id: String,
     pub to: Port,
-    pub core: RequestCore,
+    pub core: ReqCore,
     pub handling: Handling,
     pub scope: Scope,
 }
 
-impl ProtoRequest {
-    pub fn to_request<P>(self, from: P, agent: Agent, scope: Scope) -> Request
+impl ReqProto {
+    pub fn to_request<P>(self, from: P, agent: Agent, scope: Scope) -> ReqShell
     where
         P: ToPort,
     {
         let scope = self.scope | scope;
-        let request = Request {
+        let request = ReqShell {
             id: self.id,
             from: from.to_port(),
             to: self.to,
@@ -923,12 +922,12 @@ impl ProtoRequest {
     }
 }
 
-impl ProtoRequest {
+impl ReqProto {
     pub fn new<P: ToPort>(to: P, method: Method) -> Self {
         Self {
             id: uuid(),
             to: to.to_port(),
-            core: RequestCore::new(method),
+            core: ReqCore::new(method),
             handling: Default::default(),
             scope: Scope::Full
         }
@@ -958,7 +957,7 @@ impl ProtoRequest {
         Self::new(to, method)
     }
 
-    pub fn core<P: ToPort>(to: P, core: RequestCore ) -> Self {
+    pub fn core<P: ToPort>(to: P, core: ReqCore) -> Self {
         Self {
             id: uuid(),
             to: to.to_port(),
@@ -970,38 +969,38 @@ impl ProtoRequest {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Response {
+pub struct RespShell {
     pub id: Uuid,
     pub from: Port,
     pub to: Port,
-    pub core: ResponseCore,
+    pub core: RespCore,
     pub response_to: Uuid,
 }
 
-impl Response {
-    pub fn to_frame(self, span: Option<LogSpan>) -> ResponseFrame {
-        ResponseFrame {
+impl RespShell {
+    pub fn to_frame(self, span: Option<LogSpan>) -> RespFrame {
+        RespFrame {
             session: None,
             response: self,
             span,
         }
     }
 
-    pub fn to_span_frame(self, span: LogSpan ) -> ResponseFrame {
-        ResponseFrame {
+    pub fn to_span_frame(self, span: LogSpan ) -> RespFrame {
+        RespFrame {
             session: None,
             response: self,
             span: Some(span),
         }
     }
 
-    pub fn as_result<E: From<&'static str>, P: TryFrom<Payload>>(self) -> Result<P, E> {
+    pub fn as_result<E: From<&'static str>, P: TryFrom<Substance>>(self) -> Result<P, E> {
         self.core.as_result()
     }
 }
 
-impl Response {
-    pub fn new(core: ResponseCore, from: Port, to: Port, response_to: String) -> Self {
+impl RespShell {
+    pub fn new(core: RespCore, from: Port, to: Port, response_to: String) -> Self {
         Self {
             id: uuid(),
             to: to.into(),
@@ -1015,7 +1014,7 @@ impl Response {
         if self.core.status.is_success() {
             Ok(self)
         } else {
-            if let Payload::Text(error) = self.core.body {
+            if let Substance::Text(error) = self.core.body {
                 Err(error.into())
             } else {
                 Err(format!("error code: {}", self.core.status).into())
@@ -1026,8 +1025,8 @@ impl Response {
 
 #[derive(Debug, Clone, Serialize, Deserialize, Autobox)]
 pub enum Wave {
-    Request(Request),
-    Response(Response),
+    Request(ReqShell),
+    Response(RespShell),
 }
 
 impl Wave {
@@ -1039,7 +1038,7 @@ impl Wave {
         }
     }
 
-    pub fn payload(&self) -> Payload {
+    pub fn substance(&self) -> Substance {
         match self {
             Wave::Request(request) => request.core.body.clone(),
             Wave::Response(response) => response.core.body.clone(),
@@ -1056,14 +1055,14 @@ impl Wave {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum RequestTransform {
-    Request(RequestCore),
-    Response(ResponseCore),
+    Request(ReqCore),
+    Response(RespCore),
 }
 
 pub enum ResponseKindExpected {
     None,
     Synch,          // requestor will wait for response
-    Async(Payload), // The payload
+    Async(Substance), // The substance
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1351,15 +1350,15 @@ pub struct AsyncPointRequestHandlers{
 #[async_trait]
 impl AsyncRequestHandler for  AsyncPointRequestHandlers {
 
-    async fn select(&self, request: &Request) -> Result<(), ()> {
-        if let Some(handler) = self.handlers.get( &request.to.to_point() ) {
+    async fn select(&self, request: &ReqShell) -> Result<(), ()> {
+        if let Some(handler) = self.handlers.get( &request.to.clone().to_point() ) {
             handler.select(request).await
         } else {
             Err(())
         }
     }
 
-    async fn handle(&self, request: RootInputCtx<Request>) -> Result<ResponseCore, MsgErr> {
+    async fn handle(&self, request: RootReqCtx<ReqShell>) -> Result<RespCore, MsgErr> {
         if let Some(handler) = self.handlers.get( &request.to ) {
             handler.handle(request).await
         } else {
@@ -1371,29 +1370,29 @@ impl AsyncRequestHandler for  AsyncPointRequestHandlers {
 
 
 #[derive(Clone)]
-pub struct AsyncMessengerAgent {
+pub struct AsyncTransmitterWithAgent {
     pub agent: Agent,
     pub from: Port,
-    pub relay: Arc<dyn AsyncMessenger<Request, Response>>,
+    pub relay: Arc<dyn AsyncMessenger<ReqShell, RespShell>>,
 }
 
-impl AsyncMessengerAgent {
+impl AsyncTransmitterWithAgent {
     pub fn new(
         agent: Agent,
         from: Port,
-        relay: Arc<dyn AsyncMessenger<Request, Response>>,
+        relay: Arc<dyn AsyncMessenger<ReqShell, RespShell>>,
     ) -> Self {
         Self { agent, from, relay }
     }
 }
 
-impl AsyncMessengerAgent {
-    pub async fn send<R>(&self, request: ProtoRequest) -> Result<R,MsgErr> where R: TryFrom<Response,Error=MsgErr>{
+impl AsyncTransmitterWithAgent {
+    pub async fn send<R>(&self, request: ReqProto) -> Result<R,MsgErr> where R: TryFrom<RespShell,Error=MsgErr>{
         let request = request.to_request(self.from.clone(), self.agent.clone(), Scope::None);
         R::try_from(self.relay.send(request).await)
     }
 
-    pub fn send_sync<R>(&self, request: ProtoRequest) ->  Result<R,MsgErr> where R: TryFrom<Response,Error=MsgErr>{
+    pub fn send_sync<R>(&self, request: ReqProto) ->  Result<R,MsgErr> where R: TryFrom<RespShell,Error=MsgErr>{
         let request = request.to_request(self.from.clone(), self.agent.clone(), Scope::None);
         R::try_from(self.relay.send_sync(request))
     }
@@ -1403,7 +1402,7 @@ impl AsyncMessengerAgent {
     }
 }
 
-impl AsyncMessengerAgent {
+impl AsyncTransmitterWithAgent {
     pub fn with_from(self, from: Port) -> Self {
         let mut rtn = self.clone();
         rtn.from = from;
@@ -1426,7 +1425,7 @@ pub struct SyncMessengerRelay {
 }
 
 impl SyncMessenger for SyncMessengerRelay {
-    fn send(&self, request: Request) -> Response {
+    fn send(&self, request: ReqShell) -> RespShell {
         let mut request = request;
         if let Some(topic) = &self.topic {
             request.from.topic = topic.clone();
@@ -1490,7 +1489,7 @@ where
 }
 
 pub trait SyncMessenger: Send + Sync {
-    fn send(&self, request: Request) -> Response;
+    fn send(&self, request: ReqShell) -> RespShell;
 }
 
 pub struct InternalPipeline<H> {
@@ -1505,29 +1504,29 @@ impl<H> InternalPipeline<H> {
 }
 
 pub trait RequestHandler {
-    fn select(&self, request: &Request) -> Result<(), ()>;
-    fn handle(&self, request: RootInputCtx<Request>) -> Result<ResponseCore, MsgErr>;
+    fn select(&self, request: &ReqShell) -> Result<(), ()>;
+    fn handle(&self, request: RootReqCtx<ReqShell>) -> Result<RespCore, MsgErr>;
 }
 
 #[async_trait]
 pub trait AsyncRequestHandler: Sync + Send {
-    async fn select(&self, request: &Request) -> Result<(), ()>;
-    async fn handle(&self, request: RootInputCtx<Request>) -> Result<ResponseCore, MsgErr>;
+    async fn select(&self, request: &ReqShell) -> Result<(), ()>;
+    async fn handle(&self, request: RootReqCtx<ReqShell>) -> Result<RespCore, MsgErr>;
 }
 
 impl RequestHandler for RequestHandlerRelay {
-    fn select(&self, request: &Request) -> Result<(), ()> {
+    fn select(&self, request: &ReqShell) -> Result<(), ()> {
         self.relay.select(request)
     }
 
-    fn handle(&self, request: RootInputCtx<Request>) -> Result<ResponseCore, MsgErr> {
+    fn handle(&self, request: RootReqCtx<ReqShell>) -> Result<RespCore, MsgErr> {
         self.relay.handle(request)
     }
 }
 
 #[async_trait]
 pub trait AsyncAuthorizationRequester {
-    async fn authorize(self, messenger: AsyncMessengerAgent) -> Result<AuthResponse, MsgErr>;
+    async fn authorize(self, messenger: AsyncTransmitterWithAgent) -> Result<AuthResponse, MsgErr>;
 }
 
 pub struct Credentials {
@@ -1555,13 +1554,13 @@ pub struct AsyncCredsAuthorizationRequester {
 
 #[async_trait]
 impl AsyncAuthorizationRequester for AsyncCredsAuthorizationRequester {
-    async fn authorize(self, messenger: AsyncMessengerAgent) -> Result<AuthResponse, MsgErr> {
+    async fn authorize(self, messenger: AsyncTransmitterWithAgent) -> Result<AuthResponse, MsgErr> {
         let mut form = MultipartFormBuilder::new();
         form.put( "username", self.credentials.username.as_str() );
         form.put( "password", self.credentials.password.as_str() );
         let form = form.build()?;
         let request = form.to_request_core();
-        let mut request = ProtoRequest::core(self.auth_point.clone(), request );
+        let mut request = ReqProto::core(self.auth_point.clone(), request );
         request.handling.wait = WaitTime::High;
         let refresh_token: Token = messenger.send(request).await?;
         let next = AsyncRefreshTokenAuthorizationRequester{
@@ -1579,7 +1578,7 @@ pub struct AsyncRefreshTokenAuthorizationRequester {
 
 #[async_trait]
 impl AsyncAuthorizationRequester for AsyncRefreshTokenAuthorizationRequester {
-    async fn authorize(self, messenger: AsyncMessengerAgent) -> Result<AuthResponse, MsgErr> {
+    async fn authorize(self, messenger: AsyncTransmitterWithAgent) -> Result<AuthResponse, MsgErr> {
         unimplemented!()
     }
 }
@@ -1597,11 +1596,11 @@ impl AsyncRequestHandlerRelay {
 
 #[async_trait]
 impl AsyncRequestHandler for AsyncRequestHandlerRelay {
-    async fn select(&self, request: &Request) -> Result<(), ()> {
+    async fn select(&self, request: &ReqShell) -> Result<(), ()> {
         self.relay.select(request).await
     }
 
-    async fn handle(&self, ctx: RootInputCtx<Request>) -> Result<ResponseCore, MsgErr> {
+    async fn handle(&self, ctx: RootReqCtx<ReqShell>) -> Result<RespCore, MsgErr> {
         self.relay.handle(ctx).await
     }
 }
@@ -1632,7 +1631,7 @@ impl<H> AsyncInternalRequestHandlers<H> {
 
 #[async_trait]
 impl AsyncRequestHandler for AsyncInternalRequestHandlers<AsyncRequestHandlerRelay> {
-    async fn select(&self, request: &Request) -> Result<(), ()> {
+    async fn select(&self, request: &ReqShell) -> Result<(), ()> {
         let read = self.pipelines.read().await;
         for pipeline in read.iter() {
             if pipeline.selector.is_match(&request).is_ok() {
@@ -1642,14 +1641,14 @@ impl AsyncRequestHandler for AsyncInternalRequestHandlers<AsyncRequestHandlerRel
         Err(())
     }
 
-    async fn handle(&self, ctx: RootInputCtx<Request>) -> Result<ResponseCore, MsgErr> {
+    async fn handle(&self, ctx: RootReqCtx<ReqShell>) -> Result<RespCore, MsgErr> {
         let read = self.pipelines.read().await;
         for pipeline in read.iter() {
             if pipeline.selector.is_match(&ctx.request).is_ok() {
                 return pipeline.handler.handle(ctx).await;
             }
         }
-        Ok(ResponseCore::not_found())
+        Ok(RespCore::not_found())
     }
 }
 
@@ -1690,8 +1689,8 @@ impl ValueMatcher<MethodKind> for MethodKind {
     }
 }
 
-impl From<Result<ResponseCore,MsgErr>> for ResponseCore {
-    fn from(result: Result<ResponseCore, MsgErr>) -> Self {
+impl From<Result<RespCore,MsgErr>> for RespCore {
+    fn from(result: Result<RespCore, MsgErr>) -> Self {
         match result {
             Ok(response) => response,
             Err(err) => {
@@ -1702,31 +1701,31 @@ impl From<Result<ResponseCore,MsgErr>> for ResponseCore {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
-pub struct ResponseCore {
+pub struct RespCore {
     #[serde(with = "http_serde::header_map")]
     pub headers: HeaderMap,
 
     #[serde(with = "http_serde::status_code")]
     pub status: StatusCode,
 
-    pub body: Payload,
+    pub body: Substance,
 }
 
-impl ResponseCore {
+impl RespCore {
     pub fn ok_html(html: &str) -> Self {
         let bin = Arc::new(html.to_string().into_bytes());
-        ResponseCore::ok(Payload::Bin(bin))
+        RespCore::ok(Substance::Bin(bin))
     }
 
     pub fn new() -> Self {
-        ResponseCore {
+        RespCore {
             headers: HeaderMap::new(),
             status: StatusCode::from_u16(200u16).unwrap(),
-            body: Payload::Empty,
+            body: Substance::Empty,
         }
     }
 
-    pub fn ok(body: Payload) -> Self {
+    pub fn ok(body: Substance) -> Self {
         Self {
             headers: HeaderMap::new(),
             status: StatusCode::from_u16(200u16).unwrap(),
@@ -1738,7 +1737,7 @@ impl ResponseCore {
         Self {
             headers: HeaderMap::new(),
             status: StatusCode::from_u16(408u16).unwrap(),
-            body: Payload::Empty,
+            body: Substance::Empty,
         }
     }
 
@@ -1746,7 +1745,7 @@ impl ResponseCore {
         Self {
             headers: HeaderMap::new(),
             status: StatusCode::from_u16(500u16).unwrap(),
-            body: Payload::Empty,
+            body: Substance::Empty,
         }
     }
 
@@ -1754,7 +1753,7 @@ impl ResponseCore {
         Self {
             headers: HeaderMap::new(),
             status: StatusCode::from_u16(status).unwrap_or(StatusCode::from_u16(500).unwrap()),
-            body: Payload::Empty,
+            body: Substance::Empty,
         }
     }
 
@@ -1762,7 +1761,7 @@ impl ResponseCore {
         Self {
             headers: HeaderMap::new(),
             status: StatusCode::from_u16(404u16).unwrap(),
-            body: Payload::Empty,
+            body: Substance::Empty,
         }
     }
 
@@ -1770,7 +1769,7 @@ impl ResponseCore {
         Self {
             headers: HeaderMap::new(),
             status: StatusCode::from_u16(403u16).unwrap(),
-            body: Payload::Empty,
+            body: Substance::Empty,
         }
     }
 
@@ -1778,7 +1777,7 @@ impl ResponseCore {
         Self {
             headers: HeaderMap::new(),
             status: StatusCode::from_u16(400u16).unwrap(),
-            body: Payload::Empty,
+            body: Substance::Empty,
         }
     }
 
@@ -1787,7 +1786,7 @@ impl ResponseCore {
         Self {
             headers: HeaderMap::new(),
             status: StatusCode::from_u16(500u16).unwrap(),
-            body: Payload::Errors(errors),
+            body: Substance::Errors(errors),
         }
     }
 
@@ -1797,15 +1796,15 @@ impl ResponseCore {
             headers: HeaderMap::new(),
             status: StatusCode::from_u16(err.status())
                 .unwrap_or(StatusCode::from_u16(500u16).unwrap()),
-            body: Payload::Errors(errors),
+            body: Substance::Errors(errors),
         }
     }
 
-    pub fn with_new_payload(self, payload: Payload) -> Self {
+    pub fn with_new_substance(self, substance: Substance) -> Self {
         Self {
             headers: self.headers,
             status: self.status,
-            body: payload,
+            body: substance,
         }
     }
 
@@ -1813,11 +1812,11 @@ impl ResponseCore {
         return self.status.is_success();
     }
 
-    pub fn into_response<P>(self, from: P, to: P, response_to: String) -> Response
+    pub fn into_response<P>(self, from: P, to: P, response_to: String) -> RespShell
     where
         P: ToPort,
     {
-        Response {
+        RespShell {
             id: uuid(),
             from: from.to_port(),
             to: to.to_port(),
@@ -1827,11 +1826,11 @@ impl ResponseCore {
     }
 }
 
-impl ResponseCore {
-    pub fn as_result<E: From<&'static str>, P: TryFrom<Payload>>(self) -> Result<P, E> {
+impl RespCore {
+    pub fn as_result<E: From<&'static str>, P: TryFrom<Substance>>(self) -> Result<P, E> {
         if self.status.is_success() {
             match P::try_from(self.body) {
-                Ok(payload) => Ok(payload),
+                Ok(substance) => Ok(substance),
                 Err(err) => Err(E::from("error")),
             }
         } else {
@@ -1840,7 +1839,7 @@ impl ResponseCore {
     }
 }
 
-impl TryInto<http::response::Builder> for ResponseCore {
+impl TryInto<http::response::Builder> for RespCore {
     type Error = MsgErr;
 
     fn try_into(self) -> Result<http::response::Builder, Self::Error> {
@@ -1859,7 +1858,7 @@ impl TryInto<http::response::Builder> for ResponseCore {
     }
 }
 
-impl TryInto<http::Response<Bin>> for ResponseCore {
+impl TryInto<http::Response<Bin>> for RespCore {
     type Error = MsgErr;
 
     fn try_into(self) -> Result<http::Response<Bin>, Self::Error> {
@@ -1981,28 +1980,28 @@ impl ToString for Method {
     }
 }
 
-impl Into<RequestCore> for Method {
-    fn into(self) -> RequestCore {
-        RequestCore {
+impl Into<ReqCore> for Method {
+    fn into(self) -> ReqCore {
+        ReqCore {
             headers: Default::default(),
             method: self,
             uri: Uri::from_static("/"),
-            body: Payload::Empty,
+            body: Substance::Empty,
         }
     }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
-pub struct RequestCore {
+pub struct ReqCore {
     #[serde(with = "http_serde::header_map")]
     pub headers: HeaderMap,
     pub method: Method,
     #[serde(with = "http_serde::uri")]
     pub uri: Uri,
-    pub body: Payload,
+    pub body: Substance,
 }
 
-impl RequestCore {
+impl ReqCore {
     pub fn new(method: Method) -> Self {
         Self {
             method,
@@ -2031,31 +2030,31 @@ impl RequestCore {
     }
 }
 
-impl TryFrom<Request> for RequestCore {
+impl TryFrom<ReqShell> for ReqCore {
     type Error = MsgErr;
 
-    fn try_from(request: Request) -> Result<Self, Self::Error> {
+    fn try_from(request: ReqShell) -> Result<Self, Self::Error> {
         Ok(request.core)
     }
 }
 
-impl RequestCore {
+impl ReqCore {
     pub fn kind(&self) -> MethodKind {
         self.method.kind()
     }
 }
 
-impl Into<RequestCore> for Command {
-    fn into(self) -> RequestCore {
-        RequestCore {
-            body: Payload::Command(Box::new(self)),
+impl Into<ReqCore> for Command {
+    fn into(self) -> ReqCore {
+        ReqCore {
+            body: Substance::Command(Box::new(self)),
             method: Method::Msg(MsgMethod::new("Command").unwrap()),
             ..Default::default()
         }
     }
 }
 
-impl TryFrom<http::Request<Bin>> for RequestCore {
+impl TryFrom<http::Request<Bin>> for ReqCore {
     type Error = MsgErr;
 
     fn try_from(request: http::Request<Bin>) -> Result<Self, Self::Error> {
@@ -2063,12 +2062,12 @@ impl TryFrom<http::Request<Bin>> for RequestCore {
             headers: request.headers().clone(),
             method: Method::Http(request.method().clone().try_into()?),
             uri: request.uri().clone(),
-            body: Payload::Bin(request.body().clone()),
+            body: Substance::Bin(request.body().clone()),
         })
     }
 }
 
-impl TryInto<http::Request<Bin>> for RequestCore {
+impl TryInto<http::Request<Bin>> for ReqCore {
     type Error = MsgErr;
 
     fn try_into(self) -> Result<http::Request<Bin>, MsgErr> {
@@ -2091,19 +2090,19 @@ impl TryInto<http::Request<Bin>> for RequestCore {
     }
 }
 
-impl Default for RequestCore {
+impl Default for ReqCore {
     fn default() -> Self {
         Self {
             headers: Default::default(),
             method: Method::Msg(Default::default()),
             uri: Uri::from_static("/"),
-            body: Payload::Empty,
+            body: Substance::Empty,
         }
     }
 }
 
-impl RequestCore {
-    pub fn with_body(self, body: Payload) -> Self {
+impl ReqCore {
+    pub fn with_body(self, body: Substance) -> Self {
         Self {
             headers: self.headers,
             uri: self.uri,
@@ -2112,71 +2111,71 @@ impl RequestCore {
         }
     }
 
-    pub fn not_found(&self) -> ResponseCore {
-        ResponseCore {
+    pub fn not_found(&self) -> RespCore {
+        RespCore {
             headers: Default::default(),
             status: StatusCode::from_u16(404u16).unwrap(),
-            body: Payload::Empty,
+            body: Substance::Empty,
         }
     }
 
-    pub fn payload(method: Method, body: Payload) -> RequestCore {
-        RequestCore {
+    pub fn substance(method: Method, body: Substance) -> ReqCore {
+        ReqCore {
             method,
             body,
             ..Default::default()
         }
     }
 
-    pub fn ok(&self, payload: Payload) -> ResponseCore {
-        ResponseCore {
+    pub fn ok(&self, substance: Substance) -> RespCore {
+        RespCore {
             headers: Default::default(),
             status: StatusCode::from_u16(200u16).unwrap(),
-            body: payload,
+            body: substance,
         }
     }
 
-    pub fn fail(&self, error: &str) -> ResponseCore {
+    pub fn fail(&self, error: &str) -> RespCore {
         let errors = Errors::default(error);
-        ResponseCore {
+        RespCore {
             headers: Default::default(),
             status: StatusCode::from_u16(500u16).unwrap(),
-            body: Payload::Errors(errors),
+            body: Substance::Errors(errors),
         }
     }
 
-    pub fn err<E: StatusErr>(&self, error: E) -> ResponseCore {
+    pub fn err<E: StatusErr>(&self, error: E) -> RespCore {
         let errors = Errors::default(error.message().as_str());
         let status = match StatusCode::from_u16(error.status()) {
             Ok(status) => status,
             Err(_) => StatusCode::from_u16(500u16).unwrap(),
         };
         println!("----->   returning STATUS of {}", status.as_str());
-        ResponseCore {
+        RespCore {
             headers: Default::default(),
             status,
-            body: Payload::Errors(errors),
+            body: Substance::Errors(errors),
         }
     }
 }
 
-impl Into<ResponseCore> for Port {
-    fn into(self) -> ResponseCore {
-        ResponseCore::ok(Payload::Port(self))
+impl Into<RespCore> for Port {
+    fn into(self) -> RespCore {
+        RespCore::ok(Substance::Port(self))
     }
 }
 
-impl TryFrom<ResponseCore> for Port {
+impl TryFrom<RespCore> for Port {
     type Error = MsgErr;
 
-    fn try_from(core: ResponseCore) -> Result<Self, Self::Error> {
+    fn try_from(core: RespCore) -> Result<Self, Self::Error> {
         if !core.status.is_success() {
             Err(MsgErr::new(core.status.as_u16(), "error"))
         } else {
             match core.body {
-                Payload::Port(port) => Ok(port),
-                payload => {
-                    Err(format!("expecting Port received {}", payload.kind().to_string()).into())
+                Substance::Port(port) => Ok(port),
+                substance => {
+                    Err(format!("expecting Port received {}", substance.kind().to_string()).into())
                 }
             }
         }

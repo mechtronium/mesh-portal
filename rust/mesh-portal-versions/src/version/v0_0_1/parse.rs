@@ -3260,7 +3260,7 @@ pub mod model {
         BindConfig, MessageKind, PipelineStepCtx, PipelineStepDef, PipelineStepVar,
         PipelineStopCtx, PipelineStopDef, PipelineStopVar,
     };
-    use crate::version::v0_0_1::wave::{Method, MethodKind, Request, RequestCore};
+    use crate::version::v0_0_1::wave::{Method, MethodKind, ReqShell, ReqCore};
     use crate::version::v0_0_1::http::HttpMethod;
     use crate::version::v0_0_1::id::id::{Point, PointCtx, PointVar, Version};
     use crate::version::v0_0_1::parse::error::result;
@@ -3397,7 +3397,7 @@ pub mod model {
     }
 
     impl RouteScope {
-        pub fn select(&self, request: &Request) -> Vec<&MessageScope> {
+        pub fn select(&self, request: &ReqShell) -> Vec<&MessageScope> {
             let mut scopes = vec![];
             for scope in &self.block {
                 if scope.selector.is_match(request).is_ok() {
@@ -3454,8 +3454,8 @@ pub mod model {
         pub path: P,
     }
 
-    impl ValueMatcher<Request> for RouteScopeSelector {
-        fn is_match(&self, request: &Request) -> Result<(), ()> {
+    impl ValueMatcher<ReqShell> for RouteScopeSelector {
+        fn is_match(&self, request: &ReqShell) -> Result<(), ()> {
             if self.name.as_str() != "Route" {
                 return Err(());
             }
@@ -3466,8 +3466,8 @@ pub mod model {
         }
     }
 
-    impl ValueMatcher<Request> for MessageScopeSelector {
-        fn is_match(&self, request: &Request) -> Result<(), ()> {
+    impl ValueMatcher<ReqShell> for MessageScopeSelector {
+        fn is_match(&self, request: &ReqShell) -> Result<(), ()> {
             self.name.is_match(&request.core.method.kind())?;
             match self.path.is_match(&request.core.uri.path()) {
                 true => Ok(()),
@@ -3494,7 +3494,7 @@ pub mod model {
             Ok(Self { selector, block })
         }
 
-        pub fn select(&self, request: &Request) -> Vec<&MethodScope> {
+        pub fn select(&self, request: &ReqShell) -> Vec<&MethodScope> {
             let mut scopes = vec![];
             for scope in &self.block {
                 if scope.selector.is_match(request).is_ok() {
@@ -3525,22 +3525,22 @@ pub mod model {
         }
     }
 
-    impl ValueMatcher<Request> for RouteScopeSelectorAndFilters {
-        fn is_match(&self, request: &Request) -> Result<(), ()> {
+    impl ValueMatcher<ReqShell> for RouteScopeSelectorAndFilters {
+        fn is_match(&self, request: &ReqShell) -> Result<(), ()> {
             // nothing for filters at this time...
             self.selector.is_match(request)
         }
     }
 
-    impl ValueMatcher<Request> for MessageScopeSelectorAndFilters {
-        fn is_match(&self, request: &Request) -> Result<(), ()> {
+    impl ValueMatcher<ReqShell> for MessageScopeSelectorAndFilters {
+        fn is_match(&self, request: &ReqShell) -> Result<(), ()> {
             // nothing for filters at this time...
             self.selector.is_match(request)
         }
     }
 
-    impl ValueMatcher<Request> for MethodScopeSelectorAndFilters {
-        fn is_match(&self, request: &Request) -> Result<(), ()> {
+    impl ValueMatcher<ReqShell> for MethodScopeSelectorAndFilters {
+        fn is_match(&self, request: &ReqShell) -> Result<(), ()> {
             // nothing for filters at this time...
             self.selector.is_match(request)
         }
@@ -3581,8 +3581,8 @@ pub mod model {
         }
     }
 
-    impl ValueMatcher<Request> for MethodScopeSelector {
-        fn is_match(&self, request: &Request) -> Result<(), ()> {
+    impl ValueMatcher<ReqShell> for MethodScopeSelector {
+        fn is_match(&self, request: &ReqShell) -> Result<(), ()> {
             self.name.is_match(&request.core.method)?;
             match self.path.is_match(&request.core.uri.path()) {
                 true => Ok(()),
@@ -4755,11 +4755,11 @@ use crate::version::v0_0_1::msg::MsgMethod;
 use crate::version::v0_0_1::parse::error::{find_parse_err, result};
 use crate::version::v0_0_1::parse::model::{BindScope, BindScopeKind, Block, BlockKind, Chunk, DelimitedBlockKind, LexBlock, LexParentScope, LexRootScope, LexScope, LexScopeSelector, LexScopeSelectorAndFilters, MessageScopeSelectorAndFilters, NestedBlockKind, PipelineCtx, PipelineSegment, PipelineSegmentCtx, PipelineSegmentVar, PipelineVar, RootScopeSelector, RouteScope, ScopeFilterDef, ScopeFilters, ScopeFiltersDef, ScopeSelectorAndFiltersDef, Spanned, Subst, TerminatedBlockKind, TextType, Var, VarParser};
 use cosmic_nom::{Res, trim, tw, Wrap};
-use crate::version::v0_0_1::payload::payload::{
+use crate::version::v0_0_1::substance::substance::{
     Call, CallCtx, CallKind, CallVar, CallWithConfig, CallWithConfigCtx, CallWithConfigVar,
     HttpCall, ListPattern, MapPattern, MapPatternCtx, MapPatternVar, MsgCall, NumRange,
-    PayloadFormat, PayloadKind, PayloadPattern, PayloadPatternCtx, PayloadPatternVar,
-    PayloadTypePatternCtx, PayloadTypePatternDef, PayloadTypePatternVar,
+    SubstanceFormat, SubstanceKind, SubstancePattern, SubstancePatternCtx, SubstancePatternVar,
+    SubstanceTypePatternCtx, SubstanceTypePatternDef, SubstanceTypePatternVar,
 };
 use crate::version::v0_0_1::selector::selector::specific::{
     ProductSelector, VariantSelector, VendorSelector,
@@ -5540,7 +5540,7 @@ pub fn primitive_def<I: Span>(input: I) -> Res<I, PayloadType2Def<PointVar>> {
     })
 }
 
-pub fn payload<I: Span>(input: I) -> Res<I, PayloadKind> {
+pub fn payload<I: Span>(input: I) -> Res<I, SubstanceKind> {
     parse_camel_case_str(input)
 }
 
@@ -5658,12 +5658,12 @@ pub fn range<I: Span>(input: I) -> Res<I, NumRange> {
     })
 }
 
-pub fn primitive_data_struct<I: Span>(input: I) -> Res<I, PayloadTypePatternDef<PointVar>> {
+pub fn primitive_data_struct<I: Span>(input: I) -> Res<I, SubstanceTypePatternDef<PointVar>> {
     context("selector", payload)(input)
-        .map(|(next, primitive)| (next, PayloadTypePatternDef::Primitive(primitive)))
+        .map(|(next, primitive)| (next, SubstanceTypePatternDef::Primitive(primitive)))
 }
 
-pub fn array_data_struct<I: Span>(input: I) -> Res<I, PayloadTypePatternDef<PointVar>> {
+pub fn array_data_struct<I: Span>(input: I) -> Res<I, SubstanceTypePatternDef<PointVar>> {
     context(
         "selector",
         tuple((
@@ -5674,7 +5674,7 @@ pub fn array_data_struct<I: Span>(input: I) -> Res<I, PayloadTypePatternDef<Poin
     .map(|(next, (primitive, range))| {
         (
             next,
-            PayloadTypePatternDef::List(ListPattern { primitive, range }),
+            SubstanceTypePatternDef::List(ListPattern { primitive, range }),
         )
     })
 }
@@ -5715,7 +5715,7 @@ pub fn required_map_entry_pattern<I: Span>(input: I) -> Res<I, Vec<MapEntryPatte
     delimited(tag("["), map_entry_patterns, tag("]"))(input).map(|(next, params)| (next, params))
 }
 
-pub fn allowed_map_entry_pattern<I: Span>(input: I) -> Res<I, ValuePattern<PayloadPatternVar>> {
+pub fn allowed_map_entry_pattern<I: Span>(input: I) -> Res<I, ValuePattern<SubstancePatternVar>> {
     payload_pattern(input).map(|(next, con)| (next, con))
 }
 
@@ -5748,9 +5748,9 @@ pub fn map_pattern_params<I: Span>(input: I) -> Res<I, MapPatternVar> {
     })
 }
 
-pub fn format<I: Span>(input: I) -> Res<I, PayloadFormat> {
+pub fn format<I: Span>(input: I) -> Res<I, SubstanceFormat> {
     let (next, format) = recognize(alpha1)(input)?;
-    match PayloadFormat::from_str(format.to_string().as_str()) {
+    match SubstanceFormat::from_str(format.to_string().as_str()) {
         Ok(format) => Ok((next, format)),
         Err(err) => Err(nom::Err::Error(ErrorTree::from_error_kind(
             next,
@@ -5761,7 +5761,7 @@ pub fn format<I: Span>(input: I) -> Res<I, PayloadFormat> {
 
 enum MapConParam {
     Required(Vec<ValuePattern<MapEntryPattern>>),
-    Allowed(ValuePattern<PayloadPattern>),
+    Allowed(ValuePattern<SubstancePattern>),
 }
 
 // EXAMPLE:
@@ -5861,11 +5861,11 @@ pub fn rc_command_type<I: Span>(input: I) -> Res<I, RcCommandType> {
     parse_alpha1_str(input)
 }
 
-pub fn map_pattern_payload_structure<I: Span>(input: I) -> Res<I, PayloadTypePatternDef<PointVar>> {
-    map_pattern(input).map(|(next, con)| (next, PayloadTypePatternDef::Map(Box::new(con))))
+pub fn map_pattern_payload_structure<I: Span>(input: I) -> Res<I, SubstanceTypePatternDef<PointVar>> {
+    map_pattern(input).map(|(next, con)| (next, SubstanceTypePatternDef::Map(Box::new(con))))
 }
 
-pub fn payload_structure<I: Span>(input: I) -> Res<I, PayloadTypePatternDef<PointVar>> {
+pub fn payload_structure<I: Span>(input: I) -> Res<I, SubstanceTypePatternDef<PointVar>> {
     alt((
         array_data_struct,
         primitive_data_struct,
@@ -5873,7 +5873,7 @@ pub fn payload_structure<I: Span>(input: I) -> Res<I, PayloadTypePatternDef<Poin
     ))(input)
 }
 
-pub fn payload_structure_with_validation<I: Span>(input: I) -> Res<I, PayloadPatternVar> {
+pub fn payload_structure_with_validation<I: Span>(input: I) -> Res<I, SubstancePatternVar> {
     tuple((
         context("selector", payload_structure),
         opt(preceded(tag("~"), opt(format))),
@@ -5882,7 +5882,7 @@ pub fn payload_structure_with_validation<I: Span>(input: I) -> Res<I, PayloadPat
     .map(|(next, (data, format, verifier))| {
         (
             next,
-            PayloadPatternVar {
+            SubstancePatternVar {
                 structure: data,
                 format: match format {
                     Some(Some(format)) => Some(format),
@@ -5894,19 +5894,19 @@ pub fn payload_structure_with_validation<I: Span>(input: I) -> Res<I, PayloadPat
     })
 }
 
-pub fn consume_payload_structure<I: Span>(input: I) -> Res<I, PayloadTypePatternVar> {
+pub fn consume_payload_structure<I: Span>(input: I) -> Res<I, SubstanceTypePatternVar> {
     all_consuming(payload_structure)(input)
 }
 
-pub fn consume_data_struct_def<I: Span>(input: I) -> Res<I, PayloadPatternVar> {
+pub fn consume_data_struct_def<I: Span>(input: I) -> Res<I, SubstancePatternVar> {
     all_consuming(payload_structure_with_validation)(input)
 }
 
-pub fn payload_pattern_any<I: Span>(input: I) -> Res<I, ValuePattern<PayloadPatternVar>> {
+pub fn payload_pattern_any<I: Span>(input: I) -> Res<I, ValuePattern<SubstancePatternVar>> {
     tag("*")(input).map(|(next, _)| (next, ValuePattern::Any))
 }
 
-pub fn payload_pattern<I: Span>(input: I) -> Res<I, ValuePattern<PayloadPatternVar>> {
+pub fn payload_pattern<I: Span>(input: I) -> Res<I, ValuePattern<SubstancePatternVar>> {
     context(
         "@payload-pattern",
         value_pattern(payload_structure_with_validation),
@@ -7790,10 +7790,10 @@ pub fn plus_topic_or_none<I:Span>(input: I ) -> Res<I,Topic> {
 pub fn port<I:Span>(input: I) -> Res<I,Port> {
     let (next,(point,layer,topic)) = context("port",tuple((terminated(tw(point_var),tag("@")),layer,plus_topic_or_none)))(input.clone())?;
 
-    match point.clone().collapse() {
+    match point.w.collapse() {
         Ok(point) => Ok((next,Port::new(point,layer,topic))),
         Err(err) => {
-            let err = ErrorTree::from_error_kind(input, ErrorKind::Alpha );
+            let err = ErrorTree::from_error_kind(input.clone(), ErrorKind::Alpha );
             let loc = input.slice(point.trace.range);
             Err(nom::Err::Error(ErrorTree::add_context(loc, "resolver-not-available",err)))
         }

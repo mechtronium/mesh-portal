@@ -21,8 +21,8 @@ use serde::de::Error;
 use crate::version::v0_0_1::parse::error::find_parse_err;
 use cosmic_nom::SpanExtra;
 use cosmic_nom::Span;
-use crate::version::v0_0_1::wave::ResponseCore;
-use crate::version::v0_0_1::payload::payload::{Errors, Payload};
+use crate::version::v0_0_1::wave::RespCore;
+use crate::version::v0_0_1::substance::substance::{Errors, Substance};
 
 pub enum MsgErr {
     Status {
@@ -33,21 +33,21 @@ pub enum MsgErr {
 //    SubstErr(SubstErr)
 }
 
-impl Into<ResponseCore> for MsgErr {
-    fn into(self) -> ResponseCore {
+impl Into<RespCore> for MsgErr {
+    fn into(self) -> RespCore {
         match self {
             MsgErr::Status { status, message } => {
-                ResponseCore {
+                RespCore {
                     headers: Default::default(),
                     status: StatusCode::from_u16(status).unwrap_or(StatusCode::from_u16(500).unwrap()),
-                    body: Payload::Errors(Errors::default(message.as_str()))
+                    body: Substance::Errors(Errors::default(message.as_str()))
                 }
             }
             MsgErr::ParseErrs(_) => {
-                ResponseCore {
+                RespCore {
                     headers: Default::default(),
                     status: StatusCode::from_u16(500u16).unwrap_or(StatusCode::from_u16(500).unwrap()),
-                    body: Payload::Errors(Errors::default("parsing error..."))
+                    body: Substance::Errors(Errors::default("parsing error..."))
                 }
             }
         }

@@ -9,7 +9,7 @@ use mesh_portal::version::latest::id::{Point, Port, Topic};
 use mesh_portal::version::latest::messaging::{ProtoRequest, Request, Response};
 use mesh_portal::version::latest::msg::MsgMethod;
 use mesh_portal_versions::version::v0_0_1::id::id::{Layer, ToPort};
-use mesh_portal_versions::version::v0_0_1::wave::{AsyncMessengerAgent, RequestHandler, SyncMessenger, SyncMessengerRelay};
+use mesh_portal_versions::version::v0_0_1::wave::{AsyncTransmitterWithAgent, RequestHandler, SyncMessenger, SyncMessengerRelay};
 
 #[macro_use]
 extern crate cosmic_macros;
@@ -18,12 +18,12 @@ extern crate cosmic_macros;
 extern crate async_trait;
 
 pub struct Cli{
-    messenger: AsyncMessengerAgent
+    messenger: AsyncTransmitterWithAgent
 }
 
 impl Cli{
 
-    pub fn new( messenger: AsyncMessengerAgent ) -> Self {
+    pub fn new(messenger: AsyncTransmitterWithAgent) -> Self {
         Self {
             messenger
         }
@@ -46,12 +46,12 @@ impl Cli{
 pub struct CliSession<'a> {
     pub cli: &'a Cli,
     pub to: Port,
-    pub messenger: AsyncMessengerAgent
+    pub messenger: AsyncTransmitterWithAgent
 }
 
 impl <'a> CliSession<'a> {
 
-    pub fn new( cli: &'a Cli, to: Port, messenger: AsyncMessengerAgent ) -> Self {
+    pub fn new(cli: &'a Cli, to: Port, messenger: AsyncTransmitterWithAgent) -> Self {
         Self {
             cli,
             to,
@@ -101,7 +101,7 @@ pub mod test {
     use mesh_portal::version::latest::payload::Payload;
     use std::marker::PhantomData;
     use std::sync::{Arc, RwLock};
-    use mesh_portal_versions::version::v0_0_1::wave::{AsyncRequestHandler, InputCtx, RequestHandler, RequestHandlerRelay};
+    use mesh_portal_versions::version::v0_0_1::wave::{AsyncRequestHandler, ReqCtx, RequestHandler, RequestHandlerRelay};
 
 
     #[test]

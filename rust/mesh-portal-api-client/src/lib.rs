@@ -12,9 +12,9 @@ use mesh_portal::version::latest::id::{Point, Port, Uuid};
 use mesh_portal::version::latest::messaging::{Agent, RequestCtx, SysMethod};
 use mesh_portal_versions::version::v0_0_1::id::id::{Layer, ToPoint, ToPort};
 use mesh_portal_versions::version::v0_0_1::wave::{
-    AsyncInternalRequestHandlers, AsyncMessenger, AsyncMessengerAgent, AsyncRequestHandler,
-    AsyncRequestHandlerRelay, AsyncRouter, Request, RequestFrame, RequestHandlerRelay, Requestable,
-    Response, ResponseFrame, WaitTime, Wave, WaveFrame,
+    AsyncInternalRequestHandlers, AsyncMessenger, AsyncTransmitterWithAgent, AsyncRequestHandler,
+    AsyncRequestHandlerRelay, AsyncRouter, ReqShell, ReqFrame, RequestHandlerRelay, Requestable,
+    RespShell, RespFrame, WaitTime, Wave, WaveFrame,
 };
 use mesh_portal_versions::version::v0_0_1::quota::Timeouts;
 use std::sync::Arc;
@@ -28,7 +28,7 @@ use mesh_portal::version::latest::sys::{Assign, Sys};
 pub struct Portal {
     pub port: Port,
     pub assigned: Arc<DashSet<Point>>,
-    pub messenger: Arc<dyn AsyncMessenger<RequestFrame, ResponseFrame>>,
+    pub messenger: Arc<dyn AsyncMessenger<ReqFrame, RespFrame>>,
     pub handlers: AsyncInternalRequestHandlers<AsyncRequestHandlerRelay>,
     pub auth
 }
@@ -99,7 +99,7 @@ impl Portal {
 
 pub struct PortalMessenger {
     inlet_tx: mpsc::Sender<WaveFrame>,
-    exchanges: Arc<DashMap<Uuid, oneshot::Sender<ResponseFrame>>>,
+    exchanges: Arc<DashMap<Uuid, oneshot::Sender<RespFrame>>>,
     assigned: Arc<DashSet<Point>>,
     timeouts: Timeouts,
 }
@@ -115,8 +115,8 @@ impl PortalMessenger {
     }
 }
 
-impl AsyncMessenger<RequestFrame, ResponseFrame> for PortalMessenger {
-    async fn send(&self, request: RequestFrame) -> ResponseFrame {
+impl AsyncMessenger<ReqFrame, RespFrame> for PortalMessenger {
+    async fn send(&self, request: ReqFrame) -> RespFrame {
         if !self.assigned.contains(&request.from().to_point()) {
             return request.forbidden();
         }
@@ -138,7 +138,7 @@ impl AsyncMessenger<RequestFrame, ResponseFrame> for PortalMessenger {
         }
     }
 
-    fn send_sync(&self, request: RequestFrame) -> ResponseFrame {
+    fn send_sync(&self, request: ReqFrame) -> RespFrame {
         let (tx, rx) = oneshot::channel();
         self.exchanges.insert(request.id(), tx);
         let response = tokio::runtime::Handle::current().block_on(async move {
@@ -164,7 +164,7 @@ impl AsyncMessenger<RequestFrame, ResponseFrame> for PortalMessenger {
 }
 
 pub trait PortalCtrlFactory {
-   fn create(&self, Assign, AsyncMessengerAgent) -> Result<Box<dyn AsyncRequestHandler>,MsgErr>;
+   fn create(&self, Assign, AsyncTransmitterWithAgent) -> Result<Box<dyn AsyncRequestHandler>,MsgErr>;
 }
 
 
@@ -173,13 +173,13 @@ pub trait PortalCtrlFactory {
 pub struct PortalRequestHandler {
     factory: Box<dyn PortalCtrlFactory>,
     handlers: Arc<DashMap<Point,Box<dyn AsyncRequestHandler>>>,
-    messenger: Arc<dyn AsyncMessenger<Request,Response>>
+    messenger: Arc<dyn AsyncMessenger<ReqShell, RespShell>>
 }
 
 #[routes_async(self.handlers)]
 impl PortalRequestHandler {
 
-   pub fn new( messenger: Arc<dyn AsyncMessenger<Request,Response>>, factory: Box<dyn PortalCtrlFactory>) -> Self {
+   pub fn new(messenger: Arc<dyn AsyncMessenger<ReqShell, RespShell>>, factory: Box<dyn PortalCtrlFactory>) -> Self {
       Self {
          factory,
          handlers: Arc::new(DashMap::new()),
@@ -189,7 +189,7 @@ impl PortalRequestHandler {
 
    #[route_async(Sys<Assign>)]
    pub async fn assign( &self, request: RequestCtx<Assign>) -> Result<ResponseCore,MsgErr> {
-      let messenger = AsyncMessengerAgent::new(Agent::Anonymous, request.details.stub.point.to_port().with_layer(Layer::Core), self.messenger.clone() );
+      let messenger = AsyncTransmitterWithAgent::new(Agent::Anonymous, request.details.stub.point.to_port().with_layer(Layer::Core), self.messenger.clone() );
       self.handlers.insert( request.details.stub.point.clone(), self.factory.create(request.input.clone(),messenger)?);
       Ok(ResponseCore::ok(Payload::Empty))
    }

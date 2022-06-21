@@ -22,7 +22,7 @@ use mesh_portal::version::latest::payload::{Payload, PayloadType};
 use mesh_portal::version::latest::id::Port;
 use mesh_portal::version::latest::util::uuid;
 use mesh_portal_versions::version::v0_0_1::id::id::{ToPoint, ToPort};
-use mesh_portal_versions::version::v0_0_1::wave::{AsyncMessenger, AsyncRequestHandler, AsyncMessengerAgent, AsyncRequestHandlerRelay, InternalPipeline, AsyncInternalRequestHandlers, RequestHandler, RequestHandlerRelay, AsyncRouter, SyncMessenger, SyncMessengerRelay};
+use mesh_portal_versions::version::v0_0_1::wave::{AsyncMessenger, AsyncRequestHandler, AsyncTransmitterWithAgent, AsyncRequestHandlerRelay, InternalPipeline, AsyncInternalRequestHandlers, RequestHandler, RequestHandlerRelay, AsyncRouter, SyncMessenger, SyncMessengerRelay};
 use mesh_portal_versions::version::v0_0_1::msg::MsgMethod;
 use mesh_portal_versions::version::v0_0_1::parse::{command, command_line, Env};
 use mesh_portal_versions::version::v0_0_1::parse::error::result;
@@ -45,13 +45,13 @@ extern crate async_trait;
 #[derive(AsyncRequestHandler)]
 pub struct CliRelay {
   pub port: Port,
-  pub messenger: AsyncMessengerAgent,
+  pub messenger: AsyncTransmitterWithAgent,
   pub handlers: RwLock<AsyncInternalRequestHandlers<AsyncRequestHandlerRelay>>
 }
 
 #[routes_async(self.handlers.read().await)]
 impl CliRelay {
-    pub fn new(port: Port, messenger: AsyncMessengerAgent) -> Self {
+    pub fn new(port: Port, messenger: AsyncTransmitterWithAgent) -> Self {
 
         let handlers = RwLock::new(AsyncInternalRequestHandlers::new());
 
@@ -114,7 +114,7 @@ pub struct CliSession {
     pub relay: Port,
     pub port: Port,
     pub env: Env,
-    pub messenger: AsyncMessengerAgent,
+    pub messenger: AsyncTransmitterWithAgent,
     // will only handle requests from THIS port
     pub source: Port
 }
@@ -122,7 +122,7 @@ pub struct CliSession {
 #[routes_async]
 impl CliSession {
 
-    pub fn new(port: Port, relay: Port, messenger: AsyncMessengerAgent, source: Port ) -> CliSession {
+    pub fn new(port: Port, relay: Port, messenger: AsyncTransmitterWithAgent, source: Port ) -> CliSession {
         let messenger = messenger.with_from( port.clone() );
         let env = Env::new(port.clone().to_point() );
         Self {
@@ -159,7 +159,7 @@ impl CliSession {
 
 #[derive(AsyncRequestHandler)]
 pub struct CommandExecutor {
-    messenger: AsyncMessengerAgent,
+    messenger: AsyncTransmitterWithAgent,
     port: Port,
     source: Port,
     env: Env
@@ -170,7 +170,7 @@ impl CommandExecutor {
     pub fn new(
         port: Port,
         source: Port,
-        messenger: AsyncMessengerAgent,
+        messenger: AsyncTransmitterWithAgent,
         env: Env
     ) -> Self {
 

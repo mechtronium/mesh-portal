@@ -15,7 +15,7 @@ pub mod wave;
 pub mod msg;
 pub mod parse;
 pub mod particle;
-pub mod payload;
+pub mod substance;
 pub mod portal;
 pub mod security;
 pub mod selector;

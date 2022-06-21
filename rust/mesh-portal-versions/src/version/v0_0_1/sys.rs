@@ -2,13 +2,13 @@
 use crate::error::MsgErr;
 use crate::version::v0_0_1::id::id::{GenericKind, Point, ToPoint};
 use crate::version::v0_0_1::particle::particle::{Details, Status, Stub};
-use crate::version::v0_0_1::payload::payload::Payload;
+use crate::version::v0_0_1::substance::substance::Substance;
 use cosmic_macros_primitive::Autobox;
 
 
 use serde::{Deserialize, Serialize};
 use crate::version::v0_0_1::log::Log;
-use crate::version::v0_0_1::wave::{Request, RequestCore, SysMethod};
+use crate::version::v0_0_1::wave::{ReqShell, ReqCore, SysMethod};
 
 
 #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq,strum_macros::Display)]
@@ -127,11 +127,11 @@ pub enum Sys {
     Log(Log)
 }
 
-impl TryFrom<Request> for Assign {
+impl TryFrom<ReqShell> for Assign {
     type Error = MsgErr;
 
-    fn try_from(request: Request) -> Result<Self, Self::Error> {
-        if let Payload::Sys(Sys::Assign(assign)) = request.core.body {
+    fn try_from(request: ReqShell) -> Result<Self, Self::Error> {
+        if let Substance::Sys(Sys::Assign(assign)) = request.core.body {
             Ok(assign)
         } else {
             Err(MsgErr::bad_request())
@@ -139,15 +139,15 @@ impl TryFrom<Request> for Assign {
     }
 }
 
-impl Into<Payload> for Assign {
-    fn into(self) -> Payload {
-        Payload::Sys(Sys::Assign(self))
+impl Into<Substance> for Assign {
+    fn into(self) -> Substance {
+        Substance::Sys(Sys::Assign(self))
     }
 }
 
-impl Into<RequestCore> for Assign {
-    fn into(self) -> RequestCore{
-        RequestCore::new( SysMethod::Assign.into() ).with_body(Payload::Sys(Sys::Assign(self)))
+impl Into<ReqCore> for Assign {
+    fn into(self) -> ReqCore {
+        ReqCore::new( SysMethod::Assign.into() ).with_body(Substance::Sys(Sys::Assign(self)))
     }
 }
 

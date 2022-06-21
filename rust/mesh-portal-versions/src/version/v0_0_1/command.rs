@@ -31,7 +31,7 @@ pub mod command {
         use crate::error::MsgErr;
         use crate::version::v0_0_1::id::id::Variable;
         use crate::version::v0_0_1::parse::model::Var;
-        use crate::version::v0_0_1::payload::payload::{Payload, PayloadMap};
+        use crate::version::v0_0_1::substance::substance::{Substance, SubstanceMap};
 
 
         #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, strum_macros::Display)]
@@ -45,7 +45,7 @@ pub mod command {
         #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, strum_macros::Display)]
         pub enum StateSrc {
             None,
-            Payload(Payload),
+            Payload(Substance),
         }
 
         #[derive(Debug, Clone, Serialize, Deserialize,Eq,PartialEq)]
@@ -164,11 +164,11 @@ pub mod request {
     use crate::version::v0_0_1::command::request::select::Select;
     use crate::version::v0_0_1::command::request::set::Set;
     use crate::version::v0_0_1::command::request::update::Update;
-    use crate::version::v0_0_1::wave::ResponseCore;
+    use crate::version::v0_0_1::wave::RespCore;
     use crate::version::v0_0_1::fail;
     use crate::version::v0_0_1::fail::{BadRequest, Fail, NotFound};
     use crate::version::v0_0_1::id::id::{GenericKind, GenericKindBase, Meta, Point};
-    use crate::version::v0_0_1::payload::payload::{Errors, Payload, };
+    use crate::version::v0_0_1::substance::substance::{Errors, Substance, };
     use crate::version::v0_0_1::selector::selector::KindSelector;
     use crate::version::v0_0_1::util::{ValueMatcher, ValuePattern};
     use http::status::InvalidStatusCode;
@@ -364,10 +364,10 @@ pub mod request {
         use crate::version::v0_0_1::command::Command;
         use crate::version::v0_0_1::command::command::common::{SetProperties, SetRegistry, StateSrc, StateSrcVar};
         use crate::version::v0_0_1::id::id::{GenericKind, GenericKindBase, HostKey, Point, PointCtx, PointSeg, PointVar, ToPort};
-        use crate::version::v0_0_1::wave::{CmdMethod, ProtoRequest, RequestCore, SysMethod};
+        use crate::version::v0_0_1::wave::{CmdMethod, ReqProto, ReqCore, SysMethod};
         use crate::version::v0_0_1::msg::MsgMethod;
         use crate::version::v0_0_1::parse::{Env, ResolverErr};
-        use crate::version::v0_0_1::payload::payload::Payload;
+        use crate::version::v0_0_1::substance::substance::Substance;
         use crate::version::v0_0_1::selector::selector::SpecificSelector;
         use crate::version::v0_0_1::util::{ConvertFrom, ToResolved};
 
@@ -490,7 +490,7 @@ pub mod request {
                 let template = self.template.to_resolved(env)?;
                 let state = match &self.state {
                     StateSrcVar::None => StateSrc::None,
-                    StateSrcVar::FileRef(name) => StateSrc::Payload(Payload::Bin(env.file(name).map_err(|e|{ match e{
+                    StateSrcVar::FileRef(name) => StateSrc::Payload(Substance::Bin(env.file(name).map_err(|e|{ match e{
                         ResolverErr::NotAvailable => MsgErr::from_500("files are not available in this context"),
                         ResolverErr::NotFound => MsgErr::from_500(format!("cannot find file '{}'",name))
                     }})?.content)),
@@ -499,7 +499,7 @@ pub mod request {
                             ResolverErr::NotAvailable => MsgErr::from_500("variable are not available in this context"),
                             ResolverErr::NotFound => MsgErr::from_500(format!("cannot find variable '{}'", var.name ))
                         })?;
-                        StateSrc::Payload(Payload::Bin(env.file(val.clone()).map_err(|e|{ match e{
+                        StateSrc::Payload(Substance::Bin(env.file(val.clone()).map_err(|e|{ match e{
                             ResolverErr::NotAvailable => MsgErr::from_500("files are not available in this context"),
                             ResolverErr::NotFound => MsgErr::from_500(format!("cannot find file '{}'",val))
                         }})?.content))
@@ -544,7 +544,7 @@ pub mod request {
             pub fn fulfillment(mut self, bin: Bin) -> Create {
                 Create {
                     template: self.template,
-                    state: StateSrc::Payload(Payload::Bin(bin)),
+                    state: StateSrc::Payload(Substance::Bin(bin)),
                     properties: self.properties,
                     strategy: self.strategy,
                     registry: self.registry,
@@ -552,19 +552,19 @@ pub mod request {
             }
         }
 
-        impl Into<RequestCore> for Create {
-            fn into(self) -> RequestCore{
-                let mut request = RequestCore::msg(MsgMethod::new("Command").unwrap() );
-                request.body = Payload::Command(Box::new(Command::Create(self)));
+        impl Into<ReqCore> for Create {
+            fn into(self) -> ReqCore {
+                let mut request = ReqCore::msg(MsgMethod::new("Command").unwrap() );
+                request.body = Substance::Command(Box::new(Command::Create(self)));
                 request
             }
         }
 
 
-        impl Into<ProtoRequest> for Create {
-            fn into(self) -> ProtoRequest {
-                let mut request = ProtoRequest::sys(Point::global_executor().to_port(),SysMethod::Command);
-                request.core.body = Payload::Command(Box::new(Command::Create(self)));
+        impl Into<ReqProto> for Create {
+            fn into(self) -> ReqProto {
+                let mut request = ReqProto::sys(Point::global_executor().to_port(), SysMethod::Command);
+                request.core.body = Substance::Command(Box::new(Command::Create(self)));
                 request
             }
         }
@@ -634,8 +634,8 @@ pub mod request {
         use crate::version::v0_0_1::id::id::Point;
         use crate::version::v0_0_1::parse::Env;
         use crate::version::v0_0_1::particle::particle::Stub;
-        use crate::version::v0_0_1::payload::payload::{
-            MapPattern, Payload, PayloadList,
+        use crate::version::v0_0_1::substance::substance::{
+            MapPattern, Substance, SubstanceList,
         };
         use crate::version::v0_0_1::selector::selector::{Hop, HopCtx, HopVar, PointHierarchy, PointSelector, PointSelectorDef};
         use crate::version::v0_0_1::util::{ConvertFrom, ToResolved};
@@ -647,22 +647,22 @@ pub mod request {
         }
 
         impl SelectIntoPayload {
-            pub fn to_primitive(&self, stubs: Vec<Stub>) -> Result<PayloadList, MsgErr> {
+            pub fn to_primitive(&self, stubs: Vec<Stub>) -> Result<SubstanceList, MsgErr> {
                 match self {
                     SelectIntoPayload::Stubs => {
-                        let stubs: Vec<Box<Payload>> = stubs
+                        let stubs: Vec<Box<Substance>> = stubs
                             .into_iter()
-                            .map(|stub| Box::new(Payload::Stub(stub)))
+                            .map(|stub| Box::new(Substance::Stub(stub)))
                             .collect();
-                        let stubs = PayloadList { list: stubs };
+                        let stubs = SubstanceList { list: stubs };
                         Ok(stubs)
                     }
                     SelectIntoPayload::Points => {
-                        let pointes: Vec<Box<Payload>> = stubs
+                        let pointes: Vec<Box<Substance>> = stubs
                             .into_iter()
-                            .map(|stub| Box::new(Payload::Point(stub.point)))
+                            .map(|stub| Box::new(Substance::Point(stub.point)))
                             .collect();
-                        let stubs = PayloadList { list: pointes };
+                        let stubs = SubstanceList { list: pointes };
                         Ok(stubs)
                     }
                 }
@@ -838,7 +838,7 @@ pub mod request {
         use crate::version::v0_0_1::command::command::common::SetProperties;
         use crate::version::v0_0_1::id::id::{Point, PointCtx, PointVar};
         use crate::version::v0_0_1::parse::Env;
-        use crate::version::v0_0_1::payload::payload::Payload;
+        use crate::version::v0_0_1::substance::substance::Substance;
         use crate::version::v0_0_1::util::ToResolved;
 
         pub type Update = UpdateDef<Point>;
@@ -848,7 +848,7 @@ pub mod request {
         #[derive(Debug, Clone, Serialize, Deserialize,Eq,PartialEq)]
         pub struct UpdateDef<Pnt> {
             pub point: Pnt,
-            pub payload: Payload,
+            pub payload: Substance,
         }
 
         impl ToResolved<UpdateCtx> for UpdateVar {
@@ -876,7 +876,7 @@ pub mod request {
         use crate::error::MsgErr;
         use crate::version::v0_0_1::id::id::{Point, PointCtx, PointVar};
         use crate::version::v0_0_1::parse::Env;
-        use crate::version::v0_0_1::payload::payload::Payload;
+        use crate::version::v0_0_1::substance::substance::Substance;
         use crate::version::v0_0_1::util::ToResolved;
         use serde::{Serialize,Deserialize};
 
@@ -887,7 +887,7 @@ pub mod request {
         #[derive(Debug, Clone, Serialize, Deserialize,Eq,PartialEq)]
         pub struct ReadDef<Pnt> {
             pub point: Pnt,
-            pub payload: Payload,
+            pub payload: Substance,
         }
 
         impl ToResolved<ReadCtx> for ReadVar {

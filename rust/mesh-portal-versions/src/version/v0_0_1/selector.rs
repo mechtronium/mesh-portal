@@ -1,5 +1,5 @@
 use alloc::string::String;
-use crate::version::v0_0_1::payload::payload::{Payload, PayloadPattern, PayloadPatternCtx, PayloadPatternDef};
+use crate::version::v0_0_1::substance::substance::{Substance, SubstancePattern, SubstancePatternCtx, SubstancePatternDef};
 use crate::version::v0_0_1::util::{ToResolved, ValuePattern};
 use serde::{Deserialize, Serialize};
 use crate::error::MsgErr;
@@ -24,7 +24,7 @@ pub mod selector {
     use crate::version::v0_0_1::command::request::{Rc, RcCommandType};
     use crate::version::v0_0_1::id::id::{GenericKind, GenericKindBase, Layer, Point, PointCtx, PointSeg, PointSegKind, PointVar, Port, RouteSeg, Specific, Tks, Topic, Variable, VarVal, Version};
     use crate::version::v0_0_1::parse::{camel_case_chars, camel_case_to_string_matcher, consume_hierarchy, Env, file_chars, path, path_regex, point_segment_selector, point_selector};
-    use crate::version::v0_0_1::payload::payload::{Call, CallKind, CallWithConfig, CallWithConfigDef, HttpCall, ListPattern, MapPattern, MsgCall, NumRange, Payload, PayloadFormat, PayloadPattern, PayloadPatternDef, PayloadKind, PayloadTypePatternDef};
+    use crate::version::v0_0_1::substance::substance::{Call, CallKind, CallWithConfig, CallWithConfigDef, HttpCall, ListPattern, MapPattern, MsgCall, NumRange, Substance, SubstanceFormat, SubstancePattern, SubstancePatternDef, SubstanceKind, SubstanceTypePatternDef};
     use crate::version::v0_0_1::selector::selector::specific::{
         ProductSelector, VariantSelector, VendorSelector,
     };
@@ -46,7 +46,7 @@ pub mod selector {
     use regex::Regex;
     use std::collections::HashMap;
     use cosmic_nom::{new_span, Res, Span, Trace};
-    use crate::version::v0_0_1::wave::{Method, RequestCore};
+    use crate::version::v0_0_1::wave::{Method, ReqCore};
     use crate::version::v0_0_1::parse::error::result;
     use crate::version::v0_0_1::parse::model::Var;
 
@@ -591,8 +591,8 @@ pub mod selector {
     pub type PayloadType2Var = PayloadType2Def<PointVar>;
 
     pub struct PayloadType2Def<Pnt> {
-        pub primitive: PayloadKind,
-        pub format: Option<PayloadFormat>,
+        pub primitive: SubstanceKind,
+        pub format: Option<SubstanceFormat>,
         pub verifier: Option<CallWithConfigDef<Pnt>>,
     }
 
@@ -786,7 +786,7 @@ pub mod selector {
     #[derive(Clone)]
     pub struct MapEntryPatternDef<Pnt> {
         pub key: String,
-        pub payload: ValuePattern<PayloadPatternDef<Pnt>>,
+        pub payload: ValuePattern<SubstancePatternDef<Pnt>>,
     }
 
     /*
@@ -1122,7 +1122,7 @@ impl ToResolved<PayloadBlock> for PayloadBlockCtx {
         match self {
             PayloadBlockCtx::RequestPattern(block) => {
                Ok(PayloadBlock::RequestPattern(block.modify(move |block| {
-                       let block : PayloadPattern = block.to_resolved(env)?;
+                       let block : SubstancePattern = block.to_resolved(env)?;
                        Ok(block)})? ))
             }
             PayloadBlockCtx::ResponsePattern(block) => {
@@ -1137,7 +1137,7 @@ impl ToResolved<PayloadBlockCtx> for PayloadBlockVar{
         match self {
             PayloadBlockVar::RequestPattern(block) => {
                 Ok(PayloadBlockCtx::RequestPattern(block.modify(move |block| {
-                    let block : PayloadPatternCtx = block.to_resolved(env)?;
+                    let block : SubstancePatternCtx = block.to_resolved(env)?;
                     Ok(block)})? ))
             }
             PayloadBlockVar::ResponsePattern(block) => {
@@ -1178,13 +1178,13 @@ pub struct UploadBlock {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CreateBlock {
-    pub payload: Payload,
+    pub payload: Substance,
 }
 
 pub type PatternBlock = PatternBlockDef<Point>;
 pub type PatternBlockCtx = PatternBlockDef<PointCtx>;
 pub type PatternBlockVar = PatternBlockDef<PointVar>;
-pub type PatternBlockDef<Pnt> = ValuePattern<PayloadPatternDef<Pnt>>;
+pub type PatternBlockDef<Pnt> = ValuePattern<SubstancePatternDef<Pnt>>;
 
 
 impl ToResolved<PatternBlock> for PatternBlockCtx{

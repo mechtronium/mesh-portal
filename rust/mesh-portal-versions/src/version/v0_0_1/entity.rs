@@ -5,11 +5,11 @@
     pub mod response {
         use crate::error::{MsgErr, StatusErr};
         use crate::version::v0_0_1::bin::Bin;
-        use crate::version::v0_0_1::wave::RequestCore;
+        use crate::version::v0_0_1::wave::ReqCore;
         use crate::version::v0_0_1::fail;
         use crate::version::v0_0_1::fail::Fail;
         use crate::version::v0_0_1::id::id::{GenericKind, Meta, Point, ToPort};
-        use crate::version::v0_0_1::payload::payload::{Errors, Payload};
+        use crate::version::v0_0_1::substance::substance::{Errors, Substance};
         use crate::version::v0_0_1::util::uuid;
         use http::response::Parts;
         use http::{HeaderMap, StatusCode};

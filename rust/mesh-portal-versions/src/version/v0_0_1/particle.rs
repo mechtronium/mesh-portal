@@ -1,6 +1,6 @@
 use crate::version::v0_0_1::id::id::Point;
 use crate::version::v0_0_1::particle::particle::Stub;
-use crate::version::v0_0_1::payload::payload::Payload;
+use crate::version::v0_0_1::substance::substance::Substance;
 
 pub mod particle {
     use std::collections::HashMap;
@@ -20,7 +20,7 @@ pub mod particle {
 
     use crate::error::MsgErr;
     use crate::version::v0_0_1::id::id::{GenericKind, GenericKindBase, Point, PointKind};
-    use crate::version::v0_0_1::payload::payload::{Payload, PayloadMap};
+    use crate::version::v0_0_1::substance::substance::{Substance, SubstanceMap};
     use crate::version::v0_0_1::parse::parse_alpha1_str;
     use crate::version::v0_0_1::security::Permissions;
     use cosmic_nom::{Res, Span};
@@ -163,7 +163,7 @@ pub mod particle {
     #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
     pub struct Particle {
         pub stub: Stub,
-        pub state: Box<Payload>,
+        pub state: Box<Substance>,
     }
 }
 
@@ -172,11 +172,11 @@ use serde::{Serialize,Deserialize};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Particle {
     pub stub: Stub,
-    pub state: Payload,
+    pub state: Substance,
 }
 
 impl Particle {
-    pub fn new(stub: Stub, state: Payload) -> Particle {
+    pub fn new(stub: Stub, state: Substance) -> Particle {
         Particle {
             stub,
             state
@@ -187,7 +187,7 @@ impl Particle {
         self.stub.point.clone()
     }
 
-    pub fn state_src(&self) -> Payload {
+    pub fn state_src(&self) -> Substance {
         self.state.clone()
     }
 }

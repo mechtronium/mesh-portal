@@ -95,12 +95,12 @@ pub mod messaging {
     use mesh_portal_versions::version::v0_0_1::wave;
 
     pub type RequestHandler=dyn wave::RequestHandler;
-    pub type RequestCtx<'a,R> = wave::InputCtx<'a,R>;
-    pub type RootRequestCtx<R> = wave::RootInputCtx<R>;
-    pub type Request = wave::Request;
-    pub type Response= wave::Response;
-    pub type RequestBuilder = wave::RequestBuilder;
-    pub type ProtoRequest= wave::ProtoRequest;
+    pub type RequestCtx<'a,R> = wave::ReqCtx<'a,R>;
+    pub type RootRequestCtx<R> = wave::RootReqCtx<R>;
+    pub type Request = wave::ReqShell;
+    pub type Response= wave::RespShell;
+    pub type RequestBuilder = wave::ReqBuilder;
+    pub type ProtoRequest= wave::ReqProto;
     pub type Message = wave::Wave;
     pub type Agent = wave::Agent;
     pub type AuthedAgent = wave::AuthedAgent;
@@ -159,23 +159,23 @@ pub mod parse {
 
 pub mod payload {
     use mesh_portal_versions::version::v0_0_1 as current;
-    use mesh_portal_versions::version::v0_0_1::payload;
+    use mesh_portal_versions::version::v0_0_1::substance;
 
-    pub type Payload = payload::payload::Payload;
-    pub type PayloadMap = payload::payload::PayloadMap;
-    pub type PrimitiveList = payload::payload::PayloadList;
-    pub type PayloadType = payload::payload::PayloadKind;
-    pub type Errors = payload::payload::Errors;
-    pub type ListPattern = payload::payload::ListPattern;
-    pub type Range = payload::payload::NumRange;
-    pub type PayloadPattern = payload::payload::PayloadPattern;
-    pub type CallWithConfig = payload::payload::CallWithConfig;
-    pub type Call = payload::payload::Call;
-    pub type CallKind = payload::payload::CallKind;
-    pub type MsgCall = payload::payload::MsgCall;
-    pub type HttpCall = payload::payload::HttpCall;
-    pub type PayloadFormat = payload::payload::PayloadFormat;
-    pub type MapPattern = payload::payload::MapPattern;
+    pub type Payload = substance::substance::Substance;
+    pub type PayloadMap = substance::substance::SubstanceMap;
+    pub type PrimitiveList = substance::substance::SubstanceList;
+    pub type PayloadType = substance::substance::SubstanceKind;
+    pub type Errors = substance::substance::Errors;
+    pub type ListPattern = substance::substance::ListPattern;
+    pub type Range = substance::substance::NumRange;
+    pub type PayloadPattern = substance::substance::SubstancePattern;
+    pub type CallWithConfig = substance::substance::CallWithConfig;
+    pub type Call = substance::substance::Call;
+    pub type CallKind = substance::substance::CallKind;
+    pub type MsgCall = substance::substance::MsgCall;
+    pub type HttpCall = substance::substance::HttpCall;
+    pub type PayloadFormat = substance::substance::SubstanceFormat;
+    pub type MapPattern = substance::substance::MapPattern;
 }
 
 pub mod command {
@@ -273,7 +273,7 @@ pub mod entity {
         use mesh_portal_versions::version::v0_0_1::{command, entity};
 
         pub type Method = v0_0_1::wave::Method;
-        pub type RequestCore= v0_0_1::wave::RequestCore;
+        pub type RequestCore= v0_0_1::wave::ReqCore;
         pub type Rc = command::request::Rc;
         pub type RcCommandType = command::request::RcCommandType;
 
@@ -339,7 +339,7 @@ pub mod entity {
         use mesh_portal_versions::version::{v0_0_1 as current, v0_0_1};
         use mesh_portal_versions::version::v0_0_1::entity;
 
-        pub type ResponseCore = v0_0_1::wave::ResponseCore;
+        pub type ResponseCore = v0_0_1::wave::RespCore;
     }
 }
 

@@ -1,4 +1,4 @@
-pub mod payload {
+pub mod substance {
     use serde::{Deserialize, Serialize};
     use std::collections::HashMap;
     use std::ops::{Deref, DerefMut};
@@ -17,7 +17,7 @@ pub mod payload {
     use serde_json::Value;
     use crate::version::v0_0_1::cli::RawCommand;
     use crate::version::v0_0_1::command::Command;
-    use crate::version::v0_0_1::wave::{Method, RequestCore, Response, ResponseCore};
+    use crate::version::v0_0_1::wave::{Method, ReqCore, RespShell, RespCore};
     use crate::version::v0_0_1::http::HttpMethod;
     use crate::version::v0_0_1::msg::MsgMethod;
     use crate::version::v0_0_1::parse::{CtxResolver, Env};
@@ -38,7 +38,7 @@ pub mod payload {
         strum_macros::Display,
         strum_macros::EnumString,
     )]
-    pub enum PayloadKind {
+    pub enum SubstanceKind {
         Empty,
         List,
         Map,
@@ -57,17 +57,17 @@ pub mod payload {
         MultipartForm,
         RawCommand,
         Command,
-        Request,
-        Response,
+        ReqCore,
+        RespCore,
         Sys,
         Token,
     }
 
     #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, strum_macros::Display,Autobox)]
-    pub enum Payload {
+    pub enum Substance {
         Empty,
-        List(PayloadList),
-        Map(PayloadMap),
+        List(SubstanceList),
+        Map(SubstanceMap),
         Point(Point),
         Port(Port),
         Text(String),
@@ -83,8 +83,8 @@ pub mod payload {
         Errors(Errors),
         Json(Value),
         MultipartForm(MultipartForm),
-        Request(Box<RequestCore>),
-        Response(Box<ResponseCore>),
+        ReqCore(Box<ReqCore>),
+        RespCore(Box<RespCore>),
         Sys(Sys),
         Token(Token)
     }
@@ -122,28 +122,28 @@ pub mod payload {
         }
     }
 
-    impl TryFrom<Response> for Token {
+    impl TryFrom<RespShell> for Token {
         type Error = MsgErr;
 
-        fn try_from(response: Response) -> Result<Self, Self::Error> {
+        fn try_from(response: RespShell) -> Result<Self, Self::Error> {
             response.core.body.try_into()
         }
     }
 
     pub trait ToRequestCore  {
         type Method;
-        fn to_request_core(self) -> RequestCore;
+        fn to_request_core(self) -> ReqCore;
     }
 
-    impl Default for Payload {
+    impl Default for Substance {
         fn default() -> Self {
-            Payload::Empty
+            Substance::Empty
         }
     }
 
-    impl Payload {
+    impl Substance {
         pub fn to_text(self) -> Result<String, MsgErr> {
-            if let Payload::Text(text) = self {
+            if let Substance::Text(text) = self {
                 Ok(text)
             } else {
                 Err("not a 'Text' payload".into())
@@ -162,77 +162,77 @@ pub mod payload {
             Self::Bin(bin)
         }
 
-        pub fn kind(&self) -> PayloadKind {
+        pub fn kind(&self) -> SubstanceKind {
             match self {
-                Payload::Empty => PayloadKind::Empty,
-                Payload::List(list) => PayloadKind::List,
-                Payload::Map(map) => PayloadKind::Map,
-                Payload::Point(_) => PayloadKind::Point,
-                Payload::Text(_) => PayloadKind::Text,
-                Payload::Stub(_) => PayloadKind::Stub,
-                Payload::Meta(_) => PayloadKind::Meta,
-                Payload::Bin(_) => PayloadKind::Bin,
-                Payload::Boolean(_) => PayloadKind::Boolean,
-                Payload::Int(_) => PayloadKind::Int,
-                Payload::Status(_) => PayloadKind::Status,
-                Payload::Particle(_) => PayloadKind::Particle,
-                Payload::Errors(_) => PayloadKind::Errors,
-                Payload::Json(_) => PayloadKind::Json,
-                Payload::RawCommand(_) => PayloadKind::RawCommand,
-                Payload::Port(_) => PayloadKind::Port,
-                Payload::Command(_) => PayloadKind::Command,
-                Payload::Request(_) => PayloadKind::Request,
-                Payload::Response(_) => PayloadKind::Response,
-                Payload::Sys(_) => PayloadKind::Sys,
-                Payload::MultipartForm(_) => PayloadKind::MultipartForm,
-                Payload::Token(_) => PayloadKind::Token
+                Substance::Empty => SubstanceKind::Empty,
+                Substance::List(list) => SubstanceKind::List,
+                Substance::Map(map) => SubstanceKind::Map,
+                Substance::Point(_) => SubstanceKind::Point,
+                Substance::Text(_) => SubstanceKind::Text,
+                Substance::Stub(_) => SubstanceKind::Stub,
+                Substance::Meta(_) => SubstanceKind::Meta,
+                Substance::Bin(_) => SubstanceKind::Bin,
+                Substance::Boolean(_) => SubstanceKind::Boolean,
+                Substance::Int(_) => SubstanceKind::Int,
+                Substance::Status(_) => SubstanceKind::Status,
+                Substance::Particle(_) => SubstanceKind::Particle,
+                Substance::Errors(_) => SubstanceKind::Errors,
+                Substance::Json(_) => SubstanceKind::Json,
+                Substance::RawCommand(_) => SubstanceKind::RawCommand,
+                Substance::Port(_) => SubstanceKind::Port,
+                Substance::Command(_) => SubstanceKind::Command,
+                Substance::ReqCore(_) => SubstanceKind::ReqCore,
+                Substance::RespCore(_) => SubstanceKind::RespCore,
+                Substance::Sys(_) => SubstanceKind::Sys,
+                Substance::MultipartForm(_) => SubstanceKind::MultipartForm,
+                Substance::Token(_) => SubstanceKind::Token
             }
         }
 
         pub fn to_bin(self) -> Result<Bin, MsgErr> {
             match self {
-                Payload::Empty => Ok(Arc::new(vec![])),
-                Payload::List(list) => list.to_bin(),
-                Payload::Map(map) => map.to_bin(),
+                Substance::Empty => Ok(Arc::new(vec![])),
+                Substance::List(list) => list.to_bin(),
+                Substance::Map(map) => map.to_bin(),
                 _ => Err("not supported".into()),
             }
         }
     }
 
 
-    impl TryInto<HashMap<String, Payload>> for Payload {
+    impl TryInto<HashMap<String, Substance>> for Substance {
         type Error = MsgErr;
 
-        fn try_into(self) -> Result<HashMap<String, Payload>, Self::Error> {
+        fn try_into(self) -> Result<HashMap<String, Substance>, Self::Error> {
             match self {
-                Payload::Map(map) => Ok(map.map),
-                _ => Err("Payload type must a Map".into()),
+                Substance::Map(map) => Ok(map.map),
+                _ => Err("Substance type must a Map".into()),
             }
         }
     }
 
 
     #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
-    pub struct PayloadMap {
-        pub map: HashMap<String, Payload>,
+    pub struct SubstanceMap {
+        pub map: HashMap<String, Substance>,
     }
 
 
-    impl Deref for PayloadMap {
-        type Target = HashMap<String, Payload>;
+    impl Deref for SubstanceMap {
+        type Target = HashMap<String, Substance>;
 
         fn deref(&self) -> &Self::Target {
             &self.map
         }
     }
 
-    impl DerefMut for PayloadMap {
+    impl DerefMut for SubstanceMap {
         fn deref_mut(&mut self) -> &mut Self::Target {
             &mut self.map
         }
     }
 
-    impl Default for PayloadMap {
+    impl Default for SubstanceMap {
         fn default() -> Self {
             Self {
                 map: Default::default(),
@@ -240,7 +240,7 @@ pub mod payload {
         }
     }
     /*
-    impl <ToKind,FromKind> TryInto<ToKind> for PayloadMap<FromKind> {
+    impl <ToKind,FromKind> TryInto<ToKind> for SubstanceMap<FromKind> {
         type Error = Error;
 
         fn try_into(self) -> Result<ToKind, Self::Error> {
@@ -254,7 +254,7 @@ pub mod payload {
 
      */
 
-    impl PayloadMap {
+    impl SubstanceMap {
         /*
         pub fn new(constraints: MapConstraints<KEY,ADDRESS,IDENTIFIER,KIND> ) -> Self {
             Self{
@@ -319,17 +319,17 @@ pub mod payload {
 
 
     #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
-    pub struct PayloadList {
-        pub list: Vec<Box<Payload>>,
+    pub struct SubstanceList {
+        pub list: Vec<Box<Substance>>,
     }
 
-    impl ToString for PayloadList {
+    impl ToString for SubstanceList {
         fn to_string(&self) -> String {
             "[]".to_string()
         }
     }
 
-    impl PayloadList {
+    impl SubstanceList {
         pub fn new() -> Self {
             Self { list: vec![] }
         }
@@ -338,15 +338,15 @@ pub mod payload {
         }
     }
 
-    impl Deref for PayloadList {
-        type Target = Vec<Box<Payload>>;
+    impl Deref for SubstanceList {
+        type Target = Vec<Box<Substance>>;
 
         fn deref(&self) -> &Self::Target {
             &self.list
         }
     }
 
-    impl DerefMut for PayloadList {
+    impl DerefMut for SubstanceList {
         fn deref_mut(&mut self) -> &mut Self::Target {
             &mut self.list
         }
@@ -354,12 +354,12 @@ pub mod payload {
 
     #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
     pub struct ListPattern {
-        pub primitive: PayloadKind,
+        pub primitive: SubstanceKind,
         pub range: NumRange,
     }
 
     impl ListPattern {
-        pub fn is_match(&self, list: &PayloadList) -> Result<(), MsgErr> {
+        pub fn is_match(&self, list: &SubstanceList) -> Result<(), MsgErr> {
             /*
             for i in &list.list {
                 if self.primitive != i.primitive_type() {
@@ -385,26 +385,26 @@ pub mod payload {
         Exact(usize),
         Any,
     }
-    pub type PayloadTypePatternCtx = PayloadTypePatternDef<PointCtx>;
-    pub type PayloadTypePatternVar = PayloadTypePatternDef<PointVar>;
+    pub type SubstanceTypePatternCtx = SubstanceTypePatternDef<PointCtx>;
+    pub type SubstanceTypePatternVar = SubstanceTypePatternDef<PointVar>;
 
     #[derive(Debug, Clone, Serialize, Deserialize,Eq,PartialEq)]
-    pub enum PayloadTypePatternDef<Pnt> {
+    pub enum SubstanceTypePatternDef<Pnt> {
         Empty,
-        Primitive(PayloadKind),
+        Primitive(SubstanceKind),
         List(ListPattern),
         Map(Box<MapPatternDef<Pnt>>),
     }
 
 
 
-    impl ToResolved<PayloadTypePatternDef<Point>> for PayloadTypePatternDef<PointCtx>{
-        fn to_resolved(self, env: &Env ) -> Result<PayloadTypePatternDef<Point>, MsgErr> {
+    impl ToResolved<SubstanceTypePatternDef<Point>> for SubstanceTypePatternDef<PointCtx>{
+        fn to_resolved(self, env: &Env ) -> Result<SubstanceTypePatternDef<Point>, MsgErr> {
             match self {
-                PayloadTypePatternDef::Empty => Ok(PayloadTypePatternDef::Empty),
-                PayloadTypePatternDef::Primitive(payload_type) =>Ok(PayloadTypePatternDef::Primitive(payload_type)),
-                PayloadTypePatternDef::List(list)=>Ok(PayloadTypePatternDef::List(list)),
-                PayloadTypePatternDef::Map(map)  => {
+                SubstanceTypePatternDef::Empty => Ok(SubstanceTypePatternDef::Empty),
+                SubstanceTypePatternDef::Primitive(payload_type) =>Ok(SubstanceTypePatternDef::Primitive(payload_type)),
+                SubstanceTypePatternDef::List(list)=>Ok(SubstanceTypePatternDef::List(list)),
+                SubstanceTypePatternDef::Map(map)  => {
                     Err("MapPatternCtx resolution not supported yet...".into())
                 }
             }
@@ -412,13 +412,13 @@ pub mod payload {
     }
 
 
-    impl ToResolved<PayloadTypePatternCtx> for PayloadTypePatternVar{
-        fn to_resolved(self, env: &Env ) -> Result<PayloadTypePatternCtx, MsgErr> {
+    impl ToResolved<SubstanceTypePatternCtx> for SubstanceTypePatternVar {
+        fn to_resolved(self, env: &Env ) -> Result<SubstanceTypePatternCtx, MsgErr> {
             match self {
-                PayloadTypePatternVar::Empty => Ok(PayloadTypePatternCtx::Empty),
-                PayloadTypePatternVar::Primitive(payload_type) =>Ok(PayloadTypePatternCtx::Primitive(payload_type)),
-                PayloadTypePatternVar::List(list)=>Ok(PayloadTypePatternCtx::List(list)),
-                PayloadTypePatternVar::Map(map)  => {
+                SubstanceTypePatternVar::Empty => Ok(SubstanceTypePatternCtx::Empty),
+                SubstanceTypePatternVar::Primitive(payload_type) =>Ok(SubstanceTypePatternCtx::Primitive(payload_type)),
+                SubstanceTypePatternVar::List(list)=>Ok(SubstanceTypePatternCtx::List(list)),
+                SubstanceTypePatternVar::Map(map)  => {
                     Err("MapPatternCtx resolution not supported yet...".into())
                 }
             }
@@ -427,29 +427,29 @@ pub mod payload {
 
 
 
-    impl <Pnt> PayloadTypePatternDef<Pnt> {
-        pub fn is_match(&self, payload: &Payload) -> Result<(), ()> {
+    impl <Pnt> SubstanceTypePatternDef<Pnt> {
+        pub fn is_match(&self, payload: &Substance) -> Result<(), ()> {
             unimplemented!();
             /*
             match self {
-                PayloadTypePattern::Empty => {
-                    if payload.payload_type() == PayloadType::Empty {
+                SubstanceTypePattern::Empty => {
+                    if payload.payload_type() == SubstanceType::Empty {
                         Ok(())
                     } else {
                         Err(format!(
-                            "Payload expected: Empty found: {}",
+                            "Substance expected: Empty found: {}",
                             payload.payload_type().to_string()
                         )
                         .into())
                     }
                 }
-                PayloadTypePattern::Primitive(expected) => {
-                    if let Payload::Primitive(found) = payload {
+                SubstanceTypePattern::Primitive(expected) => {
+                    if let Substance::Primitive(found) = payload {
                         if *expected == found.primitive_type() {
                             Ok(())
                         } else {
                             Err(format!(
-                                "Payload Primitive expected: {} found: {}",
+                                "Substance Primitive expected: {} found: {}",
                                 expected.to_string(),
                                 found.primitive_type().to_string()
                             )
@@ -457,30 +457,30 @@ pub mod payload {
                         }
                     } else {
                         Err(format!(
-                            "Payload expected: {} found: {}",
+                            "Substance expected: {} found: {}",
                             expected.to_string(),
                             payload.payload_type().to_string()
                         )
                         .into())
                     }
                 }
-                PayloadTypePattern::List(expected) => {
-                    if let Payload::List(found) = payload {
+                SubstanceTypePattern::List(expected) => {
+                    if let Substance::List(found) = payload {
                         expected.is_match(found)
                     } else {
                         Err(format!(
-                            "Payload expected: List found: {}",
+                            "Substance expected: List found: {}",
                             payload.payload_type().to_string()
                         )
                         .into())
                     }
                 }
-                PayloadTypePattern::Map(expected) => {
-                    if let Payload::Map(found) = payload {
+                SubstanceTypePattern::Map(expected) => {
+                    if let Substance::Map(found) = payload {
                         expected.is_match(found)
                     } else {
                         Err(format!(
-                            "Payload expected: {} found: {}",
+                            "Substance expected: {} found: {}",
                             expected.to_string(),
                             payload.payload_type().to_string()
                         )
@@ -493,18 +493,18 @@ pub mod payload {
         }
     }
 
-    pub type PayloadPatternVar= PayloadPatternDef<PointVar>;
-    pub type PayloadPatternCtx = PayloadPatternDef<PointCtx>;
-    pub type PayloadPattern = PayloadPatternDef<Point>;
+    pub type SubstancePatternVar = SubstancePatternDef<PointVar>;
+    pub type SubstancePatternCtx = SubstancePatternDef<PointCtx>;
+    pub type SubstancePattern = SubstancePatternDef<Point>;
 
     #[derive(Debug, Clone, Serialize,Deserialize,Eq,PartialEq)]
-    pub struct PayloadPatternDef<Pnt> {
-        pub structure: PayloadTypePatternDef<Pnt>,
-        pub format: Option<PayloadFormat>,
+    pub struct SubstancePatternDef<Pnt> {
+        pub structure: SubstanceTypePatternDef<Pnt>,
+        pub format: Option<SubstanceFormat>,
         pub validator: Option<CallWithConfigDef<Pnt>>,
     }
-    impl ToResolved<PayloadPatternCtx> for PayloadPatternVar{
-        fn to_resolved(self, env: &Env) -> Result<PayloadPatternCtx, MsgErr> {
+    impl ToResolved<SubstancePatternCtx> for SubstancePatternVar {
+        fn to_resolved(self, env: &Env) -> Result<SubstancePatternCtx, MsgErr> {
             let mut errs = vec![];
             let structure = match self.structure.to_resolved(env) {
                 Ok(structure) => Some(structure),
@@ -528,7 +528,7 @@ pub mod payload {
 
 
             if errs.is_empty() {
-                Ok(PayloadPatternCtx {
+                Ok(SubstancePatternCtx {
                     structure: structure.expect("structure"),
                     validator: validator,
                     format: self.format
@@ -539,8 +539,8 @@ pub mod payload {
         }
     }
 
-    impl ToResolved<PayloadPattern> for PayloadPatternCtx{
-        fn to_resolved(self, resolver: &Env) -> Result<PayloadPattern, MsgErr> {
+    impl ToResolved<SubstancePattern> for SubstancePatternCtx {
+        fn to_resolved(self, resolver: &Env) -> Result<SubstancePattern, MsgErr> {
             let mut errs = vec![];
             let structure = match self.structure.to_resolved(resolver) {
               Ok(structure) => Some(structure),
@@ -564,7 +564,7 @@ pub mod payload {
 
 
             if errs.is_empty() {
-                Ok(PayloadPattern {
+                Ok(SubstancePattern {
                     structure: structure.expect("structure"),
                     validator: validator,
                     format: self.format
@@ -576,8 +576,8 @@ pub mod payload {
     }
 
 
-        impl <Pnt> ValueMatcher<Payload> for PayloadPatternDef<Pnt> {
-        fn is_match(&self, payload: &Payload) -> Result<(), ()> {
+        impl <Pnt> ValueMatcher<Substance> for SubstancePatternDef<Pnt> {
+        fn is_match(&self, payload: &Substance) -> Result<(), ()> {
             self.structure.is_match(&payload)?;
 
             // more matching to come... not sure exactly how to match Format and Validation...
@@ -710,7 +710,7 @@ pub mod payload {
 
     impl CallKind {
         /*
-        pub fn core_with_body(self, body: Payload) -> Result<RequestCore, MsgErr> {
+        pub fn core_with_body(self, body: Substance) -> Result<RequestCore, MsgErr> {
             Ok(match self {
                 CallKind::Msg(msg) => RequestCore {
                     headers: Default::default(),
@@ -825,7 +825,7 @@ pub mod payload {
         Serialize,
         Deserialize,
     )]
-    pub enum PayloadFormat {
+    pub enum SubstanceFormat {
         #[strum(serialize = "json")]
         Json,
         #[strum(serialize = "image")]
@@ -841,8 +841,8 @@ pub mod payload {
 
     #[derive(Debug, Clone,Serialize,Deserialize,Eq,PartialEq)]
     pub struct MapPatternDef<Pnt> {
-        pub required: HashMap<String, ValuePattern<PayloadPatternDef<Pnt>>>,
-        pub allowed: ValuePattern<PayloadPatternDef<Pnt>>,
+        pub required: HashMap<String, ValuePattern<SubstancePatternDef<Pnt>>>,
+        pub allowed: ValuePattern<SubstancePatternDef<Pnt>>,
     }
 
     impl <Pnt> Default for MapPatternDef<Pnt> {
@@ -862,8 +862,8 @@ pub mod payload {
 
     impl <Pnt>MapPatternDef<Pnt> {
         pub fn new(
-            required: HashMap<String, ValuePattern<PayloadPatternDef<Pnt>>>,
-            allowed: ValuePattern<PayloadPatternDef<Pnt>>,
+            required: HashMap<String, ValuePattern<SubstancePatternDef<Pnt>>>,
+            allowed: ValuePattern<SubstancePatternDef<Pnt>>,
         ) -> Self {
             MapPatternDef { required, allowed }
         }
@@ -882,7 +882,7 @@ pub mod payload {
             }
         }
 
-        pub fn is_match(&self, map: &PayloadMap) -> Result<(), ()> {
+        pub fn is_match(&self, map: &SubstanceMap) -> Result<(), ()> {
             // if Any keys are allowed then skip
             for (key, payload) in &map.map {
                 if !self.required.contains_key(key) {
@@ -914,19 +914,19 @@ pub mod payload {
     }
 
     /*
-    impl<FromResourceType,FromKind,FromPayload,FromTksPattern, ToResourceType,ToKind,ToPayload,ToTksPattern> ConvertFrom<Valuepattern<PayloadPattern<FromResourceType,FromKind,FromPayload,FromTksPattern>>>
-    for ValuePattern<PayloadPattern<FromResourceType,FromKind,FromPayload,FromTksPattern>>
+    impl<FromResourceType,FromKind,FromSubstance,FromTksPattern, ToResourceType,ToKind,ToSubstance,ToTksPattern> ConvertFrom<Valuepattern<SubstancePattern<FromResourceType,FromKind,FromSubstance,FromTksPattern>>>
+    for ValuePattern<SubstancePattern<FromResourceType,FromKind,FromSubstance,FromTksPattern>>
         where
             FromKind: TryInto<ToKind, Error = Error> + Clone,
             FromTksPattern: TryInto<ToTksPattern, Error = Error> + Clone,
-            FromPayload: TryInto<ToPayload, Error = Error> + Clone,
+            FromSubstance: TryInto<ToSubstance, Error = Error> + Clone,
             FromResourceType: TryInto<ToResourceType, Error = Error> + Clone,
             ToKind: Clone,
 
     {
 
         fn convert_from(
-            a: HashMap<String, ValuePattern<PayloadPattern<FromKind>>>
+            a: HashMap<String, ValuePattern<SubstancePattern<FromKind>>>
         ) -> Result<Self, Error>
             where
                 Self: Sized,
@@ -942,35 +942,35 @@ pub mod payload {
      */
 
     /*
-    impl <KEY,ADDRESS,IDENTIFIER,KIND> ValuePattern<Payload<KEY,ADDRESS,IDENTIFIER,KIND>> for PayloadType<KEY,ADDRESS,IDENTIFIER,KIND> {
-        fn is_match(&self, payload: &Payload<KEY,ADDRESS,IDENTIFIER,KIND>) -> Result<(), Error> {
+    impl <KEY,ADDRESS,IDENTIFIER,KIND> ValuePattern<Substance<KEY,ADDRESS,IDENTIFIER,KIND>> for SubstanceType<KEY,ADDRESS,IDENTIFIER,KIND> {
+        fn is_match(&self, payload: &Substance<KEY,ADDRESS,IDENTIFIER,KIND>) -> Result<(), Error> {
             match **self {
-                PayloadType::Empty => {
-                    if let Payload::Empty = payload {
+                SubstanceType::Empty => {
+                    if let Substance::Empty = payload {
                         Ok(())
                     } else {
-                        Err(format!("Payload expected: '{}' found: Empty",self.to_string()).into())
+                        Err(format!("Substance expected: '{}' found: Empty",self.to_string()).into())
                     }
                 }
-                PayloadType::Primitive(expected) => {
-                    if let Payload::Primitive(found)= payload {
+                SubstanceType::Primitive(expected) => {
+                    if let Substance::Primitive(found)= payload {
                         expected.is_match(found)
                     } else {
-                        Err(format!("Payload expected: '{}' found: '{}'",self.to_string(), payload.to_string()).into())
+                        Err(format!("Substance expected: '{}' found: '{}'",self.to_string(), payload.to_string()).into())
                     }
                 }
-                PayloadType::List(expected) => {
-                    if let Payload::List(found)= payload {
+                SubstanceType::List(expected) => {
+                    if let Substance::List(found)= payload {
                         expected.is_match(&found.primitive_type )
                     } else {
-                        Err(format!("Payload expected: '{}' found: '{}'",self.to_string(), payload.to_string()).into())
+                        Err(format!("Substance expected: '{}' found: '{}'",self.to_string(), payload.to_string()).into())
                     }
                 }
-                PayloadType::Map(expected) => {
-                    if let Payload::Map(found)= payload {
+                SubstanceType::Map(expected) => {
+                    if let Substance::Map(found)= payload {
                         expected.is_match(&found.primitive_type )
                     } else {
-                        Err(format!("Payload expected: '{}' found: '{}'",self.to_string(), payload.to_string()).into())
+                        Err(format!("Substance expected: '{}' found: '{}'",self.to_string(), payload.to_string()).into())
                     }
                 }
             }
@@ -980,19 +980,19 @@ pub mod payload {
      */
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
-    pub struct PayloadRef<PAYLOAD_CLAIM, PAYLOAD_PATTERN> {
+    pub struct SubstanceRef<PAYLOAD_CLAIM, PAYLOAD_PATTERN> {
         pub claim: PAYLOAD_CLAIM,
         pub pattern: PAYLOAD_PATTERN,
     }
 
     /*
-    impl<FromPayloadClaim, FromPayloadPattern> PayloadRef<FromPayloadClaim, FromPayloadPattern> {
-        pub fn convert<ToPayloadClaim, ToPayloadPattern>(
+    impl<FromSubstanceClaim, FromSubstancePattern> SubstanceRef<FromSubstanceClaim, FromSubstancePattern> {
+        pub fn convert<ToSubstanceClaim, ToSubstancePattern>(
             self,
-        ) -> Result<PayloadRef<ToPayloadClaim, ToPayloadPattern>, Error>
+        ) -> Result<SubstanceRef<ToSubstanceClaim, ToSubstancePattern>, Error>
         where
-            ToPayloadClaim: TryFrom<FromPayloadClaim, Error = Error>,
-            ToPayloadPattern: TryFrom<FromPayloadPattern, Error = Error>,
+            ToSubstanceClaim: TryFrom<FromSubstanceClaim, Error = Error>,
+            ToSubstancePattern: TryFrom<FromSubstancePattern, Error = Error>,
         {
             Ok(Self {
                 claim: self.claim.try_into()?,
@@ -1003,24 +1003,26 @@ pub mod payload {
 
      */
 
-    #[derive(Debug, Clone, Serialize, Deserialize)]
-    pub enum PayloadDelivery<PAYLOAD, PAYLOAD_REF> {
-        Payload(PAYLOAD),
+/*    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub enum SubstanceDelivery<PAYLOAD, PAYLOAD_REF> {
+        Substance(PAYLOAD),
         Ref(PAYLOAD_REF),
     }
 
+ */
+
     /*
-    impl<FromPayload, FromPayloadRef> PayloadDelivery<FromPayload, FromPayloadRef> {
-        pub fn convert<ToPayload, ToPayloadRef>(
+    impl<FromSubstance, FromSubstanceRef> SubstanceDelivery<FromSubstance, FromSubstanceRef> {
+        pub fn convert<ToSubstance, ToSubstanceRef>(
             self,
-        ) -> Result<PayloadDelivery<ToPayload, ToPayloadRef>, Error>
+        ) -> Result<SubstanceDelivery<ToSubstance, ToSubstanceRef>, Error>
         where
-            ToPayload: TryFrom<FromPayload,Error=Error>,
-            ToPayloadRef: TryFrom<FromPayloadRef,Error=Error>,
+            ToSubstance: TryFrom<FromSubstance,Error=Error>,
+            ToSubstanceRef: TryFrom<FromSubstanceRef,Error=Error>,
         {
             match self {
-                PayloadDelivery::Payload(payload) => Ok(payload.try_into()?),
-                PayloadDelivery::Ref(payload_ref) => {
+                SubstanceDelivery::Substance(payload) => Ok(payload.try_into()?),
+                SubstanceDelivery::Ref(payload_ref) => {
                     Ok(payload_ref.try_into()?)
                 }
             }
@@ -1049,7 +1051,7 @@ pub mod payload {
     impl ToRequestCore for MultipartForm {
         type Method = HttpMethod;
 
-        fn to_request_core(self) -> RequestCore {
+        fn to_request_core(self) -> ReqCore {
             let mut headers = HeaderMap::new();
 
             headers.insert(
@@ -1057,11 +1059,11 @@ pub mod payload {
                 HeaderValue::from_static("application/x-www-form-urlencoded"),
             );
 
-            RequestCore {
+            ReqCore {
                 headers,
                 method: HttpMethod::Post.into(),
                 uri: Default::default(),
-                body: Payload::MultipartForm(self)
+                body: Substance::MultipartForm(self)
             }
         }
     }

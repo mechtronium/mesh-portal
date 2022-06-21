@@ -1,7 +1,7 @@
 use crate::error::MsgErr;
-use crate::version::v0_0_1::wave::{Method, RequestCore, ResponseCore};
+use crate::version::v0_0_1::wave::{Method, ReqCore, RespCore};
 use crate::version::v0_0_1::id::id::Meta;
-use crate::version::v0_0_1::payload::payload::{Errors, Payload};
+use crate::version::v0_0_1::substance::substance::{Errors, Substance};
 use http::{HeaderMap, StatusCode, Uri};
 use serde::{Deserialize, Serialize};
 use crate::version::v0_0_1::util::ValueMatcher;
@@ -64,32 +64,32 @@ pub struct HttpRequest {
 
     #[serde(with = "http_serde::uri")]
     pub uri: Uri,
-    pub body: Payload,
+    pub body: Substance,
 }
 
 impl HttpRequest {
-    pub fn ok(&self, payload: Payload) -> ResponseCore {
-        ResponseCore {
+    pub fn ok(&self, payload: Substance) -> RespCore {
+        RespCore {
             headers: Default::default(),
             status: StatusCode::from_u16(200u16).unwrap(),
             body: payload,
         }
     }
 
-    pub fn fail(&self, error: &str) -> ResponseCore {
+    pub fn fail(&self, error: &str) -> RespCore {
         let errors = Errors::default(error);
-        ResponseCore {
+        RespCore {
             headers: Default::default(),
             status: StatusCode::from_u16(500u16).unwrap(),
-            body: Payload::Errors(errors),
+            body: Substance::Errors(errors),
         }
     }
 }
 
-impl TryFrom<RequestCore> for HttpRequest {
+impl TryFrom<ReqCore> for HttpRequest {
     type Error = MsgErr;
 
-    fn try_from(core: RequestCore) -> Result<Self, Self::Error> {
+    fn try_from(core: ReqCore) -> Result<Self, Self::Error> {
         if let Method::Http(method) = core.method {
             Ok(Self {
                 method: method.into(),

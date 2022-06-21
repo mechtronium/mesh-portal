@@ -79,10 +79,10 @@ pub mod config {
     pub mod bind {
         use crate::error::{MsgErr, ParseErrs};
         use crate::version::v0_0_1::command::request::Rc;
-        use crate::version::v0_0_1::wave::{MethodKind, MethodPattern, Request, RequestCore};
+        use crate::version::v0_0_1::wave::{MethodKind, MethodPattern, ReqShell, ReqCore};
         use crate::version::v0_0_1::id::id::{Point, PointCtx, PointVar, Topic};
-        use crate::version::v0_0_1::payload::payload::{Call, CallDef};
-        use crate::version::v0_0_1::payload::payload::{Payload, PayloadPattern};
+        use crate::version::v0_0_1::substance::substance::{Call, CallDef};
+        use crate::version::v0_0_1::substance::substance::{Substance, SubstancePattern};
 
         use crate::version::v0_0_1::parse::model::{
             BindScope, MessageScope, MethodScope, PipelineSegment, PipelineSegmentDef, PipelineVar,
@@ -119,7 +119,7 @@ pub mod config {
                 scopes
             }
 
-            pub fn select(&self, request: &Request) -> Result<&MethodScope, MsgErr> {
+            pub fn select(&self, request: &ReqShell) -> Result<&MethodScope, MsgErr> {
                 for route_scope in self.route_scopes() {
                     if route_scope.selector.is_match(request).is_ok() {
                         for message_scope in &route_scope.block {
@@ -260,7 +260,7 @@ pub mod config {
 
          */
 
-        pub type PatternBlock = ValuePattern<PayloadPattern>;
+        pub type PatternBlock = ValuePattern<SubstancePattern>;
 
         pub type PipelineStopCtx = PipelineStopDef<PointCtx>;
         pub type PipelineStopVar = PipelineStopDef<PointVar>;
@@ -389,7 +389,7 @@ pub mod config {
             }
 
 
-            pub fn is_match(&self, request: &Request) -> Result<(), ()> {
+            pub fn is_match(&self, request: &ReqShell) -> Result<(), ()> {
                 if let Some(topic) = &self.topic {
                     topic.is_match(&request.from.topic)?;
                 } else if Topic::None != request.from.topic {
