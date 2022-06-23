@@ -1,4 +1,4 @@
-#![feature(proc_macro_quote)]
+/*#![feature(proc_macro_quote)]*/
 #![crate_type = "lib"]
 #![allow(warnings)]
 

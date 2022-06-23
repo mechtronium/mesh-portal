@@ -24,6 +24,7 @@ use std::ops::Deref;
 use std::sync::Arc;
 use dashmap::DashMap;
 use tokio::sync::RwLock;
+use crate::version::v0_0_1::parse::sub;
 use crate::version::v0_0_1::substance::substance::Substance;
 
 
@@ -90,6 +91,13 @@ impl WaveFrame {
             WaveFrame::Resp(response) => response.from()
         }
     }
+
+    pub fn span(&self) -> Option<&LogSpan> {
+        match self {
+            WaveFrame::Req(req) => req.span.as_ref(),
+            WaveFrame::Resp(res) => res.span.as_ref()
+        }
+    }
 }
 
 pub struct RootReqCtx<I> {
@@ -97,6 +105,7 @@ pub struct RootReqCtx<I> {
     pub request: ReqShell,
     session: Option<Session>,
     logger: SpanLogger,
+    pub tx: AsyncTransmitterWithAgent
 }
 
 impl <I> Deref for RootReqCtx<I> {
@@ -108,12 +117,13 @@ impl <I> Deref for RootReqCtx<I> {
 }
 
 impl RootReqCtx<ReqShell> {
-    pub fn new(request: ReqShell, logger: SpanLogger) -> Self {
+    pub fn new(request: ReqShell, logger: SpanLogger, tx: AsyncTransmitterWithAgent ) -> Self {
         Self {
             request: request.clone(),
             input: request.clone(),
             logger,
             session: None,
+            tx
         }
     }
 }
@@ -133,11 +143,12 @@ impl<I> RootReqCtx<I> {
             request: self.request,
             input,
             session: self.session,
+            tx: self.tx,
         })
     }
 
-    pub fn push<'a>(&'a self, tx: &'a AsyncTransmitterWithAgent) -> ReqCtx<'a, I> {
-        ReqCtx::new(self, &self.input, tx, self.logger.clone())
+    pub fn push<'a>(&'a self) -> ReqCtx<'a, I> {
+        ReqCtx::new(self, &self.input, &self.tx, self.logger.clone())
     }
 }
 
@@ -401,8 +412,8 @@ impl Into<ReqProto> for ReqShell {
     fn into(self) -> ReqProto {
         ReqProto {
             id: self.id,
-            to: self.to,
-            core: self.core,
+            to: Some(self.to),
+            core: Some(self.core),
             handling: self.handling,
             scope: self.scope,
         }
@@ -617,12 +628,19 @@ impl Requestable<RespFrame> for ReqFrame {
 
 #[derive(Serialize, Deserialize)]
 pub struct RespFrame {
-    session: Option<Session>,
-    response: RespShell,
-    span: Option<LogSpan>,
+    pub session: Option<Session>,
+    pub response: RespShell,
+    pub span: Option<LogSpan>,
 }
 
 impl RespFrame {
+    pub fn new(response: RespShell) -> Self {
+        Self {
+            response,
+            session: None,
+            span: None
+        }
+    }
     pub fn id(&self) -> &Uuid {
         &self.response.id
     }
@@ -897,14 +915,14 @@ impl Default for ReqBuilder {
 #[derive(Debug, Clone)]
 pub struct ReqProto {
     pub id: String,
-    pub to: Port,
-    pub core: ReqCore,
+    pub to: Option<Port>,
+    pub core: Option<ReqCore>,
     pub handling: Handling,
     pub scope: Scope,
 }
 
 impl ReqProto {
-    pub fn to_request<P>(self, from: P, agent: Agent, scope: Scope) -> ReqShell
+    pub fn to_request<P>(self, from: P, agent: Agent, scope: Scope) -> Result<ReqShell,MsgErr>
     where
         P: ToPort,
     {
@@ -912,13 +930,28 @@ impl ReqProto {
         let request = ReqShell {
             id: self.id,
             from: from.to_port(),
-            to: self.to,
-            core: self.core,
+            to: self.to.ok_or(MsgErr::new(500u16,"must set 'to'"))?,
+            core: self.core.ok_or(MsgErr::new(500u16,"request core must be set"))?,
             agent,
             handling: self.handling,
             scope,
         };
-        request
+        Ok(request)
+    }
+
+    pub fn body( &mut self, body: Substance ) -> Result<(),MsgErr>{
+        self.core.as_mut().ok_or(MsgErr::new(500u16,"core must be set before body") )?.body = body;
+        Ok(())
+    }
+
+    pub fn method( &mut self, method: Method) -> Result<(),MsgErr>{
+        if self.core.is_none() {
+            let core:ReqCore = method.into();
+            self.core = Some(core);
+        } else {
+            self.core.as_mut().unwrap().method = method;
+        }
+        Ok(())
     }
 }
 
@@ -926,10 +959,20 @@ impl ReqProto {
     pub fn new<P: ToPort>(to: P, method: Method) -> Self {
         Self {
             id: uuid(),
-            to: to.to_port(),
-            core: ReqCore::new(method),
+            to: Some(to.to_port()),
+            core: Some(ReqCore::new(method)),
             handling: Default::default(),
-            scope: Scope::Full
+            scope: Scope::None
+        }
+    }
+
+    pub fn from_core(core: ReqCore ) -> Self {
+        Self {
+            id: uuid(),
+            to: None,
+            core: Some(core),
+            handling: Default::default(),
+            scope: Scope::None
         }
     }
 
@@ -960,8 +1003,8 @@ impl ReqProto {
     pub fn core<P: ToPort>(to: P, core: ReqCore) -> Self {
         Self {
             id: uuid(),
-            to: to.to_port(),
-            core,
+            to: Some(to.to_port()),
+            core: Some(core),
             scope: Default::default(),
             handling: Default::default()
         }
@@ -978,6 +1021,13 @@ pub struct RespShell {
 }
 
 impl RespShell {
+    pub fn core_result<E>( result: Result<RespShell,E> ) -> Result<RespCore,E> {
+        match result {
+            Ok(response) => Ok(response.core),
+            Err(err) => Err(err)
+        }
+    }
+
     pub fn to_frame(self, span: Option<LogSpan>) -> RespFrame {
         RespFrame {
             session: None,
@@ -1025,30 +1075,30 @@ impl RespShell {
 
 #[derive(Debug, Clone, Serialize, Deserialize, Autobox)]
 pub enum Wave {
-    Request(ReqShell),
-    Response(RespShell),
+    Req(ReqShell),
+    Resp(RespShell),
 }
 
 impl Wave {
 
     pub fn id(&self) -> Uuid {
         match self {
-            Wave::Request(request) => request.id.clone(),
-            Wave::Response(response) => response.id.clone(),
+            Wave::Req(request) => request.id.clone(),
+            Wave::Resp(response) => response.id.clone(),
         }
     }
 
     pub fn substance(&self) -> Substance {
         match self {
-            Wave::Request(request) => request.core.body.clone(),
-            Wave::Response(response) => response.core.body.clone(),
+            Wave::Req(request) => request.core.body.clone(),
+            Wave::Resp(response) => response.core.body.clone(),
         }
     }
 
     pub fn to(&self) -> &Port {
         match self {
-            Wave::Request(request) => &request.to,
-            Wave::Response(response) => &response.to,
+            Wave::Req(request) => &request.to,
+            Wave::Resp(response) => &response.to,
         }
     }
 }
@@ -1373,28 +1423,36 @@ impl AsyncRequestHandler for  AsyncPointRequestHandlers {
 pub struct AsyncTransmitterWithAgent {
     pub agent: Agent,
     pub from: Port,
-    pub relay: Arc<dyn AsyncMessenger<ReqShell, RespShell>>,
+    pub relay: Arc<dyn AsyncTransmitter>,
 }
 
 impl AsyncTransmitterWithAgent {
     pub fn new(
         agent: Agent,
         from: Port,
-        relay: Arc<dyn AsyncMessenger<ReqShell, RespShell>>,
+        relay: Arc<dyn AsyncTransmitter>,
     ) -> Self {
         Self { agent, from, relay }
+    }
+
+    pub fn with_topic( self, topic: Topic ) -> Self {
+        Self {
+            agent: self.agent,
+            from: self.from.with_topic(topic),
+            relay: self.relay
+        }
     }
 }
 
 impl AsyncTransmitterWithAgent {
-    pub async fn send<R>(&self, request: ReqProto) -> Result<R,MsgErr> where R: TryFrom<RespShell,Error=MsgErr>{
-        let request = request.to_request(self.from.clone(), self.agent.clone(), Scope::None);
-        R::try_from(self.relay.send(request).await)
+    pub async fn send(&self, request: ReqProto) -> Result<RespShell,MsgErr> {
+        let request = request.to_request(self.from.clone(), self.agent.clone(), Scope::None)?;
+        Ok(self.relay.send(request).await)
     }
 
-    pub fn send_sync<R>(&self, request: ReqProto) ->  Result<R,MsgErr> where R: TryFrom<RespShell,Error=MsgErr>{
-        let request = request.to_request(self.from.clone(), self.agent.clone(), Scope::None);
-        R::try_from(self.relay.send_sync(request))
+    pub fn send_sync(&self, request: ReqProto) ->  Result<RespShell,MsgErr>{
+        let request = request.to_request(self.from.clone(), self.agent.clone(), Scope::None)?;
+        Ok(self.relay.send_sync(request))
     }
 
     pub async fn route(&self, wave: Wave )  {
@@ -1417,14 +1475,14 @@ impl AsyncTransmitterWithAgent {
 }
 
 #[derive(Clone)]
-pub struct SyncMessengerRelay {
+pub struct SyncTransmitRelay {
     pub topic: Option<Topic>,
     pub layer: Option<Layer>,
     pub point: Option<Point>,
-    pub relay: Arc<dyn SyncMessenger>,
+    pub relay: Arc<dyn SyncTransmitter>,
 }
 
-impl SyncMessenger for SyncMessengerRelay {
+impl SyncTransmitter for SyncTransmitRelay {
     fn send(&self, request: ReqShell) -> RespShell {
         let mut request = request;
         if let Some(topic) = &self.topic {
@@ -1440,7 +1498,7 @@ impl SyncMessenger for SyncMessengerRelay {
     }
 }
 
-impl SyncMessengerRelay {
+impl SyncTransmitRelay {
     pub fn with_point(self, point: Point) -> Self {
         Self {
             topic: self.topic,
@@ -1479,16 +1537,14 @@ impl SyncMessengerRelay {
 }
 
 #[async_trait]
-pub trait AsyncMessenger<Request, Response>: Send + Sync
-where
-    Request: Requestable<Response>,
+pub trait AsyncTransmitter: Send + Sync
 {
-    async fn send(&self, request: Request) -> Response;
-    fn send_sync(&self, request: Request) -> Response;
+    async fn send(&self, request: ReqShell ) -> RespShell;
+    fn send_sync(&self, request: ReqShell) -> RespShell;
     async fn route(&self, wave: Wave);
 }
 
-pub trait SyncMessenger: Send + Sync {
+pub trait SyncTransmitter: Send + Sync {
     fn send(&self, request: ReqShell) -> RespShell;
 }
 
@@ -1562,7 +1618,7 @@ impl AsyncAuthorizationRequester for AsyncCredsAuthorizationRequester {
         let request = form.to_request_core();
         let mut request = ReqProto::core(self.auth_point.clone(), request );
         request.handling.wait = WaitTime::High;
-        let refresh_token: Token = messenger.send(request).await?;
+        let refresh_token: Token = messenger.send(request).await?.try_into()?;
         let next = AsyncRefreshTokenAuthorizationRequester{
             auth_point: self.auth_point,
             token: refresh_token

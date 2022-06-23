@@ -5,14 +5,23 @@ extern crate async_trait;
 #[macro_use]
 extern crate anyhow;
 
+#[macro_use]
+extern crate cosmic_macros;
+
+#[macro_use]
+extern crate cosmic_macros_primitive;
+
+#[macro_use]
+extern crate lazy_static;
+
 use std::collections::HashSet;
 use dashmap::{DashMap, DashSet};
 use mesh_portal::error::MsgErr;
 use mesh_portal::version::latest::id::{Point, Port, Uuid};
-use mesh_portal::version::latest::messaging::{Agent, RequestCtx, SysMethod};
+use mesh_portal::version::latest::messaging::{Agent, ReqCtx, SysMethod};
 use mesh_portal_versions::version::v0_0_1::id::id::{Layer, ToPoint, ToPort};
 use mesh_portal_versions::version::v0_0_1::wave::{
-    AsyncInternalRequestHandlers, AsyncMessenger, AsyncTransmitterWithAgent, AsyncRequestHandler,
+    AsyncInternalRequestHandlers, AsyncTransmitter, AsyncTransmitterWithAgent, AsyncRequestHandler,
     AsyncRequestHandlerRelay, AsyncRouter, ReqShell, ReqFrame, RequestHandlerRelay, Requestable,
     RespShell, RespFrame, WaitTime, Wave, WaveFrame,
 };
@@ -21,16 +30,15 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::mpsc;
 use tokio::sync::oneshot;
-use mesh_portal::version::latest::entity::response::ResponseCore;
+use mesh_portal::version::latest::entity::response::RespCore;
 use mesh_portal::version::latest::payload::Payload;
 use mesh_portal::version::latest::sys::{Assign, Sys};
 
 pub struct Portal {
     pub port: Port,
     pub assigned: Arc<DashSet<Point>>,
-    pub messenger: Arc<dyn AsyncMessenger<ReqFrame, RespFrame>>,
+    pub messenger: Arc<dyn AsyncTransmitter>,
     pub handlers: AsyncInternalRequestHandlers<AsyncRequestHandlerRelay>,
-    pub auth
 }
 
 impl Portal {
@@ -50,7 +58,7 @@ impl Portal {
             ).await
             {
                 if let Ok(frame) = frame {
-                    if let Wave::Request(request) = frame.wave {
+                    if let Wave::Req(request) = frame.wave {
                         let point: Point = request
                             .require_method(SysMethod::AssignPort)?
                             .require_body("Point")?;
@@ -115,7 +123,8 @@ impl PortalMessenger {
     }
 }
 
-impl AsyncMessenger<ReqFrame, RespFrame> for PortalMessenger {
+#[async_trait]
+impl AsyncTransmitter for PortalMessenger {
     async fn send(&self, request: ReqFrame) -> RespFrame {
         if !self.assigned.contains(&request.from().to_point()) {
             return request.forbidden();
@@ -163,8 +172,8 @@ impl AsyncMessenger<ReqFrame, RespFrame> for PortalMessenger {
     }
 }
 
-pub trait PortalCtrlFactory {
-   fn create(&self, Assign, AsyncTransmitterWithAgent) -> Result<Box<dyn AsyncRequestHandler>,MsgErr>;
+pub trait PortalCtrlFactory: Send+Sync {
+   fn create(&self, assign: Assign, tx: AsyncTransmitterWithAgent) -> Result<Box<dyn AsyncRequestHandler>,MsgErr>;
 }
 
 
@@ -173,13 +182,13 @@ pub trait PortalCtrlFactory {
 pub struct PortalRequestHandler {
     factory: Box<dyn PortalCtrlFactory>,
     handlers: Arc<DashMap<Point,Box<dyn AsyncRequestHandler>>>,
-    messenger: Arc<dyn AsyncMessenger<ReqShell, RespShell>>
+    messenger: Arc<dyn AsyncTransmitter>
 }
 
 #[routes_async(self.handlers)]
 impl PortalRequestHandler {
 
-   pub fn new(messenger: Arc<dyn AsyncMessenger<ReqShell, RespShell>>, factory: Box<dyn PortalCtrlFactory>) -> Self {
+   pub fn new(messenger: Arc<dyn AsyncTransmitter>, factory: Box<dyn PortalCtrlFactory>) -> Self {
       Self {
          factory,
          handlers: Arc::new(DashMap::new()),
@@ -187,11 +196,11 @@ impl PortalRequestHandler {
       }
    }
 
-   #[route_async(Sys<Assign>)]
-   pub async fn assign( &self, request: RequestCtx<Assign>) -> Result<ResponseCore,MsgErr> {
+   #[route(Sys<Assign>)]
+   pub async fn assign(&self, request: ReqCtx<Assign>) -> Result<RespCore,MsgErr> {
       let messenger = AsyncTransmitterWithAgent::new(Agent::Anonymous, request.details.stub.point.to_port().with_layer(Layer::Core), self.messenger.clone() );
       self.handlers.insert( request.details.stub.point.clone(), self.factory.create(request.input.clone(),messenger)?);
-      Ok(ResponseCore::ok(Payload::Empty))
+      Ok(RespCore::ok(Payload::Empty))
    }
 
 }

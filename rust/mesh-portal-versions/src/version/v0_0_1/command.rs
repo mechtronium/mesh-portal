@@ -564,7 +564,7 @@ pub mod request {
         impl Into<ReqProto> for Create {
             fn into(self) -> ReqProto {
                 let mut request = ReqProto::sys(Point::global_executor().to_port(), SysMethod::Command);
-                request.core.body = Substance::Command(Box::new(Command::Create(self)));
+                request.body(Substance::Command(Box::new(Command::Create(self))));
                 request
             }
         }

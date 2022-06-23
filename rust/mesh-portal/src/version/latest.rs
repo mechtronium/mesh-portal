@@ -95,12 +95,12 @@ pub mod messaging {
     use mesh_portal_versions::version::v0_0_1::wave;
 
     pub type RequestHandler=dyn wave::RequestHandler;
-    pub type RequestCtx<'a,R> = wave::ReqCtx<'a,R>;
+    pub type ReqCtx<'a,R> = wave::ReqCtx<'a,R>;
     pub type RootRequestCtx<R> = wave::RootReqCtx<R>;
-    pub type Request = wave::ReqShell;
-    pub type Response= wave::RespShell;
+    pub type ReqShell = wave::ReqShell;
+    pub type RespShell = wave::RespShell;
     pub type RequestBuilder = wave::ReqBuilder;
-    pub type ProtoRequest= wave::ReqProto;
+    pub type ReqProto = wave::ReqProto;
     pub type Message = wave::Wave;
     pub type Agent = wave::Agent;
     pub type AuthedAgent = wave::AuthedAgent;
@@ -273,7 +273,7 @@ pub mod entity {
         use mesh_portal_versions::version::v0_0_1::{command, entity};
 
         pub type Method = v0_0_1::wave::Method;
-        pub type RequestCore= v0_0_1::wave::ReqCore;
+        pub type ReqCore = v0_0_1::wave::ReqCore;
         pub type Rc = command::request::Rc;
         pub type RcCommandType = command::request::RcCommandType;
 
@@ -339,7 +339,7 @@ pub mod entity {
         use mesh_portal_versions::version::{v0_0_1 as current, v0_0_1};
         use mesh_portal_versions::version::v0_0_1::entity;
 
-        pub type ResponseCore = v0_0_1::wave::RespCore;
+        pub type RespCore = v0_0_1::wave::RespCore;
     }
 }
 

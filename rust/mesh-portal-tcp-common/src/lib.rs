@@ -13,7 +13,6 @@ use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use std::marker::PhantomData;
 use std::time::Duration;
 use mesh_portal::version::latest::frame::{PrimitiveFrame, CloseReason};
-use mesh_portal::version::latest::portal::{outlet, inlet, initin, initout};
 use mesh_portal::error;
 use serde::{Deserialize, Serialize};
 

@@ -62,7 +62,6 @@ pub fn routes(attr: TokenStream, item: TokenStream ) -> TokenStream {
 }
 
 fn _routes(attr: TokenStream, item: TokenStream, _async: bool  ) -> TokenStream {
-    println!("ROUTES '{}'",attr.to_string());
 
     let item_cp = item.clone();
     let mut impl_item = parse_macro_input!(item_cp as syn::ItemImpl );
@@ -116,7 +115,7 @@ fn _routes(attr: TokenStream, item: TokenStream, _async: bool  ) -> TokenStream 
     let select = quote!{Err(())};
 
     let rtn= if attr.is_empty() {
-        quote!{Ok(ResponseCore::not_found())}
+        quote!{Ok(RespCore::not_found())}
     } else {
         let rtn= match _async {
             true => quote!{ let handler = #attr;
@@ -151,7 +150,7 @@ fn _routes(attr: TokenStream, item: TokenStream, _async: bool  ) -> TokenStream 
         #__async_trait
         impl #request_handler for #self_ty {
 
-            fn select( &self, request: & mesh_portal::version::latest::messaging::Request ) -> Result<(),()> {
+            #__async fn select( &self, request: & mesh_portal::version::latest::messaging::ReqShell ) -> Result<(),()> {
                  #(
                     if #static_selector_keys.is_match(&request).is_ok() {
                         return Ok(());
@@ -160,7 +159,7 @@ fn _routes(attr: TokenStream, item: TokenStream, _async: bool  ) -> TokenStream 
                 #select
             }
 
-            #__async fn handle( &self, request: mesh_portal::version::latest::messaging::RootRequestCtx<mesh_portal::version::latest::messaging::Request>) -> Result<ResponseCore,MsgErr> {
+            #__async fn handle( &self, request: mesh_portal::version::latest::messaging::RootRequestCtx<mesh_portal::version::latest::messaging::ReqShell>) -> Result<RespCore,MsgErr> {
                 #(
                     if #static_selector_keys.is_match(&request.request).is_ok() {
                        return self.#idents( request )#__await;
@@ -240,7 +239,7 @@ pub fn route(attr: TokenStream, input: TokenStream ) -> TokenStream {
   let item = ctx.item;
 
   let expanded = quote! {
-      #__async fn #ident( &self, mut ctx: mesh_portal::version::latest::messaging::RootRequestCtx<mesh_portal::version::latest::messaging::Request> ) -> Result<mesh_portal::version::latest::entity::response::ResponseCore,MsgErr> {
+      #__async fn #ident( &self, mut ctx: mesh_portal::version::latest::messaging::RootRequestCtx<mesh_portal::version::latest::messaging::ReqShell> ) -> Result<mesh_portal::version::latest::entity::response::RespCore,MsgErr> {
           let mut ctx : mesh_portal::version::latest::messaging::RootRequestCtx<#item> = ctx.transform_input()?;
           let ctx = ctx.push();
 
@@ -306,7 +305,7 @@ fn rtn_type( output: &ReturnType ) -> GenericArgument {
             if let Type::Path(path) = &**t {
                 if let PathSegment{arguments,..} = path.path.segments.last().expect("expecting Result") {
                     if let PathArguments::AngleBracketed(args) = arguments {
-                        return args.args.first().expect("expected Result Ok to be ResponseCore::from(...) compatible").clone()
+                        return args.args.first().expect("expected Result Ok to be RespCore::from(...) compatible").clone()
                     }
                 }
             }

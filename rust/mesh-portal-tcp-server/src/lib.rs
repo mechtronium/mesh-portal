@@ -21,14 +21,11 @@ use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::mpsc::error::SendTimeoutError;
 use tokio::sync::{broadcast, mpsc, oneshot, Mutex};
 
-use mesh_portal_api_server::{Portal, PortalEvent, PortalInfo, PortalRequestHandler};
+use mesh_portal_api_server::{Portal, PortalEvent, PortalInfo};
 use mesh_portal::version::latest::config::PortalConfig;
 use mesh_portal::version::latest::frame::CloseReason;
-use mesh_portal::version::latest::messaging::Request;
-use mesh_portal::version::latest::messaging::{Message, Response};
-use mesh_portal::version::latest::portal::initin::PortalAuth;
-use mesh_portal::version::latest::portal::inlet::{Frame};
-use mesh_portal::version::latest::portal::{initin, initout, inlet, outlet, Exchanger};
+use mesh_portal::version::latest::messaging::ReqShell;
+use mesh_portal::version::latest::messaging::{Message, RespShell};
 use mesh_portal_tcp_common::{
     FrameReader, FrameWriter, PrimitiveFrameReader, PrimitiveFrameWriter,
 };

@@ -27,21 +27,13 @@ use mesh_portal::version::latest::fail;
 use mesh_portal::version::latest::frame::CloseReason;
 use mesh_portal::version::latest::id::{Point, Port};
 use mesh_portal::version::latest::log::{RootLogger, SpanLogger};
-use mesh_portal::version::latest::messaging::{
-    Agent, ProtoRequest, Request, Response, Scope, SysMethod,
-};
+use mesh_portal::version::latest::messaging::{Agent, ReqProto, ReqShell, RespShell, Scope, SysMethod};
 use mesh_portal::version::latest::particle::Stub;
 use mesh_portal::version::latest::payload::Payload;
-use mesh_portal::version::latest::portal::inlet::AssignRequest;
-use mesh_portal::version::latest::portal::outlet::{Frame, RequestFrame};
-use mesh_portal::version::latest::portal::{inlet, outlet, Exchanger};
 use mesh_portal::version::latest::sys::{Assign, Sys};
 use mesh_portal_versions::error::MsgErr;
 use mesh_portal_versions::version::v0_0_1::id::id::{Layer, ToPoint, ToPort};
-use mesh_portal_versions::version::v0_0_1::wave::{
-    AsyncMessenger, AsyncRequestHandler, MethodKind, RespCore, RootReqCtx, AsyncRouter, Wave,
-    WaveFrame,
-};
+use mesh_portal_versions::version::v0_0_1::wave::{AsyncTransmitter, AsyncRequestHandler, MethodKind, RespCore, RootReqCtx, AsyncRouter, Wave, WaveFrame, Requestable, RespFrame};
 use std::fmt::Debug;
 use tokio::task::yield_now;
 
@@ -74,7 +66,7 @@ pub struct Portal {
     pub logger: RootLogger,
     broadcast_tx: broadcast::Sender<PortalEvent>,
     point: Point,
-    messenger: Arc<dyn AsyncMessenger>,
+    transmitter: Arc<dyn AsyncTransmitter>,
     assigned: Arc<DashSet<Point>>,
 }
 
@@ -86,43 +78,47 @@ impl Portal {
         broadcast_tx: broadcast::Sender<PortalEvent>,
         logger: RootLogger,
         point: Point,
-        messenger: Arc<dyn AsyncMessenger>,
+        transmitter: Arc<dyn AsyncTransmitter>,
     ) -> (Self, mpsc::Sender<WaveFrame>) {
-        let (inlet_tx, mut inlet_rx) = mpsc::channel(1024);
-        let (tx, mut rx) = mpsc::channel(1024);
-
+        let (inlet_tx, mut inlet_rx):(mpsc::Sender<WaveFrame>, mpsc::Receiver<WaveFrame>) = mpsc::channel(1024);
         {
             let outlet_tx = outlet_tx.clone();
             let logger = logger.point(point.clone());
-            let messenger = messenger.clone();
+            let transmitter = transmitter.clone();
             tokio::spawn(async move {
                 loop {
                     let logger = logger.clone();
                     match inlet_rx.recv().await {
                         Some(frame) => {
-                            let span = frame.span;
-                            match frame.message {
-                                Wave::Request(request) => {
+                            let span = frame.span();
+                            match frame{
+                                WaveFrame::Req(frame) => {
+                                    let request = frame.request;
+                                    let stub = request.as_stub();
                                     match tokio::time::timeout(
                                         Duration::from_secs(config.response_timeout),
-                                        messenger.send(request),
+                                        transmitter.send(request),
                                     )
                                     .await
                                     {
-                                        Ok(Ok(response)) => {
-                                            let frame = response.to_frame(span);
-                                            outlet_tx.send(frame)
+                                        Ok(response) => {
+                                            let frame = RespFrame::new(response);
+                                            let frame = WaveFrame::Resp(frame);
+                                            outlet_tx.send(frame).await;
                                         }
                                         _ => {
                                             let response =
-                                                request.fail("timeout".to_string().as_str());
-                                            response
+                                                stub.err(MsgErr::timeout());
+                                            let frame = RespFrame::new(response);
+                                            let frame = WaveFrame::Resp(frame);
+                                            outlet_tx.send(frame).await;
                                         }
                                     }
                                 }
-                                Wave::Response(response) => {
-                                    let logger = logger.for_span_async(span);
-                                    messenger.route(Wave::Response(response)).await;
+                                WaveFrame::Resp(frame) => {
+                                    let response = frame.response;
+                                    let logger = logger.opt_span(frame.span);
+                                    transmitter.route(Wave::Resp(response)).await;
                                 }
                             }
                         }
@@ -144,14 +140,14 @@ impl Portal {
                 outlet_tx,
                 broadcast_tx,
                 point,
-                messenger,
+                transmitter,
                 assigned,
             },
             inlet_tx,
         )
     }
 
-    pub async fn assign(&self, assign: Assign) {
+    pub async fn assign(&self, assign: Assign) -> Result<(),MsgErr>{
         let point = assign.details.stub.point.clone();
         self.assigned.insert(point.clone());
         let logger = self.logger.point(point.clone());
@@ -160,30 +156,33 @@ impl Portal {
         let assign: Sys = assign.into();
         let assign: Payload = assign.into();
         let mut request =
-            ProtoRequest::sys(Point::local_portal().clone().to_port(), SysMethod::Assign);
-        request.body = assign;
+            ReqProto::sys(Point::local_portal().clone().to_port(), SysMethod::Assign);
+        request.body(assign);
         let request = request.to_request(
             point.clone().to_port().with_layer(Layer::Shell),
             Agent::Anonymous,
             Scope::Full,
-        );
-        let frame = request.to_frame(logger.current_span());
+        )?;
+        let frame = request.to_frame(Some(logger.current_span().clone()) );
+        let frame = frame.into();
         self.outlet_tx.send(frame).await;
 
         self.broadcast_tx
             .send(PortalEvent::ParticleAdded(point));
+        Ok(())
     }
 
-    async fn send_request(&self, request: Request) -> Response {
+    async fn send_request(&self, request: ReqShell) -> RespShell {
+        let stub = request.as_stub();
         match tokio::time::timeout(
             Duration::from_secs(self.config.response_timeout),
-            self.messenger.send(request),
+            self.transmitter.send(request),
         )
         .await
         {
-            Ok(Ok(response)) => response,
+            Ok(response) => response,
             _ => {
-                let response = request.fail("timeout".to_string().as_str());
+                let response = stub.err(MsgErr::timeout());
                 response
             }
         }
@@ -204,7 +203,7 @@ impl Portal {
         }
 
         if self.assigned.contains(&point) {
-            Ok(())
+            return Ok(());
         }
 
         Err(())
@@ -215,29 +214,30 @@ impl Portal {
 impl AsyncRouter for Portal {
     async fn route(&self, wave: Wave) {
         match wave {
-            Wave::Request(request) => {
+            Wave::Req(request) => {
                 if self.has_core_port(&request.to).is_err() {
-                    self.messenger.route(request.not_found().into() ).await;
+                    self.transmitter.route(request.not_found().into() ).await;
                     return;
                 }
 
                 // don't allow anyone to say this request came from itself
                 if  self.has_core_port(&request.from).is_ok() {
-                    self.messenger.route(request.forbidden().into() ).await;
+                    self.transmitter.route(request.forbidden().into() ).await;
                     return;
                 }
 
                 // the portal shell sends Sys messages...
                 if request.core.method.kind() == MethodKind::Sys {
-                    self.messenger.route(request.forbidden().into() ).await;
+                    self.transmitter.route(request.forbidden().into() ).await;
                     return;
                 }
                 let logger = self.logger.point(request.to.clone().to_point());
-                let span = logger.span_async().current_span();
-                let frame = request.to_frame(span);
+                let span = logger.span_async().current_span().clone();
+                let frame = request.to_frame(Some(span));
+                let frame = WaveFrame::Req(frame);
                 self.outlet_tx.send(frame).await;
             }
-            Wave::Response(response) => {
+            Wave::Resp(response) => {
                 // Portal only handles requests (it should be expecting the response)
             }
         }
