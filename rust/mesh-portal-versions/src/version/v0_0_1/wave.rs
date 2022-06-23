@@ -1101,6 +1101,13 @@ impl Wave {
             Wave::Resp(response) => &response.to,
         }
     }
+
+    pub fn from(&self) -> &Port {
+        match self {
+            Wave::Req(request) => &request.from,
+            Wave::Resp(response) => &response.from,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1118,7 +1125,7 @@ pub enum ResponseKindExpected {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Agent {
     Anonymous,
-    Authenticated(AuthedAgent),
+    Point(Point),
 }
 
 impl Default for Agent {
@@ -1127,37 +1134,6 @@ impl Default for Agent {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AuthedAgent {
-    pub owner: Point,
-    pub executor: Point,
-}
-
-impl AuthedAgent {
-    pub fn new(point: Point) -> Self {
-        Self {
-            owner: point.clone(),
-            executor: point,
-        }
-    }
-}
-
-impl TryInto<AuthedAgent> for Agent {
-    type Error = MsgErr;
-
-    fn try_into(self) -> Result<AuthedAgent, Self::Error> {
-        match self {
-            Agent::Anonymous => Err(MsgErr::new(401, "Authorization required")),
-            Agent::Authenticated(auth) => Ok(auth),
-        }
-    }
-}
-
-impl Into<Agent> for AuthedAgent {
-    fn into(self) -> Agent {
-        Agent::Authenticated(self)
-    }
-}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Session {
@@ -2280,6 +2256,7 @@ pub enum SysMethod {
     Assign,
     Authenticate,
     AssignPort,
+    LaneAuth,
 }
 
 

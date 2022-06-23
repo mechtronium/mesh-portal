@@ -124,7 +124,8 @@ pub struct Assign {
 pub enum Sys {
     Assign(Assign),
     Event(SysEvent),
-    Log(Log)
+    Log(Log),
+    LaneAuth(LaneAuth)
 }
 
 impl TryFrom<ReqShell> for Assign {
@@ -160,6 +161,13 @@ pub enum SysEvent {
 pub struct Created {
     pub point: Point,
     pub kind: GenericKind
+}
+
+
+#[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
+pub struct LaneAuth {
+  pub creds: Box<Substance>,
+  pub end_point: Option<Point>,
 }
 
 

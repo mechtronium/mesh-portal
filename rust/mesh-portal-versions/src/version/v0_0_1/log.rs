@@ -467,12 +467,55 @@ impl PointLogger {
     }
 
 
-    fn point(&self, point: Point) -> PointLogger {
+    pub fn point(&self, point: Point) -> PointLogger {
         PointLogger {
             logger: self.logger.clone(),
             point
         }
     }
+
+    pub fn push<S:ToString>(&self, point_segs: S ) -> Result<PointLogger,MsgErr> {
+        Ok(PointLogger {
+            logger: self.logger.clone(),
+            point: self.point.push(point_segs.to_string())?
+        })
+    }
+
+    pub fn msg<M>(&self, level: Level, message :M ) where M: ToString {
+        self.logger.log(Log {
+            point: self.point.clone(),
+            level,
+            timestamp: timestamp().timestamp_millis(),
+            payload: LogPayload::Message(message.to_string()),
+            span:  None,
+            source: self.logger.source()
+        })
+    }
+
+
+    pub fn trace<M>(&self, message: M)
+        where
+            M: ToString,
+    {
+        self.msg(Level::Trace,message);
+    }
+
+    pub fn debug<M>(&self, message: M) where M:ToString {
+        self.msg(Level::Trace,message);
+    }
+
+    pub fn info<M>(&self, message: M) where M:ToString {
+        self.msg(Level::Trace,message);
+    }
+
+    pub fn warn<M>(&self, message: M) where M:ToString {
+        self.msg(Level::Warn, message );
+    }
+
+    pub fn error<M>(&self, message: M) where M:ToString {
+        self.msg(Level::Error, message );
+    }
+
 }
 
 
@@ -583,6 +626,7 @@ impl SpanLogger {
     pub fn error<M>(&self, message: M) where M:ToString {
         self.msg(Level::Error, message );
     }
+
 
     pub fn audit(&self) -> AuditLogBuilder {
         AuditLogBuilder {

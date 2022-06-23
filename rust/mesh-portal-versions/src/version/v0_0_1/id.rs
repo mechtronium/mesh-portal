@@ -38,6 +38,7 @@ pub mod id {
         pub static ref GLOBAL_CENTRAL: Point = Point::from_str("GLOBAL::central").unwrap();
         pub static ref GLOBAL_EXEC: Point = Point::from_str("GLOBAL::executor").unwrap();
         pub static ref LOCAL_PORTAL: Point = Point::from_str("LOCAL::portal").unwrap();
+        pub static ref LOCAL_LANE_CONNECTOR: Point = Point::from_str("LOCAL::lane-connector").unwrap();
     }
 
     pub type Uuid = String;
@@ -1519,6 +1520,10 @@ pub mod id {
 
         pub fn local_portal() -> Self {
             LOCAL_PORTAL.clone()
+        }
+
+        pub fn local_lane_connector() -> Self {
+            LOCAL_LANE_CONNECTOR.clone()
         }
 
         pub fn normalize(self) -> Result<Point, MsgErr> {
