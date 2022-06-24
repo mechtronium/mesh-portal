@@ -6,7 +6,7 @@ pub mod config {
     use serde::{Deserialize, Serialize};
 
     use crate::version::v0_0_1::config::config::bind::BindConfig;
-    use crate::version::v0_0_1::id::id::{GenericKind, Point};
+    use crate::version::v0_0_1::id::id::{KindParts, Point};
     use crate::version::v0_0_1::parse::model::{MessageScope, MethodScope, RouteScope};
     use crate::version::v0_0_1::particle::particle;
     use crate::version::v0_0_1::particle::particle::{Details, Stub};

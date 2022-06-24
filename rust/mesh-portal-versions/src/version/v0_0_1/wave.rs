@@ -8,7 +8,7 @@ use crate::version::v0_0_1::id::id::{Point, Port, Layer, ToPort, Topic, Uuid, To
 use crate::version::v0_0_1::log::{LogSpan, LogSpanEvent, SpanLogger};
 use crate::version::v0_0_1::msg::MsgMethod;
 use crate::version::v0_0_1::particle::particle::Details;
-use crate::version::v0_0_1::substance::substance::{Errors, MultipartFormBuilder, Token, ToRequestCore};
+use crate::version::v0_0_1::substance::substance::{Errors, MultipartFormBuilder, SubstanceKind, Token, ToRequestCore};
 use crate::version::v0_0_1::security::{Permissions, Privilege, Privileges};
 use crate::version::v0_0_1::selector::selector::PointSelector;
 use crate::version::v0_0_1::sys::AssignmentKind;
@@ -288,6 +288,13 @@ pub struct ReqStub {
     pub span: Option<LogSpan>
 }
 
+impl Into<WaitTime> for &ReqStub{
+    fn into(self) -> WaitTime {
+        self.handling.wait.clone()
+    }
+}
+
+
 impl Requestable<RespShell> for ReqStub {
     fn status(self, status: u16) -> RespShell {
         RespShell {
@@ -397,7 +404,7 @@ impl Requestable<RespXtra> for ReqStub {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize,Eq,PartialEq)]
 pub struct ReqShell {
     pub id: String,
     pub agent: Agent,
@@ -490,27 +497,24 @@ impl ReqShell {
         }
     }
 
-    pub fn require_method<M: Into<Method>+ToString+Clone>(self, method: M) -> Result<ReqShell, RespShell> {
+    pub fn require_method<M: Into<Method>+ToString+Clone>(self, method: M) -> Result<ReqShell, MsgErr> {
         if self.core.method == method.clone().into() {
             Ok(self)
         } else {
-            Err(self.err(MsgErr::new(
+            Err(MsgErr::new(
                 400,
                 format!("Bad Request: expecting method: {}", method.to_string()).as_str(),
-            )))
+            ))
         }
     }
 
-    pub fn require_body<B>(self, body_kind: &'static str) -> Result<B, RespShell>
+    pub fn require_body<B>(self) -> Result<B, MsgErr>
     where
         B: TryFrom<Substance, Error = MsgErr>,
     {
         match B::try_from(self.clone().core.body) {
             Ok(body) => Ok(body),
-            Err(err) => Err(self.err(MsgErr::new(
-                400,
-                format!("Bad Request: expecting body substance kind: {}", body_kind).as_str(),
-            ))),
+            Err(err) => Err(MsgErr::bad_request()),
         }
     }
 
@@ -712,9 +716,9 @@ impl ReqShell {
         }
     }
 
-    pub fn substance_result<E: StatusErr>(self, result: Result<Substance, E>) -> RespShell {
+    pub fn body_result<E: StatusErr>(self, result: Result<Substance, E>) -> RespShell {
         match result {
-            Ok(substance) => self.ok_substance(substance),
+            Ok(substance) => self.ok_body(substance),
             Err(err) => {
                 let core = self.core.err(err);
                 RespShell {
@@ -800,11 +804,11 @@ impl ReqShell {
         response
     }
 
-    pub fn ok_substance(self, substance: Substance) -> RespShell {
+    pub fn ok_body(self, body: Substance) -> RespShell {
         let core = RespCore {
             headers: Default::default(),
             status: StatusCode::from_u16(200u16).unwrap(),
-            body: substance,
+            body,
         };
         let response = RespShell {
             id: uuid(),
@@ -1011,7 +1015,7 @@ impl ReqProto {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize,Eq,PartialEq)]
 pub struct RespShell {
     pub id: Uuid,
     pub from: Port,
@@ -1073,7 +1077,7 @@ impl RespShell {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Autobox)]
+#[derive(Debug, Clone, Serialize, Deserialize, Autobox,Eq,PartialEq)]
 pub enum Wave {
     Req(ReqShell),
     Resp(RespShell),
@@ -1122,7 +1126,7 @@ pub enum ResponseKindExpected {
     Async(Substance), // The substance
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize,Eq,PartialEq)]
 pub enum Agent {
     Anonymous,
     Point(Point),
@@ -1282,7 +1286,7 @@ pub enum Roles {
     Enumerated(Vec<String>),
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize,Eq,PartialEq)]
 pub struct Handling {
     pub kind: HandlingKind,
     pub priority: Priority,
@@ -1290,7 +1294,7 @@ pub struct Handling {
     pub wait: WaitTime,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize,Eq,PartialEq)]
 pub enum HandlingKind {
     Durable,   // Mesh will guarantee delivery eventually once Request call has returned
     Queued,    // Slower but more reliable delivery, message can be lost if a star crashes, etc
@@ -1308,7 +1312,7 @@ impl Default for Handling {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize,Eq,PartialEq)]
 pub enum WaitTime {
     High,
     Med,
@@ -1321,7 +1325,7 @@ impl Default for WaitTime {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize,Eq,PartialEq)]
 pub enum Retries {
     None,
     Max,
@@ -1335,8 +1339,9 @@ impl Default for Retries {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize,Eq,PartialEq)]
 pub enum Priority {
+    Hyper,
     High,
     Med,
     Low,
@@ -1350,6 +1355,7 @@ impl Default for Priority {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Karma {
+    Hyper,
     Super,
     High,
     Med,
@@ -1370,7 +1376,23 @@ pub trait AsyncRouter: Send + Sync {
 
 #[derive(Clone)]
 pub struct AsyncPointRequestHandlers{
-    pub handlers: Arc<DashMap<Point,AsyncRequestHandlerRelay>>
+    pub handlers: Arc<DashMap<Point,Box<dyn AsyncRequestHandler>>>
+}
+
+impl AsyncPointRequestHandlers {
+    pub fn new() -> Self {
+        Self {
+            handlers: Arc::new(DashMap::new())
+        }
+    }
+
+    pub fn add(&self, point: Point, handler: Box<dyn AsyncRequestHandler>) {
+        self.handlers.insert( point, handler );
+    }
+
+    pub fn remove(&self, point: &Point ) {
+        self.handlers.remove(point);
+    }
 }
 
 #[async_trait]
@@ -1616,12 +1638,13 @@ impl AsyncAuthorizationRequester for AsyncRefreshTokenAuthorizationRequester {
 }
 
 
+#[derive(Clone)]
 pub struct AsyncRequestHandlerRelay {
-    pub relay: Box<dyn AsyncRequestHandler>,
+    pub relay: Arc<dyn AsyncRequestHandler>,
 }
 
 impl AsyncRequestHandlerRelay {
-    pub fn new(handler: Box<dyn AsyncRequestHandler>) -> Self {
+    pub fn new(handler: Arc<dyn AsyncRequestHandler>) -> Self {
         Self { relay: handler }
     }
 }
@@ -2255,7 +2278,7 @@ pub enum SysMethod {
     Command,
     Assign,
     AssignPort,
-    ConnectReq,
+    EntryReq,
 }
 
 

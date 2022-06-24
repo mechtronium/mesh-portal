@@ -118,10 +118,10 @@ fn _routes(attr: TokenStream, item: TokenStream, _async: bool  ) -> TokenStream 
         quote!{Ok(RespCore::not_found())}
     } else {
         let rtn= match _async {
-            true => quote!{ let handler = #attr;
-                            handler.handle(request).await },
-            false=> quote!{  let handler = #attr;
-                             handler.handle(request) }
+            true => quote!{
+                            #attr.handle(request).await },
+            false=> quote!{
+                             #attr.handler.handle(request) }
         };
         rtn
     };

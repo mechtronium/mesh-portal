@@ -6,7 +6,7 @@ pub mod substance {
     use crate::error::{MsgErr, ParseErrs};
     use crate::version::v0_0_1::bin::Bin;
     use crate::version::v0_0_1::command::request::{Rc, RcCommandType};
-    use crate::version::v0_0_1::id::id::{GenericKind, GenericKindBase, Meta, Point, PointCtx, PointVar, Port};
+    use crate::version::v0_0_1::id::id::{KindParts, KindBase, Meta, Point, PointCtx, PointVar, Port};
     use crate::version::v0_0_1::particle::particle::{Particle, Status, Stub};
     use crate::version::v0_0_1::selector::selector::{KindSelector, PointSelector};
     use crate::version::v0_0_1::util::{ToResolved, uuid, ValueMatcher, ValuePattern};
@@ -17,7 +17,7 @@ pub mod substance {
     use serde_json::Value;
     use crate::version::v0_0_1::cli::RawCommand;
     use crate::version::v0_0_1::command::Command;
-    use crate::version::v0_0_1::wave::{Method, ReqCore, RespShell, RespCore};
+    use crate::version::v0_0_1::wave::{Method, ReqCore, RespShell, RespCore, Wave};
     use crate::version::v0_0_1::http::HttpMethod;
     use crate::version::v0_0_1::msg::MsgMethod;
     use crate::version::v0_0_1::parse::{CtxResolver, Env};
@@ -61,6 +61,7 @@ pub mod substance {
         RespCore,
         Sys,
         Token,
+        Wave,
     }
 
     #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, strum_macros::Display,Autobox)]
@@ -86,7 +87,8 @@ pub mod substance {
         ReqCore(Box<ReqCore>),
         RespCore(Box<RespCore>),
         Sys(Sys),
-        Token(Token)
+        Token(Token),
+        Wave(Box<Wave>)
     }
 
     #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq,Hash )]
@@ -189,7 +191,8 @@ pub mod substance {
                 Substance::RespCore(_) => SubstanceKind::RespCore,
                 Substance::Sys(_) => SubstanceKind::Sys,
                 Substance::MultipartForm(_) => SubstanceKind::MultipartForm,
-                Substance::Token(_) => SubstanceKind::Token
+                Substance::Token(_) => SubstanceKind::Token,
+                Substance::Wave(_) => SubstanceKind::Wave
             }
         }
 
@@ -198,6 +201,7 @@ pub mod substance {
                 Substance::Empty => Ok(Arc::new(vec![])),
                 Substance::List(list) => list.to_bin(),
                 Substance::Map(map) => map.to_bin(),
+                Substance::Bin(bin) => Ok(bin),
                 _ => Err("not supported".into()),
             }
         }

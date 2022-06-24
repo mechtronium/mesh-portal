@@ -7,6 +7,7 @@ pub mod frame {
     use serde::{Deserialize, Serialize};
 
     use crate::error::MsgErr;
+    use crate::version::v0_0_1::sys::EntryReq;
     use crate::version::v0_0_1::wave::{ReqShell, RespShell, Wave};
 
     pub struct PrimitiveFrame {
@@ -120,5 +121,21 @@ pub mod frame {
     }
 
 
+    impl TryInto<PrimitiveFrame> for EntryReq{
+        type Error = MsgErr;
+
+        fn try_into(self) -> Result<PrimitiveFrame, Self::Error> {
+            let data = bincode::serialize(&self)?;
+            Ok(PrimitiveFrame::from(data))
+        }
+    }
+
+    impl TryInto<EntryReq> for PrimitiveFrame {
+        type Error = MsgErr;
+
+        fn try_into(self) -> Result<EntryReq, Self::Error> {
+            Ok(bincode::deserialize(self.data.as_bytes())?)
+        }
+    }
 
 }

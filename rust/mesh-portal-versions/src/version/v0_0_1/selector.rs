@@ -15,15 +15,14 @@ pub mod selector {
     use core::str::FromStr;
 
 
-    use semver::ReqParseError;
     use serde::de::Visitor;
     use serde::{de, Deserializer, Serializer};
 
     use crate::error::MsgErr;
 
     use crate::version::v0_0_1::command::request::{Rc, RcCommandType};
-    use crate::version::v0_0_1::id::id::{GenericKind, GenericKindBase, Layer, Point, PointCtx, PointSeg, PointSegKind, PointVar, Port, RouteSeg, Specific, Tks, Topic, Variable, VarVal, Version};
-    use crate::version::v0_0_1::parse::{camel_case_chars, camel_case_to_string_matcher, consume_hierarchy, Env, file_chars, path, path_regex, point_segment_selector, point_selector};
+    use crate::version::v0_0_1::id::id::{KindParts, KindBase, Layer, Point, PointCtx, PointSeg, PointSegKind, PointVar, Port, RouteSeg, Specific, Tks, Topic, Variable, VarVal, Version};
+    use crate::version::v0_0_1::parse::{camel_case_chars, camel_case_to_string_matcher, CamelCase, consume_hierarchy, Env, file_chars, path, path_regex, point_segment_selector, point_selector};
     use crate::version::v0_0_1::substance::substance::{Call, CallKind, CallWithConfig, CallWithConfigDef, HttpCall, ListPattern, MapPattern, MsgCall, NumRange, Substance, SubstanceFormat, SubstancePattern, SubstancePatternDef, SubstanceKind, SubstanceTypePatternDef};
     use crate::version::v0_0_1::selector::selector::specific::{
         ProductSelector, VariantSelector, VendorSelector,
@@ -50,8 +49,8 @@ pub mod selector {
     use crate::version::v0_0_1::parse::error::result;
     use crate::version::v0_0_1::parse::model::Var;
 
-    pub type KindSelector =KindSelectorDef<GenericKindSelector,GenericSubKindSelector,SpecificSelector>;
-    pub type KindSelectorVar =KindSelectorDef<VarVal<GenericKindSelector>,VarVal<GenericSubKindSelector>,VarVal<SpecificSelector>>;
+    pub type KindSelector =KindSelectorDef<KindBaseSelector, SubKindSelector,SpecificSelector>;
+    pub type KindSelectorVar =KindSelectorDef<VarVal<KindBaseSelector>,VarVal<SubKindSelector>,VarVal<SpecificSelector>>;
 
     #[derive(Debug, Clone, Serialize, Deserialize,Eq,PartialEq,Hash)]
     pub struct KindSelectorDef<GenericKindSelector,GenericSubKindSelector,SpecificSelector> {
@@ -62,8 +61,8 @@ pub mod selector {
 
     impl KindSelector {
         pub fn new(
-            kind: GenericKindSelector,
-            sub_kind: GenericSubKindSelector,
+            kind: KindBaseSelector,
+            sub_kind: SubKindSelector,
             specific: ValuePattern<SpecificSelector>,
         ) -> Self {
             Self {
@@ -73,12 +72,12 @@ pub mod selector {
             }
         }
 
-        pub fn matches(&self, kind: &GenericKind) -> bool
+        pub fn matches(&self, kind: &KindParts) -> bool
         where
-            GenericKind: Eq + PartialEq,
+            KindParts: Eq + PartialEq,
         {
-            self.kind.matches(&kind.kind())
-                && (kind.sub_kind.is_some() && self.sub_kind.matches(kind.sub_kind.as_ref().unwrap()))
+            self.kind.matches(&kind.base())
+                && (kind.sub.is_some() && self.sub_kind.matches(kind.sub.as_ref().unwrap()))
                 && self.specific.is_match_opt(kind.specific().as_ref()).is_ok()
         }
     }
@@ -97,15 +96,15 @@ pub mod selector {
     impl KindSelector {
         pub fn any() -> Self {
             Self {
-                kind: GenericKindSelector::Any,
-                sub_kind: GenericSubKindSelector::Any,
+                kind: KindBaseSelector::Any,
+                sub_kind: SubKindSelector::Any,
                 specific: ValuePattern::Any,
             }
         }
     }
 
 
-    pub type GenericSubKindSelector = Pattern<String>;
+    pub type SubKindSelector = Pattern<CamelCase>;
 
     #[derive(Debug, Clone, Serialize, Deserialize,Eq,PartialEq,Hash)]
     pub struct PointSelectorDef<Hop> {
@@ -150,7 +149,7 @@ pub mod selector {
                 if PointSegSelector::InclusiveAny == hop.segment_selector
                     || PointSegSelector::InclusiveRecursive == hop.segment_selector
                 {
-                    let resource_kind = GenericKind::new(GenericKindBase::Root, None, None);
+                    let resource_kind = KindParts::new(KindBase::Root, None, None);
                     hop.kind_selector.matches(&resource_kind)
                 } else {
                     false
@@ -205,8 +204,8 @@ pub mod selector {
 
         pub fn matches(&self, hierarchy: &PointHierarchy ) -> bool
         where
-            GenericKindBase: Clone,
-            GenericKind: Clone,
+            KindBase: Clone,
+            KindParts: Clone,
         {
 
             if hierarchy.is_root() && self.is_root() {
@@ -989,7 +988,7 @@ pub mod selector {
         }
     }
 
-    pub type GenericKindSelector = Pattern<GenericKindBase>;
+    pub type KindBaseSelector = Pattern<KindBase>;
 
     #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
     pub struct PortHierarchy {
@@ -1024,8 +1023,8 @@ pub mod selector {
     impl PointHierarchy {
         pub fn push(&self, segment: PointKindSeg) -> PointHierarchy
             where
-                GenericKind: Clone,
-                GenericKindBase: Clone,
+                KindParts: Clone,
+                KindBase: Clone,
         {
             if let PointSeg::Root = segment.segment {
                 println!("pushing ROOT");
@@ -1089,7 +1088,7 @@ pub mod selector {
     #[derive(Debug, Eq, PartialEq, Clone, Serialize, Deserialize)]
     pub struct PointKindSeg{
         pub segment: PointSeg,
-        pub kind: GenericKind,
+        pub kind: KindParts,
     }
 
     impl ToString for PointKindSeg {

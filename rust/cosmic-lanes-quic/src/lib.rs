@@ -6,14 +6,14 @@ use std::time::Duration;
 use tokio::sync::mpsc;
 use quinn::{ClientConfig, Connecting, Connection, Endpoint, NewConnection, RecvStream, ServerConfig, VarInt};
 use tokio::sync::mpsc::{Receiver, Sender};
-use cosmic_lanes::{HyperGate, OnRamp};
+use cosmic_lanes::{VersionGate, InterchangeEntryRouter};
 use mesh_portal_versions::error::{MsgErr, StatusErr};
 use mesh_portal_versions::VERSION;
 use mesh_portal_versions::version::v0_0_1::frame::frame::PrimitiveFrame;
 use mesh_portal_versions::version::v0_0_1::id::id::{Point, ToPort};
 use mesh_portal_versions::version::v0_0_1::log::PointLogger;
 use mesh_portal_versions::version::v0_0_1::substance::substance::Substance;
-use mesh_portal_versions::version::v0_0_1::sys::{ConnectReq, Sys};
+use mesh_portal_versions::version::v0_0_1::sys::{EntryReq, Sys};
 use mesh_portal_versions::version::v0_0_1::wave::{ReqCore, ReqProto, RespShell, SysMethod, Wave};
 
 fn generate_self_signed_cert() -> Result<(rustls::Certificate, rustls::PrivateKey), MsgErr>
@@ -64,7 +64,7 @@ pub struct HyperServerQuic {
 
 
 impl HyperServerQuic {
-   pub async fn new( addr: SocketAddr, gate: Arc<dyn HyperGate> ) -> Result<Self,MsgErr> {
+   pub async fn new(addr: SocketAddr, gate: Arc<VersionGate> ) -> Result<Self,MsgErr> {
 
        let (cert,key) = generate_self_signed_cert()?;
        let server_config = ServerConfig::with_single_cert( vec![cert], key )?;
@@ -78,20 +78,20 @@ impl HyperServerQuic {
            while let Some(conn) = incoming.next().await {
                let gate = gate.clone();
                tokio::spawn( async move {
-                   async fn connect( conn: Connecting, gate: Arc<dyn HyperGate> ) -> Result<(NewConnection, mpsc::Sender<Wave>,mpsc::Receiver<Wave>), ConErr>{
+                   async fn connect(conn: Connecting, gate: Arc<VersionGate> ) -> Result<(NewConnection, mpsc::Sender<Wave>, mpsc::Receiver<Wave>), ConErr>{
                        let mut connection: NewConnection = conn.await?;
                        let recv = tokio::time::timeout(Duration::from_secs(30), connection.uni_streams.next()).await?.ok_or(MsgErr::server_error())??;
                        let version = recv.read_to_end(2*1024).await?;
                        let version = PrimitiveFrame::from(version);
                        let version = version.try_into()?;
-                       let ramp = match gate.unlock(version).await {
-                           Ok(ramp) => {
+                       let entry_router = match gate.unlock(version).await {
+                           Ok(entry_router) => {
                                let mut send = connection.connection.open_uni().await?;
                                let ok = PrimitiveFrame::from("Ok".to_string());
                                send.write_all(ok.data.as_bytes() ).await?;
                                send.finish().await?;
-                               ramp
-                           },
+                               entry_router
+                           }
                            Err(err) => {
                                let mut send = connection.connection.open_uni().await?;
                                let frame = PrimitiveFrame::from(err);
@@ -107,7 +107,7 @@ impl HyperServerQuic {
                        let req = PrimitiveFrame::from(req);
                        let req = req.try_into()?;
                        let stub = req.as_stub();
-                       match ramp.enter(req).await {
+                       match entry_router.enter(req).await {
                            Ok((tx,rx)) => {
                                let mut send = connection.connection.open_uni().await?;
                                let resp = stub.ok();
@@ -173,11 +173,11 @@ pub struct HyperClientQuic {
 }
 
 impl HyperClientQuic {
-    pub async fn new( endpoint: Endpoint,
-                      server_addr: SocketAddr,
-                      connect_req: ConnectReq,
-                      deliver_tx: mpsc::Sender<Wave>,
-                      logger: PointLogger ) -> Result<Self,MsgErr> {
+    pub async fn new(endpoint: Endpoint,
+                     server_addr: SocketAddr,
+                     connect_req: EntryReq,
+                     deliver_tx: mpsc::Sender<Wave>,
+                     logger: PointLogger ) -> Result<Self,MsgErr> {
 
 
         // Connect to the server passing in the server name which is supposed to be in the server certificate.

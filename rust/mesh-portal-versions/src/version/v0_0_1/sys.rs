@@ -1,15 +1,15 @@
 
 use crate::error::MsgErr;
-use crate::version::v0_0_1::id::id::{GenericKind, Point, ToPoint, ToPort};
+use crate::version::v0_0_1::id::id::{KindParts, Point, ToPoint, ToPort};
 use crate::version::v0_0_1::particle::particle::{Details, Status, Stub};
 use crate::version::v0_0_1::substance::substance::Substance;
 use cosmic_macros_primitive::Autobox;
 
 
 use serde::{Deserialize, Serialize};
+use crate::version::v0_0_1::command::command::common::StateSrc;
 use crate::version::v0_0_1::log::Log;
-use crate::version::v0_0_1::substance::substance::SubstanceKind::ReqCore;
-use crate::version::v0_0_1::wave::{ReqShell, ReqCore, SysMethod};
+use crate::version::v0_0_1::wave::{ReqCore, ReqShell, SysMethod};
 
 
 #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq,strum_macros::Display)]
@@ -98,7 +98,7 @@ impl ParticleRecord {
             details: Details {
                 stub: Stub {
                     point: Point::root(),
-                    kind: GenericKind::root(),
+                    kind: KindParts::root(),
                     status: Status::Ready
                 },
                 properties: Default::default(),
@@ -118,7 +118,18 @@ impl Into<Stub> for ParticleRecord {
 #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq )]
 pub struct Assign {
     pub kind: AssignmentKind,
-    pub details: Details
+    pub details: Details,
+    pub state: StateSrc
+}
+
+impl Assign {
+    pub fn new( kind: AssignmentKind, details: Details, state: StateSrc ) -> Self {
+        Self {
+            kind,
+            details,
+            state
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, strum_macros::Display, Autobox)]
@@ -126,7 +137,7 @@ pub enum Sys {
     Assign(Assign),
     Event(SysEvent),
     Log(Log),
-    ConnectReq(ConnectReq)
+    EntryReq(EntryReq)
 }
 
 impl TryFrom<ReqShell> for Assign {
@@ -161,28 +172,27 @@ pub enum SysEvent {
 #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
 pub struct Created {
     pub point: Point,
-    pub kind: GenericKind
+    pub kind: KindParts
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
-pub enum ServiceSelector {
+#[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, strum_macros::Display)]
+pub enum InterchangeKind {
     Cli,
     Portal,
-    Host(String)
 }
 
 
 #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
-pub struct ConnectReq {
-  pub selector: ServiceSelector,
+pub struct EntryReq {
+  pub interchange: InterchangeKind,
   pub auth: Box<Substance>,
-  pub end_point: Option<Point>,
+  pub remote: Option<Point>,
 }
 
-impl Into<ReqShell> for ConnectReq {
+impl Into<ReqShell> for EntryReq {
     fn into(self) -> ReqShell {
-        let mut core = ReqCore::new(SysMethod::ConnectReq.into() );
-        core.body = Sys::ConnectReq(self).into();
+        let mut core = ReqCore::new(SysMethod::EntryReq.into() );
+        core.body = Sys::EntryReq(self).into();
         let req = ReqShell::new(core, Point::local_hypergate(), Point::remote_entry_requester() );
         req
     }

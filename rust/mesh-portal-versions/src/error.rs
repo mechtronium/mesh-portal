@@ -10,7 +10,6 @@ use nom::error::VerboseError;
 use nom::Err;
 use nom_locate::LocatedSpan;
 use nom_supreme::error::{ErrorTree, StackContext};
-use semver::{ReqParseError, SemVerError};
 use std::num::ParseIntError;
 use std::ops::Range;
 use std::rc::Rc;
@@ -120,20 +119,6 @@ impl Debug for MsgErr {
     }
 }
 
-impl ToString for MsgErr {
-    fn to_string(&self) -> String {
-        match self {
-            MsgErr::Status { status, message } => {
-                format!("Status {}: {}", status, message )
-            }
-
-            MsgErr::ParseErrs(_) => {
-                "ParseErrs".to_string()
-            }
-        }
-
-    }
-}
 
 
 impl MsgErr {
@@ -314,6 +299,14 @@ impl From<nom::Err<VerboseError<&str>>> for MsgErr {
     }
 }
 
+impl From<semver::Error> for MsgErr {
+    fn from(error: semver::Error) -> Self {
+        Self::Status  {
+            status: 500,
+            message: error.to_string(),
+        }
+    }
+}
 
 
 impl From<ErrorTree<&str>> for MsgErr {
@@ -325,23 +318,7 @@ impl From<ErrorTree<&str>> for MsgErr {
     }
 }
 
-impl From<ReqParseError> for MsgErr {
-    fn from(error: ReqParseError) -> Self {
-        Self::Status  {
-            status: 500,
-            message: error.to_string(),
-        }
-    }
-}
 
-impl From<SemVerError> for MsgErr {
-    fn from(error: SemVerError) -> Self {
-        Self::Status  {
-            status: 500,
-            message: error.to_string(),
-        }
-    }
-}
 
 impl From<strum::ParseError> for MsgErr {
     fn from(error: strum::ParseError) -> Self {

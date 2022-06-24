@@ -20,11 +20,7 @@ use mesh_portal::error::MsgErr;
 use mesh_portal::version::latest::id::{Point, Port, Uuid};
 use mesh_portal::version::latest::messaging::{Agent, ReqCtx, SysMethod};
 use mesh_portal_versions::version::v0_0_1::id::id::{Layer, ToPoint, ToPort};
-use mesh_portal_versions::version::v0_0_1::wave::{
-    AsyncInternalRequestHandlers, AsyncTransmitter, AsyncTransmitterWithAgent, AsyncRequestHandler,
-    AsyncRequestHandlerRelay, AsyncRouter, ReqShell, ReqXtra, RequestHandlerRelay, Requestable,
-    RespShell, RespXtra, WaitTime, Wave, WaveXtra,
-};
+use mesh_portal_versions::version::v0_0_1::wave::{AsyncInternalRequestHandlers, AsyncTransmitter, AsyncTransmitterWithAgent, AsyncRequestHandler, AsyncRequestHandlerRelay, AsyncRouter, ReqShell, ReqXtra, RequestHandlerRelay, Requestable, RespShell, RespXtra, WaitTime, Wave, WaveXtra, AsyncPointRequestHandlers};
 use mesh_portal_versions::version::v0_0_1::quota::Timeouts;
 use std::sync::Arc;
 use std::time::Duration;
@@ -34,34 +30,34 @@ use mesh_portal::version::latest::entity::response::RespCore;
 use mesh_portal::version::latest::payload::Payload;
 use mesh_portal::version::latest::sys::{Assign, Sys};
 
-pub struct Portal {
+pub struct PortalCore {
     pub port: Port,
     pub assigned: Arc<DashSet<Point>>,
-    pub messenger: Arc<dyn AsyncTransmitter>,
+    pub transmitter: Arc<dyn AsyncTransmitter>,
     pub handlers: AsyncInternalRequestHandlers<AsyncRequestHandlerRelay>,
 }
 
-impl Portal {
+impl PortalCore {
     pub async fn new(
-        inlet_tx: mpsc::Sender<WaveXtra>,
-        outlet_rx: mpsc::Receiver<WaveXtra>,
+        inlet_tx: mpsc::Sender<Wave>,
+        outlet_rx: mpsc::Receiver<Wave>,
     ) -> Result<Self, MsgErr> {
         let assigned = Arc::new(DashSet::new());
-        let messenger = Arc::new(PortalMessenger::new(inlet_tx, assigned.clone()));
+        let messenger = Arc::new(PortalTransmitter::new(inlet_tx, assigned.clone()));
 
         async fn listen_for_point(
-            mut outlet_rx: mpsc::Receiver<WaveXtra>
-        ) -> Result<(Point, mpsc::Receiver<WaveXtra>), MsgErr> {
+            mut outlet_rx: mpsc::Receiver<Wave>
+        ) -> Result<(Point, mpsc::Receiver<Wave>), MsgErr> {
             while let Ok(frame) = tokio::time::timeout(
-                Duration::from_secs(Timeouts::default().from(&WaitTime::High)),
+                Duration::from_secs(Timeouts::default().from(WaitTime::High)),
                 outlet_rx.recv(),
             ).await
             {
-                if let Ok(frame) = frame {
-                    if let Wave::Req(request) = frame.wave {
+                if let Some(frame) = frame {
+                    if let Wave::Req(request) = frame{
                         let point: Point = request
                             .require_method(SysMethod::AssignPort)?
-                            .require_body("Point")?;
+                            .core.body.try_into()?;
                         return Ok((point, outlet_rx));
                     } // else do nothing...
                 } else {
@@ -81,14 +77,16 @@ impl Portal {
        {
           let handlers = handlers.clone();
           tokio::spawn(async move {
-             while let Ok(frame) = outlet_rx.recv().await {}
+             while let Some(wave) = outlet_rx.recv().await {
+                 // process wave somehow...
+             }
           });
        }
 
         Ok(Self {
             port,
            assigned,
-           messenger,
+            transmitter: messenger,
             handlers,
         })
     }
@@ -97,7 +95,7 @@ impl Portal {
         if self.port.point == *point {
             return Ok(());
         }
-        if self.assigned.contains_key(point) {
+        if self.assigned.contains(point) {
             Ok(())
         } else {
             Err(())
@@ -105,15 +103,15 @@ impl Portal {
     }
 }
 
-pub struct PortalMessenger {
-    inlet_tx: mpsc::Sender<WaveXtra>,
-    exchanges: Arc<DashMap<Uuid, oneshot::Sender<RespXtra>>>,
+pub struct PortalTransmitter {
+    inlet_tx: mpsc::Sender<Wave>,
+    exchanges: Arc<DashMap<Uuid, oneshot::Sender<RespShell>>>,
     assigned: Arc<DashSet<Point>>,
     timeouts: Timeouts,
 }
 
-impl PortalMessenger {
-    pub fn new(inlet_tx: mpsc::Sender<WaveXtra>, assigned: Arc<DashSet<Point>>) -> Self {
+impl PortalTransmitter {
+    pub fn new(inlet_tx: mpsc::Sender<Wave>, assigned: Arc<DashSet<Point>>) -> Self {
         Self {
             inlet_tx,
             exchanges: Arc::new(DashMap::new()),
@@ -124,37 +122,38 @@ impl PortalMessenger {
 }
 
 #[async_trait]
-impl AsyncTransmitter for PortalMessenger {
-    async fn send(&self, request: ReqXtra) -> RespXtra {
-        if !self.assigned.contains(&request.from().to_point()) {
+impl AsyncTransmitter for PortalTransmitter {
+    async fn send(&self, request: ReqShell ) -> RespShell {
+        if !self.assigned.contains(&request.from.clone().to_point()) {
             return request.forbidden();
         }
 
         let (tx, rx) = oneshot::channel();
-        self.exchanges.insert(request.id(), tx);
+        self.exchanges.insert(request.id.clone(), tx);
+        let stub = request.as_stub();
         self.inlet_tx.send(request.into()).await;
 
         if let Ok(frame) =
-            tokio::time::timeout(Duration::from_secs(self.timeouts.from(&request)), rx).await
+            tokio::time::timeout(Duration::from_secs(self.timeouts.from(&stub)), rx).await
         {
             if let Ok(response) = frame {
                 response
             } else {
-                request.server_error()
+                stub.server_error()
             }
         } else {
-            request.timeout()
+            stub.timeout()
         }
     }
 
-    fn send_sync(&self, request: ReqXtra) -> RespXtra {
+    fn send_sync(&self, request: ReqShell ) -> RespShell {
         let (tx, rx) = oneshot::channel();
-        self.exchanges.insert(request.id(), tx);
+        self.exchanges.insert(request.id.clone(), tx);
         let response = tokio::runtime::Handle::current().block_on(async move {
             let stub = request.as_stub();
             self.inlet_tx.send(request.into()).await;
             if let Ok(result) =
-                tokio::time::timeout(Duration::from_secs(self.timeouts.from(&request)), rx).await
+                tokio::time::timeout(Duration::from_secs(self.timeouts.from(&stub )), rx).await
             {
                 if let Ok(frame) = result {
                     frame
@@ -169,6 +168,7 @@ impl AsyncTransmitter for PortalMessenger {
     }
 
     async fn route(&self, wave: Wave) {
+        unimplemented!()
     }
 }
 
@@ -181,25 +181,25 @@ pub trait PortalCtrlFactory: Send+Sync {
 #[derive(AsyncRequestHandler)]
 pub struct PortalRequestHandler {
     factory: Box<dyn PortalCtrlFactory>,
-    handlers: Arc<DashMap<Point,Box<dyn AsyncRequestHandler>>>,
+    handlers: AsyncPointRequestHandlers,
     messenger: Arc<dyn AsyncTransmitter>
 }
 
 #[routes_async(self.handlers)]
 impl PortalRequestHandler {
 
-   pub fn new(messenger: Arc<dyn AsyncTransmitter>, factory: Box<dyn PortalCtrlFactory>) -> Self {
+   pub fn new(transmitter: Arc<dyn AsyncTransmitter>, factory: Box<dyn PortalCtrlFactory>) -> Self {
       Self {
          factory,
-         handlers: Arc::new(DashMap::new()),
-         messenger
+         handlers: AsyncPointRequestHandlers::new(),
+          messenger: transmitter
       }
    }
 
-   #[route(Sys<Assign>)]
-   pub async fn assign(&self, request: ReqCtx<Assign>) -> Result<RespCore,MsgErr> {
-      let messenger = AsyncTransmitterWithAgent::new(Agent::Anonymous, request.details.stub.point.to_port().with_layer(Layer::Core), self.messenger.clone() );
-      self.handlers.insert( request.details.stub.point.clone(), self.factory.create(request.input.clone(),messenger)?);
+   #[route("Sys<Assign>")]
+   pub async fn assign(&self, request: ReqCtx<'_,Assign>) -> Result<RespCore,MsgErr> {
+      let transmitter = AsyncTransmitterWithAgent::new(Agent::Anonymous, request.details.stub.point.clone().to_port().with_layer(Layer::Core), self.messenger.clone() );
+      self.handlers.add( request.details.stub.point.clone(), self.factory.create(request.input.clone(), transmitter)?);
       Ok(RespCore::ok(Payload::Empty))
    }
 

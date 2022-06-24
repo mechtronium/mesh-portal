@@ -9,13 +9,14 @@ use std::collections::HashMap;
 use std::future::Future;
 use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, Mutex};
 use mesh_portal_versions::error::MsgErr;
+use mesh_portal_versions::VERSION;
 use mesh_portal_versions::version::v0_0_1::command::request::create::{PointFactory, PointFactoryU128, PointSegTemplate};
 use mesh_portal_versions::version::v0_0_1::frame::frame::PrimitiveFrame;
 use mesh_portal_versions::version::v0_0_1::log::{PointLogger, RootLogger};
-use mesh_portal_versions::version::v0_0_1::substance::substance::{Substance, SubstanceKind, Token};
-use mesh_portal_versions::version::v0_0_1::sys::Sys;
+use mesh_portal_versions::version::v0_0_1::substance::substance::{Errors, Substance, SubstanceKind, Token};
+use mesh_portal_versions::version::v0_0_1::sys::{EntryReq, InterchangeKind, Sys};
 use mesh_portal_versions::version::v0_0_1::util::uuid;
 
 #[macro_use]
@@ -24,28 +25,40 @@ extern crate async_trait;
 pub struct Hyperway {
     pub agent: Agent,
     pub logger: PointLogger,
-    pub end_point: Point,
+    pub remote: Point,
     outbound: OutboundLanes,
     inbound: InboundLanes,
+}
+
+impl Hyperway {
+    pub fn new(agent: Agent, logger: PointLogger, remote: Point, outbound: OutboundLanes, inbound: InboundLanes ) -> Self {
+        Self {
+            agent,
+            logger,
+            remote,
+            outbound,
+            inbound
+        }
+    }
 }
 
 #[derive(Clone)]
 pub struct HyperwayStub {
     pub agent: Agent,
     pub logger: PointLogger,
-    pub end_point: Point
+    pub remote: Point,
 }
 
 pub struct HyperwayOut {
     pub agent: Agent,
-    pub end_point: Point,
+    pub remote: Point,
     outbound: OutboundLanes,
     logger: PointLogger
 }
 
 pub struct HyperwayIn {
     pub agent: Agent,
-    pub end_point: Point,
+    pub remote: Point,
     inbound: InboundLanes,
     logger: PointLogger
 }
@@ -67,7 +80,7 @@ impl HyperwayIn {
             None => None,
             Some(wave) => {
                 let hyperwave = HyperWave {
-                    from: self.end_point.clone(),
+                    from: self.remote.clone(),
                     wave,
                 };
                 Some(HyperwayCall::Wave(hyperwave))
@@ -80,13 +93,13 @@ impl Hyperway {
     pub fn split(self) -> (HyperwayIn, HyperwayOut) {
         (
             HyperwayIn {
-                end_point: self.end_point.clone(),
+                remote: self.remote.clone(),
                 inbound: self.inbound,
                 logger: self.logger.push("inbound").unwrap(),
                 agent: self.agent.clone()
             },
             HyperwayOut {
-                end_point: self.end_point.clone(),
+                remote: self.remote.clone(),
                 outbound: self.outbound,
                 logger: self.logger.push("outbound").unwrap(),
                 agent: self.agent.clone()
@@ -108,6 +121,13 @@ pub struct OutboundLanes {
 }
 
 impl OutboundLanes {
+    pub fn new( ) -> (Self,mpsc::Receiver<Wave>) {
+        let (tx,rx) = mpsc::channel(1024);
+        (Self{tx},rx)
+    }
+}
+
+impl OutboundLanes {
     async fn send(&self, wave: Wave) {
         self.tx.send(wave).await;
     }
@@ -118,6 +138,14 @@ impl OutboundLanes {
 pub struct InboundLanes {
     pub rx: mpsc::Receiver<Wave>,
 }
+
+impl InboundLanes {
+    pub fn new( ) -> (Self,mpsc::Sender<Wave>) {
+        let (tx,rx) = mpsc::channel(1024);
+        (Self{rx},tx)
+    }
+}
+
 
 impl InboundLanes {
     async fn receive(&mut self) -> Option<Wave> {
@@ -134,10 +162,10 @@ pub struct HyperwayInterchange {
     hyperways: Arc<DashMap<Point, HyperwayOut>>,
     call_tx: mpsc::Sender<HyperwayCall>,
     logger: PointLogger,
-    authenticator: Box<dyn HyperAuthenticator>
 }
 
 impl HyperwayInterchange {
+    // move authenticator to HyperGate...
     pub fn new(router: Box<dyn HyperRouter>, authenticator: Box<dyn HyperAuthenticator>, logger: PointLogger ) -> Self {
         let (call_tx, mut call_rx) = mpsc::channel(1024);
         let hyperways: Arc<DashMap<Point, HyperwayOut>> = Arc::new(DashMap::new());
@@ -161,7 +189,7 @@ impl HyperwayInterchange {
 
                     match result {
                         Some(HyperwayCall::Add(hyperway_in)) => {
-                            hyperway_ins.insert(hyperway_in.end_point.clone(), hyperway_in);
+                            hyperway_ins.insert(hyperway_in.remote.clone(), hyperway_in);
                         }
                         Some(HyperwayCall::Remove(hyperway)) => {
                             hyperway_ins.remove(&hyperway);
@@ -187,51 +215,17 @@ impl HyperwayInterchange {
             });
         }
 
-        Self { hyperways, call_tx, authenticator, logger }
+        Self { hyperways, call_tx, logger }
     }
 
     pub fn point(&self) -> &Point {
         &self.logger.point
     }
 
-    async fn auth(&mut self, req: ReqShell) -> Result<(mpsc::Sender<Wave>, mpsc::Receiver<Wave>),RespShell> {
-        // first make sure we are talking to the local lane connector
-        if req.to.clone().to_point() != Point::local_hypergate() {
-            let mut resp = req.bad_request();
-            resp.from = Point::local_hypergate().to_port();
-            return Err(resp);
-        }
-
-        // if this is not a request to Authenticate then it is a bad request
-        if Method::Sys(SysMethod::ConnectReq) != req.core.method  {
-            return Err(req.bad_request());
-        }
-
-        let stub = req.as_stub();
-        match self.authenticator.auth(req).await {
-            Ok(hyperway) => {
-                let (inbound_tx,inbound_rx) = mpsc::channel(1024);
-                let (outbound_tx,outbound_rx) = mpsc::channel(1024);
-                let hyperway = Hyperway {
-                    agent: hyperway.agent,
-                    logger: hyperway.logger,
-                    end_point: hyperway.end_point,
-                    inbound: InboundLanes {rx:inbound_rx},
-                    outbound: OutboundLanes {tx:outbound_tx},
-                };
-                self.add(hyperway);
-                Ok((inbound_tx,outbound_rx))
-            }
-            Err(err) => {
-                Err(stub.err(err))
-            }
-        }
-    }
-
     pub fn add(&self, hyperway: Hyperway) {
         let (hyperway_in, hyperway_out) = hyperway.split();
         self.hyperways
-            .insert(hyperway_out.end_point.clone(), hyperway_out);
+            .insert(hyperway_out.remote.clone(), hyperway_out);
         let call_tx = self.call_tx.clone();
         tokio::spawn(async move {
             call_tx.send(HyperwayCall::Add(hyperway_in)).await;
@@ -267,7 +261,7 @@ pub trait HyperRouter: Send + Sync {
 
 #[async_trait]
 pub trait HyperAuthenticator {
-    async fn auth( &mut self, req: ReqShell ) -> Result<HyperwayStub,MsgErr>;
+    async fn auth( &mut self, req: EntryReq ) -> Result<HyperwayStub,MsgErr>;
 }
 
 pub struct AnonHyperAuthenticator{
@@ -288,15 +282,15 @@ impl AnonHyperAuthenticator{
 impl HyperAuthenticator for AnonHyperAuthenticator{
     async fn auth(&mut self, req: ReqShell) -> Result<HyperwayStub, MsgErr> {
 
-        if let Substance::Sys(Sys::ConnectReq(auth_req)) = &req.core.body {
-            if let Some(end_point) = &auth_req.end_point {
-                let end_point = end_point.clone();
+        if let Substance::Sys(Sys::EntryReq(entry_req)) = &req.core.body {
+            if let Some(remote) = &entry_req.remote {
+                let remote = remote.clone();
                 let lane_point = self.lane_point_factory.create()?;
                 let logger = self.logger.point(lane_point);
                 return Ok(HyperwayStub {
                     agent: Agent::Anonymous,
                     logger,
-                    end_point
+                    remote
                 })
             } else {
                 return Err(MsgErr::bad_request())
@@ -311,15 +305,15 @@ impl HyperAuthenticator for AnonHyperAuthenticator{
 pub struct AnonHyperAuthenticatorAssignEndPoint {
    pub logger: RootLogger,
    pub lane_point_factory: Box<dyn PointFactory>,
-   pub end_point_factory: Box<dyn PointFactory>
+   pub remote_point_factory: Box<dyn PointFactory>
 }
 
 impl AnonHyperAuthenticatorAssignEndPoint {
-    pub fn new(lane_point_factory: Box<dyn PointFactory>, end_point_factory: Box<dyn PointFactory>, logger: RootLogger ) -> Self {
+    pub fn new(lane_point_factory: Box<dyn PointFactory>, remote_point_factory: Box<dyn PointFactory>, logger: RootLogger ) -> Self {
         Self {
             logger,
             lane_point_factory,
-            end_point_factory
+            remote_point_factory
         }
     }
 }
@@ -328,15 +322,15 @@ impl AnonHyperAuthenticatorAssignEndPoint {
 impl HyperAuthenticator for AnonHyperAuthenticatorAssignEndPoint {
     async fn auth(&mut self, req: ReqShell) -> Result<HyperwayStub, MsgErr> {
 
-       if let Substance::Sys(Sys::ConnectReq(auth_req)) = &req.core.body {
-           if let None = auth_req.end_point {
-               let end_point = self.end_point_factory.create()?;
+       if let Substance::Sys(Sys::EntryReq(entry_req)) = &req.core.body {
+           if let None = entry_req.remote {
+               let end_point = self.remote_point_factory.create()?;
                let lane_point = self.lane_point_factory.create()?;
                let logger = self.logger.point(lane_point);
                return Ok(HyperwayStub {
                    agent: Agent::Anonymous,
                    logger,
-                   end_point
+                   remote: end_point
                })
            } else {
                return Err(MsgErr::bad_request())
@@ -366,8 +360,8 @@ impl TokensFromHeavenHyperAuthenticatorAssignEndPoint {
 #[async_trait]
 impl HyperAuthenticator for TokensFromHeavenHyperAuthenticatorAssignEndPoint {
     async fn auth(&mut self, req: ReqShell) -> Result<HyperwayStub, MsgErr> {
-        if let Substance::Sys(Sys::ConnectReq(auth_req)) = &req.core.body {
-            if let None = auth_req.end_point {
+        if let Substance::Sys(Sys::EntryReq(auth_req)) = &req.core.body {
+            if let None = auth_req.remote {
                 match &*auth_req.auth {
                     Substance::Token(token) => {
                         if let Some((_,stub)) = self.tokens.remove(token)  {
@@ -422,7 +416,7 @@ impl TokenDispensingHyperwayInterchange {
         let stub = HyperwayStub {
             agent: self.agent.clone(),
             logger,
-            end_point
+            remote: end_point
         };
         self.tokens.insert(token.clone(),stub.clone());
         Ok((token,stub))
@@ -444,15 +438,82 @@ impl DerefMut for TokenDispensingHyperwayInterchange {
 }
 
 
-#[async_trait]
-pub trait HyperGate {
-  async fn unlock(&self, version: semver::Version ) -> Result<Box<dyn OnRamp>, String>;
+pub struct VersionGate {
+    router: InterchangeEntryRouter
 }
 
-#[async_trait]
-pub trait OnRamp {
-  async fn enter(&self, request: ReqShell ) -> Result<(mpsc::Sender<Wave>, mpsc::Receiver<Wave>),RespShell>;
+impl VersionGate {
+  pub async fn unlock(&self, version: semver::Version ) -> Result<InterchangeEntryRouter, String> {
+      if version == *VERSION {
+          Ok(router.clone())
+      } else {
+          Err("version mismatch".to_string())
+      }
+  }
 }
+
+#[derive(Clone)]
+pub struct InterchangeEntryRouter {
+    map: HashMap<InterchangeKind,HyperGate>
+}
+
+impl InterchangeEntryRouter {
+    pub fn new( map: HashMap<InterchangeKind,HyperGate> ) -> Self {
+        Self {
+            map
+        }
+    }
+
+    pub async fn enter(&self, req: EntryReq ) -> Result<(mpsc::Sender<Wave>, mpsc::Receiver<Wave>),MsgErr> {
+        if let Some(gate) = self.map.get(&req.interchange ) {
+            gate.enter(req).await
+        } else {
+            Err(MsgErr::from(format!("interchange not available: {}",req.interchange.to_string()).as_str()))
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct HyperGate {
+    pub logger: PointLogger,
+    pub auth: Arc<Mutex<dyn HyperAuthenticator>>,
+    pub interchange: Arc<HyperwayInterchange>
+}
+
+impl HyperGate {
+    pub fn new( auth: Box<dyn HyperAuthenticator>, interchange: Arc<HyperwayInterchange>, logger: PointLogger ) -> Self {
+        let auth = Arc::new( Mutex::new( *auth ));
+
+        Self {
+            auth,
+            interchange,
+            logger
+        }
+    }
+
+    pub async fn enter(&self, req: EntryReq ) -> Result<(mpsc::Sender<Wave>, mpsc::Receiver<Wave>),MsgErr> {
+        let stub = {
+            let mut auth = self.auth.lock().await;
+            auth.auth(req).await?
+        };
+
+        let (inbound,tx) = InboundLanes::new();
+        let (outbound,rx) = OutboundLanes::new();
+
+        let hyperway = Hyperway {
+            agent: stub.agent,
+            remote: stub.remote,
+            logger: stub.logger,
+            outbound,
+            inbound
+        };
+
+        self.interchange.add(hyperway);
+
+        Ok((tx,rx))
+    }
+}
+
 
 #[cfg(test)]
 mod tests {

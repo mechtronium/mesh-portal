@@ -89,7 +89,7 @@ impl CliRelay {
         let selector = RouteSelector::any().with_topic(session_port.topic.clone());
         {
             let mut write = self.handlers.write().await;
-            write.add(selector, AsyncRequestHandlerRelay::new(Box::new(session)));
+            write.add(selector, AsyncRequestHandlerRelay::new(Arc::new(session)));
         }
 
         Ok(session_port)

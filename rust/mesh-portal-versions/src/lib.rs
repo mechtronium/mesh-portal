@@ -14,12 +14,13 @@ extern crate alloc;
 
 #[macro_use]
 extern crate async_trait;
-extern crate core;
 
 use serde::{Deserialize, Serialize};
 
 pub mod version;
 pub mod error;
+
+use core::str::FromStr;
 
 lazy_static!{
     pub static ref VERSION: semver::Version = semver::Version::from_str("1.0.0").unwrap();

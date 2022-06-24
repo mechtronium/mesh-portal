@@ -24,7 +24,7 @@ use crate::version::v0_0_1::command::request::select::{
     Select, SelectIntoSubstance, SelectKind, SelectVar,
 };
 use crate::version::v0_0_1::command::request::set::{Set, SetVar};
-use crate::version::v0_0_1::id::id::{Layer, Point, PointCtx, PointKindVar, PointSegCtx, PointSegDelim, PointSegment, PointSegVar, PointVar, Port, RouteSeg, RouteSegVar, Topic, Uuid, Variable, VarVal, Version};
+use crate::version::v0_0_1::id::id::{Kind, KindLex, Layer, Point, PointCtx, PointKindVar, PointSegCtx, PointSegDelim, PointSegment, PointSegVar, PointVar, Port, RouteSeg, RouteSegVar, Topic, Uuid, Variable, VarVal, Version};
 use crate::version::v0_0_1::security::{
     AccessGrantKind, AccessGrantKindDef, ChildPerms, ParticlePerms, Permissions, PermissionsMask,
     PermissionsMaskKind, Privilege,
@@ -561,7 +561,7 @@ pub fn file_point_capture_segment(input: Span) -> Res<Span, PointSeg> {
  */
 
 pub fn space_point_kind_segment<I: Span>(input: I) -> Res<I, PointKindSeg> {
-    tuple((space_point_segment, delim_kind))(input).map(|(next, (point_segment, kind))| {
+    tuple((space_point_segment, delim_kind_parts))(input).map(|(next, (point_segment, kind))| {
         (
             next,
             PointKindSeg {
@@ -573,7 +573,7 @@ pub fn space_point_kind_segment<I: Span>(input: I) -> Res<I, PointKindSeg> {
 }
 
 pub fn base_point_kind_segment<I: Span>(input: I) -> Res<I, PointKindSeg> {
-    tuple((base_point_segment, delim_kind))(input).map(|(next, (point_segment, kind))| {
+    tuple((base_point_segment, delim_kind_parts))(input).map(|(next, (point_segment, kind))| {
         (
             next,
             PointKindSeg {
@@ -588,7 +588,7 @@ pub fn filepath_point_kind_segment<I: Span>(input: I) -> Res<I, PointKindSeg> {
     alt((file_point_kind_segment, dir_point_kind_segment))(input)
 }
 pub fn dir_point_kind_segment<I: Span>(input: I) -> Res<I, PointKindSeg> {
-    tuple((dir_point_segment, delim_kind))(input).map(|(next, (point_segment, kind))| {
+    tuple((dir_point_segment, delim_kind_parts))(input).map(|(next, (point_segment, kind))| {
         (
             next,
             PointKindSeg {
@@ -600,7 +600,7 @@ pub fn dir_point_kind_segment<I: Span>(input: I) -> Res<I, PointKindSeg> {
 }
 
 pub fn file_point_kind_segment<I: Span>(input: I) -> Res<I, PointKindSeg> {
-    tuple((file_point_segment, delim_kind))(input).map(|(next, (point_segment, kind))| {
+    tuple((file_point_segment, delim_kind_parts))(input).map(|(next, (point_segment, kind))| {
         (
             next,
             PointKindSeg {
@@ -612,7 +612,7 @@ pub fn file_point_kind_segment<I: Span>(input: I) -> Res<I, PointKindSeg> {
 }
 
 pub fn version_point_kind_segment<I: Span>(input: I) -> Res<I, PointKindSeg> {
-    tuple((version_point_segment, delim_kind))(input).map(|(next, (point_segment, kind))| {
+    tuple((version_point_segment, delim_kind_parts))(input).map(|(next, (point_segment, kind))| {
         (
             next,
             PointKindSeg {
@@ -1082,6 +1082,12 @@ pub struct CamelCase {
     string: String
 }
 
+impl CamelCase {
+    pub fn as_str(&self) -> &str {
+        self.string.as_str()
+    }
+}
+
 impl FromStr for CamelCase {
     type Err=MsgErr;
 
@@ -1442,11 +1448,11 @@ pub fn point_template<I: Span>(input: I) -> Res<I, PointTemplateVar> {
 
 pub fn kind_template<I: Span>(input: I) -> Res<I, KindTemplate> {
     tuple((
-        generic_kind_base,
+        kind_base,
         opt(delimited(
             tag("<"),
             tuple((
-                camel_case_chars,
+                camel_case,
                 opt(delimited(tag("<"), specific_selector, tag(">"))),
             )),
             tag(">"),
@@ -1454,14 +1460,14 @@ pub fn kind_template<I: Span>(input: I) -> Res<I, KindTemplate> {
     ))(input)
     .map(|(next, (kind, more))| {
         let mut parts = KindTemplate {
-            kind,
-            sub_kind: None,
+            base: kind,
+            sub: None,
             specific: None,
         };
 
         match more {
-            Some((sub_kind, specific)) => {
-                parts.sub_kind = Option::Some(sub_kind.to_string());
+            Some((sub, specific)) => {
+                parts.sub = Option::Some(sub);
                 parts.specific = specific;
             }
             None => {}
@@ -1649,8 +1655,8 @@ pub fn publish<I: Span>(input: I) -> Res<I, CreateVar> {
     let template = TemplateVar {
         point,
         kind: KindTemplate {
-            kind: GenericKindBase::ArtifactBundle,
-            sub_kind: None,
+            base: KindBase::Bundle,
+            sub: None,
             specific: None,
         },
     };
@@ -3249,7 +3255,7 @@ pub fn lex_root_scope<I: Span>(span: I) -> Result<LexRootScope<I>, MsgErr> {
 }
 
 pub fn method_kind<I: Span>(input: I) -> Res<I, MethodKind> {
-    let (next, v) = recognize(alt((tag("Cmd"), tag("Msg"), tag("Http"))))(input)?;
+    let (next, v) = recognize(alt((tag("Cmd"), tag("Msg"), tag("Http"), tag("Sys"))))(input)?;
     Ok((next, MethodKind::from_str(v.to_string().as_str()).unwrap()))
 }
 
@@ -4748,9 +4754,9 @@ use crate::version::v0_0_1::config::config::bind::{
     PipelineStop, PipelineStopCtx, PipelineStopVar, RouteSelector,
 };
 use crate::version::v0_0_1::config::config::Document;
-use crate::version::v0_0_1::wave::{Method, MethodKind, MethodPattern};
+use crate::version::v0_0_1::wave::{Method, MethodKind, MethodPattern, SysMethod};
 use crate::version::v0_0_1::http::HttpMethod;
-use crate::version::v0_0_1::id::id::{GenericKind, GenericKindBase, PointKind, PointSeg, Specific};
+use crate::version::v0_0_1::id::id::{KindParts, KindBase, PointKind, PointSeg, Specific};
 use crate::version::v0_0_1::msg::MsgMethod;
 use crate::version::v0_0_1::parse::error::{find_parse_err, result};
 use crate::version::v0_0_1::parse::model::{BindScope, BindScopeKind, Block, BlockKind, Chunk, DelimitedBlockKind, LexBlock, LexParentScope, LexRootScope, LexScope, LexScopeSelector, LexScopeSelectorAndFilters, MessageScopeSelectorAndFilters, NestedBlockKind, PipelineCtx, PipelineSegment, PipelineSegmentCtx, PipelineSegmentVar, PipelineVar, RootScopeSelector, RouteScope, ScopeFilterDef, ScopeFilters, ScopeFiltersDef, ScopeSelectorAndFiltersDef, Spanned, Subst, TerminatedBlockKind, TextType, Var, VarParser};
@@ -4765,7 +4771,7 @@ use crate::version::v0_0_1::selector::selector::specific::{
     ProductSelector, VariantSelector, VendorSelector,
 };
 use crate::version::v0_0_1::selector::selector::{
-    ExactPointSeg, GenericKindSelector, GenericSubKindSelector, Hop, KindSelector,
+    ExactPointSeg, KindBaseSelector, SubKindSelector, Hop, KindSelector,
     LabeledPrimitiveTypeDef, MapEntryPattern, Pattern, PayloadType2Def, PointSegSelector,
     PointSelector, SpecificSelector, VersionReq,
 };
@@ -4778,6 +4784,7 @@ use nom_supreme::parser_ext::MapRes;
 use nom_supreme::{parse_from_str, ParserExt};
 use cosmic_nom::{new_span, Span, span_with_extra, Trace};
 use crate::version::v0_0_1::bin::Bin;
+use crate::version::v0_0_1::id::{BaseSubKind, DatabaseSubKind};
 
 fn inclusive_any_segment<I: Span>(input: I) -> Res<I, PointSegSelector> {
     alt((tag("+*"), tag("ROOT+*")))(input).map(|(next, _)| (next, PointSegSelector::InclusiveAny))
@@ -5087,41 +5094,18 @@ impl SubstParser<Pattern<String>> for DomainPatternParser {
     }
 }
 
-fn kind_parts<I: Span>(input: I) -> Res<I, GenericKind> {
-    tuple((
-        generic_kind_base,
-        opt(delimited(
-            tag("<"),
-            tuple((camel_case_chars, opt(delimited(tag("<"), specific, tag(">"))))),
-            tag(">"),
-        )),
-    ))(input)
-    .map(|(next, (kind, more))| {
-        let mut parts = GenericKind {
-            kind: kind,
-            sub_kind: None,
-            specific: None,
-        };
-
-        match more {
-            Some((kind, specific)) => {
-                parts.sub_kind = Option::Some(kind.to_string());
-                parts.specific = specific;
-            }
-            None => {}
-        }
-
-        (next, parts)
-    })
+fn kind<I: Span>(input: I) -> Res<I, Kind> {
+    let (next,base) = kind_base(input.clone())?;
+    unwrap_block(BlockKind::Nested(NestedBlockKind::Angle), resolve_kind( base))(next)
 }
 
 fn rec_kind<I: Span>(input: I) -> Res<I, I> {
     recognize(kind_parts)(input)
 }
 
-pub fn kind<I: Span>(input: I) -> Res<I, GenericKind> {
+pub fn kind_lex<I: Span>(input: I) -> Res<I, KindLex> {
     tuple((
-        generic_kind_base,
+        camel_case,
         opt(delimited(
             tag("<"),
             tuple((camel_case, opt(delimited(tag("<"), specific, tag(">"))))),
@@ -5129,15 +5113,15 @@ pub fn kind<I: Span>(input: I) -> Res<I, GenericKind> {
         )),
     ))(input)
     .map(|(next, (kind, rest))| {
-        let mut rtn = GenericKind {
-            kind: kind,
-            sub_kind: Option::None,
+        let mut rtn = KindLex{
+            base: kind,
+            sub: Option::None,
             specific: Option::None,
         };
 
         match rest {
-            Some((kind, specific)) => {
-                rtn.sub_kind = Option::Some(kind.to_string());
+            Some((sub, specific)) => {
+                rtn.sub = Option::Some(sub);
                 match specific {
                     Some(specific) => {
                         rtn.specific = Option::Some(specific);
@@ -5152,13 +5136,53 @@ pub fn kind<I: Span>(input: I) -> Res<I, GenericKind> {
     })
 }
 
-pub fn delim_kind<I: Span>(input: I) -> Res<I, GenericKind> {
+pub fn kind_parts<I: Span>(input: I) -> Res<I, KindParts> {
+    tuple((
+        kind_base,
+        opt(delimited(
+            tag("<"),
+            tuple((camel_case, opt(delimited(tag("<"), specific, tag(">"))))),
+            tag(">"),
+        )),
+    ))(input)
+        .map(|(next, (base, rest))| {
+            let mut rtn = KindParts{
+                base,
+                sub: Option::None,
+                specific: Option::None,
+            };
+
+            match rest {
+                Some((sub, specific)) => {
+                    rtn.sub = Option::Some(sub);
+                    match specific {
+                        Some(specific) => {
+                            rtn.specific = Option::Some(specific);
+                        }
+                        None => {}
+                    }
+                }
+                None => {}
+            }
+
+            (next, rtn)
+        })
+}
+
+pub fn delim_kind<I: Span>(input: I) -> Res<I, Kind> {
     delimited(tag("<"), kind, tag(">"))(input)
 }
 
+pub fn delim_kind_lex<I: Span>(input: I) -> Res<I, KindLex> {
+    delimited(tag("<"), kind_lex, tag(">"))(input)
+}
+
+pub fn delim_kind_parts<I: Span>(input: I) -> Res<I, KindParts> {
+    delimited(tag("<"), kind_parts, tag(">"))(input)
+}
 
 
-pub fn consume_kind<I: Span>(input: I) -> Result<GenericKind, MsgErr> {
+pub fn consume_kind<I: Span>(input: I) -> Result<KindParts, MsgErr> {
     let (_, kind_parts) = all_consuming(kind_parts)(input)?;
 
     Ok(kind_parts.try_into()?)
@@ -5174,29 +5198,84 @@ where
     }
 }
 
-pub fn generic_kind_selector<I: Span>(input: I) -> Res<I, GenericSubKindSelector> {
-    pattern(to_string(camel_case_chars))(input).map(|(next, kind)| (next, kind))
+pub fn sub_kind_selector<I: Span>(input: I) -> Res<I, SubKindSelector> {
+    pattern(camel_case)(input).map(|(next, selector)| (next, selector))
 }
 
-pub fn generic_kind_base<I: Span>(input: I) -> Res<I, GenericKindBase> {
-    let (next,kind) = camel_case_chars(input)?;
-    // unwrapping because we already know string is CamelCase
-    Ok((next,kind.to_string().try_into().unwrap()))
+pub fn kind_base<I: Span>(input: I) -> Res<I, KindBase> {
+    let (next,kind) = context("kind-base",camel_case)(input.clone())?;
+    match KindBase::try_from(kind) {
+        Ok(kind) => {
+            Ok((next,kind))
+        }
+        Err(err) => {
+            let err = ErrorTree::from_error_kind(input.clone(), ErrorKind::Fail );
+            Err(nom::Err::Error(ErrorTree::add_context(input, "kind-base",err)))
+        }
+    }
 }
 
-pub fn generic_kind_base_selector<I: Span>(input: I) -> Res<I, GenericKindSelector> {
-    pattern(generic_kind_base)(input)
+pub fn resolve_kind<I: Span>(base: KindBase) -> impl FnMut(I) -> Res<I, Kind>
+{
+    move | input: I | {
+        let (next,sub) = context("kind-sub", camel_case)(input.clone())?;
+        match base {
+            KindBase::Database => {
+               match sub.as_str() {
+                   "Relational" => {
+                       let (next,specific) = context("specific",delimited(tag("<"), specific, tag(">") ))(next)?;
+                       Ok((next,Kind::Database(DatabaseSubKind::Relational(specific))))
+                   },
+                   _ => {
+                       let err = ErrorTree::from_error_kind(input.clone(), ErrorKind::Fail );
+                       Err(nom::Err::Error(ErrorTree::add_context(input, "kind-sub:not-found",err)))
+                   }
+               }
+            }
+            KindBase::Base => {
+                match BaseSubKind::from_str(sub.as_str()) {
+                    Ok(sub) => {
+                       Ok((next,Kind::Base(sub)))
+                    }
+                    Err(err) => {
+                        let err = ErrorTree::from_error_kind(input.clone(), ErrorKind::Fail );
+                        Err(nom::Err::Error(ErrorTree::add_context(input, "kind-sub:not-accepted",err)))
+                    }
+                }
+            }
+            KindBase::Root => Ok((next,Kind::Root)),
+            KindBase::Space => Ok((next,Kind::Space)),
+            KindBase::UserBase => Ok((next,Kind::UserBase)),
+            KindBase::User => Ok((next,Kind::User)),
+            KindBase::App => Ok((next,Kind::App)),
+            KindBase::Mechtron => Ok((next,Kind::Mechtron)),
+            KindBase::FileSystem => Ok((next,Kind::FileSystem)),
+            KindBase::File => Ok((next,Kind::File)),
+            KindBase::Dir => Ok((next,Kind::Dir)),
+            KindBase::BundleSeries => Ok((next,Kind::BundleSeries)),
+            KindBase::Bundle => Ok((next,Kind::Bundle)),
+            KindBase::Artifact => Ok((next,Kind::Artifact)),
+            KindBase::Control => Ok((next,Kind::Control)),
+            KindBase::Portal => Ok((next,Kind::Portal)),
+            KindBase::Repo => Ok((next,Kind::Repo))
+        }
+    }
 }
 
-pub fn kind_pattern<I: Span>(input: I) -> Res<I, KindSelector> {
+
+pub fn kind_base_selector<I: Span>(input: I) -> Res<I, KindBaseSelector> {
+    pattern(kind_base)(input)
+}
+
+pub fn kind_selector<I: Span>(input: I) -> Res<I, KindSelector> {
     delimited(
         tag("<"),
         tuple((
-            generic_kind_base_selector,
+            kind_base_selector,
             opt(delimited(
                 tag("<"),
                 tuple((
-                    generic_kind_selector,
+                    sub_kind_selector,
                     opt(delimited(
                         tag("<"),
                         value_pattern(specific_selector),
@@ -5231,7 +5310,7 @@ pub fn kind_pattern<I: Span>(input: I) -> Res<I, KindSelector> {
 }
 
 fn space_hop<I: Span>(input: I) -> Res<I, Hop> {
-    tuple((point_segment_selector, opt(kind_pattern), opt(tag("+"))))(input).map(
+    tuple((point_segment_selector, opt(kind_selector), opt(tag("+"))))(input).map(
         |(next, (segment_selector, kind_selector, inclusive))| {
             let kind_selector = match kind_selector {
                 None => KindSelector::any(),
@@ -5251,7 +5330,7 @@ fn space_hop<I: Span>(input: I) -> Res<I, Hop> {
 }
 
 fn base_hop<I: Span>(input: I) -> Res<I, Hop> {
-    tuple((base_segment, opt(kind_pattern), opt(tag("+"))))(input).map(
+    tuple((base_segment, opt(kind_selector), opt(tag("+"))))(input).map(
         |(next, (segment, tks, inclusive))| {
             let tks = match tks {
                 None => KindSelector::any(),
@@ -5273,7 +5352,7 @@ fn base_hop<I: Span>(input: I) -> Res<I, Hop> {
 fn file_hop<I: Span>(input: I) -> Res<I, Hop> {
     tuple((file_segment, opt(tag("+"))))(input).map(|(next, (segment, inclusive))| {
         let tks = KindSelector {
-            kind: Pattern::Exact(GenericKindBase::File),
+            kind: Pattern::Exact(KindBase::File),
             sub_kind: Pattern::Any,
             specific: ValuePattern::Any,
         };
@@ -5305,7 +5384,7 @@ fn dir_hop<I: Span>(input: I) -> Res<I, Hop> {
 }
 
 fn version_hop<I: Span>(input: I) -> Res<I, Hop> {
-    tuple((version_segment, opt(kind_pattern), opt(tag("+"))))(input).map(
+    tuple((version_segment, opt(kind_selector), opt(tag("+"))))(input).map(
         |(next, (segment, tks, inclusive))| {
             let tks = match tks {
                 None => KindSelector::any(),
@@ -5352,7 +5431,7 @@ pub fn point_selector<I: Span>(input: I) -> Res<I, PointSelector> {
                         PointSeg::FilesystemRootDir,
                     )),
                     kind_selector: KindSelector {
-                        kind: Pattern::Exact(GenericKindBase::Dir),
+                        kind: Pattern::Exact(KindBase::Dir),
                         sub_kind: Pattern::Any,
                         specific: ValuePattern::Any,
                     },
@@ -5373,7 +5452,7 @@ pub fn point_selector<I: Span>(input: I) -> Res<I, PointSelector> {
 }
 
 pub fn point_and_kind<I: Span>(input: I) -> Res<I, PointKindVar> {
-    tuple((point_var, kind))(input)
+    tuple((point_var, kind_parts))(input)
         .map(|(next, (point, kind))| (next, PointKindVar { point, kind }))
 }
 
@@ -5833,6 +5912,19 @@ pub fn msg_method<I: Span>(input: I) -> Res<I, MsgMethod> {
     let (next, msg_method) = camel_case_chars(input.clone())?;
 
     match MsgMethod::new(msg_method.to_string()) {
+        Ok(method) => Ok((next, method)),
+        Err(err) => Err(nom::Err::Error(ErrorTree::from_error_kind(
+            input,
+            ErrorKind::Fail,
+        ))),
+    }
+}
+
+pub fn sys_method<I: Span>(input: I) -> Res<I, SysMethod> {
+    let (next, sys_method) = camel_case_chars(input.clone())?;
+
+println!("sys_method: {}", sys_method.to_string() );
+    match SysMethod::from_str(sys_method.to_string().as_str()) {
         Ok(method) => Ok((next, method)),
         Err(err) => Err(nom::Err::Error(ErrorTree::from_error_kind(
             input,
@@ -6510,7 +6602,7 @@ pub fn topic<I: Span>(input: I) -> Res<I, ValuePattern<Topic>> {
  */
 
 pub fn route_selector<I: Span>(input: I) -> Result<RouteSelector, MsgErr> {
-    let (next, (topic, lex_route)) = match pair(opt(value_pattern(topic)), lex_route_selector)(input.clone()) {
+    let (next, (topic, lex_route)) = match pair(opt(terminated(unwrap_block(BlockKind::Nested(NestedBlockKind::Square),value_pattern(topic)),tag("::"))), lex_route_selector)(input.clone()) {
         Ok((next, (topic, lex_route))) => (next, (topic, lex_route)),
         Err(err) => { return Err(find_parse_err(&err)); }
     };
@@ -6537,13 +6629,14 @@ pub fn route_selector<I: Span>(input: I) -> Result<RouteSelector, MsgErr> {
         ValuePattern::None => ValuePattern::None,
         ValuePattern::Pattern(method_kind) => match method_kind {
             MethodKind::Sys=> {
-                return Err(ParseErrs::from_loc_span(
-                    "Sys not supported yet",
-                    "not supported (yet)",
+                let method = names.pop().ok_or(ParseErrs::from_loc_span(
+                    "Sys method requires a sub kind i.e. Sys<Assign> or Msg<*>",
+                    "sub kind required",
                     method_kind_span,
-                )
-                    .into());
-            }
+                ))?;
+                let method = result(value_pattern(sys_method)(method))?;
+                ValuePattern::Pattern(MethodPattern::Sys(method))
+           }
             MethodKind::Cmd => {
                 return Err(ParseErrs::from_loc_span(
                     "Cmd not supported yet",
@@ -6646,7 +6739,9 @@ pub mod test {
 
     #[test]
     pub fn test_message_selector() {
-        let route = util::log(route_attribute("#[route(\"[my-topic]::Msg<NewSession>\")]")).unwrap();
+        let route = util::log(route_attribute("#[route(\"[Topic<*>]::Msg<NewSession>\")]")).unwrap();
+        let route = util::log(route_attribute("#[route(\"Sys<Assign>\")]")).unwrap();
+
         println!("path: {}", route.path.to_string());
         //println!("filters: {}", route.filters.first().unwrap().name)
     }
@@ -7712,7 +7807,7 @@ pub mod cmd_test {
         let (_, command) = command(new_span(input))?;
         match command {
             CommandVar::Create(create) => {
-                assert_eq!(create.template.kind.sub_kind, Some("Keycloak".to_string()));
+                assert_eq!(create.template.kind.sub, Some("Keycloak".to_string()));
             }
             _ => {
                 panic!("expected create command")

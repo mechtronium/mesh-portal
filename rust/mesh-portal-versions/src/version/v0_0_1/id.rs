@@ -1,11 +1,18 @@
-use crate::version::v0_0_1::id::id::Point;
+use crate::version::v0_0_1::id::id::{KindParts, KindBase, Point, Specific, Kind};
 use crate::version::v0_0_1::particle::particle::Stub;
 use crate::version::v0_0_1::substance::substance::Substance;
+use crate::version::v0_0_1::sys::ChildRegistry;
+use serde::{Serialize,Deserialize};
+use crate::error::MsgErr;
 
 pub mod id {
+    use nom::branch::alt;
     use nom::bytes::complete::tag;
     use nom::combinator::{all_consuming, opt, success, value};
+    use nom::error::{context, ContextError, ErrorKind, ParseError};
     use nom::sequence::{delimited, pair, preceded, terminated, tuple};
+    use nom::Parser;
+    use nom_supreme::error::ErrorTree;
     use regex::Captures;
     use std::collections::HashMap;
     use std::convert::TryInto;
@@ -13,24 +20,22 @@ pub mod id {
     use std::ops::{Deref, Range};
     use std::str::FromStr;
     use std::sync::Arc;
-    use nom::branch::alt;
-    use nom::error::{context, ContextError, ErrorKind, ParseError};
-    use nom::Parser;
-    use nom_supreme::error::ErrorTree;
 
-    use semver::SemVerError;
+    use cosmic_nom::{new_span, Res, Span, SpanExtra, Trace, tw, Tw};
     use serde::de::Visitor;
     use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
-    use cosmic_nom::{new_span, Res, Span, SpanExtra, Trace, tw, Tw};
 
     use crate::error::{MsgErr, ParseErrs};
     use crate::version::v0_0_1::config::config::bind::RouteSelector;
     use crate::version::v0_0_1::id::id::PointSegCtx::Working;
+    use crate::version::v0_0_1::parse::{camel_case, camel_case_chars, CamelCase, consume_point, consume_point_ctx, Ctx, CtxResolver, Env, kind_lex, kind_parts, parse_uuid, point_and_kind, point_route_segment, point_var, ResolverErr, SkewerCase, uuid_chars, VarResolver};
     use crate::version::v0_0_1::{mesh_portal_uuid, parse};
-    use crate::version::v0_0_1::parse::{camel_case, camel_case_chars, CamelCase, consume_point, consume_point_ctx, Ctx, CtxResolver, Env, kind, parse_uuid, point_and_kind, point_route_segment, point_var, ResolverErr, SkewerCase, uuid_chars, VarResolver};
+    use crate::version::v0_0_1::id::{BaseSubKind, DatabaseSubKind, FileSubKind};
 
     use crate::version::v0_0_1::parse::error::result;
-    use crate::version::v0_0_1::selector::selector::{Pattern, PointHierarchy, PointSelector, SpecificSelector, VersionReq};
+    use crate::version::v0_0_1::selector::selector::{
+        Pattern, PointHierarchy, PointSelector, SpecificSelector, VersionReq,
+    };
     use crate::version::v0_0_1::sys::Location::Central;
     use crate::version::v0_0_1::util::{ToResolved, ValueMatcher, ValuePattern};
 
@@ -39,85 +44,151 @@ pub mod id {
         pub static ref GLOBAL_EXEC: Point = Point::from_str("GLOBAL::executor").unwrap();
         pub static ref LOCAL_PORTAL: Point = Point::from_str("LOCAL::portal").unwrap();
         pub static ref LOCAL_HYPERGATE: Point = Point::from_str("LOCAL::hypergate").unwrap();
-        pub static ref REMOTE_ENTRY_REQUESTER: Point = Point::from_str("REMOTE::entry-requester").unwrap();
+        pub static ref REMOTE_ENTRY_REQUESTER: Point =
+            Point::from_str("REMOTE::entry-requester").unwrap();
     }
 
     pub type Uuid = String;
 
-
-    #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
-    pub enum GenericKindBase {
+    #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash, strum_macros::Display,strum_macros::EnumString)]
+    pub enum KindBase {
         Root,
-        Portal,
-        ArtifactBundle,
+        Space,
+        UserBase,
+        Base,
+        User,
+        App,
+        Mechtron,
+        FileSystem,
         File,
         Dir,
-        Ext(CamelCase)
+        Database,
+        Repo,
+        BundleSeries,
+        Bundle,
+        Artifact,
+        Control,
+        Portal,
     }
 
-    impl TryFrom<String> for GenericKindBase {
-        type Error=MsgErr;
-        fn try_from(s: String) -> Result<Self,Self::Error> {
-            Self::from_str(s.as_str())
+    pub trait ToKindBase {
+        fn to_base(&self) -> KindBase;
+    }
+
+    impl ToKindBase for KindBase {
+        fn to_base(&self) -> KindBase {
+            self.clone()
         }
     }
 
-    impl TryFrom<&str> for GenericKindBase {
-        type Error=MsgErr;
-        fn try_from(s: &str) -> Result<Self,Self::Error> {
-            Self::from_str(s)
+    impl TryFrom<CamelCase> for KindBase {
+        type Error = MsgErr;
+
+        fn try_from(base: CamelCase) -> Result<Self, Self::Error> {
+            Ok(KindBase::from_str(base.as_str())?)
         }
     }
 
 
-    impl ToString for GenericKindBase {
-        fn to_string(&self) -> String {
+    #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash, strum_macros::Display)]
+    pub enum Kind{
+        Root,
+        Space,
+        UserBase,
+        User,
+        App,
+        Mechtron,
+        FileSystem,
+        Repo,
+        BundleSeries,
+        Bundle,
+        Artifact,
+        Control,
+        Portal,
+        File,
+        Dir,
+        Database(DatabaseSubKind),
+        Base(BaseSubKind),
+    }
+
+    impl Kind {
+        pub fn base(&self) -> KindBase {
             match self {
-                GenericKindBase::Root => "Root".to_string(),
-                GenericKindBase::Portal => "Portal".to_string(),
-                GenericKindBase::ArtifactBundle => "ArtifactBundle".to_string(),
-                GenericKindBase::File=> "File".to_string(),
-                GenericKindBase::Dir=> "Dir".to_string(),
-                GenericKindBase::Ext(ext) => ext.to_string()
+                Kind::Root => KindBase::Root,
+                Kind::Space => KindBase::Space,
+                Kind::UserBase => KindBase::UserBase,
+                Kind::User => KindBase::User,
+                Kind::App => KindBase::App,
+                Kind::Mechtron => KindBase::Mechtron,
+                Kind::FileSystem => KindBase::FileSystem,
+                Kind::BundleSeries => KindBase::BundleSeries,
+                Kind::Bundle => KindBase::Bundle,
+                Kind::Artifact => KindBase::Artifact,
+                Kind::Control => KindBase::Control,
+                Kind::Portal => KindBase::Portal,
+                Kind::Dir => KindBase::Dir,
+                Kind::File => KindBase::File,
+                Kind::Database(_) => KindBase::Database,
+                Kind::Base(_) => KindBase::Base,
+                Kind::Repo => KindBase::Repo,
             }
         }
     }
 
-    impl FromStr for GenericKindBase {
-        type Err = MsgErr;
-
-        fn from_str(s: &str) -> Result<Self, Self::Err> {
-            if "Root" == s {
-                Ok(Self::Root)
-            } else if "Portal" == s {
-                Ok(Self::Portal)
-            } else if "File" == s {
-                Ok(Self::File)
-            } else if "Dir" == s {
-                Ok(Self::Dir)
-            } else if "ArtifactBundle" == s {
-                Ok(Self::ArtifactBundle)
-            } else {
-                Ok(Self::Ext(result(all_consuming(camel_case )(new_span(s)))?))
-            }
+    impl ToKindBase for Kind {
+        fn to_base(&self) -> KindBase {
+            self.base()
         }
     }
 
-    impl Deref for GenericKindBase {
-        type Target = str;
 
-        fn deref(&self) -> &Self::Target {
-            match self {
-                GenericKindBase::Portal => "Portal",
-                GenericKindBase::Ext(k) => k.as_str(),
-                GenericKindBase::Root => "Root",
-                GenericKindBase::ArtifactBundle => "ArtifactBundle",
-                GenericKindBase::File => "File",
-                GenericKindBase::Dir => "Dir"
-            }
+    impl TryFrom<KindParts> for Kind {
+        type Error = MsgErr;
+
+        fn try_from(value: KindParts) -> Result<Self, Self::Error> {
+            Ok(match value.base {
+                KindBase::Database => {
+                    match value.sub.ok_or("Database<?> requires a Sub Kind")?.as_str() {
+                        "Relational" => {
+                            Kind::Database(DatabaseSubKind::Relational(value.specific.ok_or("Database<Relational<?>> requires a Specific")?))
+                        }
+                        what => {
+                            return Err(MsgErr::from(format!("unexpected Database SubKind '{}'", what)));
+                        }
+                    }
+                }
+                KindBase::Base => {
+                    match value.sub.ok_or("Base<?> requires a Sub Kind")?.as_str() {
+                        "Database" => {
+                            Kind::Base(BaseSubKind::Database)
+                        }
+                        "Mechtron" => {
+                            Kind::Base(BaseSubKind::Mechtron)
+                        }
+                        what => {
+                            return Err(MsgErr::from(format!("unexpected Base SubKind '{}'", what)));
+                        }
+                    }
+                }
+
+                KindBase::Root => Kind::Root,
+                KindBase::Space => Kind::Space,
+                KindBase::UserBase => Kind::UserBase,
+                KindBase::User => Kind::User,
+                KindBase::App => Kind::App,
+                KindBase::Mechtron => Kind::Mechtron,
+                KindBase::FileSystem => Kind::FileSystem,
+                KindBase::File => Kind::File,
+                KindBase::Dir => Kind::Dir,
+                KindBase::BundleSeries => Kind::BundleSeries,
+                KindBase::Bundle => Kind::Bundle,
+                KindBase::Artifact => Kind::Artifact,
+                KindBase::Control => Kind::Control,
+                KindBase::Portal => Kind::Portal,
+                KindBase::Repo => Kind::Repo,
+            })
         }
     }
-
 
     pub type PointKind = PointKindDef<Point>;
     pub type PointKindCtx = PointKindDef<PointCtx>;
@@ -126,38 +197,37 @@ pub mod id {
     #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
     pub struct PointKindDef<Pnt> {
         pub point: Pnt,
-        pub kind: GenericKind,
+        pub kind: KindParts,
     }
 
     impl ToResolved<PointKindCtx> for PointKindVar {
         fn to_resolved(self, env: &Env) -> Result<PointKindCtx, MsgErr> {
             Ok(PointKindCtx {
                 point: self.point.to_resolved(env)?,
-                kind: self.kind
+                kind: self.kind,
             })
         }
     }
 
     impl ToResolved<PointKind> for PointKindVar {
         fn to_resolved(self, env: &Env) -> Result<PointKind, MsgErr> {
-            Ok(PointKind{
+            Ok(PointKind {
                 point: self.point.to_resolved(env)?,
-                kind: self.kind
+                kind: self.kind,
             })
         }
     }
 
-
     impl ToResolved<PointKind> for PointKindCtx {
         fn to_resolved(self, env: &Env) -> Result<PointKind, MsgErr> {
-            Ok(PointKind{
+            Ok(PointKind {
                 point: self.point.to_resolved(env)?,
-                kind: self.kind
+                kind: self.kind,
             })
         }
     }
     impl PointKind {
-        pub fn new(point: Point, kind: GenericKind) -> Self {
+        pub fn new(point: Point, kind: KindParts) -> Self {
             Self { point, kind }
         }
     }
@@ -181,7 +251,7 @@ pub mod id {
     #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
     pub struct AddressAndType {
         pub point: Point,
-        pub resource_type: GenericKindBase,
+        pub resource_type: KindBase,
     }
 
     pub type Meta = HashMap<String, String>;
@@ -266,8 +336,8 @@ pub mod id {
 
     /// Stands for "Type, Kind, Specific"
     pub trait Tks {
-        fn kind(&self) -> GenericKindBase;
-        fn sub_kind(&self) -> Option<String>;
+        fn base(&self) -> KindBase;
+        fn sub(&self) -> Option<CamelCase>;
         fn specific(&self) -> Option<Specific>;
         fn matches(&self, tks: &dyn Tks) -> bool;
     }
@@ -368,7 +438,6 @@ pub mod id {
         }
     }
 
-
     impl TryInto<RouteSeg> for RouteSegVar {
         type Error = MsgErr;
 
@@ -386,7 +455,7 @@ pub mod id {
                     var.trace.range,
                     var.trace.extra,
                 )),
-                RouteSegVar::Remote => Ok(RouteSeg::Remote)
+                RouteSegVar::Remote => Ok(RouteSeg::Remote),
             }
         }
     }
@@ -420,12 +489,11 @@ pub mod id {
                     format!("[<{}>]", mesh)
                 }
                 Self::Var(var) => {
-                    format!("${{{}}}",var.name)
+                    format!("${{{}}}", var.name)
                 }
             }
         }
     }
-
 
     impl FromStr for RouteSeg {
         type Err = MsgErr;
@@ -449,7 +517,7 @@ pub mod id {
                 }
                 RouteSeg::Global => "GLOBAL".to_string(),
                 RouteSeg::Local => "LOCAL".to_string(),
-                RouteSeg::Local => "REMOTE".to_string()
+                RouteSeg::Remote => "REMOTE".to_string(),
             }
         }
     }
@@ -557,7 +625,7 @@ pub mod id {
     #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
     pub struct Variable {
         pub name: String,
-        pub trace: Trace
+        pub trace: Trace,
     }
 
     impl Variable {
@@ -568,41 +636,37 @@ pub mod id {
 
     pub enum VarVal<V> {
         Var(Tw<SkewerCase>),
-        Val(Tw<V>)
+        Val(Tw<V>),
     }
 
-    impl <V> ToResolved<V> for VarVal<V> where V: FromStr<Err=MsgErr> {
+    impl<V> ToResolved<V> for VarVal<V>
+    where
+        V: FromStr<Err = MsgErr>,
+    {
         fn to_resolved(self, env: &Env) -> Result<V, MsgErr> {
             match self {
-                VarVal::Var(var) => {
-                    match env.val(var.as_str()) {
-                        Ok(val) => Ok(V::from_str(val.as_str())?),
-                        Err(err) => {
-                            let trace = var.trace.clone();
-                            match err {
-                                ResolverErr::NotAvailable => {
-                                    Err(ParseErrs::from_range(
-                                        "variables not available in this context",
-                                        "variables not available",
-                                        trace.range,
-                                        trace.extra,
-                                    ))
-                                }
-                                ResolverErr::NotFound => {
-                                    Err(ParseErrs::from_range(
-                                        format!("variable '{}' not found", var.unwrap().to_string()).as_str(),
-                                        "not found",
-                                        trace.range,
-                                        trace.extra,
-                                    ))
-                                }
-                            }
+                VarVal::Var(var) => match env.val(var.as_str()) {
+                    Ok(val) => Ok(V::from_str(val.as_str())?),
+                    Err(err) => {
+                        let trace = var.trace.clone();
+                        match err {
+                            ResolverErr::NotAvailable => Err(ParseErrs::from_range(
+                                "variables not available in this context",
+                                "variables not available",
+                                trace.range,
+                                trace.extra,
+                            )),
+                            ResolverErr::NotFound => Err(ParseErrs::from_range(
+                                format!("variable '{}' not found", var.unwrap().to_string())
+                                    .as_str(),
+                                "not found",
+                                trace.range,
+                                trace.extra,
+                            )),
                         }
                     }
-                }
-                VarVal::Val(val) => {
-                    Ok(val.unwrap())
-                }
+                },
+                VarVal::Val(val) => Ok(val.unwrap()),
             }
         }
     }
@@ -621,7 +685,7 @@ pub mod id {
         fn is_filesystem_root(&self) -> bool {
             match self {
                 Self::FilesystemRootDir => true,
-                _ => false
+                _ => false,
             }
         }
         fn kind(&self) -> PointSegKind {
@@ -641,7 +705,7 @@ pub mod id {
         fn is_filesystem_root(&self) -> bool {
             match self {
                 Self::FilesystemRootDir => true,
-                _ => false
+                _ => false,
             }
         }
 
@@ -664,7 +728,7 @@ pub mod id {
         fn is_filesystem_root(&self) -> bool {
             match self {
                 Self::FilesystemRootDir => true,
-                _ => false
+                _ => false,
             }
         }
 
@@ -683,8 +747,6 @@ pub mod id {
             }
         }
     }
-
-
 
     #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
     pub enum PointSegCtx {
@@ -723,7 +785,7 @@ pub mod id {
                 PointSegVar::Dir(dir) => dir.clone(),
                 PointSegVar::File(file) => file.clone(),
                 PointSegVar::Version(version) => version.to_string(),
-                PointSegVar::Working (_) => ".".to_string(),
+                PointSegVar::Working(_) => ".".to_string(),
                 PointSegVar::Pop(_) => "..".to_string(),
                 PointSegVar::Var(var) => format!("${{{}}}", var.name),
             }
@@ -731,8 +793,6 @@ pub mod id {
     }
 
     impl PointSegVar {
-
-
         pub fn is_normalized(&self) -> bool {
             self.kind().is_normalized()
         }
@@ -752,8 +812,8 @@ pub mod id {
                 PointSegCtx::Dir(dir) => PointSegVar::Dir(dir),
                 PointSegCtx::File(file) => PointSegVar::File(file),
                 PointSegCtx::Version(version) => PointSegVar::Version(version),
-                PointSegCtx::Working(trace) => PointSegVar::Working (trace),
-                PointSegCtx::Pop (trace) => PointSegVar::Pop (trace)
+                PointSegCtx::Working(trace) => PointSegVar::Working(trace),
+                PointSegCtx::Pop(trace) => PointSegVar::Pop(trace),
             }
         }
     }
@@ -776,7 +836,7 @@ pub mod id {
                     trace.range,
                     trace.extra,
                 )),
-                PointSegVar::Pop (trace) => Err(ParseErrs::from_range(
+                PointSegVar::Pop(trace) => Err(ParseErrs::from_range(
                     "point pop not available in this context",
                     "point pop not available",
                     trace.range,
@@ -821,8 +881,6 @@ pub mod id {
     }
 
     impl PointSegCtx {
-
-
         pub fn is_normalized(&self) -> bool {
             self.kind().is_normalized()
         }
@@ -866,8 +924,6 @@ pub mod id {
     }
 
     impl PointSeg {
-
-
         pub fn is_file(&self) -> bool {
             self.kind().is_file()
         }
@@ -1030,7 +1086,7 @@ pub mod id {
         Any,
         Uuid(Uuid),
         Path(Vec<SkewerCase>),
-        CLI
+        CLI,
     }
 
     impl ToString for Topic {
@@ -1038,19 +1094,19 @@ pub mod id {
             match self {
                 Topic::None => "".to_string(),
                 Topic::Not => "Topic<!>".to_string(),
-                Topic::Any=> "Topic<*>".to_string(),
-                Topic::Uuid(uuid) => format!("Topic<Uuid>({})",uuid),
+                Topic::Any => "Topic<*>".to_string(),
+                Topic::Uuid(uuid) => format!("Topic<Uuid>({})", uuid),
                 Topic::Path(segs) => {
-                    let segments: Vec<String> = segs.into_iter().map(|s|s.to_string()).collect();
-                        let mut rtn = String::new();
-                        for (index,segment) in segments.iter().enumerate() {
-                            rtn.push_str(segment.as_str());
-                            if index < segments.len()-1 {
-                                rtn.push_str(":")
-                            }
-                        };
-                    return format!("Topic<Path>({})",rtn)
-                },
+                    let segments: Vec<String> = segs.into_iter().map(|s| s.to_string()).collect();
+                    let mut rtn = String::new();
+                    for (index, segment) in segments.iter().enumerate() {
+                        rtn.push_str(segment.as_str());
+                        if index < segments.len() - 1 {
+                            rtn.push_str(":")
+                        }
+                    }
+                    return format!("Topic<Path>({})", rtn);
+                }
                 Topic::CLI => "Topic<CLI>".to_string(),
             }
         }
@@ -1058,7 +1114,7 @@ pub mod id {
 
     impl Topic {
         pub fn uuid() -> Self {
-            Self::Uuid(unsafe{mesh_portal_uuid()})
+            Self::Uuid(unsafe { mesh_portal_uuid() })
         }
     }
 
@@ -1072,14 +1128,26 @@ pub mod id {
         }
     }
 
-    #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash,strum_macros::Display,strum_macros::EnumString)]
+    #[derive(
+        Debug,
+        Clone,
+        Serialize,
+        Deserialize,
+        Eq,
+        PartialEq,
+        Hash,
+        strum_macros::Display,
+        strum_macros::EnumString,
+    )]
     pub enum Layer {
-        Surface,
+        Field,
         Shell,
         Driver,
+        PortalShell,
         Host,
         Guest,
-        Core
+        PortalCore,
+        Core,
     }
 
     impl Default for Layer {
@@ -1096,17 +1164,17 @@ pub mod id {
 
     #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
     pub struct Port {
-       pub point: Point,
-       pub layer: Layer,
-       pub topic: Topic
+        pub point: Point,
+        pub layer: Layer,
+        pub topic: Topic,
     }
 
     impl Port {
-        pub fn new( point: Point, layer: Layer, topic: Topic ) -> Self {
+        pub fn new(point: Point, layer: Layer, topic: Topic) -> Self {
             Self {
                 point,
                 layer,
-                topic
+                topic,
             }
         }
     }
@@ -1119,7 +1187,12 @@ pub mod id {
                     format!("{}@{}", self.point.to_string(), self.layer.to_string())
                 }
                 topic => {
-                    format!("{}@{}+{}", self.point.to_string(), self.layer.to_string(),topic.to_string())
+                    format!(
+                        "{}@{}+{}",
+                        self.point.to_string(),
+                        self.layer.to_string(),
+                        topic.to_string()
+                    )
                 }
             }
         }
@@ -1128,7 +1201,7 @@ pub mod id {
     pub struct PortSelector {
         pub point: PointSelector,
         pub topic: ValuePattern<Topic>,
-        pub layer: ValuePattern<Layer>
+        pub layer: ValuePattern<Layer>,
     }
 
     impl ValueMatcher<PointHierarchy> for PortSelector {
@@ -1141,14 +1214,12 @@ pub mod id {
         }
     }
 
-
-
     impl Port {
-        pub fn with_topic( &self, topic: Topic ) -> Self {
+        pub fn with_topic(&self, topic: Topic) -> Self {
             Self {
                 point: self.point.clone(),
                 layer: self.layer.clone(),
-                topic
+                topic,
             }
         }
 
@@ -1156,7 +1227,7 @@ pub mod id {
             Self {
                 point: self.point.clone(),
                 layer,
-                topic: self.topic.clone()
+                topic: self.topic.clone(),
             }
         }
     }
@@ -1185,7 +1256,7 @@ pub mod id {
         fn to_point(self) -> Point;
     }
 
-    pub trait ToPort{
+    pub trait ToPort {
         fn to_port(self) -> Port;
     }
 
@@ -1194,7 +1265,7 @@ pub mod id {
             Port {
                 point: self,
                 topic: Default::default(),
-                layer: Default::default()
+                layer: Default::default(),
             }
         }
     }
@@ -1204,11 +1275,11 @@ pub mod id {
     pub type PointVar = PointDef<RouteSegVar, PointSegVar>;
 
     impl PointVar {
-        pub fn to_point(self) -> Result<Point,MsgErr> {
+        pub fn to_point(self) -> Result<Point, MsgErr> {
             self.collapse()
         }
 
-        pub fn to_point_ctx(self) -> Result<PointCtx,MsgErr> {
+        pub fn to_point_ctx(self) -> Result<PointCtx, MsgErr> {
             self.collapse()
         }
     }
@@ -1227,14 +1298,13 @@ pub mod id {
 
     impl ToResolved<Point> for PointVar {
         fn to_resolved(self, env: &Env) -> Result<Point, MsgErr> {
-            let point_ctx : PointCtx = self.to_resolved(env)?;
+            let point_ctx: PointCtx = self.to_resolved(env)?;
             point_ctx.to_resolved(env)
         }
     }
 
-
-    impl PointCtx{
-        pub fn to_point(self) -> Result<Point,MsgErr> {
+    impl PointCtx {
+        pub fn to_point(self) -> Result<Point, MsgErr> {
             self.collapse()
         }
     }
@@ -1259,29 +1329,29 @@ pub mod id {
                     Ok(val) => {
                         rtn.push_str(format!("{}::", val.as_str()).as_str());
                     }
-                    Err(err) => {
-                        match err {
-                            ResolverErr::NotAvailable => {
-                                errs.push(ParseErrs::from_range(
-                                    format!("variables not available in this context '{}'", var.name.clone())
-                                        .as_str(),
-                                    "Not Available",
-                                    var.trace.range.clone(),
-                                    var.trace.extra.clone(),
-                                ));
-                            }
-                            ResolverErr::NotFound => {
-                                errs.push(ParseErrs::from_range(
-                                    format!("variable could not be resolved '{}'", var.name.clone())
-                                        .as_str(),
-                                    "Not Found",
-                                    var.trace.range.clone(),
-                                    var.trace.extra.clone(),
-                                ));
-                            }
+                    Err(err) => match err {
+                        ResolverErr::NotAvailable => {
+                            errs.push(ParseErrs::from_range(
+                                format!(
+                                    "variables not available in this context '{}'",
+                                    var.name.clone()
+                                )
+                                .as_str(),
+                                "Not Available",
+                                var.trace.range.clone(),
+                                var.trace.extra.clone(),
+                            ));
                         }
-
-                    }
+                        ResolverErr::NotFound => {
+                            errs.push(ParseErrs::from_range(
+                                format!("variable could not be resolved '{}'", var.name.clone())
+                                    .as_str(),
+                                "Not Found",
+                                var.trace.range.clone(),
+                                var.trace.extra.clone(),
+                            ));
+                        }
+                    },
                 },
 
                 RouteSegVar::This => {}
@@ -1306,7 +1376,6 @@ pub mod id {
             };
 
             for (index, segment) in self.segments.iter().enumerate() {
-
                 if let PointSegVar::Var(ref var) = segment {
                     match env.val(var.name.clone().as_str()) {
                         Ok(val) => {
@@ -1319,29 +1388,32 @@ pub mod id {
                             }
                             rtn.push_str(val.as_str());
                         }
-                        Err(err) => {
-
-                            match err {
-                                ResolverErr::NotAvailable => {
-                                    errs.push(ParseErrs::from_range(
-                                        format!("variables not available in this context '{}'", var.name.clone())
-                                            .as_str(),
-                                        "Not Available",
-                                        var.trace.range.clone(),
-                                        var.trace.extra.clone(),
-                                    ));
-                                }
-                                ResolverErr::NotFound => {
-                                    errs.push(ParseErrs::from_range(
-                                        format!("variable could not be resolved '{}'", var.name.clone())
-                                            .as_str(),
-                                        "Not Found",
-                                        var.trace.range.clone(),
-                                        var.trace.extra.clone(),
-                                    ));
-                                }
+                        Err(err) => match err {
+                            ResolverErr::NotAvailable => {
+                                errs.push(ParseErrs::from_range(
+                                    format!(
+                                        "variables not available in this context '{}'",
+                                        var.name.clone()
+                                    )
+                                    .as_str(),
+                                    "Not Available",
+                                    var.trace.range.clone(),
+                                    var.trace.extra.clone(),
+                                ));
                             }
-                        }
+                            ResolverErr::NotFound => {
+                                errs.push(ParseErrs::from_range(
+                                    format!(
+                                        "variable could not be resolved '{}'",
+                                        var.name.clone()
+                                    )
+                                    .as_str(),
+                                    "Not Found",
+                                    var.trace.range.clone(),
+                                    var.trace.extra.clone(),
+                                ));
+                            }
+                        },
                     }
                 } else if PointSegVar::FilesystemRootDir == *segment {
                     after_fs = true;
@@ -1382,7 +1454,7 @@ pub mod id {
             })
         }
 
-        fn to_resolved(self, env: &Env ) -> Result<Point, MsgErr> {
+        fn to_resolved(self, env: &Env) -> Result<Point, MsgErr> {
             if self.segments.is_empty() {
                 return Ok(Point {
                     route: self.route,
@@ -1395,7 +1467,7 @@ pub mod id {
 
             for (index, segment) in old.segments.iter().enumerate() {
                 match segment {
-                    PointSegCtx::Working (trace) => {
+                    PointSegCtx::Working(trace) => {
                         if index > 1 {
                             return Err(ParseErrs::from_range(
                                 "working point can only be referenced in the first point segment",
@@ -1416,7 +1488,7 @@ pub mod id {
                             }
                         };
                     }
-                    PointSegCtx::Pop (trace) => {
+                    PointSegCtx::Pop(trace) => {
                         if index <= 1 {
                             point = match env.point_or() {
                                 Ok(point) => point.clone(),
@@ -1498,8 +1570,12 @@ pub mod id {
         pub segments: Vec<Seg>,
     }
 
-    impl <Route,Seg> PointDef<Route,Seg> where Route:Clone, Seg:Clone{
-        pub fn parent(&self) -> Option<PointDef<Route,Seg>> {
+    impl<Route, Seg> PointDef<Route, Seg>
+    where
+        Route: Clone,
+        Seg: Clone,
+    {
+        pub fn parent(&self) -> Option<PointDef<Route, Seg>> {
             if self.segments.is_empty() {
                 return None;
             }
@@ -1521,8 +1597,9 @@ pub mod id {
     }
 
     impl Point {
-
-        pub fn central() -> Self { GLOBAL_CENTRAL.clone() }
+        pub fn central() -> Self {
+            GLOBAL_CENTRAL.clone()
+        }
 
         pub fn global_executor() -> Self {
             GLOBAL_EXEC.clone()
@@ -1537,10 +1614,8 @@ pub mod id {
         }
 
         pub fn remote_entry_requester() -> Self {
-            REMOTE_ENTRY_REQUESTE
-            R.clone()
+            REMOTE_ENTRY_REQUESTER.clone()
         }
-
 
         pub fn normalize(self) -> Result<Point, MsgErr> {
             if self.is_normalized() {
@@ -1577,18 +1652,18 @@ pub mod id {
             })
         }
 
-        pub fn is_parent(&self, child: &Point ) -> Result<(),()> {
+        pub fn is_parent(&self, child: &Point) -> Result<(), ()> {
             if self.route != child.route {
                 return Err(());
             }
 
             if self.segments.len() >= child.segments.len() {
-                return Err(())
+                return Err(());
             }
 
-            for (index,seg) in self.segments.iter().enumerate() {
+            for (index, seg) in self.segments.iter().enumerate() {
                 if *seg != *child.segments.get(index).unwrap() {
-                    return Err(())
+                    return Err(());
                 }
             }
 
@@ -1714,7 +1789,6 @@ pub mod id {
             }
         }
 
-
         pub fn filepath(&self) -> Option<String> {
             let mut path = String::new();
             for segment in &self.segments {
@@ -1746,19 +1820,26 @@ pub mod id {
             }
         }
 
-        pub fn truncate( self, kind: PointSegKind  ) -> Result<Point,MsgErr> {
+        pub fn truncate(self, kind: PointSegKind) -> Result<Point, MsgErr> {
             let mut segments = vec![];
             for segment in &self.segments {
                 segments.push(segment.clone());
                 if segment.kind() == kind {
                     return Ok(Self {
                         route: self.route,
-                        segments
-                    })
+                        segments,
+                    });
                 }
             }
 
-            Err(MsgErr::Status{ status: 404, message: format!("Point segment kind: {} not found in point: {}", kind.to_string(), self.to_string() ) })
+            Err(MsgErr::Status {
+                status: 404,
+                message: format!(
+                    "Point segment kind: {} not found in point: {}",
+                    kind.to_string(),
+                    self.to_string()
+                ),
+            })
         }
     }
 
@@ -1784,7 +1865,11 @@ pub mod id {
         }
     }
 
-    impl <Route,Seg> PointDef<Route,Seg> where Route: ToString, Seg: PointSegQuery+ToString {
+    impl<Route, Seg> PointDef<Route, Seg>
+    where
+        Route: ToString,
+        Seg: PointSegQuery + ToString,
+    {
         pub fn to_string_impl(&self, show_route: bool) -> String {
             let mut rtn = String::new();
 
@@ -1811,14 +1896,17 @@ pub mod id {
         }
     }
 
-    impl <Route,Seg> ToString for PointDef<Route,Seg> where Route: RouteSegQuery +ToString, Seg: PointSegQuery+ToString {
+    impl<Route, Seg> ToString for PointDef<Route, Seg>
+    where
+        Route: RouteSegQuery + ToString,
+        Seg: PointSegQuery + ToString,
+    {
         fn to_string(&self) -> String {
             self.to_string_impl(!self.route.is_local())
         }
     }
 
     impl Point {
-
         pub fn root() -> Self {
             Self {
                 route: RouteSeg::This,
@@ -1833,12 +1921,9 @@ pub mod id {
             }
         }
 
-
         pub fn is_local_root(&self) -> bool {
             self.segments.is_empty() && self.route.is_local()
         }
-
-
     }
 
     impl PointVar {
@@ -1920,76 +2005,96 @@ pub mod id {
 
      */
 
+    pub struct KindLex {
+        pub base: CamelCase,
+        pub sub: Option<CamelCase>,
+        pub specific: Option<Specific>
+    }
+
+    impl TryInto<KindParts> for KindLex {
+        type Error = MsgErr;
+
+        fn try_into(self) -> Result<KindParts, Self::Error> {
+            Ok(KindParts {
+                base: KindBase::try_from(self.base)?,
+                sub: self.sub,
+                specific: self.specific
+            })
+        }
+    }
+
     #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
-    pub struct GenericKind {
-        pub kind: GenericKindBase,
-        pub sub_kind: Option<String>,
+    pub struct KindParts {
+        pub base: KindBase,
+        pub sub: Option<CamelCase>,
         pub specific: Option<Specific>,
     }
 
-    impl GenericKind {
+    impl ToKindBase for KindParts {
+        fn to_base(&self) -> KindBase {
+            self.base.clone()
+        }
+    }
+
+
+    impl KindParts {
         pub fn root() -> Self {
             Self {
-                kind: "Root".try_into().unwrap(),
-                sub_kind: None,
-                specific: None
+                base: KindBase::Root,
+                sub: None,
+                specific: None,
             }
         }
     }
 
-
-    impl ToString for GenericKind {
+    impl ToString for KindParts {
         fn to_string(&self) -> String {
-            if self.sub_kind.is_some() && self.specific.is_some() {
+            if self.sub.is_some() && self.specific.is_some() {
                 format!(
                     "{}<{}<{}>>",
-                    self.kind.to_string(),
-                    self.sub_kind.as_ref().expect("kind"),
+                    self.base.to_string(),
+                    self.sub.as_ref().expect("sub").to_string(),
                     self.specific.as_ref().expect("specific").to_string()
                 )
-            } else if self.sub_kind.is_some() {
+            } else if self.sub.is_some() {
                 format!(
                     "{}<{}>",
-                    self.kind.to_string(),
-                    self.sub_kind.as_ref().expect("kind")
+                    self.base.to_string(),
+                    self.sub.as_ref().expect("sub").to_string()
                 )
             } else {
-                self.kind.to_string()
+                self.base.to_string()
             }
         }
     }
 
-    impl FromStr for GenericKind {
+    impl FromStr for KindParts {
         type Err = MsgErr;
 
         fn from_str(s: &str) -> Result<Self, Self::Err> {
-            let (_, kind) = all_consuming(kind)(new_span(s))?;
+            let (_, kind) = all_consuming(kind_parts)(new_span(s))?;
 
             Ok(kind)
         }
     }
 
-    impl GenericKind {
-        pub fn new(
-            kind: GenericKindBase,
-            sub_kind: Option<String>,
-            specific: Option<Specific>,
-        ) -> Self {
+    impl KindParts {
+        pub fn new(kind: KindBase, sub: Option<CamelCase>, specific: Option<Specific>) -> Self {
             Self {
-                kind,
-                sub_kind,
+                base: kind,
+                sub,
                 specific,
             }
         }
     }
 
-    impl Tks for GenericKind {
-        fn kind(&self) -> GenericKindBase {
-            self.kind.clone()
+    impl Tks for KindParts {
+        fn base(&self) -> KindBase {
+            self.base.clone()
         }
 
-        fn sub_kind(&self) -> Option<String> {
-            self.sub_kind.clone()
+        fn sub(&self) -> Option<CamelCase> {
+            self.sub.clone()
         }
 
         fn specific(&self) -> Option<Specific> {
@@ -1997,9 +2102,115 @@ pub mod id {
         }
 
         fn matches(&self, tks: &dyn Tks) -> bool {
-            self.kind == tks.kind()
-                && self.sub_kind == tks.sub_kind()
+            self.base == tks.base()
+                && self.sub == tks.sub()
                 && self.specific == tks.specific()
+        }
+    }
+}
+
+#[derive(
+    Clone,
+    Debug,
+    Eq,
+    PartialEq,
+    Hash,
+    Serialize,
+    Deserialize,
+    strum_macros::Display,
+    strum_macros::EnumString,
+)]
+pub enum BaseSubKind {
+    User,
+    App,
+    Mechtron,
+    Database,
+    Repo,
+    Any,
+}
+
+#[derive(
+Clone,
+Debug,
+Eq,
+PartialEq,
+Hash,
+Serialize,
+Deserialize,
+strum_macros::Display,
+strum_macros::EnumString,
+)]
+pub enum UserBaseSubKind {
+    Keycloak
+}
+
+#[derive(
+    Clone,
+    Debug,
+    Eq,
+    PartialEq,
+    Hash,
+    Serialize,
+    Deserialize,
+    strum_macros::Display,
+    strum_macros::EnumString,
+)]
+pub enum FileSubKind {
+    File,
+    Dir,
+}
+
+#[derive(
+    Clone,
+    Debug,
+    Eq,
+    PartialEq,
+    Hash,
+    Serialize,
+    Deserialize,
+    strum_macros::Display,
+    strum_macros::EnumString,
+)]
+pub enum ArtifactSubKind {
+    Raw,
+    ParticleConfig,
+    Bind,
+    Wasm,
+    Dir,
+}
+
+
+
+
+#[derive(
+    Clone,
+    Debug,
+    Eq,
+    PartialEq,
+    Hash,
+    Serialize,
+    Deserialize,
+    strum_macros::Display,
+)]
+pub enum DatabaseSubKind {
+    Relational(Specific),
+}
+
+impl DatabaseSubKind {
+    pub fn specific(&self) -> Option<Specific> {
+        match self {
+            Self::Relational(specific) => Option::Some(specific.clone()),
+            _ => Option::None,
+        }
+    }
+}
+
+
+impl KindBase {
+    pub fn child_resource_registry_handler(&self) -> ChildRegistry {
+        match self {
+            Self::UserBase => ChildRegistry::Core,
+            _ => ChildRegistry::Shell
         }
     }
 }

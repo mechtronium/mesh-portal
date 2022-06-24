@@ -45,7 +45,7 @@ pub mod command {
         #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, strum_macros::Display)]
         pub enum StateSrc {
             None,
-            Payload(Substance),
+            Substance(Box<Substance>),
         }
 
         #[derive(Debug, Clone, Serialize, Deserialize,Eq,PartialEq)]
@@ -167,7 +167,7 @@ pub mod request {
     use crate::version::v0_0_1::wave::RespCore;
     use crate::version::v0_0_1::fail;
     use crate::version::v0_0_1::fail::{BadRequest, Fail, NotFound};
-    use crate::version::v0_0_1::id::id::{GenericKind, GenericKindBase, Meta, Point};
+    use crate::version::v0_0_1::id::id::{KindParts, KindBase, Meta, Point};
     use crate::version::v0_0_1::substance::substance::{Errors, Substance, };
     use crate::version::v0_0_1::selector::selector::KindSelector;
     use crate::version::v0_0_1::util::{ValueMatcher, ValuePattern};
@@ -364,10 +364,10 @@ pub mod request {
         use crate::version::v0_0_1::bin::Bin;
         use crate::version::v0_0_1::command::Command;
         use crate::version::v0_0_1::command::command::common::{SetProperties, SetRegistry, StateSrc, StateSrcVar};
-        use crate::version::v0_0_1::id::id::{GenericKind, GenericKindBase, HostKey, Point, PointCtx, PointSeg, PointVar, ToPort};
+        use crate::version::v0_0_1::id::id::{KindParts, KindBase, HostKey, Point, PointCtx, PointSeg, PointVar, ToPort};
         use crate::version::v0_0_1::wave::{CmdMethod, ReqProto, ReqCore, SysMethod};
         use crate::version::v0_0_1::msg::MsgMethod;
-        use crate::version::v0_0_1::parse::{Env, ResolverErr};
+        use crate::version::v0_0_1::parse::{CamelCase, Env, ResolverErr};
         use crate::version::v0_0_1::substance::substance::Substance;
         use crate::version::v0_0_1::selector::selector::SpecificSelector;
         use crate::version::v0_0_1::util::{ConvertFrom, ToResolved};
@@ -410,8 +410,8 @@ pub mod request {
                 let template = TemplateCtx {
                     point,
                     kind: KindTemplate {
-                        kind: "ArtifactBundle".try_into().unwrap(),
-                        sub_kind: None,
+                        base: KindBase::Bundle,
+                        sub: None,
                         specific: None,
                     },
                 };
@@ -425,8 +425,8 @@ pub mod request {
                 let template = Template {
                     point,
                     kind: KindTemplate {
-                        kind: "ArtifactBundle".try_into().unwrap(),
-                        sub_kind: None,
+                        base: KindBase::Bundle,
+                        sub: None,
                         specific: None,
                     },
                 };
@@ -442,21 +442,21 @@ pub mod request {
 
         #[derive(Debug, Clone, Serialize, Deserialize,Eq,PartialEq)]
         pub struct KindTemplate {
-            pub kind: GenericKindBase,
-            pub sub_kind: Option<String>,
+            pub base: KindBase,
+            pub sub: Option<CamelCase>,
             pub specific: Option<SpecificSelector>,
         }
 
-        impl TryInto<GenericKind> for KindTemplate {
+        impl TryInto<KindParts> for KindTemplate {
             type Error = MsgErr;
 
-            fn try_into(self) -> Result<GenericKind, Self::Error> {
+            fn try_into(self) -> Result<KindParts, Self::Error> {
                 if self.specific.is_some() {
                     return Err("cannot create a ResourceKind from a specific pattern when using KindTemplate".into());
                 }
-                Ok(GenericKind {
-                    kind: self.kind,
-                    sub_kind: self.sub_kind,
+                Ok(KindParts {
+                    base: self.base,
+                    sub: self.sub,
                     specific: None,
                 })
             }
@@ -491,19 +491,19 @@ pub mod request {
                 let template = self.template.to_resolved(env)?;
                 let state = match &self.state {
                     StateSrcVar::None => StateSrc::None,
-                    StateSrcVar::FileRef(name) => StateSrc::Payload(Substance::Bin(env.file(name).map_err(|e|{ match e{
+                    StateSrcVar::FileRef(name) => StateSrc::Substance(Box::new(Substance::Bin(env.file(name).map_err(|e|{ match e{
                         ResolverErr::NotAvailable => MsgErr::from_500("files are not available in this context"),
                         ResolverErr::NotFound => MsgErr::from_500(format!("cannot find file '{}'",name))
-                    }})?.content)),
+                    }})?.content))),
                     StateSrcVar::Var(var) => {
                         let val = env.val(var.name.as_str() ).map_err(|e|match e{
                             ResolverErr::NotAvailable => MsgErr::from_500("variable are not available in this context"),
                             ResolverErr::NotFound => MsgErr::from_500(format!("cannot find variable '{}'", var.name ))
                         })?;
-                        StateSrc::Payload(Substance::Bin(env.file(val.clone()).map_err(|e|{ match e{
+                        StateSrc::Substance(Box::new(Substance::Bin(env.file(val.clone()).map_err(|e|{ match e{
                             ResolverErr::NotAvailable => MsgErr::from_500("files are not available in this context"),
                             ResolverErr::NotFound => MsgErr::from_500(format!("cannot find file '{}'",val))
-                        }})?.content))
+                        }})?.content)))
                     }
                 };
                 Ok(CreateCtx {
@@ -545,7 +545,7 @@ pub mod request {
             pub fn fulfillment(mut self, bin: Bin) -> Create {
                 Create {
                     template: self.template,
-                    state: StateSrc::Payload(Substance::Bin(bin)),
+                    state: StateSrc::Substance(Box::new(Substance::Bin(bin))),
                     properties: self.properties,
                     strategy: self.strategy,
                     registry: self.registry,
