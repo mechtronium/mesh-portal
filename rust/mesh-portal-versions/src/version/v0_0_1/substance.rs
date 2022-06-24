@@ -9,7 +9,7 @@ pub mod substance {
     use crate::version::v0_0_1::id::id::{GenericKind, GenericKindBase, Meta, Point, PointCtx, PointVar, Port};
     use crate::version::v0_0_1::particle::particle::{Particle, Status, Stub};
     use crate::version::v0_0_1::selector::selector::{KindSelector, PointSelector};
-    use crate::version::v0_0_1::util::{ToResolved, ValueMatcher, ValuePattern};
+    use crate::version::v0_0_1::util::{ToResolved, uuid, ValueMatcher, ValuePattern};
     use http::{HeaderMap, HeaderValue, Uri};
     use std::str::FromStr;
     use std::sync::Arc;
@@ -97,6 +97,10 @@ pub mod substance {
     impl Token {
         pub fn new<D:ToString>(data: D) -> Self {
             Self{data:data.to_string()}
+        }
+
+        pub fn new_uuid() -> Self {
+            Self::new(uuid())
         }
     }
 

@@ -11,3 +11,5 @@ async-trait = "0.1.48"
 futures = {version = "0.3.21", default-features = true }
 tokio = { version = "1.15.0", features = ["full"] }
 dashmap = "5.3.4"
+semver = { version="1.0.10", features=['serde'] }
+

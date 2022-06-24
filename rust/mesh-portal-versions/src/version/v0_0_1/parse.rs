@@ -16,12 +16,12 @@ use nom::combinator::{cut, eof, fail, not, peek, recognize, success, value, veri
 use crate::error::{MsgErr, ParseErrs};
 use crate::version::v0_0_1::command::command::common::{PropertyMod, SetProperties, StateSrc, StateSrcVar};
 use crate::version::v0_0_1::command::request::create::{
-    Create, CreateVar, KindTemplate, PointSegFactory, PointTemplate, PointTemplateSeg,
+    Create, CreateVar, KindTemplate, PointSegTemplate, PointTemplate, PointTemplateSeg,
     PointTemplateVar, Require, Strategy, Template, TemplateVar,
 };
 use crate::version::v0_0_1::command::request::get::{Get, GetOp, GetVar};
 use crate::version::v0_0_1::command::request::select::{
-    Select, SelectIntoPayload, SelectKind, SelectVar,
+    Select, SelectIntoSubstance, SelectKind, SelectVar,
 };
 use crate::version::v0_0_1::command::request::set::{Set, SetVar};
 use crate::version::v0_0_1::id::id::{Layer, Point, PointCtx, PointKindVar, PointSegCtx, PointSegDelim, PointSegment, PointSegVar, PointVar, Port, RouteSeg, RouteSegVar, Topic, Uuid, Variable, VarVal, Version};
@@ -1424,7 +1424,7 @@ pub fn point_template<I: Span>(input: I) -> Res<I, PointTemplateVar> {
             next,
             PointTemplateVar {
                 parent,
-                child_segment_template: PointSegFactory::Exact(child.to_string()),
+                child_segment_template: PointSegTemplate::Exact(child.to_string()),
             },
         )),
         Some(_) => {
@@ -1433,7 +1433,7 @@ pub fn point_template<I: Span>(input: I) -> Res<I, PointTemplateVar> {
                 next,
                 PointTemplateVar {
                     parent,
-                    child_segment_template: PointSegFactory::Exact(child),
+                    child_segment_template: PointSegTemplate::Exact(child),
                 },
             ))
         }
@@ -1613,7 +1613,7 @@ pub fn select<I: Span>(input: I) -> Res<I, SelectVar> {
         let select = SelectVar {
             pattern: point_kind_pattern,
             properties: Default::default(),
-            into_payload: SelectIntoPayload::Stubs,
+            into_payload: SelectIntoSubstance::Stubs,
             kind: SelectKind::Initial,
         };
         (next, select)
@@ -6604,7 +6604,7 @@ pub fn route_selector<I: Span>(input: I) -> Result<RouteSelector, MsgErr> {
 pub mod test {
     use crate::error::{MsgErr, ParseErrs};
     use crate::version::v0_0_1::command::request::create::{
-        PointSegFactory, PointTemplate, PointTemplateCtx,
+        PointSegTemplate, PointTemplate, PointTemplateCtx,
     };
     use crate::version::v0_0_1::config::config::Document;
     use crate::version::v0_0_1::id::id::{Point, PointCtx, PointSegVar, RouteSegVar};
@@ -6664,7 +6664,7 @@ pub mod test {
         let template = util::log(result(point_template(new_span("localhost:other:some-%"))))?;
 
         let template: PointTemplate = util::log(template.collapse())?;
-        if let PointSegFactory::Pattern(child) = template.child_segment_template {
+        if let PointSegTemplate::Pattern(child) = template.child_segment_template {
             assert_eq!(child.as_str(), "some-%")
         }
 

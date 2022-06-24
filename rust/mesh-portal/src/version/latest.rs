@@ -287,7 +287,7 @@ pub mod entity {
             pub type Fulfillment = command::request::create::Fulfillment;
             pub type Strategy = command::request::create::Strategy;
             pub type PointTemplate = command::request::create::PointTemplate;
-            pub type PointSegFactory = command::request::create::PointSegFactory;
+            pub type PointSegFactory = command::request::create::PointSegTemplate;
             pub type CreateOp = command::request::create::Create;
             pub type Require = command::request::create::Require;
             pub type Set = command::request::set::Set;
@@ -297,7 +297,7 @@ pub mod entity {
             use mesh_portal_versions::version::v0_0_1 as current;
             use mesh_portal_versions::version::v0_0_1::{command, entity};
 
-            pub type SelectIntoPayload = command::request::select::SelectIntoPayload;
+            pub type SelectIntoPayload = command::request::select::SelectIntoSubstance;
             pub type Select = command::request::select::Select;
             pub type SelectionKind = command::request::select::SelectKind;
             pub type SubSelector = command::request::select::SubSelect;

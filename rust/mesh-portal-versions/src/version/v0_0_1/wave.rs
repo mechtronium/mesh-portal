@@ -65,37 +65,37 @@ impl ToString for WaveId {
 }
 
 #[derive(Serialize, Deserialize, Autobox)]
-pub enum WaveFrame {
-    Req(ReqFrame),
-    Resp(RespFrame),
+pub enum WaveXtra {
+    Req(ReqXtra),
+    Resp(RespXtra),
 }
 
-impl WaveFrame {
+impl WaveXtra {
     pub fn id(&self) -> &Uuid {
         match self {
-            WaveFrame::Req(request) => request.id(),
-            WaveFrame::Resp(response) => response.id()
+            WaveXtra::Req(request) => request.id(),
+            WaveXtra::Resp(response) => response.id()
         }
     }
 
     pub fn to(&self) -> &Port{
         match self {
-            WaveFrame::Req(request) => request.to(),
-            WaveFrame::Resp(response) => response.to()
+            WaveXtra::Req(request) => request.to(),
+            WaveXtra::Resp(response) => response.to()
         }
     }
 
     pub fn from(&self) -> &Port{
         match self {
-            WaveFrame::Req(request) => request.from(),
-            WaveFrame::Resp(response) => response.from()
+            WaveXtra::Req(request) => request.from(),
+            WaveXtra::Resp(response) => response.from()
         }
     }
 
     pub fn span(&self) -> Option<&LogSpan> {
         match self {
-            WaveFrame::Req(req) => req.span.as_ref(),
-            WaveFrame::Resp(res) => res.span.as_ref()
+            WaveXtra::Req(req) => req.span.as_ref(),
+            WaveXtra::Resp(res) => res.span.as_ref()
         }
     }
 }
@@ -340,8 +340,8 @@ impl Requestable<RespShell> for ReqStub {
     }
 }
 
-impl Requestable<RespFrame> for ReqStub {
-    fn status(self, status: u16) -> RespFrame {
+impl Requestable<RespXtra> for ReqStub {
+    fn status(self, status: u16) -> RespXtra {
         RespShell {
             id: uuid(),
             to: self.from,
@@ -352,7 +352,7 @@ impl Requestable<RespFrame> for ReqStub {
         .to_frame(self.span)
     }
 
-    fn err(self, err: MsgErr) -> RespFrame {
+    fn err(self, err: MsgErr) -> RespXtra {
         RespShell {
             id: uuid(),
             to: self.from,
@@ -363,7 +363,7 @@ impl Requestable<RespFrame> for ReqStub {
         .to_frame(self.span)
     }
 
-    fn ok(self) -> RespFrame {
+    fn ok(self) -> RespXtra {
         RespShell {
             id: uuid(),
             to: self.from,
@@ -374,7 +374,7 @@ impl Requestable<RespFrame> for ReqStub {
         .to_frame(self.span)
     }
 
-    fn body(self, body: Substance) -> RespFrame {
+    fn body(self, body: Substance) -> RespXtra {
         RespShell {
             id: uuid(),
             to: self.from,
@@ -385,7 +385,7 @@ impl Requestable<RespFrame> for ReqStub {
         .to_frame(self.span)
     }
 
-    fn core(self, core: RespCore) -> RespFrame {
+    fn core(self, core: RespCore) -> RespXtra {
         RespShell {
             id: uuid(),
             to: self.from,
@@ -538,8 +538,8 @@ impl ReqShell {
         self.as_stub().status(status)
     }
 
-    pub fn to_frame(self, span: Option<LogSpan>) -> ReqFrame {
-        ReqFrame {
+    pub fn to_frame(self, span: Option<LogSpan>) -> ReqXtra {
+        ReqXtra {
             session: None,
             request: self,
             span
@@ -549,13 +549,13 @@ impl ReqShell {
 }
 
 #[derive(Serialize, Deserialize)]
-pub struct ReqFrame {
+pub struct ReqXtra {
     pub session: Option<Session>,
     pub request: ReqShell,
     pub span: Option<LogSpan>,
 }
 
-impl ReqFrame {
+impl ReqXtra {
     pub fn from(&self) -> &Port {
         &self.request.from
     }
@@ -565,7 +565,7 @@ impl ReqFrame {
     }
 }
 
-impl ReqFrame {
+impl ReqXtra {
     pub fn id(&self) -> &Uuid {
         &self.request.id
     }
@@ -577,48 +577,48 @@ impl ReqFrame {
     }
 }
 
-impl Into<WaitTime> for &ReqFrame {
+impl Into<WaitTime> for &ReqXtra {
     fn into(self) -> WaitTime {
         (&self.request).into()
     }
 }
 
-impl Requestable<RespFrame> for ReqFrame {
-    fn status(self, status: u16) -> RespFrame {
-        RespFrame {
+impl Requestable<RespXtra> for ReqXtra {
+    fn status(self, status: u16) -> RespXtra {
+        RespXtra {
             session: None,
             response: self.request.status(status),
             span: self.span,
         }
     }
 
-    fn err(self, err: MsgErr) -> RespFrame {
-        RespFrame {
+    fn err(self, err: MsgErr) -> RespXtra {
+        RespXtra {
             session: None,
             response: self.request.err(err),
             span: self.span,
         }
     }
 
-    fn ok(self) -> RespFrame {
-        RespFrame {
+    fn ok(self) -> RespXtra {
+        RespXtra {
             session: None,
             response: self.request.ok(),
             span: self.span,
         }
     }
 
-    fn body(self, body: Substance) -> RespFrame {
-        RespFrame {
+    fn body(self, body: Substance) -> RespXtra {
+        RespXtra {
             session: None,
             response: self.request.body(body),
             span: self.span,
         }
     }
 
-    fn core(self, core: RespCore) -> RespFrame {
+    fn core(self, core: RespCore) -> RespXtra {
         let response = RespShell::new(core, self.request.to, self.request.from, self.request.id);
-        RespFrame {
+        RespXtra {
             session: None,
             response,
             span: self.span
@@ -627,13 +627,13 @@ impl Requestable<RespFrame> for ReqFrame {
 }
 
 #[derive(Serialize, Deserialize)]
-pub struct RespFrame {
+pub struct RespXtra {
     pub session: Option<Session>,
     pub response: RespShell,
     pub span: Option<LogSpan>,
 }
 
-impl RespFrame {
+impl RespXtra {
     pub fn new(response: RespShell) -> Self {
         Self {
             response,
@@ -1028,16 +1028,16 @@ impl RespShell {
         }
     }
 
-    pub fn to_frame(self, span: Option<LogSpan>) -> RespFrame {
-        RespFrame {
+    pub fn to_frame(self, span: Option<LogSpan>) -> RespXtra {
+        RespXtra {
             session: None,
             response: self,
             span,
         }
     }
 
-    pub fn to_span_frame(self, span: LogSpan ) -> RespFrame {
-        RespFrame {
+    pub fn to_span_frame(self, span: LogSpan ) -> RespXtra {
+        RespXtra {
             session: None,
             response: self,
             span: Some(span),
@@ -2254,9 +2254,8 @@ impl ValueMatcher<CmdMethod> for CmdMethod {
 pub enum SysMethod {
     Command,
     Assign,
-    Authenticate,
     AssignPort,
-    LaneAuth,
+    ConnectReq,
 }
 
 

@@ -1,15 +1,22 @@
+#![allow(warnings)]
+
 use dashmap::DashMap;
 use futures::future::select_all;
 use futures::FutureExt;
-use mesh_portal_versions::version::v0_0_1::id::id::{Point, ToPoint, ToPort};
+use mesh_portal_versions::version::v0_0_1::id::id::{Point, ToPoint, ToPort, Version};
 use mesh_portal_versions::version::v0_0_1::wave::{Agent, Method, ReqShell, Requestable, RespShell, SysMethod, Wave};
 use std::collections::HashMap;
 use std::future::Future;
+use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
 use tokio::sync::mpsc;
 use mesh_portal_versions::error::MsgErr;
-use mesh_portal_versions::version::v0_0_1::log::PointLogger;
-use mesh_portal_versions::version::v0_0_1::substance::substance::SubstanceKind;
+use mesh_portal_versions::version::v0_0_1::command::request::create::{PointFactory, PointFactoryU128, PointSegTemplate};
+use mesh_portal_versions::version::v0_0_1::frame::frame::PrimitiveFrame;
+use mesh_portal_versions::version::v0_0_1::log::{PointLogger, RootLogger};
+use mesh_portal_versions::version::v0_0_1::substance::substance::{Substance, SubstanceKind, Token};
+use mesh_portal_versions::version::v0_0_1::sys::Sys;
+use mesh_portal_versions::version::v0_0_1::util::uuid;
 
 #[macro_use]
 extern crate async_trait;
@@ -22,6 +29,7 @@ pub struct Hyperway {
     inbound: InboundLanes,
 }
 
+#[derive(Clone)]
 pub struct HyperwayStub {
     pub agent: Agent,
     pub logger: PointLogger,
@@ -186,16 +194,16 @@ impl HyperwayInterchange {
         &self.logger.point
     }
 
-    async fn lane_auth(&self, req: ReqShell) -> Result<(mpsc::Sender<Wave>, mpsc::Receiver<Wave>),RespShell> {
+    async fn auth(&mut self, req: ReqShell) -> Result<(mpsc::Sender<Wave>, mpsc::Receiver<Wave>),RespShell> {
         // first make sure we are talking to the local lane connector
-        if req.to.clone().to_point() != Point::local_lane_connector() {
+        if req.to.clone().to_point() != Point::local_hypergate() {
             let mut resp = req.bad_request();
-            resp.from = Point::local_lane_connector().to_port();
+            resp.from = Point::local_hypergate().to_port();
             return Err(resp);
         }
 
         // if this is not a request to Authenticate then it is a bad request
-        if Method::Sys(SysMethod::LaneAuth) != req.core.method  {
+        if Method::Sys(SysMethod::ConnectReq) != req.core.method  {
             return Err(req.bad_request());
         }
 
@@ -259,10 +267,192 @@ pub trait HyperRouter: Send + Sync {
 
 #[async_trait]
 pub trait HyperAuthenticator {
-    async fn auth( &self, req: ReqShell ) -> Result<HyperwayStub,MsgErr>;
+    async fn auth( &mut self, req: ReqShell ) -> Result<HyperwayStub,MsgErr>;
+}
+
+pub struct AnonHyperAuthenticator{
+    pub logger: RootLogger,
+    pub lane_point_factory: Box<dyn PointFactory>,
+}
+
+impl AnonHyperAuthenticator{
+    pub fn new(lane_point_factory: Box<dyn PointFactory>, logger: RootLogger ) -> Self {
+        Self {
+            logger,
+            lane_point_factory,
+        }
+    }
+}
+
+#[async_trait]
+impl HyperAuthenticator for AnonHyperAuthenticator{
+    async fn auth(&mut self, req: ReqShell) -> Result<HyperwayStub, MsgErr> {
+
+        if let Substance::Sys(Sys::ConnectReq(auth_req)) = &req.core.body {
+            if let Some(end_point) = &auth_req.end_point {
+                let end_point = end_point.clone();
+                let lane_point = self.lane_point_factory.create()?;
+                let logger = self.logger.point(lane_point);
+                return Ok(HyperwayStub {
+                    agent: Agent::Anonymous,
+                    logger,
+                    end_point
+                })
+            } else {
+                return Err(MsgErr::bad_request())
+            }
+        } else {
+            // must be a LaneAuth
+            return Err(MsgErr::bad_request())
+        }
+    }
+}
+
+pub struct AnonHyperAuthenticatorAssignEndPoint {
+   pub logger: RootLogger,
+   pub lane_point_factory: Box<dyn PointFactory>,
+   pub end_point_factory: Box<dyn PointFactory>
+}
+
+impl AnonHyperAuthenticatorAssignEndPoint {
+    pub fn new(lane_point_factory: Box<dyn PointFactory>, end_point_factory: Box<dyn PointFactory>, logger: RootLogger ) -> Self {
+        Self {
+            logger,
+            lane_point_factory,
+            end_point_factory
+        }
+    }
+}
+
+#[async_trait]
+impl HyperAuthenticator for AnonHyperAuthenticatorAssignEndPoint {
+    async fn auth(&mut self, req: ReqShell) -> Result<HyperwayStub, MsgErr> {
+
+       if let Substance::Sys(Sys::ConnectReq(auth_req)) = &req.core.body {
+           if let None = auth_req.end_point {
+               let end_point = self.end_point_factory.create()?;
+               let lane_point = self.lane_point_factory.create()?;
+               let logger = self.logger.point(lane_point);
+               return Ok(HyperwayStub {
+                   agent: Agent::Anonymous,
+                   logger,
+                   end_point
+               })
+           } else {
+               return Err(MsgErr::bad_request())
+           }
+       } else {
+           // must be a LaneAuth
+           return Err(MsgErr::bad_request())
+       }
+    }
 }
 
 
+pub struct TokensFromHeavenHyperAuthenticatorAssignEndPoint {
+    pub logger: RootLogger,
+    pub tokens: Arc<DashMap<Token,HyperwayStub>>
+}
+
+impl TokensFromHeavenHyperAuthenticatorAssignEndPoint {
+    pub fn new( tokens: Arc<DashMap<Token,HyperwayStub>>, logger: RootLogger ) -> Self {
+        Self {
+            logger,
+            tokens
+        }
+    }
+}
+
+#[async_trait]
+impl HyperAuthenticator for TokensFromHeavenHyperAuthenticatorAssignEndPoint {
+    async fn auth(&mut self, req: ReqShell) -> Result<HyperwayStub, MsgErr> {
+        if let Substance::Sys(Sys::ConnectReq(auth_req)) = &req.core.body {
+            if let None = auth_req.end_point {
+                match &*auth_req.auth {
+                    Substance::Token(token) => {
+                        if let Some((_,stub)) = self.tokens.remove(token)  {
+                            return Ok(stub)
+                        }
+                        else {
+                            return Err(MsgErr::forbidden())
+                        }
+                    }
+                    _ => { return Err(MsgErr::bad_request()); }
+                }
+            } else {
+                return Err(MsgErr::bad_request())
+            }
+        } else {
+            // must be a LaneAuth
+            return Err(MsgErr::bad_request())
+        }
+    }
+}
+
+pub struct TokenDispensingHyperwayInterchange {
+    pub agent: Agent,
+    pub logger: PointLogger,
+    pub tokens: Arc<DashMap<Token,HyperwayStub>>,
+    pub lane_point_factory: Box<dyn PointFactory>,
+    pub end_point_factory: Box<dyn PointFactory>,
+    pub interchange: HyperwayInterchange,
+}
+
+impl TokenDispensingHyperwayInterchange {
+
+    pub fn new(agent: Agent, router: Box<dyn HyperRouter>, lane_point_factory: Box<dyn PointFactory>, end_point_factory: Box<dyn PointFactory>, logger: PointLogger ) -> Self {
+        let tokens = Arc::new(DashMap::new());
+        let authenticator = Box::new(TokensFromHeavenHyperAuthenticatorAssignEndPoint::new(tokens.clone(),logger.logger.clone()));
+        let interchange = HyperwayInterchange::new( router, authenticator, logger.clone() );
+        Self {
+            agent,
+            tokens,
+            logger,
+            lane_point_factory,
+            end_point_factory,
+            interchange
+        }
+    }
+
+    pub fn dispense( &mut self ) -> Result<(Token, HyperwayStub),MsgErr> {
+        let token = Token::new_uuid();
+        let end_point = self.end_point_factory.create()?;
+        let lane_point = self.lane_point_factory.create()?;
+        let logger = self.logger.point(lane_point);
+        let stub = HyperwayStub {
+            agent: self.agent.clone(),
+            logger,
+            end_point
+        };
+        self.tokens.insert(token.clone(),stub.clone());
+        Ok((token,stub))
+    }
+}
+
+impl Deref for TokenDispensingHyperwayInterchange {
+    type Target = HyperwayInterchange;
+
+    fn deref(&self) -> &Self::Target {
+        &self.interchange
+    }
+}
+
+impl DerefMut for TokenDispensingHyperwayInterchange {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        & mut self.interchange
+    }
+}
+
+
+#[async_trait]
+pub trait HyperGate {
+  async fn unlock(&self, version: semver::Version ) -> Result<Box<dyn OnRamp>, String>;
+}
+
+#[async_trait]
+pub trait OnRamp {
+  async fn enter(&self, request: ReqShell ) -> Result<(mpsc::Sender<Wave>, mpsc::Receiver<Wave>),RespShell>;
+}
 
 #[cfg(test)]
 mod tests {

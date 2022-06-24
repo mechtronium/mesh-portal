@@ -22,8 +22,8 @@ use mesh_portal::version::latest::messaging::{Agent, ReqCtx, SysMethod};
 use mesh_portal_versions::version::v0_0_1::id::id::{Layer, ToPoint, ToPort};
 use mesh_portal_versions::version::v0_0_1::wave::{
     AsyncInternalRequestHandlers, AsyncTransmitter, AsyncTransmitterWithAgent, AsyncRequestHandler,
-    AsyncRequestHandlerRelay, AsyncRouter, ReqShell, ReqFrame, RequestHandlerRelay, Requestable,
-    RespShell, RespFrame, WaitTime, Wave, WaveFrame,
+    AsyncRequestHandlerRelay, AsyncRouter, ReqShell, ReqXtra, RequestHandlerRelay, Requestable,
+    RespShell, RespXtra, WaitTime, Wave, WaveXtra,
 };
 use mesh_portal_versions::version::v0_0_1::quota::Timeouts;
 use std::sync::Arc;
@@ -43,15 +43,15 @@ pub struct Portal {
 
 impl Portal {
     pub async fn new(
-        inlet_tx: mpsc::Sender<WaveFrame>,
-        outlet_rx: mpsc::Receiver<WaveFrame>,
+        inlet_tx: mpsc::Sender<WaveXtra>,
+        outlet_rx: mpsc::Receiver<WaveXtra>,
     ) -> Result<Self, MsgErr> {
         let assigned = Arc::new(DashSet::new());
         let messenger = Arc::new(PortalMessenger::new(inlet_tx, assigned.clone()));
 
         async fn listen_for_point(
-            mut outlet_rx: mpsc::Receiver<WaveFrame>
-        ) -> Result<(Point, mpsc::Receiver<WaveFrame>), MsgErr> {
+            mut outlet_rx: mpsc::Receiver<WaveXtra>
+        ) -> Result<(Point, mpsc::Receiver<WaveXtra>), MsgErr> {
             while let Ok(frame) = tokio::time::timeout(
                 Duration::from_secs(Timeouts::default().from(&WaitTime::High)),
                 outlet_rx.recv(),
@@ -106,14 +106,14 @@ impl Portal {
 }
 
 pub struct PortalMessenger {
-    inlet_tx: mpsc::Sender<WaveFrame>,
-    exchanges: Arc<DashMap<Uuid, oneshot::Sender<RespFrame>>>,
+    inlet_tx: mpsc::Sender<WaveXtra>,
+    exchanges: Arc<DashMap<Uuid, oneshot::Sender<RespXtra>>>,
     assigned: Arc<DashSet<Point>>,
     timeouts: Timeouts,
 }
 
 impl PortalMessenger {
-    pub fn new(inlet_tx: mpsc::Sender<WaveFrame>, assigned: Arc<DashSet<Point>>) -> Self {
+    pub fn new(inlet_tx: mpsc::Sender<WaveXtra>, assigned: Arc<DashSet<Point>>) -> Self {
         Self {
             inlet_tx,
             exchanges: Arc::new(DashMap::new()),
@@ -125,7 +125,7 @@ impl PortalMessenger {
 
 #[async_trait]
 impl AsyncTransmitter for PortalMessenger {
-    async fn send(&self, request: ReqFrame) -> RespFrame {
+    async fn send(&self, request: ReqXtra) -> RespXtra {
         if !self.assigned.contains(&request.from().to_point()) {
             return request.forbidden();
         }
@@ -147,7 +147,7 @@ impl AsyncTransmitter for PortalMessenger {
         }
     }
 
-    fn send_sync(&self, request: ReqFrame) -> RespFrame {
+    fn send_sync(&self, request: ReqXtra) -> RespXtra {
         let (tx, rx) = oneshot::channel();
         self.exchanges.insert(request.id(), tx);
         let response = tokio::runtime::Handle::current().block_on(async move {

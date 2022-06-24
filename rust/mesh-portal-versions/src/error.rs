@@ -119,22 +119,22 @@ impl Debug for MsgErr {
         }
     }
 }
-/*
+
 impl ToString for MsgErr {
     fn to_string(&self) -> String {
         match self {
             MsgErr::Status { status, message } => {
                 format!("Status {}: {}", status, message )
             }
-            MsgErr::Report { .. } => {
-                format!("MsgErr reports cannot be converted into a String at the moment...")
+
+            MsgErr::ParseErrs(_) => {
+                "ParseErrs".to_string()
             }
         }
 
     }
 }
 
- */
 
 impl MsgErr {
     pub fn print(&self) {

@@ -33,7 +33,7 @@ use mesh_portal::version::latest::payload::Payload;
 use mesh_portal::version::latest::sys::{Assign, Sys};
 use mesh_portal_versions::error::MsgErr;
 use mesh_portal_versions::version::v0_0_1::id::id::{Layer, ToPoint, ToPort};
-use mesh_portal_versions::version::v0_0_1::wave::{AsyncTransmitter, AsyncRequestHandler, MethodKind, RespCore, RootReqCtx, AsyncRouter, Wave, WaveFrame, Requestable, RespFrame};
+use mesh_portal_versions::version::v0_0_1::wave::{AsyncTransmitter, AsyncRequestHandler, MethodKind, RespCore, RootReqCtx, AsyncRouter, Wave, WaveXtra, Requestable, RespXtra};
 use std::fmt::Debug;
 use tokio::task::yield_now;
 
@@ -62,7 +62,7 @@ pub struct PortalInfo {
 pub struct Portal {
     pub info: PortalInfo,
     pub config: PortalConfig,
-    outlet_tx: mpsc::Sender<WaveFrame>,
+    outlet_tx: mpsc::Sender<WaveXtra>,
     pub logger: RootLogger,
     broadcast_tx: broadcast::Sender<PortalEvent>,
     point: Point,
@@ -74,13 +74,13 @@ impl Portal {
     pub fn new(
         info: PortalInfo,
         config: PortalConfig,
-        outlet_tx: mpsc::Sender<WaveFrame>,
+        outlet_tx: mpsc::Sender<WaveXtra>,
         broadcast_tx: broadcast::Sender<PortalEvent>,
         logger: RootLogger,
         point: Point,
         transmitter: Arc<dyn AsyncTransmitter>,
-    ) -> (Self, mpsc::Sender<WaveFrame>) {
-        let (inlet_tx, mut inlet_rx):(mpsc::Sender<WaveFrame>, mpsc::Receiver<WaveFrame>) = mpsc::channel(1024);
+    ) -> (Self, mpsc::Sender<WaveXtra>) {
+        let (inlet_tx, mut inlet_rx):(mpsc::Sender<WaveXtra>, mpsc::Receiver<WaveXtra>) = mpsc::channel(1024);
         {
             let outlet_tx = outlet_tx.clone();
             let logger = logger.point(point.clone());
@@ -92,7 +92,7 @@ impl Portal {
                         Some(frame) => {
                             let span = frame.span();
                             match frame{
-                                WaveFrame::Req(frame) => {
+                                WaveXtra::Req(frame) => {
                                     let request = frame.request;
                                     let stub = request.as_stub();
                                     match tokio::time::timeout(
@@ -102,20 +102,20 @@ impl Portal {
                                     .await
                                     {
                                         Ok(response) => {
-                                            let frame = RespFrame::new(response);
-                                            let frame = WaveFrame::Resp(frame);
+                                            let frame = RespXtra::new(response);
+                                            let frame = WaveXtra::Resp(frame);
                                             outlet_tx.send(frame).await;
                                         }
                                         _ => {
                                             let response =
                                                 stub.err(MsgErr::timeout());
-                                            let frame = RespFrame::new(response);
-                                            let frame = WaveFrame::Resp(frame);
+                                            let frame = RespXtra::new(response);
+                                            let frame = WaveXtra::Resp(frame);
                                             outlet_tx.send(frame).await;
                                         }
                                     }
                                 }
-                                WaveFrame::Resp(frame) => {
+                                WaveXtra::Resp(frame) => {
                                     let response = frame.response;
                                     let logger = logger.opt_span(frame.span);
                                     transmitter.route(Wave::Resp(response)).await;
@@ -234,7 +234,7 @@ impl AsyncRouter for Portal {
                 let logger = self.logger.point(request.to.clone().to_point());
                 let span = logger.span_async().current_span().clone();
                 let frame = request.to_frame(Some(span));
-                let frame = WaveFrame::Req(frame);
+                let frame = WaveXtra::Req(frame);
                 self.outlet_tx.send(frame).await;
             }
             Wave::Resp(response) => {

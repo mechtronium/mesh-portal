@@ -38,7 +38,8 @@ pub mod id {
         pub static ref GLOBAL_CENTRAL: Point = Point::from_str("GLOBAL::central").unwrap();
         pub static ref GLOBAL_EXEC: Point = Point::from_str("GLOBAL::executor").unwrap();
         pub static ref LOCAL_PORTAL: Point = Point::from_str("LOCAL::portal").unwrap();
-        pub static ref LOCAL_LANE_CONNECTOR: Point = Point::from_str("LOCAL::lane-connector").unwrap();
+        pub static ref LOCAL_HYPERGATE: Point = Point::from_str("LOCAL::hypergate").unwrap();
+        pub static ref REMOTE_ENTRY_REQUESTER: Point = Point::from_str("REMOTE::entry-requester").unwrap();
     }
 
     pub type Uuid = String;
@@ -316,6 +317,7 @@ pub mod id {
     pub enum RouteSeg {
         This,
         Local,
+        Remote,
         Global,
         Domain(String),
         Tag(String),
@@ -342,6 +344,7 @@ pub mod id {
     pub enum RouteSegVar {
         This,
         Local,
+        Remote,
         Global,
         Domain(String),
         Tag(String),
@@ -383,6 +386,7 @@ pub mod id {
                     var.trace.range,
                     var.trace.extra,
                 )),
+                RouteSegVar::Remote => Ok(RouteSeg::Remote)
             }
         }
     }
@@ -392,6 +396,7 @@ pub mod id {
             match self {
                 RouteSeg::This => RouteSegVar::This,
                 RouteSeg::Local => RouteSegVar::Local,
+                RouteSeg::Remote => RouteSegVar::Remote,
                 RouteSeg::Global => RouteSegVar::Global,
                 RouteSeg::Domain(domain) => RouteSegVar::Domain(domain),
                 RouteSeg::Tag(tag) => RouteSegVar::Tag(tag),
@@ -405,6 +410,7 @@ pub mod id {
             match self {
                 Self::This => ".".to_string(),
                 Self::Local => "LOCAL".to_string(),
+                Self::Remote => "REMOTE".to_string(),
                 Self::Global => "GLOBAL".to_string(),
                 Self::Domain(domain) => domain.clone(),
                 Self::Tag(tag) => {
@@ -442,7 +448,8 @@ pub mod id {
                     format!("[<{}>]", mesh)
                 }
                 RouteSeg::Global => "GLOBAL".to_string(),
-                RouteSeg::Local => "LOCAL".to_string()
+                RouteSeg::Local => "LOCAL".to_string(),
+                RouteSeg::Local => "REMOTE".to_string()
             }
         }
     }
@@ -1293,6 +1300,9 @@ pub mod id {
                 RouteSegVar::Local => {
                     rtn.push_str("LOCAL");
                 }
+                RouteSegVar::Remote => {
+                    rtn.push_str("REMOTE");
+                }
             };
 
             for (index, segment) in self.segments.iter().enumerate() {
@@ -1522,9 +1532,15 @@ pub mod id {
             LOCAL_PORTAL.clone()
         }
 
-        pub fn local_lane_connector() -> Self {
-            LOCAL_LANE_CONNECTOR.clone()
+        pub fn local_hypergate() -> Self {
+            LOCAL_HYPERGATE.clone()
         }
+
+        pub fn remote_entry_requester() -> Self {
+            REMOTE_ENTRY_REQUESTE
+            R.clone()
+        }
+
 
         pub fn normalize(self) -> Result<Point, MsgErr> {
             if self.is_normalized() {

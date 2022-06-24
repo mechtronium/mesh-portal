@@ -1,6 +1,6 @@
 
 use crate::error::MsgErr;
-use crate::version::v0_0_1::id::id::{GenericKind, Point, ToPoint};
+use crate::version::v0_0_1::id::id::{GenericKind, Point, ToPoint, ToPort};
 use crate::version::v0_0_1::particle::particle::{Details, Status, Stub};
 use crate::version::v0_0_1::substance::substance::Substance;
 use cosmic_macros_primitive::Autobox;
@@ -8,6 +8,7 @@ use cosmic_macros_primitive::Autobox;
 
 use serde::{Deserialize, Serialize};
 use crate::version::v0_0_1::log::Log;
+use crate::version::v0_0_1::substance::substance::SubstanceKind::ReqCore;
 use crate::version::v0_0_1::wave::{ReqShell, ReqCore, SysMethod};
 
 
@@ -125,7 +126,7 @@ pub enum Sys {
     Assign(Assign),
     Event(SysEvent),
     Log(Log),
-    LaneAuth(LaneAuth)
+    ConnectReq(ConnectReq)
 }
 
 impl TryFrom<ReqShell> for Assign {
@@ -163,11 +164,28 @@ pub struct Created {
     pub kind: GenericKind
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
+pub enum ServiceSelector {
+    Cli,
+    Portal,
+    Host(String)
+}
+
 
 #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
-pub struct LaneAuth {
-  pub creds: Box<Substance>,
+pub struct ConnectReq {
+  pub selector: ServiceSelector,
+  pub auth: Box<Substance>,
   pub end_point: Option<Point>,
+}
+
+impl Into<ReqShell> for ConnectReq {
+    fn into(self) -> ReqShell {
+        let mut core = ReqCore::new(SysMethod::ConnectReq.into() );
+        core.body = Sys::ConnectReq(self).into();
+        let req = ReqShell::new(core, Point::local_hypergate(), Point::remote_entry_requester() );
+        req
+    }
 }
 
 

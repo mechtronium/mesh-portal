@@ -356,6 +356,7 @@ pub mod request {
 
     pub mod create {
         use std::convert::TryInto;
+        use std::sync::atomic::{AtomicU128, Ordering};
 
         use serde::{Deserialize, Serialize};
 
@@ -576,6 +577,35 @@ pub mod request {
             Ensure,
         }
 
+        pub trait PointFactory: Send+Sync {
+            fn create(&mut self) -> Result<Point,MsgErr>;
+        }
+
+        pub struct PointFactoryU128 {
+            parent: Point,
+            prefix: String,
+            atomic: AtomicU128
+        }
+
+        impl PointFactoryU128 {
+            pub fn new( parent: Point, prefix: String ) -> Self {
+                Self {
+                    parent,
+                    prefix,
+                    atomic: AtomicU128::new(0u128 )
+                }
+            }
+        }
+
+
+        impl PointFactory for PointFactoryU128 {
+            fn create(&mut self) -> Result<Point, MsgErr> {
+                let index = self.atomic.fetch_add( 1u128,Ordering::Relaxed );
+                self.parent.push( format!("{}{}", self.prefix, index))
+            }
+        }
+
+
         pub type PointTemplate = PointTemplateDef<Point>;
         pub type PointTemplateCtx = PointTemplateDef<PointCtx>;
         pub type PointTemplateVar = PointTemplateDef<PointVar>;
@@ -583,7 +613,7 @@ pub mod request {
         #[derive(Debug, Clone, Serialize, Deserialize,Eq,PartialEq)]
         pub struct PointTemplateDef<Pnt> {
             pub parent: Pnt,
-            pub child_segment_template: PointSegFactory,
+            pub child_segment_template: PointSegTemplate,
         }
 
         impl ToResolved<PointTemplateCtx> for PointTemplateVar {
@@ -616,7 +646,7 @@ pub mod request {
 
 
         #[derive(Debug, Clone, strum_macros::Display, Serialize, Deserialize,Eq,PartialEq)]
-        pub enum PointSegFactory {
+        pub enum PointSegTemplate {
             Exact(String),
             Pattern(String), // must have a '%'
         }
@@ -641,15 +671,15 @@ pub mod request {
         use crate::version::v0_0_1::util::{ConvertFrom, ToResolved};
 
         #[derive(Debug, Clone, Serialize, Deserialize,Eq,PartialEq)]
-        pub enum SelectIntoPayload {
+        pub enum SelectIntoSubstance {
             Stubs,
             Points,
         }
 
-        impl SelectIntoPayload {
+        impl SelectIntoSubstance {
             pub fn to_primitive(&self, stubs: Vec<Stub>) -> Result<SubstanceList, MsgErr> {
                 match self {
-                    SelectIntoPayload::Stubs => {
+                    SelectIntoSubstance::Stubs => {
                         let stubs: Vec<Box<Substance>> = stubs
                             .into_iter()
                             .map(|stub| Box::new(Substance::Stub(stub)))
@@ -657,7 +687,7 @@ pub mod request {
                         let stubs = SubstanceList { list: stubs };
                         Ok(stubs)
                     }
-                    SelectIntoPayload::Points => {
+                    SelectIntoSubstance::Points => {
                         let pointes: Vec<Box<Substance>> = stubs
                             .into_iter()
                             .map(|stub| Box::new(Substance::Point(stub.point)))
@@ -683,7 +713,7 @@ pub mod request {
         pub struct SelectDef<Hop> {
             pub pattern: PointSelectorDef<Hop>,
             pub properties: PropertiesPattern,
-            pub into_payload: SelectIntoPayload,
+            pub into_payload: SelectIntoSubstance,
             pub kind: SelectKind,
         }
 
@@ -744,7 +774,7 @@ pub mod request {
             pub point: Point,
             pub pattern: PointSelector,
             pub properties: PropertiesPattern,
-            pub into_payload: SelectIntoPayload,
+            pub into_payload: SelectIntoSubstance,
             pub hops: Vec<Hop>,
             pub hierarchy: PointHierarchy,
         }
@@ -787,7 +817,7 @@ pub mod request {
                 Self {
                     pattern,
                     properties: Default::default(),
-                    into_payload: SelectIntoPayload::Stubs,
+                    into_payload: SelectIntoSubstance::Stubs,
                     kind: SelectKind::Initial,
                 }
             }
@@ -798,7 +828,7 @@ pub mod request {
 
     pub mod delete {
         use crate::error::MsgErr;
-        use crate::version::v0_0_1::command::request::select::{PropertiesPattern, Select, SelectIntoPayload};
+        use crate::version::v0_0_1::command::request::select::{PropertiesPattern, Select, SelectIntoSubstance};
         use crate::version::v0_0_1::parse::Env;
         use crate::version::v0_0_1::selector::selector::{Hop, PointSelectorDef};
         use crate::version::v0_0_1::util::ToResolved;
@@ -822,7 +852,7 @@ pub mod request {
         impl Into<Select> for Delete {
             fn into(self) -> Select {
                 let mut select = Select::new(self.selector );
-                select.into_payload = SelectIntoPayload::Points;
+                select.into_payload = SelectIntoSubstance::Points;
                 select
             }
         }
