@@ -21,12 +21,10 @@ pub mod selector {
     use crate::error::MsgErr;
 
     use crate::version::v0_0_1::command::request::{Rc, RcCommandType};
-    use crate::version::v0_0_1::id::id::{KindParts, KindBase, Layer, Point, PointCtx, PointSeg, PointSegKind, PointVar, Port, RouteSeg, Specific, Tks, Topic, Variable, VarVal, Version};
+    use crate::version::v0_0_1::id::id::{KindParts, BaseKind, Layer, Point, PointCtx, PointSeg, PointSegKind, PointVar, Port, RouteSeg, Specific, Tks, Topic, Variable, VarVal, Version, Kind, SubKind};
     use crate::version::v0_0_1::parse::{camel_case_chars, camel_case_to_string_matcher, CamelCase, consume_hierarchy, Env, file_chars, path, path_regex, point_segment_selector, point_selector};
     use crate::version::v0_0_1::substance::substance::{Call, CallKind, CallWithConfig, CallWithConfigDef, HttpCall, ListPattern, MapPattern, MsgCall, NumRange, Substance, SubstanceFormat, SubstancePattern, SubstancePatternDef, SubstanceKind, SubstanceTypePatternDef};
-    use crate::version::v0_0_1::selector::selector::specific::{
-        ProductSelector, VariantSelector, VendorSelector,
-    };
+    use crate::version::v0_0_1::selector::selector::specific::{ProductSelector, ProviderSelector, VariantSelector, VendorSelector};
     use crate::version::v0_0_1::util::{HttpMethodPattern, StringMatcher, ToResolved, ValueMatcher, ValuePattern};
     use crate::version::v0_0_1::parse;
     use crate::{Deserialize, Serialize};
@@ -55,7 +53,7 @@ pub mod selector {
     #[derive(Debug, Clone, Serialize, Deserialize,Eq,PartialEq,Hash)]
     pub struct KindSelectorDef<GenericKindSelector,GenericSubKindSelector,SpecificSelector> {
         pub kind: GenericKindSelector,
-        pub sub_kind: GenericSubKindSelector,
+        pub sub: GenericSubKindSelector,
         pub specific: ValuePattern<SpecificSelector>,
     }
 
@@ -67,17 +65,17 @@ pub mod selector {
         ) -> Self {
             Self {
                 kind,
-                sub_kind,
+                sub: sub_kind,
                 specific,
             }
         }
 
-        pub fn matches(&self, kind: &KindParts) -> bool
+        pub fn matches(&self, kind: &Kind) -> bool
         where
             KindParts: Eq + PartialEq,
         {
             self.kind.matches(&kind.base())
-                && (kind.sub.is_some() && self.sub_kind.matches(kind.sub.as_ref().unwrap()))
+                && self.sub.matches(&kind.sub().into() )
                 && self.specific.is_match_opt(kind.specific().as_ref()).is_ok()
         }
     }
@@ -87,7 +85,12 @@ pub mod selector {
             format!(
                 "{}<{}<{}>>",
                 self.kind.to_string(),
-                self.sub_kind.to_string(),
+                match &self.sub {
+                    SubKindSelector::Any => "*".to_string(),
+                    SubKindSelector::Exact(sub) => {
+                        sub.as_ref().unwrap().to_string()
+                    }
+                },
                 self.specific.to_string()
             )
         }
@@ -97,14 +100,14 @@ pub mod selector {
         pub fn any() -> Self {
             Self {
                 kind: KindBaseSelector::Any,
-                sub_kind: SubKindSelector::Any,
+                sub: SubKindSelector::Any,
                 specific: ValuePattern::Any,
             }
         }
     }
 
 
-    pub type SubKindSelector = Pattern<CamelCase>;
+    pub type SubKindSelector = Pattern<Option<CamelCase>>;
 
     #[derive(Debug, Clone, Serialize, Deserialize,Eq,PartialEq,Hash)]
     pub struct PointSelectorDef<Hop> {
@@ -149,8 +152,7 @@ pub mod selector {
                 if PointSegSelector::InclusiveAny == hop.segment_selector
                     || PointSegSelector::InclusiveRecursive == hop.segment_selector
                 {
-                    let resource_kind = KindParts::new(KindBase::Root, None, None);
-                    hop.kind_selector.matches(&resource_kind)
+                    hop.kind_selector.matches(&Kind::Root)
                 } else {
                     false
                 }
@@ -204,7 +206,7 @@ pub mod selector {
 
         pub fn matches(&self, hierarchy: &PointHierarchy ) -> bool
         where
-            KindBase: Clone,
+            BaseKind: Clone,
             KindParts: Clone,
         {
 
@@ -506,10 +508,11 @@ pub mod selector {
             }
         }
     }
-    pub type SpecificSelector = SpecificSelectorDef<VendorSelector,ProductSelector,VariantSelector,VersionReq>;
+    pub type SpecificSelector = SpecificSelectorDef<ProviderSelector,VendorSelector,ProductSelector,VariantSelector,VersionReq>;
 
     #[derive(Debug, Clone, Serialize, Deserialize,Eq,PartialEq,Hash)]
-    pub struct SpecificSelectorDef<VendorSelector,ProductSelector,VariantSelector,VersionReq> {
+    pub struct SpecificSelectorDef<ProviderSelector,VendorSelector,ProductSelector,VariantSelector,VersionReq> {
+        pub provider: ProviderSelector,
         pub vendor: VendorSelector,
         pub product: ProductSelector,
         pub variant: VariantSelector,
@@ -518,7 +521,8 @@ pub mod selector {
 
     impl ValueMatcher<Specific> for SpecificSelector {
         fn is_match(&self, specific: &Specific) -> Result<(), ()> {
-            if self.vendor.matches(&specific.vendor)
+            if self.provider.matches(&specific.provider ) &&
+                self.vendor.matches(&specific.vendor)
                 && self.product.matches(&specific.product)
                 && self.variant.matches(&specific.variant)
                 && self.version.matches(&specific.version)
@@ -546,6 +550,7 @@ pub mod selector {
         use core::ops::Deref;
         use core::str::FromStr;
         use crate::error::MsgErr;
+        use crate::version::v0_0_1::parse::{Domain, SkewerCase};
         use crate::version::v0_0_1::selector::selector::Pattern;
 
         pub struct VersionReq {
@@ -570,9 +575,10 @@ pub mod selector {
             }
         }
 
-        pub type VendorSelector = Pattern<String>;
-        pub type ProductSelector = Pattern<String>;
-        pub type VariantSelector = Pattern<String>;
+        pub type ProviderSelector= Pattern<Domain>;
+        pub type VendorSelector = Pattern<Domain>;
+        pub type ProductSelector = Pattern<SkewerCase>;
+        pub type VariantSelector = Pattern<SkewerCase>;
         pub type VersionPattern = Pattern<VersionReq>;
     }
 
@@ -822,10 +828,10 @@ pub mod selector {
             let mut rtn = String::new();
             rtn.push_str(self.segment_selector.to_string().as_str());
 
-            if let Pattern::Exact(resource_type) = &self.kind_selector.kind {
-                rtn.push_str(format!("<{}", resource_type.to_string()).as_str());
-                if let Pattern::Exact(sub_kind) = &self.kind_selector.sub_kind {
-                    rtn.push_str(format!("<{}", sub_kind.to_string()).as_str());
+            if let Pattern::Exact(base) = &self.kind_selector.kind {
+                rtn.push_str(format!("<{}", base.to_string()).as_str());
+                if let Pattern::Exact(sub) = &self.kind_selector.sub {
+                    rtn.push_str(format!("<{}", sub.as_ref().unwrap().to_string()).as_str());
                     if let ValuePattern::Pattern(specific) = &self.kind_selector.specific {
                         rtn.push_str(format!("<{}", specific.to_string()).as_str());
                         rtn.push_str(">");
@@ -988,7 +994,7 @@ pub mod selector {
         }
     }
 
-    pub type KindBaseSelector = Pattern<KindBase>;
+    pub type KindBaseSelector = Pattern<BaseKind>;
 
     #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
     pub struct PortHierarchy {
@@ -1024,7 +1030,7 @@ pub mod selector {
         pub fn push(&self, segment: PointKindSeg) -> PointHierarchy
             where
                 KindParts: Clone,
-                KindBase: Clone,
+                BaseKind: Clone,
         {
             if let PointSeg::Root = segment.segment {
                 println!("pushing ROOT");
@@ -1088,7 +1094,7 @@ pub mod selector {
     #[derive(Debug, Eq, PartialEq, Clone, Serialize, Deserialize)]
     pub struct PointKindSeg{
         pub segment: PointSeg,
-        pub kind: KindParts,
+        pub kind: Kind,
     }
 
     impl ToString for PointKindSeg {

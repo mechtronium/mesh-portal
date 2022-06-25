@@ -1,4 +1,5 @@
 use core::fmt;
+use core::fmt::Display;
 use std::collections::HashMap;
 use std::fmt::Formatter;
 use std::ops::{Deref, Range, RangeFrom, RangeTo};
@@ -561,7 +562,7 @@ pub fn file_point_capture_segment(input: Span) -> Res<Span, PointSeg> {
  */
 
 pub fn space_point_kind_segment<I: Span>(input: I) -> Res<I, PointKindSeg> {
-    tuple((space_point_segment, delim_kind_parts))(input).map(|(next, (point_segment, kind))| {
+    tuple((space_point_segment, delim_kind))(input).map(|(next, (point_segment, kind))| {
         (
             next,
             PointKindSeg {
@@ -573,7 +574,7 @@ pub fn space_point_kind_segment<I: Span>(input: I) -> Res<I, PointKindSeg> {
 }
 
 pub fn base_point_kind_segment<I: Span>(input: I) -> Res<I, PointKindSeg> {
-    tuple((base_point_segment, delim_kind_parts))(input).map(|(next, (point_segment, kind))| {
+    tuple((base_point_segment, delim_kind))(input).map(|(next, (point_segment, kind))| {
         (
             next,
             PointKindSeg {
@@ -588,7 +589,7 @@ pub fn filepath_point_kind_segment<I: Span>(input: I) -> Res<I, PointKindSeg> {
     alt((file_point_kind_segment, dir_point_kind_segment))(input)
 }
 pub fn dir_point_kind_segment<I: Span>(input: I) -> Res<I, PointKindSeg> {
-    tuple((dir_point_segment, delim_kind_parts))(input).map(|(next, (point_segment, kind))| {
+    tuple((dir_point_segment, delim_kind))(input).map(|(next, (point_segment, kind))| {
         (
             next,
             PointKindSeg {
@@ -600,7 +601,7 @@ pub fn dir_point_kind_segment<I: Span>(input: I) -> Res<I, PointKindSeg> {
 }
 
 pub fn file_point_kind_segment<I: Span>(input: I) -> Res<I, PointKindSeg> {
-    tuple((file_point_segment, delim_kind_parts))(input).map(|(next, (point_segment, kind))| {
+    tuple((file_point_segment, delim_kind))(input).map(|(next, (point_segment, kind))| {
         (
             next,
             PointKindSeg {
@@ -612,7 +613,7 @@ pub fn file_point_kind_segment<I: Span>(input: I) -> Res<I, PointKindSeg> {
 }
 
 pub fn version_point_kind_segment<I: Span>(input: I) -> Res<I, PointKindSeg> {
-    tuple((version_point_segment, delim_kind_parts))(input).map(|(next, (point_segment, kind))| {
+    tuple((version_point_segment, delim_kind))(input).map(|(next, (point_segment, kind))| {
         (
             next,
             PointKindSeg {
@@ -743,20 +744,9 @@ where
     )
 }
 
-pub fn domain<T: Span>(i: T) -> Res<T, T>
-where
-    T: InputTakeAtPosition + nom::InputLength,
-    <T as InputTakeAtPosition>::Item: AsChar,
+pub fn domain<I: Span>(i: I) -> Res<I, Domain>
 {
-    i.split_at_position1_complete(
-        |item| {
-            let char_item = item.as_char();
-            !(char_item == '-')
-                && !(char_item == '.')
-                && !((char_item.is_alpha() && char_item.is_lowercase()) || char_item.is_dec_digit())
-        },
-        ErrorKind::AlphaNumeric,
-    )
+    domain_chars(i).map( |(next,domain)| { (next, Domain{ string: domain.to_string() } ) } )
 }
 
 pub fn point_segment_chars<T: Span>(i: T) -> Res<T, T>
@@ -1092,9 +1082,7 @@ impl FromStr for CamelCase {
     type Err=MsgErr;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        Ok(Self {
-            string:result(camel_case_chars(new_span(s)))?.to_string()
-        })
+        result(all_consuming(camel_case)(new_span(s)))
     }
 }
 
@@ -1116,9 +1104,9 @@ impl <'de> Deserialize<'de> for CamelCase{
     }
 }
 
-impl ToString for CamelCase {
-    fn to_string(&self) -> String {
-        self.string.clone()
+impl Display for CamelCase{
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        f.write_str(self.string.as_str())
     }
 }
 
@@ -1131,9 +1119,57 @@ impl Deref for CamelCase {
 }
 
 #[derive(Debug,Clone,Eq,PartialEq,Hash)]
+pub struct Domain{
+    string: String
+}
+
+impl Serialize for Domain{
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error> where S: Serializer {
+        serializer.serialize_str(self.string.as_str())
+    }
+}
+
+impl <'de> Deserialize<'de> for Domain{
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error> where D: Deserializer<'de> {
+        let string = String::deserialize(deserializer)?;
+
+        let result = result(domain(new_span(string.as_str())));
+        match result {
+            Ok(domain) => Ok(domain),
+            Err(err) => Err(serde::de::Error::custom(err.to_string()))
+        }
+    }
+}
+
+impl FromStr for Domain{
+    type Err=MsgErr;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        result(all_consuming(domain)(new_span(s)))
+    }
+}
+
+
+impl Display for Domain {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        f.write_str(self.string.as_str())
+    }
+}
+
+impl Deref for Domain {
+    type Target = String;
+
+    fn deref(&self) -> &Self::Target {
+        &self.string
+    }
+}
+
+#[derive(Debug,Clone,Eq,PartialEq,Hash)]
 pub struct SkewerCase {
     string: String
 }
+
+
 
 impl Serialize for SkewerCase {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error> where S: Serializer {
@@ -1157,15 +1193,13 @@ impl FromStr for SkewerCase {
     type Err=MsgErr;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        Ok(Self {
-            string:result(skewer_case_chars(new_span(s)))?.to_string()
-        })
+        result(all_consuming(skewer_case)(new_span(s)))
     }
 }
 
-impl ToString for SkewerCase {
-    fn to_string(&self) -> String {
-        self.string.clone()
+impl Display for SkewerCase{
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        f.write_str(self.string.as_str())
     }
 }
 
@@ -1655,7 +1689,7 @@ pub fn publish<I: Span>(input: I) -> Res<I, CreateVar> {
     let template = TemplateVar {
         point,
         kind: KindTemplate {
-            base: KindBase::Bundle,
+            base: BaseKind::Bundle,
             sub: None,
             specific: None,
         },
@@ -4756,11 +4790,11 @@ use crate::version::v0_0_1::config::config::bind::{
 use crate::version::v0_0_1::config::config::Document;
 use crate::version::v0_0_1::wave::{Method, MethodKind, MethodPattern, SysMethod};
 use crate::version::v0_0_1::http::HttpMethod;
-use crate::version::v0_0_1::id::id::{KindParts, KindBase, PointKind, PointSeg, Specific};
+use crate::version::v0_0_1::id::id::{KindParts, BaseKind, PointKind, PointSeg, Specific};
 use crate::version::v0_0_1::msg::MsgMethod;
 use crate::version::v0_0_1::parse::error::{find_parse_err, result};
 use crate::version::v0_0_1::parse::model::{BindScope, BindScopeKind, Block, BlockKind, Chunk, DelimitedBlockKind, LexBlock, LexParentScope, LexRootScope, LexScope, LexScopeSelector, LexScopeSelectorAndFilters, MessageScopeSelectorAndFilters, NestedBlockKind, PipelineCtx, PipelineSegment, PipelineSegmentCtx, PipelineSegmentVar, PipelineVar, RootScopeSelector, RouteScope, ScopeFilterDef, ScopeFilters, ScopeFiltersDef, ScopeSelectorAndFiltersDef, Spanned, Subst, TerminatedBlockKind, TextType, Var, VarParser};
-use cosmic_nom::{Res, trim, tw, Wrap};
+use cosmic_nom::{Res, Span, trim, tw, Wrap};
 use crate::version::v0_0_1::substance::substance::{
     Call, CallCtx, CallKind, CallVar, CallWithConfig, CallWithConfigCtx, CallWithConfigVar,
     HttpCall, ListPattern, MapPattern, MapPatternCtx, MapPatternVar, MsgCall, NumRange,
@@ -4782,9 +4816,9 @@ use crate::version::v0_0_1::selector::{
 use nom_supreme::error::ErrorTree;
 use nom_supreme::parser_ext::MapRes;
 use nom_supreme::{parse_from_str, ParserExt};
-use cosmic_nom::{new_span, Span, span_with_extra, Trace};
+use cosmic_nom::{new_span, span_with_extra, Trace};
 use crate::version::v0_0_1::bin::Bin;
-use crate::version::v0_0_1::id::{BaseSubKind, DatabaseSubKind};
+use crate::version::v0_0_1::id::{ArtifactSubKind, BaseSubKind, DatabaseSubKind, FileSubKind};
 
 fn inclusive_any_segment<I: Span>(input: I) -> Res<I, PointSegSelector> {
     alt((tag("+*"), tag("ROOT+*")))(input).map(|(next, _)| (next, PointSegSelector::InclusiveAny))
@@ -5036,24 +5070,20 @@ fn space<I: Span>(input: I) -> Res<I, I> {
 
 pub fn specific_selector<I: Span>(input: I) -> Res<I, SpecificSelector> {
     tuple((
-        pattern(rec_domain),
+        pattern(domain),
         tag(":"),
-        pattern(skewer_chars),
+        pattern(domain),
         tag(":"),
-        pattern(skewer_chars),
+        pattern(skewer_case),
+        tag(":"),
+        pattern(skewer_case),
         tag(":"),
         delimited(tag("("), version_req, tag(")")),
     ))(input)
-    .map(|(next, (vendor, _, product, _, variant, _, version))| {
-        let vendor: Pattern<I> = vendor;
-        let product: Pattern<I> = product;
-        let variant: Pattern<I> = variant;
-
-        let vendor: VendorSelector = vendor.to_string_version();
-        let product: ProductSelector = product.to_string_version();
-        let variant: VariantSelector = variant.to_string_version();
+    .map(|(next, (provider, _, vendor, _, product, _, variant, _, version))| {
 
         let specific = SpecificSelector {
+            provider,
             vendor,
             product,
             variant,
@@ -5199,12 +5229,17 @@ where
 }
 
 pub fn sub_kind_selector<I: Span>(input: I) -> Res<I, SubKindSelector> {
-    pattern(camel_case)(input).map(|(next, selector)| (next, selector))
+    pattern(camel_case)(input).map(|(next, selector)| {
+        match selector {
+            Pattern::Any => (next,Pattern::Any),
+            Pattern::Exact(sub) => (next,Pattern::Exact(Some(sub)))
+        }
+    })
 }
 
-pub fn kind_base<I: Span>(input: I) -> Res<I, KindBase> {
+pub fn kind_base<I: Span>(input: I) -> Res<I, BaseKind> {
     let (next,kind) = context("kind-base",camel_case)(input.clone())?;
-    match KindBase::try_from(kind) {
+    match BaseKind::try_from(kind) {
         Ok(kind) => {
             Ok((next,kind))
         }
@@ -5215,12 +5250,12 @@ pub fn kind_base<I: Span>(input: I) -> Res<I, KindBase> {
     }
 }
 
-pub fn resolve_kind<I: Span>(base: KindBase) -> impl FnMut(I) -> Res<I, Kind>
+pub fn resolve_kind<I: Span>(base: BaseKind) -> impl FnMut(I) -> Res<I, Kind>
 {
     move | input: I | {
         let (next,sub) = context("kind-sub", camel_case)(input.clone())?;
         match base {
-            KindBase::Database => {
+            BaseKind::Database => {
                match sub.as_str() {
                    "Relational" => {
                        let (next,specific) = context("specific",delimited(tag("<"), specific, tag(">") ))(next)?;
@@ -5232,7 +5267,7 @@ pub fn resolve_kind<I: Span>(base: KindBase) -> impl FnMut(I) -> Res<I, Kind>
                    }
                }
             }
-            KindBase::Base => {
+            BaseKind::Base => {
                 match BaseSubKind::from_str(sub.as_str()) {
                     Ok(sub) => {
                        Ok((next,Kind::Base(sub)))
@@ -5243,21 +5278,40 @@ pub fn resolve_kind<I: Span>(base: KindBase) -> impl FnMut(I) -> Res<I, Kind>
                     }
                 }
             }
-            KindBase::Root => Ok((next,Kind::Root)),
-            KindBase::Space => Ok((next,Kind::Space)),
-            KindBase::UserBase => Ok((next,Kind::UserBase)),
-            KindBase::User => Ok((next,Kind::User)),
-            KindBase::App => Ok((next,Kind::App)),
-            KindBase::Mechtron => Ok((next,Kind::Mechtron)),
-            KindBase::FileSystem => Ok((next,Kind::FileSystem)),
-            KindBase::File => Ok((next,Kind::File)),
-            KindBase::Dir => Ok((next,Kind::Dir)),
-            KindBase::BundleSeries => Ok((next,Kind::BundleSeries)),
-            KindBase::Bundle => Ok((next,Kind::Bundle)),
-            KindBase::Artifact => Ok((next,Kind::Artifact)),
-            KindBase::Control => Ok((next,Kind::Control)),
-            KindBase::Portal => Ok((next,Kind::Portal)),
-            KindBase::Repo => Ok((next,Kind::Repo))
+            BaseKind::Artifact => {
+                match ArtifactSubKind::from_str(sub.as_str()) {
+                    Ok(sub) => {
+                        Ok((next,Kind::Artifact(sub)))
+                    }
+                    Err(err) => {
+                        let err = ErrorTree::from_error_kind(input.clone(), ErrorKind::Fail );
+                        Err(nom::Err::Error(ErrorTree::add_context(input, "kind-sub:not-accepted",err)))
+                    }
+                }
+            }
+            BaseKind::File => {
+                match FileSubKind::from_str(sub.as_str()) {
+                    Ok(sub) => {
+                        Ok((next,Kind::File(sub)))
+                    }
+                    Err(err) => {
+                        let err = ErrorTree::from_error_kind(input.clone(), ErrorKind::Fail );
+                        Err(nom::Err::Error(ErrorTree::add_context(input, "kind-sub:not-accepted",err)))
+                    }
+                }
+            }
+            BaseKind::Root => Ok((next, Kind::Root)),
+            BaseKind::Space => Ok((next, Kind::Space)),
+            BaseKind::UserBase => Ok((next, Kind::UserBase)),
+            BaseKind::User => Ok((next, Kind::User)),
+            BaseKind::App => Ok((next, Kind::App)),
+            BaseKind::Mechtron => Ok((next, Kind::Mechtron)),
+            BaseKind::FileSystem => Ok((next, Kind::FileSystem)),
+            BaseKind::BundleSeries => Ok((next, Kind::BundleSeries)),
+            BaseKind::Bundle => Ok((next, Kind::Bundle)),
+            BaseKind::Control => Ok((next, Kind::Control)),
+            BaseKind::Portal => Ok((next, Kind::Portal)),
+            BaseKind::Repo => Ok((next, Kind::Repo))
         }
     }
 }
@@ -5301,7 +5355,7 @@ pub fn kind_selector<I: Span>(input: I) -> Res<I, KindSelector> {
 
         let tks = KindSelector {
             kind,
-            sub_kind,
+            sub: sub_kind,
             specific,
         };
 
@@ -5352,8 +5406,8 @@ fn base_hop<I: Span>(input: I) -> Res<I, Hop> {
 fn file_hop<I: Span>(input: I) -> Res<I, Hop> {
     tuple((file_segment, opt(tag("+"))))(input).map(|(next, (segment, inclusive))| {
         let tks = KindSelector {
-            kind: Pattern::Exact(KindBase::File),
-            sub_kind: Pattern::Any,
+            kind: Pattern::Exact(BaseKind::File),
+            sub: Pattern::Any,
             specific: ValuePattern::Any,
         };
         let inclusive = inclusive.is_some();
@@ -5431,8 +5485,8 @@ pub fn point_selector<I: Span>(input: I) -> Res<I, PointSelector> {
                         PointSeg::FilesystemRootDir,
                     )),
                     kind_selector: KindSelector {
-                        kind: Pattern::Exact(KindBase::Dir),
-                        sub_kind: Pattern::Any,
+                        kind: Pattern::Exact(BaseKind::File),
+                        sub: Pattern::Any,
                         specific: ValuePattern::Any,
                     },
                 });
@@ -5452,7 +5506,7 @@ pub fn point_selector<I: Span>(input: I) -> Res<I, PointSelector> {
 }
 
 pub fn point_and_kind<I: Span>(input: I) -> Res<I, PointKindVar> {
-    tuple((point_var, kind_parts))(input)
+    tuple((point_var, kind))(input)
         .map(|(next, (point, kind))| (next, PointKindVar { point, kind }))
 }
 
@@ -5491,19 +5545,22 @@ pub fn version<I: Span>(input: I) -> Res<I, Version> {
 
 pub fn specific<I: Span>(input: I) -> Res<I, Specific> {
     tuple((
-        domain_chars,
+        domain,
         tag(":"),
-        skewer_chars,
+        domain,
         tag(":"),
-        skewer_chars,
+        skewer_case,
+        tag(":"),
+        skewer_case,
         tag(":"),
         version,
     ))(input)
-    .map(|(next, (vendor, _, product, _, variant, _, version))| {
+    .map(|(next, (provider, _, vendor, _, product, _, variant, _, version))| {
         let specific = Specific {
-            vendor: vendor.to_string(),
-            product: product.to_string(),
-            variant: variant.to_string(),
+            provider,
+            vendor,
+            product,
+            variant,
             version,
         };
         (next, specific)

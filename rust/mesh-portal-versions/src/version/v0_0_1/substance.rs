@@ -6,7 +6,7 @@ pub mod substance {
     use crate::error::{MsgErr, ParseErrs};
     use crate::version::v0_0_1::bin::Bin;
     use crate::version::v0_0_1::command::request::{Rc, RcCommandType};
-    use crate::version::v0_0_1::id::id::{KindParts, KindBase, Meta, Point, PointCtx, PointVar, Port};
+    use crate::version::v0_0_1::id::id::{KindParts, BaseKind, Meta, Point, PointCtx, PointVar, Port};
     use crate::version::v0_0_1::particle::particle::{Particle, Status, Stub};
     use crate::version::v0_0_1::selector::selector::{KindSelector, PointSelector};
     use crate::version::v0_0_1::util::{ToResolved, uuid, ValueMatcher, ValuePattern};

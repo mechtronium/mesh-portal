@@ -1,9 +1,11 @@
-use crate::version::v0_0_1::id::id::{KindParts, KindBase, Point, Specific, Kind};
+use core::str::FromStr;
+use crate::version::v0_0_1::id::id::{KindParts, BaseKind, Point, Specific, Kind, SubKind};
 use crate::version::v0_0_1::particle::particle::Stub;
 use crate::version::v0_0_1::substance::substance::Substance;
 use crate::version::v0_0_1::sys::ChildRegistry;
 use serde::{Serialize,Deserialize};
 use crate::error::MsgErr;
+use crate::version::v0_0_1::parse::CamelCase;
 
 pub mod id {
     use nom::branch::alt;
@@ -28,9 +30,9 @@ pub mod id {
     use crate::error::{MsgErr, ParseErrs};
     use crate::version::v0_0_1::config::config::bind::RouteSelector;
     use crate::version::v0_0_1::id::id::PointSegCtx::Working;
-    use crate::version::v0_0_1::parse::{camel_case, camel_case_chars, CamelCase, consume_point, consume_point_ctx, Ctx, CtxResolver, Env, kind_lex, kind_parts, parse_uuid, point_and_kind, point_route_segment, point_var, ResolverErr, SkewerCase, uuid_chars, VarResolver};
+    use crate::version::v0_0_1::parse::{camel_case, camel_case_chars, CamelCase, consume_point, consume_point_ctx, Ctx, CtxResolver, Domain, Env, kind_lex, kind_parts, parse_uuid, point_and_kind, point_route_segment, point_var, ResolverErr, SkewerCase, uuid_chars, VarResolver};
     use crate::version::v0_0_1::{mesh_portal_uuid, parse};
-    use crate::version::v0_0_1::id::{BaseSubKind, DatabaseSubKind, FileSubKind};
+    use crate::version::v0_0_1::id::{ArtifactSubKind, BaseSubKind, DatabaseSubKind, FileSubKind, UserBaseSubKind};
 
     use crate::version::v0_0_1::parse::error::result;
     use crate::version::v0_0_1::selector::selector::{
@@ -51,7 +53,7 @@ pub mod id {
     pub type Uuid = String;
 
     #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash, strum_macros::Display,strum_macros::EnumString)]
-    pub enum KindBase {
+    pub enum BaseKind {
         Root,
         Space,
         UserBase,
@@ -61,7 +63,6 @@ pub mod id {
         Mechtron,
         FileSystem,
         File,
-        Dir,
         Database,
         Repo,
         BundleSeries,
@@ -71,21 +72,68 @@ pub mod id {
         Portal,
     }
 
-    pub trait ToKindBase {
-        fn to_base(&self) -> KindBase;
+    #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash, strum_macros::Display)]
+    pub enum SubKind {
+        None,
+        Database(DatabaseSubKind),
+        File(FileSubKind),
+        Artifact(ArtifactSubKind),
+        Base(BaseSubKind),
+        UserBase(UserBaseSubKind)
     }
 
-    impl ToKindBase for KindBase {
-        fn to_base(&self) -> KindBase {
+    impl SubKind {
+        pub fn specific(&self) -> Option<&Specific> {
+            match self {
+                SubKind::Database(sub) => sub.specific(),
+                SubKind::UserBase(sub) =>  sub.specific(),
+                _ => None
+            }
+        }
+    }
+
+    impl Into<Option<CamelCase>> for SubKind {
+        fn into(self) -> Option<CamelCase> {
+            match self {
+                SubKind::None => None,
+                SubKind::Database(d) => d.into(),
+                SubKind::File(f) => f.into(),
+                SubKind::Artifact(a) => a.into(),
+                SubKind::Base(b) => b.into(),
+                SubKind::UserBase(u) => u.into()
+            }
+        }
+    }
+
+    impl Into<Option<String>> for SubKind {
+        fn into(self) -> Option<String> {
+            match self {
+                SubKind::None => None,
+                SubKind::Database(d) => d.into(),
+                SubKind::File(f) => f.into(),
+                SubKind::Artifact(a) => a.into(),
+                SubKind::Base(b) => b.into(),
+                SubKind::UserBase(u) => u.into()
+            }
+        }
+    }
+
+
+    pub trait ToBaseKind {
+        fn to_base(&self) -> BaseKind;
+    }
+
+    impl ToBaseKind for BaseKind {
+        fn to_base(&self) -> BaseKind {
             self.clone()
         }
     }
 
-    impl TryFrom<CamelCase> for KindBase {
+    impl TryFrom<CamelCase> for BaseKind {
         type Error = MsgErr;
 
         fn try_from(base: CamelCase) -> Result<Self, Self::Error> {
-            Ok(KindBase::from_str(base.as_str())?)
+            Ok(BaseKind::from_str(base.as_str())?)
         }
     }
 
@@ -102,41 +150,54 @@ pub mod id {
         Repo,
         BundleSeries,
         Bundle,
-        Artifact,
         Control,
         Portal,
-        File,
-        Dir,
+        File(FileSubKind),
+        Artifact(ArtifactSubKind),
         Database(DatabaseSubKind),
         Base(BaseSubKind),
     }
 
     impl Kind {
-        pub fn base(&self) -> KindBase {
+        pub fn base(&self) -> BaseKind {
             match self {
-                Kind::Root => KindBase::Root,
-                Kind::Space => KindBase::Space,
-                Kind::UserBase => KindBase::UserBase,
-                Kind::User => KindBase::User,
-                Kind::App => KindBase::App,
-                Kind::Mechtron => KindBase::Mechtron,
-                Kind::FileSystem => KindBase::FileSystem,
-                Kind::BundleSeries => KindBase::BundleSeries,
-                Kind::Bundle => KindBase::Bundle,
-                Kind::Artifact => KindBase::Artifact,
-                Kind::Control => KindBase::Control,
-                Kind::Portal => KindBase::Portal,
-                Kind::Dir => KindBase::Dir,
-                Kind::File => KindBase::File,
-                Kind::Database(_) => KindBase::Database,
-                Kind::Base(_) => KindBase::Base,
-                Kind::Repo => KindBase::Repo,
+                Kind::Root => BaseKind::Root,
+                Kind::Space => BaseKind::Space,
+                Kind::UserBase => BaseKind::UserBase,
+                Kind::User => BaseKind::User,
+                Kind::App => BaseKind::App,
+                Kind::Mechtron => BaseKind::Mechtron,
+                Kind::FileSystem => BaseKind::FileSystem,
+                Kind::BundleSeries => BaseKind::BundleSeries,
+                Kind::Bundle => BaseKind::Bundle,
+                Kind::Control => BaseKind::Control,
+                Kind::Portal => BaseKind::Portal,
+                Kind::File(_) => BaseKind::File,
+                Kind::Artifact(_) => BaseKind::Artifact,
+                Kind::Database(_) => BaseKind::Database,
+                Kind::Base(_) => BaseKind::Base,
+                Kind::Repo => BaseKind::Repo,
             }
+        }
+
+        pub fn sub(&self) -> SubKind {
+            match self {
+                Kind::File(s) => s.clone().into(),
+                Kind::Artifact(s) => s.clone().into(),
+                Kind::Database(s) => s.clone().into(),
+                Kind::Base(s) => s.clone().into(),
+                _ => SubKind::None
+            }
+        }
+
+        pub fn specific(&self) -> Option<Specific> {
+            let sub = self.sub();
+            sub.specific().cloned()
         }
     }
 
-    impl ToKindBase for Kind {
-        fn to_base(&self) -> KindBase {
+    impl ToBaseKind for Kind {
+        fn to_base(&self) -> BaseKind {
             self.base()
         }
     }
@@ -147,7 +208,7 @@ pub mod id {
 
         fn try_from(value: KindParts) -> Result<Self, Self::Error> {
             Ok(match value.base {
-                KindBase::Database => {
+                BaseKind::Database => {
                     match value.sub.ok_or("Database<?> requires a Sub Kind")?.as_str() {
                         "Relational" => {
                             Kind::Database(DatabaseSubKind::Relational(value.specific.ok_or("Database<Relational<?>> requires a Specific")?))
@@ -157,35 +218,29 @@ pub mod id {
                         }
                     }
                 }
-                KindBase::Base => {
-                    match value.sub.ok_or("Base<?> requires a Sub Kind")?.as_str() {
-                        "Database" => {
-                            Kind::Base(BaseSubKind::Database)
-                        }
-                        "Mechtron" => {
-                            Kind::Base(BaseSubKind::Mechtron)
-                        }
-                        what => {
-                            return Err(MsgErr::from(format!("unexpected Base SubKind '{}'", what)));
-                        }
-                    }
+                BaseKind::Base => {
+                   Kind::Base(BaseSubKind::from_str( value.sub.ok_or("Base<?> requires a Sub Kind")?.as_str() )?)
+                }
+                BaseKind::File=> {
+                    Kind::File(FileSubKind::from_str( value.sub.ok_or("File<?> requires a Sub Kind")?.as_str() )?)
+                }
+                BaseKind::Artifact=> {
+                    Kind::Artifact(ArtifactSubKind::from_str( value.sub.ok_or("Artifact<?> requires a Sub Kind")?.as_str() )?)
                 }
 
-                KindBase::Root => Kind::Root,
-                KindBase::Space => Kind::Space,
-                KindBase::UserBase => Kind::UserBase,
-                KindBase::User => Kind::User,
-                KindBase::App => Kind::App,
-                KindBase::Mechtron => Kind::Mechtron,
-                KindBase::FileSystem => Kind::FileSystem,
-                KindBase::File => Kind::File,
-                KindBase::Dir => Kind::Dir,
-                KindBase::BundleSeries => Kind::BundleSeries,
-                KindBase::Bundle => Kind::Bundle,
-                KindBase::Artifact => Kind::Artifact,
-                KindBase::Control => Kind::Control,
-                KindBase::Portal => Kind::Portal,
-                KindBase::Repo => Kind::Repo,
+                BaseKind::Root => Kind::Root,
+                BaseKind::Space => Kind::Space,
+                BaseKind::UserBase => Kind::UserBase,
+                BaseKind::User => Kind::User,
+                BaseKind::App => Kind::App,
+                BaseKind::Mechtron => Kind::Mechtron,
+                BaseKind::FileSystem => Kind::FileSystem,
+
+                BaseKind::BundleSeries => Kind::BundleSeries,
+                BaseKind::Bundle => Kind::Bundle,
+                BaseKind::Control => Kind::Control,
+                BaseKind::Portal => Kind::Portal,
+                BaseKind::Repo => Kind::Repo,
             })
         }
     }
@@ -197,7 +252,7 @@ pub mod id {
     #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
     pub struct PointKindDef<Pnt> {
         pub point: Pnt,
-        pub kind: KindParts,
+        pub kind: Kind,
     }
 
     impl ToResolved<PointKindCtx> for PointKindVar {
@@ -227,7 +282,7 @@ pub mod id {
         }
     }
     impl PointKind {
-        pub fn new(point: Point, kind: KindParts) -> Self {
+        pub fn new(point: Point, kind: Kind) -> Self {
             Self { point, kind }
         }
     }
@@ -251,7 +306,7 @@ pub mod id {
     #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
     pub struct AddressAndType {
         pub point: Point,
-        pub resource_type: KindBase,
+        pub resource_type: BaseKind,
     }
 
     pub type Meta = HashMap<String, String>;
@@ -336,7 +391,7 @@ pub mod id {
 
     /// Stands for "Type, Kind, Specific"
     pub trait Tks {
-        fn base(&self) -> KindBase;
+        fn base(&self) -> BaseKind;
         fn sub(&self) -> Option<CamelCase>;
         fn specific(&self) -> Option<Specific>;
         fn matches(&self, tks: &dyn Tks) -> bool;
@@ -344,16 +399,18 @@ pub mod id {
 
     #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize, Hash)]
     pub struct Specific {
-        pub vendor: String,
-        pub product: String,
-        pub variant: String,
+        pub provider: Domain,
+        pub vendor: Domain,
+        pub product: SkewerCase,
+        pub variant: SkewerCase,
         pub version: Version,
     }
 
     impl ToString for Specific {
         fn to_string(&self) -> String {
             format!(
-                "{}:{}:{}:{}",
+                "{}:{}:{}:{}:{}",
+                self.provider,
                 self.vendor,
                 self.product,
                 self.variant,
@@ -375,6 +432,7 @@ pub mod id {
 
         fn try_into(self) -> Result<SpecificSelector, Self::Error> {
             Ok(SpecificSelector {
+                provider: Pattern::Exact(self.provider),
                 vendor: Pattern::Exact(self.vendor),
                 product: Pattern::Exact(self.product),
                 variant: Pattern::Exact(self.variant),
@@ -2016,7 +2074,7 @@ pub mod id {
 
         fn try_into(self) -> Result<KindParts, Self::Error> {
             Ok(KindParts {
-                base: KindBase::try_from(self.base)?,
+                base: BaseKind::try_from(self.base)?,
                 sub: self.sub,
                 specific: self.specific
             })
@@ -2025,13 +2083,13 @@ pub mod id {
 
     #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
     pub struct KindParts {
-        pub base: KindBase,
+        pub base: BaseKind,
         pub sub: Option<CamelCase>,
         pub specific: Option<Specific>,
     }
 
-    impl ToKindBase for KindParts {
-        fn to_base(&self) -> KindBase {
+    impl ToBaseKind for KindParts {
+        fn to_base(&self) -> BaseKind {
             self.base.clone()
         }
     }
@@ -2040,7 +2098,7 @@ pub mod id {
     impl KindParts {
         pub fn root() -> Self {
             Self {
-                base: KindBase::Root,
+                base: BaseKind::Root,
                 sub: None,
                 specific: None,
             }
@@ -2079,7 +2137,7 @@ pub mod id {
     }
 
     impl KindParts {
-        pub fn new(kind: KindBase, sub: Option<CamelCase>, specific: Option<Specific>) -> Self {
+        pub fn new(kind: BaseKind, sub: Option<CamelCase>, specific: Option<Specific>) -> Self {
             Self {
                 base: kind,
                 sub,
@@ -2089,7 +2147,7 @@ pub mod id {
     }
 
     impl Tks for KindParts {
-        fn base(&self) -> KindBase {
+        fn base(&self) -> BaseKind {
             self.base.clone()
         }
 
@@ -2125,8 +2183,25 @@ pub enum BaseSubKind {
     App,
     Mechtron,
     Database,
-    Repo,
     Any,
+}
+
+impl Into<SubKind> for BaseSubKind {
+    fn into(self) -> SubKind {
+        SubKind::Base(self)
+    }
+}
+
+impl Into<Option<CamelCase>> for BaseSubKind {
+    fn into(self) -> Option<CamelCase> {
+        Some( CamelCase::from_str( self.to_string().as_str()).unwrap() )
+    }
+}
+
+impl Into<Option<String>> for BaseSubKind {
+    fn into(self) -> Option<String> {
+        Some(  self.to_string() )
+    }
 }
 
 #[derive(
@@ -2138,11 +2213,40 @@ Hash,
 Serialize,
 Deserialize,
 strum_macros::Display,
-strum_macros::EnumString,
 )]
 pub enum UserBaseSubKind {
-    Keycloak
+    OAuth(Specific)
 }
+
+impl UserBaseSubKind {
+    pub fn specific(&self) -> Option<&Specific> {
+        match self {
+            UserBaseSubKind::OAuth(specific) => Option::Some(specific)
+        }
+    }
+}
+
+
+impl Into<SubKind> for UserBaseSubKind {
+    fn into(self) -> SubKind {
+        SubKind::UserBase(self)
+    }
+}
+
+impl Into<Option<CamelCase>> for UserBaseSubKind {
+    fn into(self) -> Option<CamelCase> {
+        Some( CamelCase::from_str( self.to_string().as_str()).unwrap() )
+    }
+}
+
+impl Into<Option<String>> for UserBaseSubKind {
+    fn into(self) -> Option<String> {
+        Some(  self.to_string() )
+    }
+}
+
+
+
 
 #[derive(
     Clone,
@@ -2159,6 +2263,25 @@ pub enum FileSubKind {
     File,
     Dir,
 }
+
+impl Into<SubKind> for FileSubKind{
+    fn into(self) -> SubKind {
+        SubKind::File(self)
+    }
+}
+
+impl Into<Option<CamelCase>> for FileSubKind{
+    fn into(self) -> Option<CamelCase> {
+        Some( CamelCase::from_str( self.to_string().as_str()).unwrap() )
+    }
+}
+
+impl Into<Option<String>> for FileSubKind{
+    fn into(self) -> Option<String> {
+        Some(  self.to_string() )
+    }
+}
+
 
 #[derive(
     Clone,
@@ -2179,6 +2302,23 @@ pub enum ArtifactSubKind {
     Dir,
 }
 
+impl Into<SubKind> for ArtifactSubKind{
+    fn into(self) -> SubKind {
+        SubKind::Artifact(self)
+    }
+}
+
+impl Into<Option<CamelCase>> for ArtifactSubKind {
+    fn into(self) -> Option<CamelCase> {
+        Some( CamelCase::from_str( self.to_string().as_str()).unwrap() )
+    }
+}
+
+impl Into<Option<String>> for ArtifactSubKind {
+    fn into(self) -> Option<String> {
+        Some(  self.to_string() )
+    }
+}
 
 
 
@@ -2197,16 +2337,35 @@ pub enum DatabaseSubKind {
 }
 
 impl DatabaseSubKind {
-    pub fn specific(&self) -> Option<Specific> {
+    pub fn specific(&self) -> Option<&Specific> {
         match self {
-            Self::Relational(specific) => Option::Some(specific.clone()),
-            _ => Option::None,
+            DatabaseSubKind::Relational(specific) => Some(specific)
         }
     }
 }
 
+impl Into<SubKind> for DatabaseSubKind {
+    fn into(self) -> SubKind {
+        SubKind::Database(self)
+    }
+}
 
-impl KindBase {
+impl Into<Option<CamelCase>> for DatabaseSubKind {
+    fn into(self) -> Option<CamelCase> {
+        Some( CamelCase::from_str( self.to_string().as_str()).unwrap() )
+    }
+}
+
+impl Into<Option<String>> for DatabaseSubKind {
+    fn into(self) -> Option<String> {
+        Some(  self.to_string() )
+    }
+}
+
+
+
+
+impl BaseKind {
     pub fn child_resource_registry_handler(&self) -> ChildRegistry {
         match self {
             Self::UserBase => ChildRegistry::Core,

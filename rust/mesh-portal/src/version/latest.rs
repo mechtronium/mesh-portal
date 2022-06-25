@@ -25,7 +25,7 @@ pub mod id {
     use mesh_portal_versions::version::v0_0_1::id;
 
     pub type Uuid = id::id::Uuid;
-    pub type ResourceType = id::id::KindBase;
+    pub type ResourceType = id::id::BaseKind;
     pub type ResourceKind = id::id::KindParts;
     pub type AddressAndKind = id::id::PointKind;
     pub type AddressAndType = id::id::AddressAndType;

@@ -19,7 +19,7 @@ pub mod particle {
     use serde::{Deserialize, Serialize};
 
     use crate::error::MsgErr;
-    use crate::version::v0_0_1::id::id::{KindParts, KindBase, Point, PointKind};
+    use crate::version::v0_0_1::id::id::{KindParts, BaseKind, Point, PointKind, Kind};
     use crate::version::v0_0_1::substance::substance::{Substance, SubstanceMap};
     use crate::version::v0_0_1::parse::parse_alpha1_str;
     use crate::version::v0_0_1::security::Permissions;
@@ -147,7 +147,7 @@ pub mod particle {
     #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
     pub struct Stub {
         pub point: Point,
-        pub kind: KindParts,
+        pub kind: Kind,
         pub status: Status,
     }
 

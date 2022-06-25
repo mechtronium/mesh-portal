@@ -1,6 +1,6 @@
 
 use crate::error::MsgErr;
-use crate::version::v0_0_1::id::id::{KindParts, Point, ToPoint, ToPort};
+use crate::version::v0_0_1::id::id::{Kind, KindParts, Point, ToPoint, ToPort};
 use crate::version::v0_0_1::particle::particle::{Details, Status, Stub};
 use crate::version::v0_0_1::substance::substance::Substance;
 use cosmic_macros_primitive::Autobox;
@@ -98,7 +98,7 @@ impl ParticleRecord {
             details: Details {
                 stub: Stub {
                     point: Point::root(),
-                    kind: KindParts::root(),
+                    kind: Kind::Root,
                     status: Status::Ready
                 },
                 properties: Default::default(),

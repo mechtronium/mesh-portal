@@ -167,7 +167,7 @@ pub mod request {
     use crate::version::v0_0_1::wave::RespCore;
     use crate::version::v0_0_1::fail;
     use crate::version::v0_0_1::fail::{BadRequest, Fail, NotFound};
-    use crate::version::v0_0_1::id::id::{KindParts, KindBase, Meta, Point};
+    use crate::version::v0_0_1::id::id::{KindParts, BaseKind, Meta, Point};
     use crate::version::v0_0_1::substance::substance::{Errors, Substance, };
     use crate::version::v0_0_1::selector::selector::KindSelector;
     use crate::version::v0_0_1::util::{ValueMatcher, ValuePattern};
@@ -364,7 +364,7 @@ pub mod request {
         use crate::version::v0_0_1::bin::Bin;
         use crate::version::v0_0_1::command::Command;
         use crate::version::v0_0_1::command::command::common::{SetProperties, SetRegistry, StateSrc, StateSrcVar};
-        use crate::version::v0_0_1::id::id::{KindParts, KindBase, HostKey, Point, PointCtx, PointSeg, PointVar, ToPort};
+        use crate::version::v0_0_1::id::id::{KindParts, BaseKind, HostKey, Point, PointCtx, PointSeg, PointVar, ToPort};
         use crate::version::v0_0_1::wave::{CmdMethod, ReqProto, ReqCore, SysMethod};
         use crate::version::v0_0_1::msg::MsgMethod;
         use crate::version::v0_0_1::parse::{CamelCase, Env, ResolverErr};
@@ -410,7 +410,7 @@ pub mod request {
                 let template = TemplateCtx {
                     point,
                     kind: KindTemplate {
-                        base: KindBase::Bundle,
+                        base: BaseKind::Bundle,
                         sub: None,
                         specific: None,
                     },
@@ -425,7 +425,7 @@ pub mod request {
                 let template = Template {
                     point,
                     kind: KindTemplate {
-                        base: KindBase::Bundle,
+                        base: BaseKind::Bundle,
                         sub: None,
                         specific: None,
                     },
@@ -442,7 +442,7 @@ pub mod request {
 
         #[derive(Debug, Clone, Serialize, Deserialize,Eq,PartialEq)]
         pub struct KindTemplate {
-            pub base: KindBase,
+            pub base: BaseKind,
             pub sub: Option<CamelCase>,
             pub specific: Option<SpecificSelector>,
         }
