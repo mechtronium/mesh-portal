@@ -29,7 +29,7 @@ use mesh_portal::version::latest::id::{Point, Port};
 use mesh_portal::version::latest::log::{RootLogger, SpanLogger};
 use mesh_portal::version::latest::messaging::{Agent, ReqProto, ReqShell, RespShell, Scope, SysMethod};
 use mesh_portal::version::latest::particle::Stub;
-use mesh_portal::version::latest::payload::Payload;
+use mesh_portal::version::latest::payload::Substance;
 use mesh_portal::version::latest::sys::{Assign, Sys};
 use mesh_portal_versions::error::MsgErr;
 use mesh_portal_versions::version::v0_0_1::id::id::{Layer, ToPoint, ToPort};
@@ -154,7 +154,7 @@ impl Portal {
         let logger = logger.span();
         let stub = assign.details.stub.clone();
         let assign: Sys = assign.into();
-        let assign: Payload = assign.into();
+        let assign: Substance = assign.into();
         let mut request =
             ReqProto::sys(Point::local_portal().clone().to_port(), SysMethod::Assign);
         request.body(assign);

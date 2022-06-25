@@ -160,7 +160,7 @@ pub mod payload {
     use mesh_portal_versions::version::v0_0_1 as current;
     use mesh_portal_versions::version::v0_0_1::substance;
 
-    pub type Payload = substance::substance::Substance;
+    pub type Substance = substance::substance::Substance;
     pub type PayloadMap = substance::substance::SubstanceMap;
     pub type PrimitiveList = substance::substance::SubstanceList;
     pub type PayloadType = substance::substance::SubstanceKind;

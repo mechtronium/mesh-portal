@@ -98,7 +98,7 @@ pub mod test {
     use mesh_portal::version::latest::entity::request::ReqCore;
     use mesh_portal::version::latest::entity::response::RespCore;
     use mesh_portal::version::latest::messaging::{ReqShell, RootRequestCtx};
-    use mesh_portal::version::latest::payload::Payload;
+    use mesh_portal::version::latest::payload::Substance;
     use std::marker::PhantomData;
     use std::sync::{Arc, RwLock};
     use mesh_portal_versions::version::v0_0_1::wave::{AsyncRequestHandler, ReqCtx, RequestHandler, RequestHandlerRelay};

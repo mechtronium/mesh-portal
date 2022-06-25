@@ -18,7 +18,7 @@ use mesh_portal::version::latest::entity::response::RespCore;
 use mesh_portal::version::latest::id::{Point, TargetLayer, Topic, Uuid};
 use mesh_portal::version::latest::messaging::{ReqShell, ReqCtx, RespShell, RootRequestCtx, ReqProto};
 use mesh_portal::version::latest::particle::Stub;
-use mesh_portal::version::latest::payload::{Payload, PayloadType};
+use mesh_portal::version::latest::payload::{Substance, PayloadType};
 use mesh_portal::version::latest::id::Port;
 use mesh_portal::version::latest::util::uuid;
 use mesh_portal_versions::version::v0_0_1::id::id::{ToPoint, ToPort};
@@ -103,7 +103,7 @@ impl CliRelay {
 
         let mut write  = self.handlers.write().await;
         write.remove_topic(Some(ValuePattern::Pattern(ctx.to.topic.clone())));
-        Ok(RespCore::ok(Payload::Empty))
+        Ok(RespCore::ok(Substance::Empty))
     }
 }
 

@@ -27,7 +27,7 @@ use std::time::Duration;
 use tokio::sync::mpsc;
 use tokio::sync::oneshot;
 use mesh_portal::version::latest::entity::response::RespCore;
-use mesh_portal::version::latest::payload::Payload;
+use mesh_portal::version::latest::payload::Substance;
 use mesh_portal::version::latest::sys::{Assign, Sys};
 
 pub struct PortalCore {
@@ -200,7 +200,7 @@ impl PortalRequestHandler {
    pub async fn assign(&self, request: ReqCtx<'_,Assign>) -> Result<RespCore,MsgErr> {
       let transmitter = AsyncTransmitterWithAgent::new(Agent::Anonymous, request.details.stub.point.clone().to_port().with_layer(Layer::Core), self.messenger.clone() );
       self.handlers.add( request.details.stub.point.clone(), self.factory.create(request.input.clone(), transmitter)?);
-      Ok(RespCore::ok(Payload::Empty))
+      Ok(RespCore::ok(Substance::Empty))
    }
 
 }

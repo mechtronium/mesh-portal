@@ -4818,7 +4818,7 @@ use nom_supreme::parser_ext::MapRes;
 use nom_supreme::{parse_from_str, ParserExt};
 use cosmic_nom::{new_span, span_with_extra, Trace};
 use crate::version::v0_0_1::bin::Bin;
-use crate::version::v0_0_1::id::{ArtifactSubKind, BaseSubKind, DatabaseSubKind, FileSubKind};
+use crate::version::v0_0_1::id::{ArtifactSubKind, BaseSubKind, DatabaseSubKind, FileSubKind, UserBaseSubKind};
 
 fn inclusive_any_segment<I: Span>(input: I) -> Res<I, PointSegSelector> {
     alt((tag("+*"), tag("ROOT+*")))(input).map(|(next, _)| (next, PointSegSelector::InclusiveAny))
@@ -5124,12 +5124,12 @@ impl SubstParser<Pattern<String>> for DomainPatternParser {
     }
 }
 
-fn kind<I: Span>(input: I) -> Res<I, Kind> {
+pub fn kind<I: Span>(input: I) -> Res<I, Kind> {
     let (next,base) = kind_base(input.clone())?;
     unwrap_block(BlockKind::Nested(NestedBlockKind::Angle), resolve_kind( base))(next)
 }
 
-fn rec_kind<I: Span>(input: I) -> Res<I, I> {
+pub fn rec_kind<I: Span>(input: I) -> Res<I, I> {
     recognize(kind_parts)(input)
 }
 
@@ -5267,6 +5267,18 @@ pub fn resolve_kind<I: Span>(base: BaseKind) -> impl FnMut(I) -> Res<I, Kind>
                    }
                }
             }
+            BaseKind::UserBase => {
+                match sub.as_str() {
+                    "OAuth" => {
+                        let (next,specific) = context("specific",delimited(tag("<"), specific, tag(">") ))(next)?;
+                        Ok((next,Kind::UserBase(UserBaseSubKind::OAuth(specific))))
+                    },
+                    _ => {
+                        let err = ErrorTree::from_error_kind(input.clone(), ErrorKind::Fail );
+                        Err(nom::Err::Error(ErrorTree::add_context(input, "kind-sub:not-found",err)))
+                    }
+                }
+            }
             BaseKind::Base => {
                 match BaseSubKind::from_str(sub.as_str()) {
                     Ok(sub) => {
@@ -5302,7 +5314,6 @@ pub fn resolve_kind<I: Span>(base: BaseKind) -> impl FnMut(I) -> Res<I, Kind>
             }
             BaseKind::Root => Ok((next, Kind::Root)),
             BaseKind::Space => Ok((next, Kind::Space)),
-            BaseKind::UserBase => Ok((next, Kind::UserBase)),
             BaseKind::User => Ok((next, Kind::User)),
             BaseKind::App => Ok((next, Kind::App)),
             BaseKind::Mechtron => Ok((next, Kind::Mechtron)),

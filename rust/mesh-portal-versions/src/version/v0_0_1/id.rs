@@ -142,7 +142,6 @@ pub mod id {
     pub enum Kind{
         Root,
         Space,
-        UserBase,
         User,
         App,
         Mechtron,
@@ -156,6 +155,7 @@ pub mod id {
         Artifact(ArtifactSubKind),
         Database(DatabaseSubKind),
         Base(BaseSubKind),
+        UserBase(UserBaseSubKind),
     }
 
     impl Kind {
@@ -163,7 +163,6 @@ pub mod id {
             match self {
                 Kind::Root => BaseKind::Root,
                 Kind::Space => BaseKind::Space,
-                Kind::UserBase => BaseKind::UserBase,
                 Kind::User => BaseKind::User,
                 Kind::App => BaseKind::App,
                 Kind::Mechtron => BaseKind::Mechtron,
@@ -172,6 +171,7 @@ pub mod id {
                 Kind::Bundle => BaseKind::Bundle,
                 Kind::Control => BaseKind::Control,
                 Kind::Portal => BaseKind::Portal,
+                Kind::UserBase(_) => BaseKind::UserBase,
                 Kind::File(_) => BaseKind::File,
                 Kind::Artifact(_) => BaseKind::Artifact,
                 Kind::Database(_) => BaseKind::Database,
@@ -218,6 +218,16 @@ pub mod id {
                         }
                     }
                 }
+                BaseKind::UserBase => {
+                    match value.sub.ok_or("UserBase<?> requires a Sub Kind")?.as_str() {
+                        "OAuth" => {
+                            Kind::UserBase(UserBaseSubKind::OAuth(value.specific.ok_or("UserBase<OAuth<?>> requires a Specific")?))
+                        }
+                        what => {
+                            return Err(MsgErr::from(format!("unexpected Database SubKind '{}'", what)));
+                        }
+                    }
+                }
                 BaseKind::Base => {
                    Kind::Base(BaseSubKind::from_str( value.sub.ok_or("Base<?> requires a Sub Kind")?.as_str() )?)
                 }
@@ -230,7 +240,6 @@ pub mod id {
 
                 BaseKind::Root => Kind::Root,
                 BaseKind::Space => Kind::Space,
-                BaseKind::UserBase => Kind::UserBase,
                 BaseKind::User => Kind::User,
                 BaseKind::App => Kind::App,
                 BaseKind::Mechtron => Kind::Mechtron,
@@ -2225,7 +2234,6 @@ impl UserBaseSubKind {
         }
     }
 }
-
 
 impl Into<SubKind> for UserBaseSubKind {
     fn into(self) -> SubKind {
