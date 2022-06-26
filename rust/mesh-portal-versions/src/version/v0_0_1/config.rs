@@ -66,7 +66,7 @@ pub mod config {
         }
     }
 
-    #[derive(Clone)]
+    #[derive(Clone,Autobox)]
     pub enum Document {
         BindConfig(BindConfig),
     }

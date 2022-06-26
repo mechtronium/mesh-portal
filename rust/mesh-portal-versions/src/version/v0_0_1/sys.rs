@@ -9,7 +9,7 @@ use cosmic_macros_primitive::Autobox;
 use serde::{Deserialize, Serialize};
 use crate::version::v0_0_1::command::command::common::StateSrc;
 use crate::version::v0_0_1::log::Log;
-use crate::version::v0_0_1::wave::{ReqCore, ReqShell, SysMethod};
+use crate::version::v0_0_1::wave::{ReqCore, ReqShell, SysMethod, Wave};
 
 
 #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq,strum_macros::Display)]
@@ -137,7 +137,7 @@ pub enum Sys {
     Assign(Assign),
     Event(SysEvent),
     Log(Log),
-    EntryReq(EntryReq)
+    EntryReq(EntryReq),
 }
 
 impl TryFrom<ReqShell> for Assign {

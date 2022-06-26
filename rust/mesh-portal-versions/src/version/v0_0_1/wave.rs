@@ -5,10 +5,10 @@ use crate::version::v0_0_1::command::Command;
 use crate::version::v0_0_1::config::config::bind::RouteSelector;
 use crate::version::v0_0_1::http::HttpMethod;
 use crate::version::v0_0_1::id::id::{Point, Port, Layer, ToPort, Topic, Uuid, ToPoint};
-use crate::version::v0_0_1::log::{LogSpan, LogSpanEvent, SpanLogger};
+use crate::version::v0_0_1::log::{LogSpan, LogSpanEvent, PointLogger, SpanLogger};
 use crate::version::v0_0_1::msg::MsgMethod;
 use crate::version::v0_0_1::particle::particle::Details;
-use crate::version::v0_0_1::substance::substance::{Errors, MultipartFormBuilder, SubstanceKind, Token, ToRequestCore};
+use crate::version::v0_0_1::substance::substance::{Call, CallKind, Errors, HttpCall, MsgCall, MultipartFormBuilder, SubstanceKind, Token, ToRequestCore};
 use crate::version::v0_0_1::security::{Permissions, Privilege, Privileges};
 use crate::version::v0_0_1::selector::selector::PointSelector;
 use crate::version::v0_0_1::sys::AssignmentKind;
@@ -24,6 +24,7 @@ use std::ops::Deref;
 use std::sync::Arc;
 use dashmap::DashMap;
 use tokio::sync::RwLock;
+use crate::version::v0_0_1::parse::model::Subst;
 use crate::version::v0_0_1::parse::sub;
 use crate::version::v0_0_1::substance::substance::Substance;
 
@@ -262,6 +263,8 @@ pub trait Requestable<R> {
 
     fn status(self, status: u16) -> R where Self: Sized;
 
+    fn fail<M:ToString>(self, status: u16, message: M ) -> R where Self: Sized;
+
     fn err(self, err: MsgErr) -> R where Self: Sized;
 
     fn ok(self) -> R where Self: Sized;
@@ -427,6 +430,30 @@ impl Into<ReqProto> for ReqShell {
     }
 }
 
+impl ReqShell {
+    pub fn to_call(&self) -> Result<Call, MsgErr> {
+        let kind = match &self.core.method {
+            Method::Cmd(_) => {
+                unimplemented!()
+            }
+            Method::Sys(_) => {
+                unimplemented!()
+            }
+            Method::Http(method) => {
+                CallKind::Http(HttpCall::new(method.clone(), Subst::new(self.core.uri.path())?))
+            }
+            Method::Msg(method) => {
+                CallKind::Msg(MsgCall::new(method.clone(), Subst::new(self.core.uri.path())?))
+            }
+        };
+
+        Ok(Call {
+            point: self.item.to.clone().to_point(),
+            kind: kind.clone()
+        })
+    }
+}
+
 impl Into<WaitTime> for &ReqShell {
     fn into(self) -> WaitTime {
         self.handling.wait.clone()
@@ -440,6 +467,16 @@ impl Requestable<RespShell> for ReqShell {
             to: self.from,
             from: self.to,
             core: RespCore::status(status),
+            response_to: self.id,
+        }
+    }
+
+    fn fail<M: ToString>(self, status: u16, message: M) -> RespShell where Self: Sized {
+        RespShell {
+            id: uuid(),
+            to: self.from,
+            from: self.to,
+            core: self.core.fail(status, message ),
             response_to: self.id,
         }
     }
@@ -483,6 +520,8 @@ impl Requestable<RespShell> for ReqShell {
             response_to: self.id
         }
     }
+
+
 }
 
 impl ReqShell {
@@ -820,10 +859,10 @@ impl ReqShell {
         response
     }
 
-    pub fn fail(self, error: &str) -> RespShell {
+    pub fn fail(self, status: u16, error: &str) -> RespShell {
         let core = RespCore {
             headers: Default::default(),
-            status: StatusCode::from_u16(500u16).unwrap(),
+            status: StatusCode::from_u16(status ).or_else(||StatusCode::from_u16(500u16)).unwrap(),
             body: Substance::Errors(Errors::default(error.to_string().as_str())),
         };
         let response = RespShell {
@@ -1051,6 +1090,8 @@ impl RespShell {
     pub fn as_result<E: From<&'static str>, P: TryFrom<Substance>>(self) -> Result<P, E> {
         self.core.as_result()
     }
+
+
 }
 
 impl RespShell {
@@ -1374,6 +1415,10 @@ pub trait AsyncRouter: Send + Sync {
     async fn route(&self, wave: Wave);
 }
 
+pub trait Router: Send+Sync {
+    async fn route( &self, wave: Wave );
+}
+
 #[derive(Clone)]
 pub struct AsyncPointRequestHandlers{
     pub handlers: Arc<DashMap<Point,Box<dyn AsyncRequestHandler>>>
@@ -1415,7 +1460,51 @@ impl AsyncRequestHandler for  AsyncPointRequestHandlers {
     }
 }
 
+pub trait TransportPlanner {
+    fn dest<P: ToPort>( port: P ) -> Port;
+}
 
+/// Transporter will always wrap a Wave in another Wave which will then
+/// transport the wave to the next desired hop in its journey as determined
+/// by the TransportPlanner
+pub struct Transporter {
+    pub planner: Box<dyn TransportPlanner>,
+    pub transmitter: AsyncTransmitterWithAgent
+}
+
+impl Transporter {
+    pub fn new( planner: Box<dyn TransportPlanner>, transmitter: AsyncTransmitterWithAgent, logger: PointLogger) -> Self {
+        Self {
+            planner,
+            transmitter
+        }
+    }
+
+    pub async fn request(&self, req: ReqShell ) -> Result<RespShell,MsgErr> {
+        let dest = self.planner.dest(wave.to().clone());
+        let mut trans = ReqProto::sys(dest, SysMethod::Transport );
+        trans.body(Wave::Req(req).into());
+        let resp = self.transmitter.send(trans).await?;
+        let wave:Wave  = resp.core.body.try_into()?;
+        match wave {
+            Wave::Req(_) => {
+                Err(MsgErr::bad_request())
+            }
+            Wave::Resp(resp) => {
+                Ok(resp)
+            }
+        }
+    }
+
+    pub async fn response(&self, req: ReqShell ) {
+        let dest = self.planner.dest(wave.to().clone());
+        let mut trans = ReqProto::sys(dest, SysMethod::Transport );
+        trans.body(Wave::Req(req).into());
+        self.transmitter.send(trans).await;
+        // here we don't wait for a response becauase we can't do anything with it anyway
+    }
+
+}
 
 #[derive(Clone)]
 pub struct AsyncTransmitterWithAgent {
@@ -1836,11 +1925,11 @@ impl RespCore {
         }
     }
 
-    pub fn fail(message: &str) -> Self {
+    pub fn fail(status: u16, message: &str) -> Self {
         let errors = Errors::default(message.clone());
         Self {
             headers: HeaderMap::new(),
-            status: StatusCode::from_u16(500u16).unwrap(),
+            status: StatusCode::from_u16(status).or_else( ||StatusCode::from_u16(500u16) ).unwrap(),
             body: Substance::Errors(errors),
         }
     }
@@ -2190,11 +2279,11 @@ impl ReqCore {
         }
     }
 
-    pub fn fail(&self, error: &str) -> RespCore {
+    pub fn fail<M:ToString>(&self, status: u16, message: M) -> RespCore {
         let errors = Errors::default(error);
         RespCore {
             headers: Default::default(),
-            status: StatusCode::from_u16(500u16).unwrap(),
+            status: StatusCode::from_u16(status).or_else(||StatusCode::from_u16(500u16)).unwrap(),
             body: Substance::Errors(errors),
         }
     }
@@ -2279,6 +2368,7 @@ pub enum SysMethod {
     Assign,
     AssignPort,
     EntryReq,
+    Transport
 }
 
 

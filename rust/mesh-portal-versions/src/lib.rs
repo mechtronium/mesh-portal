@@ -21,10 +21,42 @@ pub mod version;
 pub mod error;
 
 use core::str::FromStr;
+use std::ops::Deref;
+use std::sync::Arc;
+use crate::error::MsgErr;
+use crate::version::v0_0_1::config::config::bind::BindConfig;
+use crate::version::v0_0_1::config::config::Document;
+use crate::version::v0_0_1::id::id::Point;
 
 lazy_static!{
     pub static ref VERSION: semver::Version = semver::Version::from_str("1.0.0").unwrap();
 }
+
+
+
+pub trait Artifacts {
+    async fn bind( &self, point: &Point ) -> Result<ArtRef<BindConfig>,MsgErr>;
+}
+
+pub struct ArtRef<A> {
+    pub artifact: Arc<A>
+}
+
+impl <A> Deref for ArtRef<A> {
+    type Target = Arc<A>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.artifact
+    }
+}
+
+impl <A> Drop for ArtRef<A>
+{
+    fn drop(&mut self) {
+        //
+    }
+}
+
 
 #[cfg(test)]
 mod tests {

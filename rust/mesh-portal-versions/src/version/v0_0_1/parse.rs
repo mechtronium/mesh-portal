@@ -4818,7 +4818,7 @@ use nom_supreme::parser_ext::MapRes;
 use nom_supreme::{parse_from_str, ParserExt};
 use cosmic_nom::{new_span, span_with_extra, Trace};
 use crate::version::v0_0_1::bin::Bin;
-use crate::version::v0_0_1::id::{ArtifactSubKind, BaseSubKind, DatabaseSubKind, FileSubKind, UserBaseSubKind};
+use crate::version::v0_0_1::id::{ArtifactSubKind, BaseSubKind, DatabaseSubKind, FileSubKind, StarKey, UserBaseSubKind};
 
 fn inclusive_any_segment<I: Span>(input: I) -> Res<I, PointSegSelector> {
     alt((tag("+*"), tag("ROOT+*")))(input).map(|(next, _)| (next, PointSegSelector::InclusiveAny))
@@ -4954,6 +4954,23 @@ where
 }
 
  */
+pub fn parse_star_key<I:Span>( input: I) -> Res<I,StarKey> {
+    let (next,(_,constelation,_,name,index)) = context("star",tuple((tag("STAR::"),lowercase_alphanumeric,tag(":"),lowercase_alphanumeric,delimited(tag("["),digit1,tag("]"))) ))(input.clone())?;
+    let constelation = constelation.to_string();
+    let name = name.to_string();
+    let index = match index.to_string().parse::<u16>() {
+        Ok(index) => index,
+        Err(err) => {
+            return Err(nom::Err::Failure(ErrorTree::from_error_kind(input, ErrorKind::Digit )))
+        }
+    };
+
+    Ok((next, StarKey {
+        constellation: constelation,
+        name,
+        index
+    }))
+}
 
 pub fn pattern<I: Span, O, E: ParseError<I>, V>(
     mut value: V,

@@ -1,11 +1,22 @@
 use core::str::FromStr;
-use crate::version::v0_0_1::id::id::{KindParts, BaseKind, Point, Specific, Kind, SubKind};
+use crate::version::v0_0_1::id::id::{BaseKind, Kind, KindParts, Layer, Point, Port, RouteSeg, Specific, SubKind, ToPoint, ToPort};
 use crate::version::v0_0_1::particle::particle::Stub;
 use crate::version::v0_0_1::substance::substance::Substance;
-use crate::version::v0_0_1::sys::ChildRegistry;
-use serde::{Serialize,Deserialize};
+use crate::version::v0_0_1::sys::{ChildRegistry, ParticleRecord};
+use serde::{Deserialize, Serialize};
+use mesh_portal::version::latest::id::{Point, Port};
+use nom::combinator::all_consuming;
+use cosmic_nom::new_span;
+use starlane_core::error::Error;
+use starlane_core::star;
+use starlane_core::template::StarHandle;
+use std::ops::{Deref, DerefMut};
+use tokio::sync::oneshot;
 use crate::error::MsgErr;
-use crate::version::v0_0_1::parse::CamelCase;
+use crate::version::v0_0_1::log::SpanLogger;
+use crate::version::v0_0_1::parse::{CamelCase, parse_star_key};
+use crate::version::v0_0_1::parse::error::result;
+use crate::version::v0_0_1::wave::{ReqShell, RespShell, Wave};
 
 pub mod id {
     use nom::branch::alt;
@@ -22,17 +33,19 @@ pub mod id {
     use std::ops::{Deref, Range};
     use std::str::FromStr;
     use std::sync::Arc;
+    use dashmap::DashMap;
 
     use cosmic_nom::{new_span, Res, Span, SpanExtra, Trace, tw, Tw};
     use serde::de::Visitor;
     use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
+    use tokio::sync::{mpsc, oneshot};
 
     use crate::error::{MsgErr, ParseErrs};
     use crate::version::v0_0_1::config::config::bind::RouteSelector;
     use crate::version::v0_0_1::id::id::PointSegCtx::Working;
     use crate::version::v0_0_1::parse::{camel_case, camel_case_chars, CamelCase, consume_point, consume_point_ctx, Ctx, CtxResolver, Domain, Env, kind_lex, kind_parts, parse_uuid, point_and_kind, point_route_segment, point_var, ResolverErr, SkewerCase, uuid_chars, VarResolver};
     use crate::version::v0_0_1::{mesh_portal_uuid, parse};
-    use crate::version::v0_0_1::id::{ArtifactSubKind, BaseSubKind, DatabaseSubKind, FileSubKind, UserBaseSubKind};
+    use crate::version::v0_0_1::id::{ArtifactSubKind, BaseSubKind, DatabaseSubKind, FileSubKind, Traversal, UserBaseSubKind};
 
     use crate::version::v0_0_1::parse::error::result;
     use crate::version::v0_0_1::selector::selector::{
@@ -40,6 +53,7 @@ pub mod id {
     };
     use crate::version::v0_0_1::sys::Location::Central;
     use crate::version::v0_0_1::util::{ToResolved, ValueMatcher, ValuePattern};
+    use crate::version::v0_0_1::wave::{ReqShell, RespShell, Wave};
 
     lazy_static! {
         pub static ref GLOBAL_CENTRAL: Point = Point::from_str("GLOBAL::central").unwrap();
@@ -48,6 +62,10 @@ pub mod id {
         pub static ref LOCAL_HYPERGATE: Point = Point::from_str("LOCAL::hypergate").unwrap();
         pub static ref REMOTE_ENTRY_REQUESTER: Point =
             Point::from_str("REMOTE::entry-requester").unwrap();
+
+        pub static ref STD_WAVE_TRAVERSAL_PLAN: TraversalPlan = TraversalPlan::new(vec![Layer::Field,Layer::Shell,Layer::Driver,Layer::Core]);
+        pub static ref MECHTRON_WAVE_TRAVERSAL_PLAN: TraversalPlan = TraversalPlan::new(vec![Layer::Field,Layer::PortalInlet,Layer::Shell,Layer::Driver,Layer::Tunnel,Layer::Host,Layer::Guest,Layer::PortalOutlet,Layer::Core]);
+        pub static ref PORTAL_WAVE_TRAVERSAL_PLAN: TraversalPlan = TraversalPlan::new(vec![Layer::Field,Layer::PortalShell,Layer::Driver,Layer::Tunnel,Layer::Host,Layer::Guest,Layer::PortalCore]);
     }
 
     pub type Uuid = String;
@@ -193,6 +211,14 @@ pub mod id {
         pub fn specific(&self) -> Option<Specific> {
             let sub = self.sub();
             sub.specific().cloned()
+        }
+
+        pub fn wave_traversal_plan(&self) -> &'static TraversalPlan {
+            match self {
+                Kind::Mechtron => MECHTRON_WAVE_TRAVERSAL_PLAN,
+                Kind::Portal => PORTAL_WAVE_TRAVERSAL_PLAN,
+                _ => STD_WAVE_TRAVERSAL_PLAN
+            }
         }
     }
 
@@ -458,7 +484,7 @@ pub mod id {
         Global,
         Domain(String),
         Tag(String),
-        Mesh(String),
+        Fabric(String),
     }
 
     impl RouteSegQuery for RouteSeg {
@@ -515,7 +541,7 @@ pub mod id {
                 RouteSegVar::Global => Ok(RouteSeg::Global),
                 RouteSegVar::Domain(domain) => Ok(RouteSeg::Domain(domain)),
                 RouteSegVar::Tag(tag) => Ok(RouteSeg::Tag(tag)),
-                RouteSegVar::Mesh(mesh) => Ok(RouteSeg::Mesh(mesh)),
+                RouteSegVar::Mesh(mesh) => Ok(RouteSeg::Fabric(mesh)),
                 RouteSegVar::Var(var) => Err(ParseErrs::from_range(
                     "variables not allowed in this context",
                     "variable not allowed here",
@@ -536,7 +562,7 @@ pub mod id {
                 RouteSeg::Global => RouteSegVar::Global,
                 RouteSeg::Domain(domain) => RouteSegVar::Domain(domain),
                 RouteSeg::Tag(tag) => RouteSegVar::Tag(tag),
-                RouteSeg::Mesh(mesh) => RouteSegVar::Mesh(mesh),
+                RouteSeg::Fabric(mesh) => RouteSegVar::Mesh(mesh),
             }
         }
     }
@@ -579,7 +605,7 @@ pub mod id {
                 RouteSeg::Tag(tag) => {
                     format!("[{}]", tag)
                 }
-                RouteSeg::Mesh(mesh) => {
+                RouteSeg::Fabric(mesh) => {
                     format!("[<{}>]", mesh)
                 }
                 RouteSeg::Global => "GLOBAL".to_string(),
@@ -1207,12 +1233,15 @@ pub mod id {
         strum_macros::EnumString,
     )]
     pub enum Layer {
+        PortalInlet = 0,
         Field,
         Shell,
         Driver,
         PortalShell,
+        Tunnel,
         Host,
         Guest,
+        PortalOutlet,
         PortalCore,
         Core,
     }
@@ -1227,6 +1256,117 @@ pub mod id {
         fn default() -> Self {
             Topic::None
         }
+    }
+
+    #[async_trait]
+    pub trait TraversalLayer {
+
+        fn layer(&self) -> &Layer;
+        async fn towards_fabric_router(&self, traversal: Traversal<Wave>);
+        async fn towards_core_router(&self, traversal: Traversal<Wave>);
+        fn exchange(&self) -> &Arc<DashMap<Uuid,oneshot::Sender<RespShell>>>;
+        async fn handle(&self, request: ReqShell);
+
+        async fn towards_core(&self, traversal: Traversal<Wave>) {
+            if traversal.is_inter_layer() && traversal.to().layer == *self.layer(){
+                if traversal.is_req() {
+                    self.incoming_layer_request(traversal.unwrap_req()).await;
+                } else {
+                    self.incoming_layer_response(traversal.unwrap_resp()).await;
+                }
+            } else if traversal.is_req() {
+                self.incoming_request(traversal.unwrap_req()).await;
+            } else {
+                self.incoming_response(traversal.unwrap_resp()).await;
+            }
+        }
+
+        async fn towards_fabric(&self, traversal: Traversal<Wave>) {
+            if traversal.is_inter_layer() && traversal.to().layer == *self.layer(){
+                if traversal.is_req() {
+                    self.outgoing_layer_request(traversal.unwrap_req()).await;
+                } else {
+                    self.outgoing_layer_response(traversal.unwrap_resp()).await;
+                }
+            } else if traversal.is_req() {
+                self.outgoing_request(traversal.unwrap_req()).await;
+            } else {
+                self.outgoing_response(traversal.unwrap_resp()).await;
+            }
+        }
+
+        async fn outgoing_request(&self, request: Traversal<ReqShell> ) -> Result<(),MsgErr>{
+            self.towards_fabric_router().send(request.wrap() ).await;
+            Ok(())
+        }
+        async fn outgoing_response(&self, response: Traversal<RespShell> ) -> Result<(),MsgErr>{
+            self.towards_fabric_router().send(response.wrap() ).await;
+            Ok(())
+        }
+        async fn incoming_request(&self, request: Traversal<ReqShell> ) -> Result<(),MsgErr>{
+            self.towards_core_router().send(request.wrap() ).await;
+            Ok(())
+        }
+
+        async fn incoming_response(&self, response: Traversal<RespShell> ) -> Result<(),MsgErr>{
+            self.towards_core_router().send(response.wrap() ).await;
+            Ok(())
+        }
+
+        async fn incoming_layer_request(&self, request: Traversal<ReqShell>) {
+            self.handle(request.payload).await;
+        }
+        async fn incoming_layer_response(&self, response: Traversal<RespShell>) {
+                if let Some((_,tx)) = self.exchange().remove(&response.response_to) {
+                    tx.send(response.payload );
+                }
+        }
+
+        async fn outgoing_layer_request(&self, request: Traversal<ReqShell>) {
+            self.handle(request.payload).await;
+        }
+
+        async fn outgoing_layer_response(&self, response: Traversal<RespShell>) {
+            if let Some((_,tx)) = self.exchange().remove(&response.response_to) {
+                tx.send(response.payload );
+            }
+        }
+    }
+
+    pub struct TraversalPlan {
+        pub stack: Vec<Layer>
+    }
+
+    impl TraversalPlan {
+        pub fn new( stack: Vec<Layer> ) -> Self {
+            Self{ stack }
+        }
+
+        pub fn towards_fabric(&self, layer: &Layer ) -> Option<Layer> {
+            let mut layer = layer.clone();
+            loop {
+                layer = layer - 1;
+                if layer < 0 {
+                    return None;
+                } else if self.stack.contains(&layer) {
+                    return Some(layer);
+                }
+            }
+        }
+
+
+        pub fn towards_core(&self, layer: &Layer ) -> Option<Layer> {
+            let mut layer = layer.clone();
+            loop {
+                layer = layer + 1;
+                if layer > self.stack.len()-1 {
+                    return None;
+                } else if self.stack.contains(&layer) {
+                    return Some(layer);
+                }
+            }
+        }
+
     }
 
     #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
@@ -2379,5 +2519,208 @@ impl BaseKind {
             Self::UserBase => ChildRegistry::Core,
             _ => ChildRegistry::Shell
         }
+    }
+}
+
+
+pub type MachineName = String;
+pub type ConstellationName = String;
+
+
+#[derive(PartialEq, Eq, Ord, PartialOrd, Hash, Debug, Clone, Serialize, Deserialize)]
+pub struct StarKey {
+    pub constellation: ConstellationName,
+    pub name: String,
+    pub index: u16
+}
+
+impl Into<Point> for StarKey {
+    fn into(self) -> Point {
+        self.to_point()
+    }
+}
+
+impl Into<Port> for StarKey {
+    fn into(self) -> Port {
+        self.to_port()
+    }
+}
+
+impl TryFrom<Point> for StarKey {
+    type Error = MsgErr;
+
+    fn try_from(point: Point) -> Result<Self, Self::Error> {
+        match point.route {
+            RouteSeg::Fabric(star) => {
+                StarKey::from_str(star.as_str())
+            }
+            _ => {
+                Err("can only extract StarKey from Mesh point routes".into())
+            }
+        }
+    }
+}
+
+impl ToPoint for StarKey {
+    fn to_point(self) -> crate::version::v0_0_1::id::id::Point {
+        Point::from_str(format!("<<{}>>::star", self.to_string()).as_str() ).unwrap()
+    }
+}
+
+impl ToPort for StarKey {
+    fn to_port(self) -> Port {
+        self.to_point().to_port()
+    }
+}
+
+impl StarKey {
+
+    pub fn new(constellation:&ConstellationName, handle: &StarHandle) -> Self {
+        Self {
+            constellation: constellation.clone(),
+            name: handle.name.clone(),
+            index: handle.index.clone()
+        }
+    }
+
+    pub fn central() -> Self {
+        StarKey {
+            constellation: "standalone".to_string(),
+            name: "central".to_string(),
+            index: 0,
+        }
+    }
+}
+
+
+impl ToString for StarKey {
+    fn to_string(&self) -> String {
+        format!("STAR::{}:{}[{}]", self.constellation, self.name, self.index)
+    }
+}
+
+impl StarKey {
+    pub fn to_sql_name(&self) -> String {
+       format!("STAR::{}_{}_{}", self.constellation, self.name, self.index )
+    }
+}
+
+
+impl FromStr for StarKey {
+    type Err = MsgErr;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(result(all_consuming(parse_star_key)(new_span(s)))?)
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize )]
+pub struct Traversal<W> {
+   pub payload: W,
+   pub record: ParticleRecord,
+   pub layer: Layer,
+   pub logger: SpanLogger,
+   pub locality: Point,
+}
+
+impl <W> Traversal<W> {
+   pub fn new(payload: W, record: ParticleRecord, locality: Point, layer: Layer, logger: SpanLogger ) -> Self {
+     Self {
+        payload,
+        record,
+        layer,
+        locality,
+        logger,
+     }
+   }
+
+   pub fn with<N>(self, payload: N ) -> Traversal<N> {
+       Traversal {
+           payload,
+           record: self.record,
+           layer: self.layer,
+           logger: self.logger,
+           locality: self.locality
+       }
+   }
+}
+
+impl <W> Traversal<W> {
+    pub fn next_towards_fabric(&self) -> Option<Layer> {
+        self.record.details.stub.kind.wave_traversal_plan().towards_fabric(&self.layer)
+    }
+
+    pub fn next_towards_core(&self) -> Option<Layer> {
+        self.record.details.stub.kind.wave_traversal_plan().towards_core(&self.layer)
+    }
+}
+
+impl Traversal<Wave> {
+    pub fn is_inter_layer(&self) -> bool {
+        self.to().point == *self.logger.point()
+    }
+
+    pub fn is_req(&self) -> bool {
+        match &self.payload {
+            Wave::Req(_) => true,
+            Wave::Resp(_) => false
+        }
+    }
+
+    pub fn is_resp(&self) -> bool {
+        match &self.payload {
+            Wave::Req(_) => false,
+            Wave::Resp(_) => true
+        }
+    }
+
+    pub fn unwrap_req(self) -> Traversal<ReqShell> {
+        if let Wave::Req(req) = self.payload {
+            self.with(req)
+        } else {
+            panic!("cannot call this unless you are sure it's a Req")
+        }
+    }
+
+    pub fn unwrap_resp(self) -> Traversal<RespShell> {
+        if let Wave::Resp(resp) = self.payload {
+            self.with(resp)
+        } else {
+            panic!("cannot call this unless you are sure it's a Resp")
+        }
+    }
+}
+
+impl Traversal<ReqShell> {
+    pub fn wrap(self) -> Traversal<Wave> {
+        self.with(Wave::Req(self.payload))
+    }
+
+    pub fn is_inter_layer(&self) -> bool {
+        self.to.point == *self.logger.point()
+    }
+}
+
+impl Traversal<RespShell> {
+    pub fn wrap(self) -> Traversal<Wave> {
+        self.with(Wave::Resp(self.payload))
+    }
+
+    pub fn is_inter_layer(&self) -> bool {
+        self.to.point == *self.logger.point()
+    }
+}
+
+impl <W> Deref for Traversal<W> {
+    type Target = W;
+
+    fn deref(&self) -> &Self::Target {
+        &self.payload
+    }
+}
+
+impl <W> DerefMut for Traversal<W> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        & mut self.payload
     }
 }
