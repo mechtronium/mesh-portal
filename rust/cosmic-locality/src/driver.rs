@@ -18,6 +18,7 @@ use crate::machine::MachineSkel;
 use crate::star::StarSkel;
 use crate::state::DriverState;
 
+#[derive(AsyncRequestHandler)]
 pub struct Drivers {
     pub skel: StarSkel,
     pub drivers: HashMap<Kind,Arc<dyn Driver>>
@@ -50,10 +51,6 @@ impl Drivers {
             Ok(())
         }
     }
-
-    pub async fn assign(&self, assign: &Assign ) -> Result<DriverState,MsgErr> {
-
-    }
 }
 
 #[routes]
@@ -67,9 +64,8 @@ impl Drivers {
                     Err(format!("do not have driver for Kind: <{}>", assign.details.stub.kind.to_string() ).into())
                 }
                 Some(driver) => {
-                    // now what to do with DriverState?
                     let state = tokio::time::timeout( Duration::from_secs( self.skel.machine.timeouts.high), driver.assign(assign)).await??;
-                    let state = self.skel.state.find(&ctx.request().to.clone().to_point() );
+                    self.skel.state.driver.insert(ctx.request().to.clone().to_point(), state );
                     Ok(ctx.request().core.ok(Substance::Empty))
                 }
             }
@@ -77,6 +73,8 @@ impl Drivers {
             Err(MsgErr::bad_request())
         }
     }
+
+
 
 }
 
@@ -104,7 +102,7 @@ impl TraversalLayer for Drivers {
         &self.skel.exchange
     }
 
-    async fn handle(&self, request: ReqShell) {
+    async fn layer_handle(&self, request: ReqShell) {
 
     }
 }
@@ -140,7 +138,7 @@ pub trait DriverFactory {
     fn create(&self,skel:StarSkel) -> Arc<dyn Driver>;
 }
 
-pub trait Driver : TraversalLayer{
+pub trait Driver : TraversalLayer+AsyncRequestHandler{
 
     fn skel(&self) -> StarSkel;
 
@@ -152,16 +150,19 @@ pub trait Driver : TraversalLayer{
         &self.skel().exchange
     }
 
-    fn lifecycle( &self, event: DriverLifecycleEvent );
-    fn status( &self ) -> DriverStatus;
-    async fn assign(&self,assign:&Assign) -> Result<DriverState,MsgErr>;
-}
+    fn lifecycle( &self, event: DriverLifecycleEvent ) {
 
-pub trait DriverBase: Driver {
-    async fn towards_fabric_router(&self, traversal: Traversal<Wave>);
-    async fn towards_core_router(&self, traversal: Traversal<Wave>);
-    fn exchange(&self) -> &Arc<DashMap<Uuid,oneshot::Sender<RespShell>>>;
-    async fn handle(&self, request: ReqShell);
+    }
+
+    fn status( &self ) -> DriverStatus;
+
+    async fn assign(&self,assign:&Assign) -> Result<DriverState,MsgErr> {
+        Ok(DriverState::None)
+    }
+
+    async fn towards_core_router(&self, traversal: Traversal<Wave>) {
+        // here's where we actually handle the Wave...
+    }
 }
 
 

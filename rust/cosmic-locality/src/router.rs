@@ -2,7 +2,6 @@ use std::sync::Arc;
 use tokio::sync::mpsc;
 use mesh_portal_versions::version::v0_0_1::id::id::{Layer, TraversalPlan};
 use mesh_portal_versions::version::v0_0_1::wave::{AsyncTransmitter, Router, Wave};
-use mesh_portal_versions::version::v0_0_1::
 use mesh_portal_versions::version::v0_0_1::id::Traversal;
 
 pub struct StarRouter {

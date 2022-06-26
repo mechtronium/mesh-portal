@@ -1265,7 +1265,8 @@ pub mod id {
         async fn towards_fabric_router(&self, traversal: Traversal<Wave>);
         async fn towards_core_router(&self, traversal: Traversal<Wave>);
         fn exchange(&self) -> &Arc<DashMap<Uuid,oneshot::Sender<RespShell>>>;
-        async fn handle(&self, request: ReqShell);
+
+        async fn layer_handle(&self, request: ReqShell);
 
         async fn towards_core(&self, traversal: Traversal<Wave>) {
             if traversal.is_inter_layer() && traversal.to().layer == *self.layer(){
@@ -1314,7 +1315,7 @@ pub mod id {
         }
 
         async fn incoming_layer_request(&self, request: Traversal<ReqShell>) {
-            self.handle(request.payload).await;
+            self.layer_handle(request.payload).await;
         }
         async fn incoming_layer_response(&self, response: Traversal<RespShell>) {
                 if let Some((_,tx)) = self.exchange().remove(&response.response_to) {
@@ -1323,7 +1324,7 @@ pub mod id {
         }
 
         async fn outgoing_layer_request(&self, request: Traversal<ReqShell>) {
-            self.handle(request.payload).await;
+            self.layer_handle(request.payload).await;
         }
 
         async fn outgoing_layer_response(&self, response: Traversal<RespShell>) {

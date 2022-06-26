@@ -1,3 +1,12 @@
+#![allow(warnings)]
+
+#[macro_use]
+extern crate cosmic_macros;
+
+#[macro_use]
+extern crate lazy_static;
+
+
 pub mod driver;
 pub mod state;
 pub mod star;

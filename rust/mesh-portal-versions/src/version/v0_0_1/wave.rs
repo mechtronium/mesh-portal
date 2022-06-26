@@ -1126,6 +1126,36 @@ pub enum Wave {
 
 impl Wave {
 
+    pub fn is_req(&self) -> bool {
+        match self {
+            Wave::Req(_) => true,
+            Wave::Resp(_) => false
+        }
+    }
+
+    pub fn is_resp(&self) -> bool {
+        match self {
+            Wave::Req(_) => false,
+            Wave::Resp(_) => true
+        }
+    }
+
+    pub fn unwrap_req(self) -> ReqShell {
+        if let Wave::Req(req) = self {
+            req
+        } else {
+            panic!("call Wave.is_req() next time!");
+        }
+    }
+
+    pub fn unwrap_resp(self) -> RespShell {
+        if let Wave::Resp(resp) = self {
+            resp
+        } else {
+            panic!("call Wave.is_resp() next time!");
+        }
+    }
+
     pub fn id(&self) -> Uuid {
         match self {
             Wave::Req(request) => request.id.clone(),
@@ -1537,11 +1567,6 @@ impl AsyncTransmitterWithAgent {
         Ok(self.relay.send(request).await)
     }
 
-    pub fn send_sync(&self, request: ReqProto) ->  Result<RespShell,MsgErr>{
-        let request = request.to_request(self.from.clone(), self.agent.clone(), Scope::None)?;
-        Ok(self.relay.send_sync(request))
-    }
-
     pub async fn route(&self, wave: Wave )  {
         self.relay.route(wave).await;
     }
@@ -1627,7 +1652,6 @@ impl SyncTransmitRelay {
 pub trait AsyncTransmitter: Send + Sync
 {
     async fn send(&self, request: ReqShell ) -> RespShell;
-    fn send_sync(&self, request: ReqShell) -> RespShell;
     async fn route(&self, wave: Wave);
 }
 

@@ -122,19 +122,20 @@ impl TraversalLayer for FieldEx {
         &Layer::Field
     }
 
-    fn towards_fabric_router(&self) -> &Sender<Traversal<Wave>> {
-        &self.skel.towards_fabric_router
+    async fn towards_fabric_router(&self, traversal: Traversal<Wave>) {
+       self.skel.towards_fabric_router.send(traversal).await;
     }
 
-    fn towards_core_router(&self) -> &Sender<Traversal<Wave>> {
-        &self.skel.towards_core_router
+    async fn towards_core_router(&self, traversal: Traversal<Wave>) {
+        self.skel.towards_core_router.send(traversal).await;
     }
+
 
     fn exchange(&self) -> &Arc<DashMap<Uuid, tokio::sync::oneshot::Sender<RespShell>>> {
         &self.skel.exchange
     }
 
-    async fn handle(&self, request: ReqShell) {
+    async fn layer_handle(&self, request: ReqShell) {
         // not sure if field will ever handle anything for itself
     }
 

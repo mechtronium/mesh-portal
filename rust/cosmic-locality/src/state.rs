@@ -86,3 +86,14 @@ impl PortalInletState{
         Self {}
     }
 }
+
+
+#[derive(Clone)]
+pub struct PortalShellState {
+}
+
+impl PortalShellState{
+    pub fn new() -> Self {
+        Self {}
+    }
+}

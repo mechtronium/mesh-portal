@@ -11,7 +11,7 @@ use mesh_portal::version::latest::messaging::{Agent, ReqShell, RespShell, RootRe
 use mesh_portal_versions::version::v0_0_1::config::config::bind::RouteSelector;
 use mesh_portal_versions::version::v0_0_1::id::id::{Layer, Point, Port, Topic, ToPoint, ToPort, TraversalLayer, Uuid};
 use mesh_portal_versions::version::v0_0_1::quota::Timeouts;
-use mesh_portal_versions::version::v0_0_1::wave::{AsyncInternalRequestHandlers, AsyncPointRequestHandlers, AsyncRequestHandler, AsyncRequestHandlerRelay, AsyncRouter, AsyncTransmitter, AsyncTransmitterWithAgent, ReqCtx, ReqXtra, Requestable, RespXtra, Wave, WaveXtra, RequestHandler, RespShell, Agent, ReqShell, RespCore};
+use mesh_portal_versions::version::v0_0_1::wave::{AsyncInternalRequestHandlers, AsyncPointRequestHandlers, AsyncRequestHandler, AsyncRequestHandlerRelay, AsyncRouter, AsyncTransmitter, AsyncTransmitterWithAgent, ReqCtx, ReqXtra, Requestable, RespXtra, Wave, WaveXtra, RequestHandler, RespShell, Agent, ReqShell, RespCore, RootReqCtx};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::mpsc;
@@ -44,20 +44,21 @@ impl TraversalLayer for ShellEx {
         &Layer::Shell
     }
 
-    fn towards_fabric_router(&self) -> &Sender<Traversal<Wave>> {
-        &self.skel.towards_fabric_router
+    async fn towards_fabric_router(&self, traversal: Traversal<Wave>) {
+        self.skel.towards_fabric_router.send(traversal).await;
     }
 
-    fn towards_core_router(&self) -> &Sender<Traversal<Wave>> {
-        &self.skel.towards_core_router
+    async fn towards_core_router(&self, traversal: Traversal<Wave>) {
+        self.skel.towards_core_router.send(traversal).await;
     }
+
 
     fn exchange(&self) -> &Arc<DashMap<Uuid,oneshot::Sender<RespShell>>> {
         &self.skel.exchange
     }
 
-    async fn handle(&self, request: ReqShell) {
-        todo!()
+    async fn layer_handle(&self, request: ReqShell) {
+        let ctx = RootReqCtx::new(request, )
     }
 
     async fn outgoing_request(&self, request: Traversal<ReqShell> ) -> Result<(),MsgErr> {
