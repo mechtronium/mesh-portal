@@ -4,64 +4,67 @@ use crate::version::v0_0_1::cli::RawCommand;
 use crate::version::v0_0_1::command::Command;
 use crate::version::v0_0_1::config::config::bind::RouteSelector;
 use crate::version::v0_0_1::http::HttpMethod;
-use crate::version::v0_0_1::id::id::{Point, Port, Layer, ToPort, Topic, Uuid, ToPoint};
+use crate::version::v0_0_1::id::id::{Layer, Point, Port, ToPoint, ToPort, Topic, Uuid};
 use crate::version::v0_0_1::log::{LogSpan, LogSpanEvent, PointLogger, SpanLogger};
 use crate::version::v0_0_1::msg::MsgMethod;
+use crate::version::v0_0_1::parse::model::Subst;
+use crate::version::v0_0_1::parse::sub;
 use crate::version::v0_0_1::particle::particle::Details;
-use crate::version::v0_0_1::substance::substance::{Call, CallKind, Errors, HttpCall, MsgCall, MultipartFormBuilder, SubstanceKind, Token, ToRequestCore};
 use crate::version::v0_0_1::security::{Permissions, Privilege, Privileges};
 use crate::version::v0_0_1::selector::selector::PointSelector;
+use crate::version::v0_0_1::substance::substance::Substance;
+use crate::version::v0_0_1::substance::substance::{
+    Call, CallKind, Errors, HttpCall, MsgCall, MultipartFormBuilder, SubstanceKind, ToRequestCore,
+    Token,
+};
 use crate::version::v0_0_1::sys::AssignmentKind;
 use crate::version::v0_0_1::util::{uuid, ValueMatcher, ValuePattern};
 use cosmic_macros_primitive::Autobox;
 use cosmic_nom::{Res, SpanExtra};
-use http::{HeaderMap,  StatusCode, Uri};
+use dashmap::DashMap;
+use http::{HeaderMap, StatusCode, Uri};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::convert::Infallible;
 use std::ops;
 use std::ops::Deref;
 use std::sync::Arc;
-use dashmap::DashMap;
 use tokio::sync::RwLock;
-use crate::version::v0_0_1::parse::model::Subst;
-use crate::version::v0_0_1::parse::sub;
-use crate::version::v0_0_1::substance::substance::Substance;
 
-
-#[derive(Serialize, Deserialize,Eq,PartialEq,Hash,strum_macros::Display,strum_macros::EnumString)]
+#[derive(
+    Serialize, Deserialize, Eq, PartialEq, Hash, strum_macros::Display, strum_macros::EnumString,
+)]
 pub enum WaveKind {
     Req,
-    Res
+    Res,
 }
 
-#[derive(Serialize, Deserialize,Eq,PartialEq,Hash)]
+#[derive(Serialize, Deserialize, Eq, PartialEq, Hash)]
 pub struct WaveId {
     port: Port,
     uuid: Uuid,
-    kind: WaveKind
+    kind: WaveKind,
 }
 
 impl WaveId {
-
-    pub fn new( port: Port, kind: WaveKind ) -> Self {
+    pub fn new(port: Port, kind: WaveKind) -> Self {
         let uuid = uuid();
-        Self::with_uuid(port,kind,uuid)
+        Self::with_uuid(port, kind, uuid)
     }
 
-    pub fn with_uuid( port: Port, kind: WaveKind, uuid: Uuid  ) -> Self {
-        Self {
-            port,
-            uuid,
-            kind
-        }
+    pub fn with_uuid(port: Port, kind: WaveKind, uuid: Uuid) -> Self {
+        Self { port, uuid, kind }
     }
 }
 
-
 impl ToString for WaveId {
     fn to_string(&self) -> String {
-        format!("{}<Wave<{}>>/{}",self.port.to_string(),self.kind.to_string(),self.uuid)
+        format!(
+            "{}<Wave<{}>>/{}",
+            self.port.to_string(),
+            self.kind.to_string(),
+            self.uuid
+        )
     }
 }
 
@@ -75,28 +78,28 @@ impl WaveXtra {
     pub fn id(&self) -> &Uuid {
         match self {
             WaveXtra::Req(request) => request.id(),
-            WaveXtra::Resp(response) => response.id()
+            WaveXtra::Resp(response) => response.id(),
         }
     }
 
-    pub fn to(&self) -> &Port{
+    pub fn to(&self) -> &Port {
         match self {
             WaveXtra::Req(request) => request.to(),
-            WaveXtra::Resp(response) => response.to()
+            WaveXtra::Resp(response) => response.to(),
         }
     }
 
-    pub fn from(&self) -> &Port{
+    pub fn from(&self) -> &Port {
         match self {
             WaveXtra::Req(request) => request.from(),
-            WaveXtra::Resp(response) => response.from()
+            WaveXtra::Resp(response) => response.from(),
         }
     }
 
     pub fn span(&self) -> Option<&LogSpan> {
         match self {
             WaveXtra::Req(req) => req.span.as_ref(),
-            WaveXtra::Resp(res) => res.span.as_ref()
+            WaveXtra::Resp(res) => res.span.as_ref(),
         }
     }
 }
@@ -106,10 +109,10 @@ pub struct RootReqCtx<I> {
     pub request: ReqShell,
     session: Option<Session>,
     logger: SpanLogger,
-    pub tx: AsyncTransmitterWithAgent
+    pub tx: Arc<dyn AsyncTransmitter>,
 }
 
-impl <I> Deref for RootReqCtx<I> {
+impl<I> Deref for RootReqCtx<I> {
     type Target = I;
 
     fn deref(&self) -> &Self::Target {
@@ -118,13 +121,13 @@ impl <I> Deref for RootReqCtx<I> {
 }
 
 impl RootReqCtx<ReqShell> {
-    pub fn new(request: ReqShell, logger: SpanLogger, tx: AsyncTransmitterWithAgent ) -> Self {
+    pub fn new(request: ReqShell, logger: SpanLogger, tx: Arc<dyn AsyncTransmitter>) -> Self {
         Self {
             request: request.clone(),
             input: request.clone(),
             logger,
             session: None,
-            tx
+            tx,
         }
     }
 }
@@ -155,7 +158,7 @@ impl<I> RootReqCtx<I> {
 
 pub struct ReqCtx<'a, I> {
     root: &'a RootReqCtx<I>,
-    tx: &'a AsyncTransmitterWithAgent,
+    tx: &'a AsyncTransmitter,
     parent: Option<Box<ReqCtx<'a, I>>>,
     pub input: &'a I,
     pub logger: SpanLogger,
@@ -170,13 +173,18 @@ impl<'a, I> Deref for ReqCtx<'a, I> {
 }
 
 impl<'a, I> ReqCtx<'a, I> {
-    pub fn new(root: &'a RootReqCtx<I>, input: &'a I, tx: &'a AsyncTransmitterWithAgent, logger: SpanLogger) -> Self {
+    pub fn new(
+        root: &'a RootReqCtx<I>,
+        input: &'a I,
+        tx: &'a AsyncTransmitter,
+        logger: SpanLogger,
+    ) -> Self {
         Self {
             root,
             parent: None,
             input,
             logger,
-            tx
+            tx,
         }
     }
 
@@ -199,6 +207,12 @@ impl<'a, I> ReqCtx<'a, I> {
 
     pub fn request(&self) -> &ReqShell {
         &self.root.request
+    }
+
+    pub async fn send(&self, request: ReqProto) -> Result<RespShell, MsgErr> {
+        let request =
+            request.to_request(self.request().to.clone(), Agent::Anonymous, Scope::None)?;
+        self.tx.send(request).await
     }
 }
 
@@ -241,42 +255,72 @@ impl<'a> ReqCtx<'a, RespShell> {
 }
 
 pub trait Requestable<R> {
-    fn forbidden(self) -> R where Self: Sized{
+    fn forbidden(self) -> R
+    where
+        Self: Sized,
+    {
         self.status(403)
     }
 
-    fn bad_request(self) -> R  where Self: Sized{
+    fn bad_request(self) -> R
+    where
+        Self: Sized,
+    {
         self.status(400)
     }
 
-    fn not_found(self) -> R  where Self: Sized{
+    fn not_found(self) -> R
+    where
+        Self: Sized,
+    {
         self.status(404)
     }
 
-    fn timeout(self) -> R  where Self: Sized{
+    fn timeout(self) -> R
+    where
+        Self: Sized,
+    {
         self.status(408)
     }
 
-    fn server_error(self) -> R  where Self: Sized{
+    fn server_error(self) -> R
+    where
+        Self: Sized,
+    {
         self.status(500)
     }
 
-    fn status(self, status: u16) -> R where Self: Sized;
+    fn status(self, status: u16) -> R
+    where
+        Self: Sized;
 
-    fn fail<M:ToString>(self, status: u16, message: M ) -> R where Self: Sized;
+    fn fail<M: ToString>(self, status: u16, message: M) -> R
+    where
+        Self: Sized;
 
-    fn err(self, err: MsgErr) -> R where Self: Sized;
+    fn err(self, err: MsgErr) -> R
+    where
+        Self: Sized;
 
-    fn ok(self) -> R where Self: Sized;
+    fn ok(self) -> R
+    where
+        Self: Sized;
 
-    fn body(self, body: Substance) -> R where Self: Sized;
+    fn body(self, body: Substance) -> R
+    where
+        Self: Sized;
 
-    fn core(self, core: RespCore) -> R where Self: Sized;
+    fn core(self, core: RespCore) -> R
+    where
+        Self: Sized;
 
-    fn result<C:Into<RespCore>>(self, result: Result<C,MsgErr>) -> R  where Self: Sized{
+    fn result<C: Into<RespCore>>(self, result: Result<C, MsgErr>) -> R
+    where
+        Self: Sized,
+    {
         match result {
             Ok(core) => self.core(core.into()),
-            Err(err) => self.core(err.into())
+            Err(err) => self.core(err.into()),
         }
     }
 }
@@ -288,15 +332,14 @@ pub struct ReqStub {
     pub handling: Handling,
     pub from: Port,
     pub to: Port,
-    pub span: Option<LogSpan>
+    pub span: Option<LogSpan>,
 }
 
-impl Into<WaitTime> for &ReqStub{
+impl Into<WaitTime> for &ReqStub {
     fn into(self) -> WaitTime {
         self.handling.wait.clone()
     }
 }
-
 
 impl Requestable<RespShell> for ReqStub {
     fn status(self, status: u16) -> RespShell {
@@ -403,11 +446,11 @@ impl Requestable<RespXtra> for ReqStub {
             core,
             response_to: self.id,
         }
-            .to_frame(self.span)
+        .to_frame(self.span)
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize,Eq,PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
 pub struct ReqShell {
     pub id: String,
     pub agent: Agent,
@@ -439,17 +482,19 @@ impl ReqShell {
             Method::Sys(_) => {
                 unimplemented!()
             }
-            Method::Http(method) => {
-                CallKind::Http(HttpCall::new(method.clone(), Subst::new(self.core.uri.path())?))
-            }
-            Method::Msg(method) => {
-                CallKind::Msg(MsgCall::new(method.clone(), Subst::new(self.core.uri.path())?))
-            }
+            Method::Http(method) => CallKind::Http(HttpCall::new(
+                method.clone(),
+                Subst::new(self.core.uri.path())?,
+            )),
+            Method::Msg(method) => CallKind::Msg(MsgCall::new(
+                method.clone(),
+                Subst::new(self.core.uri.path())?,
+            )),
         };
 
         Ok(Call {
             point: self.item.to.clone().to_point(),
-            kind: kind.clone()
+            kind: kind.clone(),
         })
     }
 }
@@ -471,12 +516,15 @@ impl Requestable<RespShell> for ReqShell {
         }
     }
 
-    fn fail<M: ToString>(self, status: u16, message: M) -> RespShell where Self: Sized {
+    fn fail<M: ToString>(self, status: u16, message: M) -> RespShell
+    where
+        Self: Sized,
+    {
         RespShell {
             id: uuid(),
             to: self.from,
             from: self.to,
-            core: self.core.fail(status, message ),
+            core: self.core.fail(status, message),
             response_to: self.id,
         }
     }
@@ -517,11 +565,9 @@ impl Requestable<RespShell> for ReqShell {
             to: self.from,
             from: self.to,
             core,
-            response_to: self.id
+            response_to: self.id,
         }
     }
-
-
 }
 
 impl ReqShell {
@@ -532,11 +578,14 @@ impl ReqShell {
             handling: self.handling.clone(),
             from: self.from.clone(),
             to: self.to.clone(),
-            span: None
+            span: None,
         }
     }
 
-    pub fn require_method<M: Into<Method>+ToString+Clone>(self, method: M) -> Result<ReqShell, MsgErr> {
+    pub fn require_method<M: Into<Method> + ToString + Clone>(
+        self,
+        method: M,
+    ) -> Result<ReqShell, MsgErr> {
         if self.core.method == method.clone().into() {
             Ok(self)
         } else {
@@ -585,10 +634,9 @@ impl ReqShell {
         ReqXtra {
             session: None,
             request: self,
-            span
+            span,
         }
     }
-
 }
 
 #[derive(Serialize, Deserialize)]
@@ -664,7 +712,7 @@ impl Requestable<RespXtra> for ReqXtra {
         RespXtra {
             session: None,
             response,
-            span: self.span
+            span: self.span,
         }
     }
 }
@@ -681,7 +729,7 @@ impl RespXtra {
         Self {
             response,
             session: None,
-            span: None
+            span: None,
         }
     }
     pub fn id(&self) -> &Uuid {
@@ -693,7 +741,9 @@ impl RespXtra {
     pub fn to(&self) -> &Port {
         &self.response.to
     }
-    pub fn response_to(&self) -> &Uuid { &self.response.response_to }
+    pub fn response_to(&self) -> &Uuid {
+        &self.response.response_to
+    }
 }
 
 impl TryFrom<ReqShell> for RawCommand {
@@ -862,7 +912,9 @@ impl ReqShell {
     pub fn fail(self, status: u16, error: &str) -> RespShell {
         let core = RespCore {
             headers: Default::default(),
-            status: StatusCode::from_u16(status ).or_else(||StatusCode::from_u16(500u16)).unwrap(),
+            status: StatusCode::from_u16(status)
+                .or_else(|| StatusCode::from_u16(500u16))
+                .unwrap(),
             body: Substance::Errors(Errors::default(error.to_string().as_str())),
         };
         let response = RespShell {
@@ -965,7 +1017,7 @@ pub struct ReqProto {
 }
 
 impl ReqProto {
-    pub fn to_request<P>(self, from: P, agent: Agent, scope: Scope) -> Result<ReqShell,MsgErr>
+    pub fn to_request<P>(self, from: P, agent: Agent, scope: Scope) -> Result<ReqShell, MsgErr>
     where
         P: ToPort,
     {
@@ -973,8 +1025,10 @@ impl ReqProto {
         let request = ReqShell {
             id: self.id,
             from: from.to_port(),
-            to: self.to.ok_or(MsgErr::new(500u16,"must set 'to'"))?,
-            core: self.core.ok_or(MsgErr::new(500u16,"request core must be set"))?,
+            to: self.to.ok_or(MsgErr::new(500u16, "must set 'to'"))?,
+            core: self
+                .core
+                .ok_or(MsgErr::new(500u16, "request core must be set"))?,
             agent,
             handling: self.handling,
             scope,
@@ -982,14 +1036,17 @@ impl ReqProto {
         Ok(request)
     }
 
-    pub fn body( &mut self, body: Substance ) -> Result<(),MsgErr>{
-        self.core.as_mut().ok_or(MsgErr::new(500u16,"core must be set before body") )?.body = body;
+    pub fn body(&mut self, body: Substance) -> Result<(), MsgErr> {
+        self.core
+            .as_mut()
+            .ok_or(MsgErr::new(500u16, "core must be set before body"))?
+            .body = body;
         Ok(())
     }
 
-    pub fn method( &mut self, method: Method) -> Result<(),MsgErr>{
+    pub fn method(&mut self, method: Method) -> Result<(), MsgErr> {
         if self.core.is_none() {
-            let core:ReqCore = method.into();
+            let core: ReqCore = method.into();
             self.core = Some(core);
         } else {
             self.core.as_mut().unwrap().method = method;
@@ -1005,17 +1062,17 @@ impl ReqProto {
             to: Some(to.to_port()),
             core: Some(ReqCore::new(method)),
             handling: Default::default(),
-            scope: Scope::None
+            scope: Scope::None,
         }
     }
 
-    pub fn from_core(core: ReqCore ) -> Self {
+    pub fn from_core(core: ReqCore) -> Self {
         Self {
             id: uuid(),
             to: None,
             core: Some(core),
             handling: Default::default(),
-            scope: Scope::None
+            scope: Scope::None,
         }
     }
 
@@ -1049,12 +1106,12 @@ impl ReqProto {
             to: Some(to.to_port()),
             core: Some(core),
             scope: Default::default(),
-            handling: Default::default()
+            handling: Default::default(),
         }
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize,Eq,PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
 pub struct RespShell {
     pub id: Uuid,
     pub from: Port,
@@ -1064,10 +1121,10 @@ pub struct RespShell {
 }
 
 impl RespShell {
-    pub fn core_result<E>( result: Result<RespShell,E> ) -> Result<RespCore,E> {
+    pub fn core_result<E>(result: Result<RespShell, E>) -> Result<RespCore, E> {
         match result {
             Ok(response) => Ok(response.core),
-            Err(err) => Err(err)
+            Err(err) => Err(err),
         }
     }
 
@@ -1079,7 +1136,7 @@ impl RespShell {
         }
     }
 
-    pub fn to_span_frame(self, span: LogSpan ) -> RespXtra {
+    pub fn to_span_frame(self, span: LogSpan) -> RespXtra {
         RespXtra {
             session: None,
             response: self,
@@ -1090,8 +1147,6 @@ impl RespShell {
     pub fn as_result<E: From<&'static str>, P: TryFrom<Substance>>(self) -> Result<P, E> {
         self.core.as_result()
     }
-
-
 }
 
 impl RespShell {
@@ -1118,25 +1173,24 @@ impl RespShell {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Autobox,Eq,PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, Autobox, Eq, PartialEq)]
 pub enum Wave {
     Req(ReqShell),
     Resp(RespShell),
 }
 
 impl Wave {
-
     pub fn is_req(&self) -> bool {
         match self {
             Wave::Req(_) => true,
-            Wave::Resp(_) => false
+            Wave::Resp(_) => false,
         }
     }
 
     pub fn is_resp(&self) -> bool {
         match self {
             Wave::Req(_) => false,
-            Wave::Resp(_) => true
+            Wave::Resp(_) => true,
         }
     }
 
@@ -1193,11 +1247,11 @@ pub enum RequestTransform {
 
 pub enum ResponseKindExpected {
     None,
-    Synch,          // requestor will wait for response
+    Synch,            // requestor will wait for response
     Async(Substance), // The substance
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize,Eq,PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
 pub enum Agent {
     Anonymous,
     Point(Point),
@@ -1208,7 +1262,6 @@ impl Default for Agent {
         Self::Anonymous
     }
 }
-
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Session {
@@ -1232,22 +1285,20 @@ pub enum Scope {
 }
 
 impl Scope {
-    pub fn has_grant( &self, grant: &ScopeGrant ) -> Result<(),()> {
-       match self {
-           Scope::Full => Ok(()),
-           Scope::None => Err(()),
-           Scope::Grants(grants)  if grants.contains(grant) => {
-               Ok(())
-           }
-           _ => Err(())
-       }
+    pub fn has_grant(&self, grant: &ScopeGrant) -> Result<(), ()> {
+        match self {
+            Scope::Full => Ok(()),
+            Scope::None => Err(()),
+            Scope::Grants(grants) if grants.contains(grant) => Ok(()),
+            _ => Err(()),
+        }
     }
 
     pub fn enumerated_grants(&self) -> HashSet<ScopeGrant> {
         match self {
             Scope::Full => HashSet::new(),
             Scope::None => HashSet::new(),
-            Scope::Grants(grants) => grants.clone()
+            Scope::Grants(grants) => grants.clone(),
         }
     }
 }
@@ -1258,7 +1309,7 @@ impl From<HashSet<ScopeGrant>> for Scope {
     }
 }
 
-impl ops::BitAnd<Scope> for Scope{
+impl ops::BitAnd<Scope> for Scope {
     type Output = Scope;
 
     fn bitand(self, rhs: Scope) -> Self::Output {
@@ -1268,13 +1319,13 @@ impl ops::BitAnd<Scope> for Scope{
             Self::None
         } else {
             let mut grants = self.enumerated_grants();
-            grants.retain(|grant|{rhs.has_grant(grant).is_ok()});
+            grants.retain(|grant| rhs.has_grant(grant).is_ok());
             grants.into()
         }
     }
 }
 
-impl ops::BitOr<Scope> for Scope{
+impl ops::BitOr<Scope> for Scope {
     type Output = Scope;
 
     fn bitor(self, rhs: Scope) -> Self::Output {
@@ -1287,7 +1338,6 @@ impl ops::BitOr<Scope> for Scope{
         }
     }
 }
-
 
 impl Scope {
     /*
@@ -1324,21 +1374,20 @@ impl Default for Scope {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq,Hash)]
+#[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
 pub struct ScopeGrant {
     pub on: PointSelector,
     pub kind: ScopeGrantKind,
     pub aspect: ScopeGrantAspect,
 }
 
-
-#[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq,Hash)]
+#[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
 pub enum ScopeGrantKind {
     Or,
     And,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq,Hash)]
+#[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
 pub enum ScopeGrantAspect {
     Perm(Permissions),
     Priv(Privilege),
@@ -1357,7 +1406,7 @@ pub enum Roles {
     Enumerated(Vec<String>),
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize,Eq,PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
 pub struct Handling {
     pub kind: HandlingKind,
     pub priority: Priority,
@@ -1365,7 +1414,7 @@ pub struct Handling {
     pub wait: WaitTime,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize,Eq,PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
 pub enum HandlingKind {
     Durable,   // Mesh will guarantee delivery eventually once Request call has returned
     Queued,    // Slower but more reliable delivery, message can be lost if a star crashes, etc
@@ -1383,7 +1432,7 @@ impl Default for Handling {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize,Eq,PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
 pub enum WaitTime {
     High,
     Med,
@@ -1396,7 +1445,7 @@ impl Default for WaitTime {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize,Eq,PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
 pub enum Retries {
     None,
     Max,
@@ -1410,7 +1459,7 @@ impl Default for Retries {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize,Eq,PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
 pub enum Priority {
     Hyper,
     High,
@@ -1445,36 +1494,35 @@ pub trait AsyncRouter: Send + Sync {
     async fn route(&self, wave: Wave);
 }
 
-pub trait Router: Send+Sync {
-    async fn route( &self, wave: Wave );
+pub trait Router: Send + Sync {
+    async fn route(&self, wave: Wave);
 }
 
 #[derive(Clone)]
-pub struct AsyncPointRequestHandlers{
-    pub handlers: Arc<DashMap<Point,Box<dyn AsyncRequestHandler>>>
+pub struct AsyncPointRequestHandlers {
+    pub handlers: Arc<DashMap<Point, Box<dyn AsyncRequestHandler>>>,
 }
 
 impl AsyncPointRequestHandlers {
     pub fn new() -> Self {
         Self {
-            handlers: Arc::new(DashMap::new())
+            handlers: Arc::new(DashMap::new()),
         }
     }
 
     pub fn add(&self, point: Point, handler: Box<dyn AsyncRequestHandler>) {
-        self.handlers.insert( point, handler );
+        self.handlers.insert(point, handler);
     }
 
-    pub fn remove(&self, point: &Point ) {
+    pub fn remove(&self, point: &Point) {
         self.handlers.remove(point);
     }
 }
 
 #[async_trait]
-impl AsyncRequestHandler for  AsyncPointRequestHandlers {
-
+impl AsyncRequestHandler for AsyncPointRequestHandlers {
     async fn select(&self, request: &ReqShell) -> Result<(), ()> {
-        if let Some(handler) = self.handlers.get( &request.to.clone().to_point() ) {
+        if let Some(handler) = self.handlers.get(&request.to.clone().to_point()) {
             handler.select(request).await
         } else {
             Err(())
@@ -1482,7 +1530,7 @@ impl AsyncRequestHandler for  AsyncPointRequestHandlers {
     }
 
     async fn handle(&self, request: RootReqCtx<ReqShell>) -> Result<RespCore, MsgErr> {
-        if let Some(handler) = self.handlers.get( &request.to ) {
+        if let Some(handler) = self.handlers.get(&request.to) {
             handler.handle(request).await
         } else {
             Err(MsgErr::not_found())
@@ -1491,7 +1539,7 @@ impl AsyncRequestHandler for  AsyncPointRequestHandlers {
 }
 
 pub trait TransportPlanner {
-    fn dest<P: ToPort>( port: P ) -> Port;
+    fn dest<P: ToPort>(port: P) -> Port;
 }
 
 /// Transporter will always wrap a Wave in another Wave which will then
@@ -1499,41 +1547,40 @@ pub trait TransportPlanner {
 /// by the TransportPlanner
 pub struct Transporter {
     pub planner: Box<dyn TransportPlanner>,
-    pub transmitter: AsyncTransmitterWithAgent
+    pub transmitter: AsyncTransmitterWithAgent,
 }
 
 impl Transporter {
-    pub fn new( planner: Box<dyn TransportPlanner>, transmitter: AsyncTransmitterWithAgent, logger: PointLogger) -> Self {
+    pub fn new(
+        planner: Box<dyn TransportPlanner>,
+        transmitter: AsyncTransmitterWithAgent,
+        logger: PointLogger,
+    ) -> Self {
         Self {
             planner,
-            transmitter
+            transmitter,
         }
     }
 
-    pub async fn request(&self, req: ReqShell ) -> Result<RespShell,MsgErr> {
+    pub async fn request(&self, req: ReqShell) -> Result<RespShell, MsgErr> {
         let dest = self.planner.dest(wave.to().clone());
-        let mut trans = ReqProto::sys(dest, SysMethod::Transport );
+        let mut trans = ReqProto::sys(dest, SysMethod::Transport);
         trans.body(Wave::Req(req).into());
         let resp = self.transmitter.send(trans).await?;
-        let wave:Wave  = resp.core.body.try_into()?;
+        let wave: Wave = resp.core.body.try_into()?;
         match wave {
-            Wave::Req(_) => {
-                Err(MsgErr::bad_request())
-            }
-            Wave::Resp(resp) => {
-                Ok(resp)
-            }
+            Wave::Req(_) => Err(MsgErr::bad_request()),
+            Wave::Resp(resp) => Ok(resp),
         }
     }
 
-    pub async fn response(&self, req: ReqShell ) {
+    pub async fn response(&self, req: ReqShell) {
         let dest = self.planner.dest(wave.to().clone());
-        let mut trans = ReqProto::sys(dest, SysMethod::Transport );
+        let mut trans = ReqProto::sys(dest, SysMethod::Transport);
         trans.body(Wave::Req(req).into());
         self.transmitter.send(trans).await;
         // here we don't wait for a response becauase we can't do anything with it anyway
     }
-
 }
 
 #[derive(Clone)]
@@ -1544,30 +1591,26 @@ pub struct AsyncTransmitterWithAgent {
 }
 
 impl AsyncTransmitterWithAgent {
-    pub fn new(
-        agent: Agent,
-        from: Port,
-        relay: Arc<dyn AsyncTransmitter>,
-    ) -> Self {
+    pub fn new(agent: Agent, from: Port, relay: Arc<dyn AsyncTransmitter>) -> Self {
         Self { agent, from, relay }
     }
 
-    pub fn with_topic( self, topic: Topic ) -> Self {
+    pub fn with_topic(self, topic: Topic) -> Self {
         Self {
             agent: self.agent,
             from: self.from.with_topic(topic),
-            relay: self.relay
+            relay: self.relay,
         }
     }
 }
 
 impl AsyncTransmitterWithAgent {
-    pub async fn send(&self, request: ReqProto) -> Result<RespShell,MsgErr> {
+    pub async fn send(&self, request: ReqProto) -> Result<RespShell, MsgErr> {
         let request = request.to_request(self.from.clone(), self.agent.clone(), Scope::None)?;
         Ok(self.relay.send(request).await)
     }
 
-    pub async fn route(&self, wave: Wave )  {
+    pub async fn route(&self, wave: Wave) {
         self.relay.route(wave).await;
     }
 }
@@ -1649,9 +1692,8 @@ impl SyncTransmitRelay {
 }
 
 #[async_trait]
-pub trait AsyncTransmitter: Send + Sync
-{
-    async fn send(&self, request: ReqShell ) -> RespShell;
+pub trait AsyncTransmitter: Send + Sync {
+    async fn send(&self, request: ReqShell) -> Result<RespShell, MsgErr>;
     async fn route(&self, wave: Wave);
 }
 
@@ -1698,41 +1740,38 @@ pub trait AsyncAuthorizationRequester {
 
 pub struct Credentials {
     pub username: String,
-    pub password: String
+    pub password: String,
 }
 
-
-
-#[derive(Clone,Serialize,Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct Authorization {
-    pub agent: Point
+    pub agent: Point,
 }
 
 pub enum AuthResponse {
     Next(Box<dyn AsyncAuthorizationRequester>),
-    Authorized(Authorization)
+    Authorized(Authorization),
 }
-
 
 pub struct AsyncCredsAuthorizationRequester {
     pub auth_point: Point,
-    pub credentials: Credentials
+    pub credentials: Credentials,
 }
 
 #[async_trait]
 impl AsyncAuthorizationRequester for AsyncCredsAuthorizationRequester {
     async fn authorize(self, messenger: AsyncTransmitterWithAgent) -> Result<AuthResponse, MsgErr> {
         let mut form = MultipartFormBuilder::new();
-        form.put( "username", self.credentials.username.as_str() );
-        form.put( "password", self.credentials.password.as_str() );
+        form.put("username", self.credentials.username.as_str());
+        form.put("password", self.credentials.password.as_str());
         let form = form.build()?;
         let request = form.to_request_core();
-        let mut request = ReqProto::core(self.auth_point.clone(), request );
+        let mut request = ReqProto::core(self.auth_point.clone(), request);
         request.handling.wait = WaitTime::High;
         let refresh_token: Token = messenger.send(request).await?.try_into()?;
-        let next = AsyncRefreshTokenAuthorizationRequester{
+        let next = AsyncRefreshTokenAuthorizationRequester {
             auth_point: self.auth_point,
-            token: refresh_token
+            token: refresh_token,
         };
         Ok(AuthResponse::Next(Box::new(next)))
     }
@@ -1740,7 +1779,7 @@ impl AsyncAuthorizationRequester for AsyncCredsAuthorizationRequester {
 
 pub struct AsyncRefreshTokenAuthorizationRequester {
     pub auth_point: Point,
-    pub token: Token
+    pub token: Token,
 }
 
 #[async_trait]
@@ -1749,7 +1788,6 @@ impl AsyncAuthorizationRequester for AsyncRefreshTokenAuthorizationRequester {
         unimplemented!()
     }
 }
-
 
 #[derive(Clone)]
 pub struct AsyncRequestHandlerRelay {
@@ -1803,7 +1841,7 @@ impl AsyncRequestHandler for AsyncInternalRequestHandlers<AsyncRequestHandlerRel
         let read = self.pipelines.read().await;
         for pipeline in read.iter() {
             if pipeline.selector.is_match(&request).is_ok() {
-                return pipeline.handler.select(request).await
+                return pipeline.handler.select(request).await;
             }
         }
         Err(())
@@ -1857,13 +1895,11 @@ impl ValueMatcher<MethodKind> for MethodKind {
     }
 }
 
-impl From<Result<RespCore,MsgErr>> for RespCore {
+impl From<Result<RespCore, MsgErr>> for RespCore {
     fn from(result: Result<RespCore, MsgErr>) -> Self {
         match result {
             Ok(response) => response,
-            Err(err) => {
-                err.into()
-            }
+            Err(err) => err.into(),
         }
     }
 }
@@ -1953,7 +1989,9 @@ impl RespCore {
         let errors = Errors::default(message.clone());
         Self {
             headers: HeaderMap::new(),
-            status: StatusCode::from_u16(status).or_else( ||StatusCode::from_u16(500u16) ).unwrap(),
+            status: StatusCode::from_u16(status)
+                .or_else(|| StatusCode::from_u16(500u16))
+                .unwrap(),
             body: Substance::Errors(errors),
         }
     }
@@ -2046,7 +2084,7 @@ impl TryInto<http::Response<Bin>> for RespCore {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq,Autobox)]
+#[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Autobox)]
 pub enum Method {
     Sys(SysMethod),
     Cmd(CmdMethod),
@@ -2303,11 +2341,13 @@ impl ReqCore {
         }
     }
 
-    pub fn fail<M:ToString>(&self, status: u16, message: M) -> RespCore {
+    pub fn fail<M: ToString>(&self, status: u16, message: M) -> RespCore {
         let errors = Errors::default(error);
         RespCore {
             headers: Default::default(),
-            status: StatusCode::from_u16(status).or_else(||StatusCode::from_u16(500u16)).unwrap(),
+            status: StatusCode::from_u16(status)
+                .or_else(|| StatusCode::from_u16(500u16))
+                .unwrap(),
             body: Substance::Errors(errors),
         }
     }
@@ -2392,9 +2432,8 @@ pub enum SysMethod {
     Assign,
     AssignPort,
     EntryReq,
-    Transport
+    Transport,
 }
-
 
 impl ValueMatcher<SysMethod> for SysMethod {
     fn is_match(&self, x: &SysMethod) -> Result<(), ()> {

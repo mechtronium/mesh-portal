@@ -15,7 +15,9 @@ use nom::character::complete::{
 use nom::combinator::{cut, eof, fail, not, peek, recognize, success, value, verify};
 
 use crate::error::{MsgErr, ParseErrs};
-use crate::version::v0_0_1::command::command::common::{PropertyMod, SetProperties, StateSrc, StateSrcVar};
+use crate::version::v0_0_1::command::command::common::{
+    PropertyMod, SetProperties, StateSrc, StateSrcVar,
+};
 use crate::version::v0_0_1::command::request::create::{
     Create, CreateVar, KindTemplate, PointSegTemplate, PointTemplate, PointTemplateSeg,
     PointTemplateVar, Require, Strategy, Template, TemplateVar,
@@ -25,12 +27,17 @@ use crate::version::v0_0_1::command::request::select::{
     Select, SelectIntoSubstance, SelectKind, SelectVar,
 };
 use crate::version::v0_0_1::command::request::set::{Set, SetVar};
-use crate::version::v0_0_1::id::id::{Kind, KindLex, Layer, Point, PointCtx, PointKindVar, PointSegCtx, PointSegDelim, PointSegment, PointSegVar, PointVar, Port, RouteSeg, RouteSegVar, Topic, Uuid, Variable, VarVal, Version};
+use crate::version::v0_0_1::id::id::{
+    Kind, KindLex, Layer, Point, PointCtx, PointKindVar, PointSegCtx, PointSegDelim, PointSegVar,
+    PointSegment, PointVar, Port, RouteSeg, RouteSegVar, Topic, Uuid, VarVal, Variable, Version,
+};
 use crate::version::v0_0_1::security::{
     AccessGrantKind, AccessGrantKindDef, ChildPerms, ParticlePerms, Permissions, PermissionsMask,
     PermissionsMaskKind, Privilege,
 };
-use crate::version::v0_0_1::selector::selector::{MapEntryPatternCtx, MapEntryPatternVar, PointHierarchy, PointKindSeg, PointSelectorDef};
+use crate::version::v0_0_1::selector::selector::{
+    MapEntryPatternCtx, MapEntryPatternVar, PointHierarchy, PointKindSeg, PointSelectorDef,
+};
 use crate::version::v0_0_1::util::{HttpMethodPattern, StringMatcher, ToResolved, ValuePattern};
 use nom::bytes::complete::take;
 use nom::character::is_space;
@@ -314,22 +321,22 @@ pub fn var<O,F,P>(mut f: F ) -> impl FnMut(I) -> Res<I,Var<O,P>> where F: Parser
  */
 
 pub fn var_val<F, I: Span, O>(mut f: F) -> impl FnMut(I) -> Res<I, VarVal<O>> + Copy
-    where F: FnMut(I) -> Res<I, O> + Copy
+where
+    F: FnMut(I) -> Res<I, O> + Copy,
 {
-  move |input:I| {
-      context("var_val", alt((var,val(f))))(input)
-  }
+    move |input: I| context("var_val", alt((var, val(f))))(input)
 }
 
-fn val<I:Span,O,F>(f: F) -> impl FnMut(I) -> Res<I,VarVal<O>> where F: FnMut(I) -> Res<I, O> + Copy
+fn val<I: Span, O, F>(f: F) -> impl FnMut(I) -> Res<I, VarVal<O>>
+where
+    F: FnMut(I) -> Res<I, O> + Copy,
 {
-   move |input| {
-       tw(f)(input).map(|(next,val)|{ (next,VarVal::Val(val))})
-   }
+    move |input| tw(f)(input).map(|(next, val)| (next, VarVal::Val(val)))
 }
 
-fn var<I:Span,O>(input: I) -> Res<I,VarVal<O>> {
-    tw(delimited(tag("${"),skewer_case,tag("}")))(input).map(|(next,var)|{ (next,VarVal::Var(var))})
+fn var<I: Span, O>(input: I) -> Res<I, VarVal<O>> {
+    tw(delimited(tag("${"), skewer_case, tag("}")))(input)
+        .map(|(next, var)| (next, VarVal::Var(var)))
 }
 
 pub fn var_seg<F, I: Span>(mut f: F) -> impl FnMut(I) -> Res<I, PointSegVar> + Copy
@@ -340,7 +347,10 @@ where
         let offset = input.location_offset();
         let result = pair(
             peek(tag("$")),
-            context("var", cut(delimited(tag("${"), skewer_case_chars, tag("}")))),
+            context(
+                "var",
+                cut(delimited(tag("${"), skewer_case_chars, tag("}"))),
+            ),
         )(input.clone());
 
         match result {
@@ -373,7 +383,10 @@ where
         let offset = input.location_offset();
         let result = pair(
             peek(tag("$")),
-            context("var", cut(delimited(tag("${"), skewer_case_chars, tag("}")))),
+            context(
+                "var",
+                cut(delimited(tag("${"), skewer_case_chars, tag("}"))),
+            ),
         )(input.clone());
         match result {
             Ok((next, (_, var))) => {
@@ -624,13 +637,10 @@ pub fn version_point_kind_segment<I: Span>(input: I) -> Res<I, PointKindSeg> {
     })
 }
 
-
 pub fn consume_hierarchy<I: Span>(input: I) -> Result<PointHierarchy, MsgErr> {
     let (_, rtn) = all_consuming(point_kind_hierarchy)(input)?;
     Ok(rtn)
 }
-
-
 
 pub fn point_kind_hierarchy<I: Span>(input: I) -> Res<I, PointHierarchy> {
     tuple((
@@ -744,9 +754,15 @@ where
     )
 }
 
-pub fn domain<I: Span>(i: I) -> Res<I, Domain>
-{
-    domain_chars(i).map( |(next,domain)| { (next, Domain{ string: domain.to_string() } ) } )
+pub fn domain<I: Span>(i: I) -> Res<I, Domain> {
+    domain_chars(i).map(|(next, domain)| {
+        (
+            next,
+            Domain {
+                string: domain.to_string(),
+            },
+        )
+    })
 }
 
 pub fn point_segment_chars<T: Span>(i: T) -> Res<T, T>
@@ -847,15 +863,14 @@ where
     )
 }
 
-pub fn parse_uuid<I:Span>(i:I) -> Res<I,Uuid> {
-    uuid_chars(i).map(|(next,uuid)|(next,uuid.to_string()))
+pub fn parse_uuid<I: Span>(i: I) -> Res<I, Uuid> {
+    uuid_chars(i).map(|(next, uuid)| (next, uuid.to_string()))
 }
 
-
 pub fn uuid_chars<T: Span>(i: T) -> Res<T, T>
-    where
-        T: InputTakeAtPosition + nom::InputLength,
-        <T as InputTakeAtPosition>::Item: AsChar,
+where
+    T: InputTakeAtPosition + nom::InputLength,
+    <T as InputTakeAtPosition>::Item: AsChar,
 {
     // same as skewer_chars
     skewer_chars(i)
@@ -1067,9 +1082,9 @@ pub fn consume_path<I: Span>(input: I) -> Res<I, I> {
     all_consuming(path)(input)
 }
 
-#[derive(Debug,Clone,Eq,PartialEq,Hash)]
+#[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub struct CamelCase {
-    string: String
+    string: String,
 }
 
 impl CamelCase {
@@ -1079,7 +1094,7 @@ impl CamelCase {
 }
 
 impl FromStr for CamelCase {
-    type Err=MsgErr;
+    type Err = MsgErr;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         result(all_consuming(camel_case)(new_span(s)))
@@ -1087,24 +1102,30 @@ impl FromStr for CamelCase {
 }
 
 impl Serialize for CamelCase {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error> where S: Serializer {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
         serializer.serialize_str(self.string.as_str())
     }
 }
 
-impl <'de> Deserialize<'de> for CamelCase{
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error> where D: Deserializer<'de> {
+impl<'de> Deserialize<'de> for CamelCase {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
         let string = String::deserialize(deserializer)?;
 
         let result = result(camel_case(new_span(string.as_str())));
         match result {
             Ok(camel) => Ok(camel),
-            Err(err) => Err(serde::de::Error::custom(err.to_string().as_str()))
+            Err(err) => Err(serde::de::Error::custom(err.to_string().as_str())),
         }
     }
 }
 
-impl Display for CamelCase{
+impl Display for CamelCase {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         f.write_str(self.string.as_str())
     }
@@ -1118,37 +1139,42 @@ impl Deref for CamelCase {
     }
 }
 
-#[derive(Debug,Clone,Eq,PartialEq,Hash)]
-pub struct Domain{
-    string: String
+#[derive(Debug, Clone, Eq, PartialEq, Hash)]
+pub struct Domain {
+    string: String,
 }
 
-impl Serialize for Domain{
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error> where S: Serializer {
+impl Serialize for Domain {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
         serializer.serialize_str(self.string.as_str())
     }
 }
 
-impl <'de> Deserialize<'de> for Domain{
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error> where D: Deserializer<'de> {
+impl<'de> Deserialize<'de> for Domain {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
         let string = String::deserialize(deserializer)?;
 
         let result = result(domain(new_span(string.as_str())));
         match result {
             Ok(domain) => Ok(domain),
-            Err(err) => Err(serde::de::Error::custom(err.to_string()))
+            Err(err) => Err(serde::de::Error::custom(err.to_string())),
         }
     }
 }
 
-impl FromStr for Domain{
-    type Err=MsgErr;
+impl FromStr for Domain {
+    type Err = MsgErr;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         result(all_consuming(domain)(new_span(s)))
     }
 }
-
 
 impl Display for Domain {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
@@ -1164,40 +1190,44 @@ impl Deref for Domain {
     }
 }
 
-#[derive(Debug,Clone,Eq,PartialEq,Hash)]
+#[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub struct SkewerCase {
-    string: String
+    string: String,
 }
 
-
-
 impl Serialize for SkewerCase {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error> where S: Serializer {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
         serializer.serialize_str(self.string.as_str())
     }
 }
 
-impl <'de> Deserialize<'de> for SkewerCase {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error> where D: Deserializer<'de> {
+impl<'de> Deserialize<'de> for SkewerCase {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
         let string = String::deserialize(deserializer)?;
 
         let result = result(skewer_case(new_span(string.as_str())));
         match result {
             Ok(skewer) => Ok(skewer),
-            Err(err) => Err(serde::de::Error::custom(err.to_string()))
+            Err(err) => Err(serde::de::Error::custom(err.to_string())),
         }
     }
 }
 
 impl FromStr for SkewerCase {
-    type Err=MsgErr;
+    type Err = MsgErr;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         result(all_consuming(skewer_case)(new_span(s)))
     }
 }
 
-impl Display for SkewerCase{
+impl Display for SkewerCase {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         f.write_str(self.string.as_str())
     }
@@ -1212,11 +1242,25 @@ impl Deref for SkewerCase {
 }
 
 pub fn camel_case<I: Span>(input: I) -> Res<I, CamelCase> {
-    camel_case_chars(input).map(|(next,camel_case_chars)|{(next,CamelCase{string:camel_case_chars.to_string()})})
+    camel_case_chars(input).map(|(next, camel_case_chars)| {
+        (
+            next,
+            CamelCase {
+                string: camel_case_chars.to_string(),
+            },
+        )
+    })
 }
 
 pub fn skewer_case<I: Span>(input: I) -> Res<I, SkewerCase> {
-    skewer_case_chars(input).map(|(next,skewer_case_chars)|{(next,SkewerCase{string:skewer_case_chars.to_string()})})
+    skewer_case_chars(input).map(|(next, skewer_case_chars)| {
+        (
+            next,
+            SkewerCase {
+                string: skewer_case_chars.to_string(),
+            },
+        )
+    })
 }
 
 pub fn camel_case_chars<I: Span>(input: I) -> Res<I, I> {
@@ -1224,7 +1268,10 @@ pub fn camel_case_chars<I: Span>(input: I) -> Res<I, I> {
 }
 
 pub fn skewer_case_chars<I: Span>(input: I) -> Res<I, I> {
-    recognize(tuple((is_a("abcdefghijklmnopqrstuvwxyz"), many0(alt((alphanumeric1,tag("-")))))))(input)
+    recognize(tuple((
+        is_a("abcdefghijklmnopqrstuvwxyz"),
+        many0(alt((alphanumeric1, tag("-")))),
+    )))(input)
 }
 
 pub fn lowercase_alphanumeric<I: Span>(input: I) -> Res<I, I> {
@@ -1721,47 +1768,46 @@ impl ToString for Ctx {
     }
 }
 
-#[derive(Clone,Serialize,Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct File {
-   pub name: String,
-   pub content: Bin
+    pub name: String,
+    pub content: Bin,
 }
 
 impl File {
-    pub fn new<S:ToString>( name: S, content: Bin )-> Self {
+    pub fn new<S: ToString>(name: S, content: Bin) -> Self {
         Self {
             name: name.to_string(),
-            content
+            content,
         }
     }
 }
 
 #[derive(Clone)]
 pub struct FileResolver {
-    pub files: HashMap<String,Bin>
+    pub files: HashMap<String, Bin>,
 }
-
 
 impl FileResolver {
     pub fn new() -> Self {
         Self {
-            files: HashMap::new()
+            files: HashMap::new(),
         }
     }
 
-    pub fn file<N: ToString>( &self, name: N ) -> Result<File, ResolverErr> {
+    pub fn file<N: ToString>(&self, name: N) -> Result<File, ResolverErr> {
         if let Some(content) = self.files.get(&name.to_string()) {
-            Ok(File::new(name,content.clone()))
+            Ok(File::new(name, content.clone()))
         } else {
             Err(ResolverErr::NotFound)
         }
     }
 
     /// grab the only file
-    pub fn singleton(&self) -> Result<File,ResolverErr> {
+    pub fn singleton(&self) -> Result<File, ResolverErr> {
         if self.files.len() == 1 {
-            let i = & mut self.files.iter();
-            if let Some((name,content)) = i.next() {
+            let i = &mut self.files.iter();
+            if let Some((name, content)) = i.next() {
                 Ok(File::new(name.clone(), content.clone()))
             } else {
                 Err(ResolverErr::NotFound)
@@ -1769,7 +1815,117 @@ impl FileResolver {
         } else {
             Err(ResolverErr::NotFound)
         }
+    }
+}
 
+#[derive(Clone, Serialize, Deserialize)]
+pub struct ScopedVars {
+    parent: Option<ScopedVars>,
+    pub point: Point,
+    pub vars: HashMap<String, Substance>,
+    pub file_resolver: FileResolver,
+}
+
+impl ScopedVars {
+    pub fn new(working: Point) -> Self {
+        Self {
+            parent: None,
+            point: working,
+            vars: HashMap::new(),
+            file_resolver: FileResolver::new(),
+        }
+    }
+    pub fn push(self) -> Self {
+        Self {
+            parent: Some(self),
+            point: self.point.clone(),
+            vars: HashMap::new(),
+            file_resolver: FileResolver::new(),
+        }
+    }
+
+    pub fn push_working<S: ToString>(self, segs: S) -> Result<Self, MsgErr> {
+        Ok(Self {
+            parent: Some(self),
+            point: self.point.push(segs.to_string())?,
+            vars: HashMap::new(),
+            file_resolver: FileResolver::new(),
+        })
+    }
+
+    pub fn pop(self) -> Result<ScopedVars, MsgErr> {
+        Ok(self.parent.ok_or("expected parent scopedVars".into())?)
+    }
+
+    pub fn val<K: ToString>(&self, var: K) -> Result<Substance, ResolverErr> {
+        match self.vars.get(var.to_string()) {
+            None => {
+                if let Some(parent) = self.parent.as_ref() {
+                    parent.val(var.to_string())
+                } else {
+                    Err(ResolverErr::NotFound)
+                }
+            }
+            Some(val) => Ok(val),
+        }
+    }
+
+    pub fn set_working(&mut self, point: Point) {
+        self.point.replace(point);
+    }
+
+    pub fn working(&self) -> &Point {
+        &self.point
+    }
+
+    pub fn set_var<V: ToString>(&mut self, key: V, value: V) {
+        match self.var_resolver.as_mut() {
+            None => {
+                let mut var_resolver = CompositeResolver::new();
+                var_resolver.set(key, value);
+                self.var_resolver.replace(var_resolver);
+            }
+            Some(var_resolver) => {
+                var_resolver.set(key, value);
+            }
+        }
+    }
+
+    pub fn file<N: ToString>(&self, name: N) -> Result<File, ResolverErr> {
+        match self.file_resolver.get(&name.to_string()) {
+            None => {
+                if let Some(parent) = self.parent.as_ref() {
+                    parent.file(name.to_string())
+                } else {
+                    Err(ResolverErr::NotFound)
+                }
+            }
+            Some(file) => Ok(file),
+        }
+    }
+
+    pub fn set_file<N: ToString>(&mut self, name: N, content: Bin) {
+        match self.file_resolver.as_mut() {
+            None => {
+                let mut file_resolver = FileResolver::new();
+                file_resolver.files.insert(name.to_string(), content);
+                self.file_resolver.replace(file_resolver);
+            }
+            Some(file_resolver) => {
+                file_resolver.files.insert(name.to_string(), content);
+            }
+        }
+    }
+}
+
+impl Default for ScopedVars {
+    fn default() -> Self {
+        Self {
+            parent: None,
+            point: Point::root(),
+            vars: HashMap::new(),
+            file_resolver: FileResolver::new(),
+        }
     }
 }
 
@@ -1777,12 +1933,11 @@ impl FileResolver {
 pub struct Env {
     point: Option<Point>,
     var_resolver: Option<CompositeResolver>,
-    file_resolver: Option<FileResolver>
+    file_resolver: Option<FileResolver>,
 }
 
 impl Env {
-
-    pub fn add_var_resolver( &mut self, resolver: Arc<dyn VarResolver> ) {
+    pub fn add_var_resolver(&mut self, resolver: Arc<dyn VarResolver>) {
         if let Some(r) = self.var_resolver.as_mut() {
             r.other_resolver.push(resolver)
         }
@@ -1792,7 +1947,7 @@ impl Env {
         Self {
             point: None,
             var_resolver: Some(CompositeResolver::new()),
-            file_resolver: None
+            file_resolver: None,
         }
     }
 
@@ -1800,7 +1955,7 @@ impl Env {
         Self {
             point: None,
             var_resolver: None,
-            file_resolver: None
+            file_resolver: None,
         }
     }
 
@@ -1808,7 +1963,7 @@ impl Env {
         Self {
             point: Some(point),
             var_resolver: Some(CompositeResolver::new()),
-            file_resolver: Some(FileResolver::new())
+            file_resolver: Some(FileResolver::new()),
         }
     }
 
@@ -1816,7 +1971,7 @@ impl Env {
         Self {
             point: Some(point),
             var_resolver: None,
-            file_resolver: None
+            file_resolver: None,
         }
     }
 
@@ -1842,7 +1997,7 @@ impl Env {
         match self.var_resolver.as_mut() {
             None => {
                 let mut var_resolver = CompositeResolver::new();
-                var_resolver.set(key,value);
+                var_resolver.set(key, value);
                 self.var_resolver.replace(var_resolver);
             }
             Some(var_resolver) => {
@@ -1851,18 +2006,18 @@ impl Env {
         }
     }
 
-    pub fn file<N:ToString>( &self, name: N) -> Result<File,ResolverErr> {
+    pub fn file<N: ToString>(&self, name: N) -> Result<File, ResolverErr> {
         match &self.file_resolver {
             None => Err(ResolverErr::NotAvailable),
-            Some(file_resolver) => file_resolver.file(name)
+            Some(file_resolver) => file_resolver.file(name),
         }
     }
 
-    pub fn set_file<N: ToString>(&mut self, name: N, content: Bin ) {
+    pub fn set_file<N: ToString>(&mut self, name: N, content: Bin) {
         match self.file_resolver.as_mut() {
             None => {
                 let mut file_resolver = FileResolver::new();
-                file_resolver.files.insert( name.to_string(), content );
+                file_resolver.files.insert(name.to_string(), content);
                 self.file_resolver.replace(file_resolver);
             }
             Some(file_resolver) => {
@@ -2002,8 +2157,7 @@ impl MultiVarResolver {
         Self(vec![])
     }
 
-    pub fn push(&mut self, resolver: Arc<dyn VarResolver>)
-    {
+    pub fn push(&mut self, resolver: Arc<dyn VarResolver>) {
         self.0.push(resolver);
     }
 }
@@ -3203,7 +3357,10 @@ pub fn scope_name<I>(input: I) -> Res<I, I>
 where
     I: Span,
 {
-    recognize(pair(skewer_case_chars, peek(alt((eof, multispace1, tag(")"))))))(input)
+    recognize(pair(
+        skewer_case_chars,
+        peek(alt((eof, multispace1, tag(")")))),
+    ))(input)
 }
 
 pub fn root_scope_selector<I: Span>(input: I) -> Res<I, RootScopeSelector<I, Spanned<I, Version>>> {
@@ -3300,22 +3457,24 @@ pub mod model {
         BindConfig, MessageKind, PipelineStepCtx, PipelineStepDef, PipelineStepVar,
         PipelineStopCtx, PipelineStopDef, PipelineStopVar,
     };
-    use crate::version::v0_0_1::wave::{Method, MethodKind, ReqShell, ReqCore};
     use crate::version::v0_0_1::http::HttpMethod;
     use crate::version::v0_0_1::id::id::{Point, PointCtx, PointVar, Version};
     use crate::version::v0_0_1::parse::error::result;
     use crate::version::v0_0_1::parse::{
-        camel_case_chars, CtxResolver, Env, filepath_chars, http_method, lex_child_scopes,
-        method_kind, pipeline, rc_command_type, ResolverErr, SubstParser,
-        value_pattern, wrapped_http_method, wrapped_msg_method,
+        camel_case_chars, filepath_chars, http_method, lex_child_scopes, method_kind, pipeline,
+        rc_command_type, value_pattern, wrapped_http_method, wrapped_msg_method, CtxResolver, Env,
+        ResolverErr, SubstParser,
     };
     use crate::version::v0_0_1::util::{
         HttpMethodPattern, StringMatcher, ToResolved, ValueMatcher, ValuePattern,
     };
+    use crate::version::v0_0_1::wave::{Method, MethodKind, ReqCore, ReqShell};
     use bincode::Options;
+    use cosmic_nom::{new_span, Res, Span, Trace, Tw};
     use nom::bytes::complete::tag;
     use nom::character::complete::{alphanumeric1, multispace0, multispace1, satisfy};
     use nom::combinator::{cut, fail, not, peek, recognize, value};
+    use nom::sequence::delimited;
     use regex::Regex;
     use serde::de::Visitor;
     use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
@@ -3325,8 +3484,6 @@ pub mod model {
     use std::ops::{Deref, DerefMut};
     use std::rc::Rc;
     use std::str::FromStr;
-    use nom::sequence::delimited;
-    use cosmic_nom::{new_span, Res, Span, Trace, Tw};
 
     #[derive(Clone)]
     pub struct ScopeSelectorAndFiltersDef<S, I> {
@@ -3650,7 +3807,7 @@ pub mod model {
                 ValuePattern::Any => ValuePattern::Any,
                 ValuePattern::None => ValuePattern::None,
                 ValuePattern::Pattern(message_kind) => match message_kind {
-                    MethodKind::Sys=> {
+                    MethodKind::Sys => {
                         return Err(ParseErrs::from_loc_span(
                             format!("Sys not implemented '{}'", selector.name.to_string()).as_str(),
                             "Sys not implemented",
@@ -3927,7 +4084,6 @@ pub mod model {
     }
 
      */
-
 
     /*
     #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -4523,9 +4679,9 @@ pub mod error {
     use crate::error::{MsgErr, ParseErrs};
     use crate::version::v0_0_1::parse::model::NestedBlockKind;
     use crate::version::v0_0_1::parse::{nospace1, skewer};
-    use cosmic_nom::{len, Span};
     use ariadne::Report;
     use ariadne::{Label, ReportKind, Source};
+    use cosmic_nom::{len, Span};
     use nom::branch::alt;
     use nom::bytes::complete::tag;
     use nom::character::complete::{alphanumeric0, alphanumeric1, multispace1};
@@ -4779,6 +4935,7 @@ use nom::{
 use nom::{Err, IResult};
 use nom_locate::LocatedSpan;
 
+use crate::version::v0_0_1::bin::Bin;
 use crate::version::v0_0_1::cli;
 use crate::version::v0_0_1::cli::RawCommand;
 use crate::version::v0_0_1::command::request::RcCommandType;
@@ -4788,37 +4945,45 @@ use crate::version::v0_0_1::config::config::bind::{
     PipelineStop, PipelineStopCtx, PipelineStopVar, RouteSelector,
 };
 use crate::version::v0_0_1::config::config::Document;
-use crate::version::v0_0_1::wave::{Method, MethodKind, MethodPattern, SysMethod};
 use crate::version::v0_0_1::http::HttpMethod;
-use crate::version::v0_0_1::id::id::{KindParts, BaseKind, PointKind, PointSeg, Specific};
+use crate::version::v0_0_1::id::id::{BaseKind, KindParts, PointKind, PointSeg, Specific};
+use crate::version::v0_0_1::id::{
+    ArtifactSubKind, BaseSubKind, DatabaseSubKind, FileSubKind, StarKey, UserBaseSubKind,
+};
 use crate::version::v0_0_1::msg::MsgMethod;
 use crate::version::v0_0_1::parse::error::{find_parse_err, result};
-use crate::version::v0_0_1::parse::model::{BindScope, BindScopeKind, Block, BlockKind, Chunk, DelimitedBlockKind, LexBlock, LexParentScope, LexRootScope, LexScope, LexScopeSelector, LexScopeSelectorAndFilters, MessageScopeSelectorAndFilters, NestedBlockKind, PipelineCtx, PipelineSegment, PipelineSegmentCtx, PipelineSegmentVar, PipelineVar, RootScopeSelector, RouteScope, ScopeFilterDef, ScopeFilters, ScopeFiltersDef, ScopeSelectorAndFiltersDef, Spanned, Subst, TerminatedBlockKind, TextType, Var, VarParser};
-use cosmic_nom::{Res, Span, trim, tw, Wrap};
-use crate::version::v0_0_1::substance::substance::{
-    Call, CallCtx, CallKind, CallVar, CallWithConfig, CallWithConfigCtx, CallWithConfigVar,
-    HttpCall, ListPattern, MapPattern, MapPatternCtx, MapPatternVar, MsgCall, NumRange,
-    SubstanceFormat, SubstanceKind, SubstancePattern, SubstancePatternCtx, SubstancePatternVar,
-    SubstanceTypePatternCtx, SubstanceTypePatternDef, SubstanceTypePatternVar,
+use crate::version::v0_0_1::parse::model::{
+    BindScope, BindScopeKind, Block, BlockKind, Chunk, DelimitedBlockKind, LexBlock,
+    LexParentScope, LexRootScope, LexScope, LexScopeSelector, LexScopeSelectorAndFilters,
+    MessageScopeSelectorAndFilters, NestedBlockKind, PipelineCtx, PipelineSegment,
+    PipelineSegmentCtx, PipelineSegmentVar, PipelineVar, RootScopeSelector, RouteScope,
+    ScopeFilterDef, ScopeFilters, ScopeFiltersDef, ScopeSelectorAndFiltersDef, Spanned, Subst,
+    TerminatedBlockKind, TextType, Var, VarParser,
 };
 use crate::version::v0_0_1::selector::selector::specific::{
     ProductSelector, VariantSelector, VendorSelector,
 };
 use crate::version::v0_0_1::selector::selector::{
-    ExactPointSeg, KindBaseSelector, SubKindSelector, Hop, KindSelector,
-    LabeledPrimitiveTypeDef, MapEntryPattern, Pattern, PayloadType2Def, PointSegSelector,
-    PointSelector, SpecificSelector, VersionReq,
+    ExactPointSeg, Hop, KindBaseSelector, KindSelector, LabeledPrimitiveTypeDef, MapEntryPattern,
+    Pattern, PayloadType2Def, PointSegSelector, PointSelector, SpecificSelector, SubKindSelector,
+    VersionReq,
 };
 use crate::version::v0_0_1::selector::{
     PatternBlock, PatternBlockCtx, PatternBlockVar, PayloadBlock, PayloadBlockCtx, PayloadBlockVar,
     UploadBlock,
 };
+use crate::version::v0_0_1::substance::substance::{
+    Call, CallCtx, CallKind, CallVar, CallWithConfig, CallWithConfigCtx, CallWithConfigVar,
+    HttpCall, ListPattern, MapPattern, MapPatternCtx, MapPatternVar, MsgCall, NumRange, Substance,
+    SubstanceFormat, SubstanceKind, SubstancePattern, SubstancePatternCtx, SubstancePatternVar,
+    SubstanceTypePatternCtx, SubstanceTypePatternDef, SubstanceTypePatternVar,
+};
+use crate::version::v0_0_1::wave::{Method, MethodKind, MethodPattern, SysMethod};
+use cosmic_nom::{new_span, span_with_extra, Trace};
+use cosmic_nom::{trim, tw, Res, Span, Wrap};
 use nom_supreme::error::ErrorTree;
 use nom_supreme::parser_ext::MapRes;
 use nom_supreme::{parse_from_str, ParserExt};
-use cosmic_nom::{new_span, span_with_extra, Trace};
-use crate::version::v0_0_1::bin::Bin;
-use crate::version::v0_0_1::id::{ArtifactSubKind, BaseSubKind, DatabaseSubKind, FileSubKind, StarKey, UserBaseSubKind};
 
 fn inclusive_any_segment<I: Span>(input: I) -> Res<I, PointSegSelector> {
     alt((tag("+*"), tag("ROOT+*")))(input).map(|(next, _)| (next, PointSegSelector::InclusiveAny))
@@ -4954,22 +5119,37 @@ where
 }
 
  */
-pub fn parse_star_key<I:Span>( input: I) -> Res<I,StarKey> {
-    let (next,(_,constelation,_,name,index)) = context("star",tuple((tag("STAR::"),lowercase_alphanumeric,tag(":"),lowercase_alphanumeric,delimited(tag("["),digit1,tag("]"))) ))(input.clone())?;
+pub fn parse_star_key<I: Span>(input: I) -> Res<I, StarKey> {
+    let (next, (_, constelation, _, name, index)) = context(
+        "star",
+        tuple((
+            tag("STAR::"),
+            lowercase_alphanumeric,
+            tag(":"),
+            lowercase_alphanumeric,
+            delimited(tag("["), digit1, tag("]")),
+        )),
+    )(input.clone())?;
     let constelation = constelation.to_string();
     let name = name.to_string();
     let index = match index.to_string().parse::<u16>() {
         Ok(index) => index,
         Err(err) => {
-            return Err(nom::Err::Failure(ErrorTree::from_error_kind(input, ErrorKind::Digit )))
+            return Err(nom::Err::Failure(ErrorTree::from_error_kind(
+                input,
+                ErrorKind::Digit,
+            )))
         }
     };
 
-    Ok((next, StarKey {
-        constellation: constelation,
-        name,
-        index
-    }))
+    Ok((
+        next,
+        StarKey {
+            constellation: constelation,
+            name,
+            index,
+        },
+    ))
 }
 
 pub fn pattern<I: Span, O, E: ParseError<I>, V>(
@@ -5097,17 +5277,18 @@ pub fn specific_selector<I: Span>(input: I) -> Res<I, SpecificSelector> {
         tag(":"),
         delimited(tag("("), version_req, tag(")")),
     ))(input)
-    .map(|(next, (provider, _, vendor, _, product, _, variant, _, version))| {
-
-        let specific = SpecificSelector {
-            provider,
-            vendor,
-            product,
-            variant,
-            version,
-        };
-        (next, specific)
-    })
+    .map(
+        |(next, (provider, _, vendor, _, product, _, variant, _, version))| {
+            let specific = SpecificSelector {
+                provider,
+                vendor,
+                product,
+                variant,
+                version,
+            };
+            (next, specific)
+        },
+    )
 }
 
 pub fn rec_domain_pattern<I: Span>(input: I) -> Res<I, Pattern<I>> {
@@ -5142,8 +5323,11 @@ impl SubstParser<Pattern<String>> for DomainPatternParser {
 }
 
 pub fn kind<I: Span>(input: I) -> Res<I, Kind> {
-    let (next,base) = kind_base(input.clone())?;
-    unwrap_block(BlockKind::Nested(NestedBlockKind::Angle), resolve_kind( base))(next)
+    let (next, base) = kind_base(input.clone())?;
+    unwrap_block(
+        BlockKind::Nested(NestedBlockKind::Angle),
+        resolve_kind(base),
+    )(next)
 }
 
 pub fn rec_kind<I: Span>(input: I) -> Res<I, I> {
@@ -5160,7 +5344,7 @@ pub fn kind_lex<I: Span>(input: I) -> Res<I, KindLex> {
         )),
     ))(input)
     .map(|(next, (kind, rest))| {
-        let mut rtn = KindLex{
+        let mut rtn = KindLex {
             base: kind,
             sub: Option::None,
             specific: Option::None,
@@ -5192,28 +5376,28 @@ pub fn kind_parts<I: Span>(input: I) -> Res<I, KindParts> {
             tag(">"),
         )),
     ))(input)
-        .map(|(next, (base, rest))| {
-            let mut rtn = KindParts{
-                base,
-                sub: Option::None,
-                specific: Option::None,
-            };
+    .map(|(next, (base, rest))| {
+        let mut rtn = KindParts {
+            base,
+            sub: Option::None,
+            specific: Option::None,
+        };
 
-            match rest {
-                Some((sub, specific)) => {
-                    rtn.sub = Option::Some(sub);
-                    match specific {
-                        Some(specific) => {
-                            rtn.specific = Option::Some(specific);
-                        }
-                        None => {}
+        match rest {
+            Some((sub, specific)) => {
+                rtn.sub = Option::Some(sub);
+                match specific {
+                    Some(specific) => {
+                        rtn.specific = Option::Some(specific);
                     }
+                    None => {}
                 }
-                None => {}
             }
+            None => {}
+        }
 
-            (next, rtn)
-        })
+        (next, rtn)
+    })
 }
 
 pub fn delim_kind<I: Span>(input: I) -> Res<I, Kind> {
@@ -5227,7 +5411,6 @@ pub fn delim_kind_lex<I: Span>(input: I) -> Res<I, KindLex> {
 pub fn delim_kind_parts<I: Span>(input: I) -> Res<I, KindParts> {
     delimited(tag("<"), kind_parts, tag(">"))(input)
 }
-
 
 pub fn consume_kind<I: Span>(input: I) -> Result<KindParts, MsgErr> {
     let (_, kind_parts) = all_consuming(kind_parts)(input)?;
@@ -5246,89 +5429,94 @@ where
 }
 
 pub fn sub_kind_selector<I: Span>(input: I) -> Res<I, SubKindSelector> {
-    pattern(camel_case)(input).map(|(next, selector)| {
-        match selector {
-            Pattern::Any => (next,Pattern::Any),
-            Pattern::Exact(sub) => (next,Pattern::Exact(Some(sub)))
-        }
+    pattern(camel_case)(input).map(|(next, selector)| match selector {
+        Pattern::Any => (next, Pattern::Any),
+        Pattern::Exact(sub) => (next, Pattern::Exact(Some(sub))),
     })
 }
 
 pub fn kind_base<I: Span>(input: I) -> Res<I, BaseKind> {
-    let (next,kind) = context("kind-base",camel_case)(input.clone())?;
+    let (next, kind) = context("kind-base", camel_case)(input.clone())?;
     match BaseKind::try_from(kind) {
-        Ok(kind) => {
-            Ok((next,kind))
-        }
+        Ok(kind) => Ok((next, kind)),
         Err(err) => {
-            let err = ErrorTree::from_error_kind(input.clone(), ErrorKind::Fail );
-            Err(nom::Err::Error(ErrorTree::add_context(input, "kind-base",err)))
+            let err = ErrorTree::from_error_kind(input.clone(), ErrorKind::Fail);
+            Err(nom::Err::Error(ErrorTree::add_context(
+                input,
+                "kind-base",
+                err,
+            )))
         }
     }
 }
 
-pub fn resolve_kind<I: Span>(base: BaseKind) -> impl FnMut(I) -> Res<I, Kind>
-{
-    move | input: I | {
-        let (next,sub) = context("kind-sub", camel_case)(input.clone())?;
+pub fn resolve_kind<I: Span>(base: BaseKind) -> impl FnMut(I) -> Res<I, Kind> {
+    move |input: I| {
+        let (next, sub) = context("kind-sub", camel_case)(input.clone())?;
         match base {
-            BaseKind::Database => {
-               match sub.as_str() {
-                   "Relational" => {
-                       let (next,specific) = context("specific",delimited(tag("<"), specific, tag(">") ))(next)?;
-                       Ok((next,Kind::Database(DatabaseSubKind::Relational(specific))))
-                   },
-                   _ => {
-                       let err = ErrorTree::from_error_kind(input.clone(), ErrorKind::Fail );
-                       Err(nom::Err::Error(ErrorTree::add_context(input, "kind-sub:not-found",err)))
-                   }
-               }
-            }
-            BaseKind::UserBase => {
-                match sub.as_str() {
-                    "OAuth" => {
-                        let (next,specific) = context("specific",delimited(tag("<"), specific, tag(">") ))(next)?;
-                        Ok((next,Kind::UserBase(UserBaseSubKind::OAuth(specific))))
-                    },
-                    _ => {
-                        let err = ErrorTree::from_error_kind(input.clone(), ErrorKind::Fail );
-                        Err(nom::Err::Error(ErrorTree::add_context(input, "kind-sub:not-found",err)))
-                    }
+            BaseKind::Database => match sub.as_str() {
+                "Relational" => {
+                    let (next, specific) =
+                        context("specific", delimited(tag("<"), specific, tag(">")))(next)?;
+                    Ok((next, Kind::Database(DatabaseSubKind::Relational(specific))))
                 }
-            }
-            BaseKind::Base => {
-                match BaseSubKind::from_str(sub.as_str()) {
-                    Ok(sub) => {
-                       Ok((next,Kind::Base(sub)))
-                    }
-                    Err(err) => {
-                        let err = ErrorTree::from_error_kind(input.clone(), ErrorKind::Fail );
-                        Err(nom::Err::Error(ErrorTree::add_context(input, "kind-sub:not-accepted",err)))
-                    }
+                _ => {
+                    let err = ErrorTree::from_error_kind(input.clone(), ErrorKind::Fail);
+                    Err(nom::Err::Error(ErrorTree::add_context(
+                        input,
+                        "kind-sub:not-found",
+                        err,
+                    )))
                 }
-            }
-            BaseKind::Artifact => {
-                match ArtifactSubKind::from_str(sub.as_str()) {
-                    Ok(sub) => {
-                        Ok((next,Kind::Artifact(sub)))
-                    }
-                    Err(err) => {
-                        let err = ErrorTree::from_error_kind(input.clone(), ErrorKind::Fail );
-                        Err(nom::Err::Error(ErrorTree::add_context(input, "kind-sub:not-accepted",err)))
-                    }
+            },
+            BaseKind::UserBase => match sub.as_str() {
+                "OAuth" => {
+                    let (next, specific) =
+                        context("specific", delimited(tag("<"), specific, tag(">")))(next)?;
+                    Ok((next, Kind::UserBase(UserBaseSubKind::OAuth(specific))))
                 }
-            }
-            BaseKind::File => {
-                match FileSubKind::from_str(sub.as_str()) {
-                    Ok(sub) => {
-                        Ok((next,Kind::File(sub)))
-                    }
-                    Err(err) => {
-                        let err = ErrorTree::from_error_kind(input.clone(), ErrorKind::Fail );
-                        Err(nom::Err::Error(ErrorTree::add_context(input, "kind-sub:not-accepted",err)))
-                    }
+                _ => {
+                    let err = ErrorTree::from_error_kind(input.clone(), ErrorKind::Fail);
+                    Err(nom::Err::Error(ErrorTree::add_context(
+                        input,
+                        "kind-sub:not-found",
+                        err,
+                    )))
                 }
-            }
+            },
+            BaseKind::Base => match BaseSubKind::from_str(sub.as_str()) {
+                Ok(sub) => Ok((next, Kind::Base(sub))),
+                Err(err) => {
+                    let err = ErrorTree::from_error_kind(input.clone(), ErrorKind::Fail);
+                    Err(nom::Err::Error(ErrorTree::add_context(
+                        input,
+                        "kind-sub:not-accepted",
+                        err,
+                    )))
+                }
+            },
+            BaseKind::Artifact => match ArtifactSubKind::from_str(sub.as_str()) {
+                Ok(sub) => Ok((next, Kind::Artifact(sub))),
+                Err(err) => {
+                    let err = ErrorTree::from_error_kind(input.clone(), ErrorKind::Fail);
+                    Err(nom::Err::Error(ErrorTree::add_context(
+                        input,
+                        "kind-sub:not-accepted",
+                        err,
+                    )))
+                }
+            },
+            BaseKind::File => match FileSubKind::from_str(sub.as_str()) {
+                Ok(sub) => Ok((next, Kind::File(sub))),
+                Err(err) => {
+                    let err = ErrorTree::from_error_kind(input.clone(), ErrorKind::Fail);
+                    Err(nom::Err::Error(ErrorTree::add_context(
+                        input,
+                        "kind-sub:not-accepted",
+                        err,
+                    )))
+                }
+            },
             BaseKind::Root => Ok((next, Kind::Root)),
             BaseKind::Space => Ok((next, Kind::Space)),
             BaseKind::User => Ok((next, Kind::User)),
@@ -5339,11 +5527,10 @@ pub fn resolve_kind<I: Span>(base: BaseKind) -> impl FnMut(I) -> Res<I, Kind>
             BaseKind::Bundle => Ok((next, Kind::Bundle)),
             BaseKind::Control => Ok((next, Kind::Control)),
             BaseKind::Portal => Ok((next, Kind::Portal)),
-            BaseKind::Repo => Ok((next, Kind::Repo))
+            BaseKind::Repo => Ok((next, Kind::Repo)),
         }
     }
 }
-
 
 pub fn kind_base_selector<I: Span>(input: I) -> Res<I, KindBaseSelector> {
     pattern(kind_base)(input)
@@ -5583,16 +5770,18 @@ pub fn specific<I: Span>(input: I) -> Res<I, Specific> {
         tag(":"),
         version,
     ))(input)
-    .map(|(next, (provider, _, vendor, _, product, _, variant, _, version))| {
-        let specific = Specific {
-            provider,
-            vendor,
-            product,
-            variant,
-            version,
-        };
-        (next, specific)
-    })
+    .map(
+        |(next, (provider, _, vendor, _, product, _, variant, _, version))| {
+            let specific = Specific {
+                provider,
+                vendor,
+                product,
+                variant,
+                version,
+            };
+            (next, specific)
+        },
+    )
 }
 //}
 
@@ -6008,7 +6197,7 @@ pub fn msg_method<I: Span>(input: I) -> Res<I, MsgMethod> {
 pub fn sys_method<I: Span>(input: I) -> Res<I, SysMethod> {
     let (next, sys_method) = camel_case_chars(input.clone())?;
 
-println!("sys_method: {}", sys_method.to_string() );
+    println!("sys_method: {}", sys_method.to_string());
     match SysMethod::from_str(sys_method.to_string().as_str()) {
         Ok(method) => Ok((next, method)),
         Err(err) => Err(nom::Err::Error(ErrorTree::from_error_kind(
@@ -6038,7 +6227,9 @@ pub fn rc_command_type<I: Span>(input: I) -> Res<I, RcCommandType> {
     parse_alpha1_str(input)
 }
 
-pub fn map_pattern_payload_structure<I: Span>(input: I) -> Res<I, SubstanceTypePatternDef<PointVar>> {
+pub fn map_pattern_payload_structure<I: Span>(
+    input: I,
+) -> Res<I, SubstanceTypePatternDef<PointVar>> {
     map_pattern(input).map(|(next, con)| (next, SubstanceTypePatternDef::Map(Box::new(con))))
 }
 
@@ -6687,15 +6878,30 @@ pub fn topic<I: Span>(input: I) -> Res<I, ValuePattern<Topic>> {
  */
 
 pub fn route_selector<I: Span>(input: I) -> Result<RouteSelector, MsgErr> {
-    let (next, (topic, lex_route)) = match pair(opt(terminated(unwrap_block(BlockKind::Nested(NestedBlockKind::Square),value_pattern(topic)),tag("::"))), lex_route_selector)(input.clone()) {
+    let (next, (topic, lex_route)) = match pair(
+        opt(terminated(
+            unwrap_block(
+                BlockKind::Nested(NestedBlockKind::Square),
+                value_pattern(topic),
+            ),
+            tag("::"),
+        )),
+        lex_route_selector,
+    )(input.clone())
+    {
         Ok((next, (topic, lex_route))) => (next, (topic, lex_route)),
-        Err(err) => { return Err(find_parse_err(&err)); }
+        Err(err) => {
+            return Err(find_parse_err(&err));
+        }
     };
 
     if next.len() > 0 {
-        return Err(
-            ParseErrs::from_loc_span("could not consume entire route selector", "extra", next).into(),
-        );
+        return Err(ParseErrs::from_loc_span(
+            "could not consume entire route selector",
+            "extra",
+            next,
+        )
+        .into());
     }
 
     let mut names = lex_route.names.clone();
@@ -6713,7 +6919,7 @@ pub fn route_selector<I: Span>(input: I) -> Result<RouteSelector, MsgErr> {
         ValuePattern::Any => ValuePattern::Any,
         ValuePattern::None => ValuePattern::None,
         ValuePattern::Pattern(method_kind) => match method_kind {
-            MethodKind::Sys=> {
+            MethodKind::Sys => {
                 let method = names.pop().ok_or(ParseErrs::from_loc_span(
                     "Sys method requires a sub kind i.e. Sys<Assign> or Msg<*>",
                     "sub kind required",
@@ -6721,7 +6927,7 @@ pub fn route_selector<I: Span>(input: I) -> Result<RouteSelector, MsgErr> {
                 ))?;
                 let method = result(value_pattern(sys_method)(method))?;
                 ValuePattern::Pattern(MethodPattern::Sys(method))
-           }
+            }
             MethodKind::Cmd => {
                 return Err(ParseErrs::from_loc_span(
                     "Cmd not supported yet",
@@ -6792,20 +6998,21 @@ pub mod test {
     };
     use crate::version::v0_0_1::parse::{
         args, base_point_segment, comment, consume_point_var, ctx_seg, doc,
-        Env, expected_block_terminator_or_non_terminator, lex_block, lex_child_scopes,
-        lex_nested_block, lex_scope, lex_scope_pipeline_step_and_block,
-        lex_scope_selector, lex_scope_selector_and_filters, lex_scopes, lowercase1, MapResolver,
-        mesh_eos, nested_block, nested_block_content, next_stacked_name,
-        no_comment, parse_bind_config, parse_include_blocks, parse_inner_block, path_regex,
-        pipeline, pipeline_segment, pipeline_step_var, pipeline_stop_var, point_non_root_var, point_template,
-        point_var, pop, rec_version, root_scope,
-        root_scope_selector, route_attribute, route_selector, scope_filter, scope_filters, skewer_case_chars,
-        skewer_dot, space_chars, space_no_dupe_dots, space_point_segment, strip_comments, subst,
-        SubstParser, var_seg, variable_name, VarResolver, version, version_point_segment, wrapper,
+        expected_block_terminator_or_non_terminator, lex_block, lex_child_scopes, lex_nested_block,
+        lex_scope, lex_scope_pipeline_step_and_block, lex_scope_selector,
+        lex_scope_selector_and_filters, lex_scopes, lowercase1, mesh_eos, nested_block,
+        nested_block_content, next_stacked_name, no_comment, parse_bind_config,
+        parse_include_blocks, parse_inner_block, path_regex, pipeline, pipeline_segment,
+        pipeline_step_var, pipeline_stop_var, point_non_root_var, point_template, point_var, pop,
+        rec_version, root_scope, root_scope_selector, route_attribute, route_selector,
+        scope_filter, scope_filters, skewer_case_chars, skewer_dot, space_chars,
+        space_no_dupe_dots, space_point_segment, strip_comments, subst, var_seg, variable_name,
+        version, version_point_segment, wrapper, Env, MapResolver, SubstParser, VarResolver,
     };
     use crate::version::v0_0_1::util;
     use crate::version::v0_0_1::util::ToResolved;
     use bincode::config;
+    use cosmic_nom::{new_span, span_with_extra, Res};
     use nom::branch::alt;
     use nom::bytes::complete::{escaped, tag};
     use nom::character::complete::{alpha1, alphanumeric1, anychar, multispace0};
@@ -6820,11 +7027,11 @@ pub mod test {
     use std::rc::Rc;
     use std::str::FromStr;
     use std::sync::Arc;
-    use cosmic_nom::{new_span, Res, span_with_extra};
 
     #[test]
     pub fn test_message_selector() {
-        let route = util::log(route_attribute("#[route(\"[Topic<*>]::Msg<NewSession>\")]")).unwrap();
+        let route =
+            util::log(route_attribute("#[route(\"[Topic<*>]::Msg<NewSession>\")]")).unwrap();
         let route = util::log(route_attribute("#[route(\"Sys<Assign>\")]")).unwrap();
 
         println!("path: {}", route.path.to_string());
@@ -7850,7 +8057,7 @@ pub mod cmd_test {
     use crate::version::v0_0_1::parse::{command, script};
     use cosmic_nom::{new_span, Res};
     use nom::error::{VerboseError, VerboseErrorKind};
-    use nom_supreme::final_parser::{ExtractContext, final_parser};
+    use nom_supreme::final_parser::{final_parser, ExtractContext};
 
     /*
     #[test]
@@ -7915,78 +8122,91 @@ pub mod cmd_test {
     }
 }
 
-pub fn layer<I:Span>(input: I) -> Res<I,Layer> {
-    let (next,layer) = recognize(camel_case)(input.clone())?;
+pub fn layer<I: Span>(input: I) -> Res<I, Layer> {
+    let (next, layer) = recognize(camel_case)(input.clone())?;
     match Layer::from_str(layer.to_string().as_str()) {
-        Ok(layer) => {
-            Ok((next,layer))
-        }
-        Err(err) => {
-            Err(nom::Err::Error(ErrorTree::from_error_kind(input,ErrorKind::Alpha)))
-        }
+        Ok(layer) => Ok((next, layer)),
+        Err(err) => Err(nom::Err::Error(ErrorTree::from_error_kind(
+            input,
+            ErrorKind::Alpha,
+        ))),
     }
 }
 
-fn topic_uuid<I:Span>(input:I) -> Res<I,Topic> {
-    delimited( tag("Topic<Uuid>("), parse_uuid, tag(")"))(input).map(|(next,uuid)|{
-        ((next,Topic::Uuid(uuid)))
-    })
+fn topic_uuid<I: Span>(input: I) -> Res<I, Topic> {
+    delimited(tag("Topic<Uuid>("), parse_uuid, tag(")"))(input)
+        .map(|(next, uuid)| ((next, Topic::Uuid(uuid))))
 }
 
-fn topic_path<I:Span>(input:I) -> Res<I,Topic> {
-    delimited(tag("Topic<Path>("), many1(skewer_case), tag(")"))(input).map(|(next, segments)|{
-        ((next,Topic::Path(segments)))
-    })
+fn topic_path<I: Span>(input: I) -> Res<I, Topic> {
+    delimited(tag("Topic<Path>("), many1(skewer_case), tag(")"))(input)
+        .map(|(next, segments)| ((next, Topic::Path(segments))))
 }
 
-fn topic_cli<I:Span>(input:I) -> Res<I,Topic> {
+fn topic_cli<I: Span>(input: I) -> Res<I, Topic> {
     context("Topic<CLI>", value(Topic::CLI, tag("Topic<CLI>")))(input)
 }
 
-fn topic_any<I:Span>(input:I) -> Res<I,Topic> {
-    context("Topic<*>",value(Topic::Any, tag("Topic<*>")))(input)
+fn topic_any<I: Span>(input: I) -> Res<I, Topic> {
+    context("Topic<*>", value(Topic::Any, tag("Topic<*>")))(input)
 }
 
-fn topic_not<I:Span>(input:I) -> Res<I,Topic> {
+fn topic_not<I: Span>(input: I) -> Res<I, Topic> {
     context("Topic<Not>", value(Topic::Not, tag("Topic<!>")))(input)
 }
 
-pub fn topic_none<I:Span>(input:I) -> Res<I,Topic> {
-    Ok((input,Topic::None))
+pub fn topic_none<I: Span>(input: I) -> Res<I, Topic> {
+    Ok((input, Topic::None))
 }
 
-pub fn topic<I:Span>(input: I ) -> Res<I,Topic> {
-    context("topic",alt((topic_path, topic_uuid, topic_cli,topic_any,topic_not)))(input)
+pub fn topic<I: Span>(input: I) -> Res<I, Topic> {
+    context(
+        "topic",
+        alt((topic_path, topic_uuid, topic_cli, topic_any, topic_not)),
+    )(input)
 }
 
-pub fn topic_or_none<I:Span>(input: I ) -> Res<I,Topic> {
-    context("topic_or_none",alt((topic,topic_none)))(input)
+pub fn topic_or_none<I: Span>(input: I) -> Res<I, Topic> {
+    context("topic_or_none", alt((topic, topic_none)))(input)
 }
 
-pub fn plus_topic_or_none<I:Span>(input: I ) -> Res<I,Topic> {
-    context("plus_topic_or_none",alt((preceded(tag("+"),topic),topic_none) ))(input)
+pub fn plus_topic_or_none<I: Span>(input: I) -> Res<I, Topic> {
+    context(
+        "plus_topic_or_none",
+        alt((preceded(tag("+"), topic), topic_none)),
+    )(input)
 }
 
-pub fn port<I:Span>(input: I) -> Res<I,Port> {
-    let (next,(point,layer,topic)) = context("port",tuple((terminated(tw(point_var),tag("@")),layer,plus_topic_or_none)))(input.clone())?;
+pub fn port<I: Span>(input: I) -> Res<I, Port> {
+    let (next, (point, layer, topic)) = context(
+        "port",
+        tuple((
+            terminated(tw(point_var), tag("@")),
+            layer,
+            plus_topic_or_none,
+        )),
+    )(input.clone())?;
 
     match point.w.collapse() {
-        Ok(point) => Ok((next,Port::new(point,layer,topic))),
+        Ok(point) => Ok((next, Port::new(point, layer, topic))),
         Err(err) => {
-            let err = ErrorTree::from_error_kind(input.clone(), ErrorKind::Alpha );
+            let err = ErrorTree::from_error_kind(input.clone(), ErrorKind::Alpha);
             let loc = input.slice(point.trace.range);
-            Err(nom::Err::Error(ErrorTree::add_context(loc, "resolver-not-available",err)))
+            Err(nom::Err::Error(ErrorTree::add_context(
+                loc,
+                "resolver-not-available",
+                err,
+            )))
         }
     }
 }
 
-pub type PortSelectorVal = PortSelectorDef<Hop,VarVal<Topic>,VarVal<ValuePattern<Layer>>>;
-pub type PortSelectorCtx = PortSelectorDef<Hop,Topic,ValuePattern<Layer>>;
-pub type PortSelector = PortSelectorDef<Hop,Topic,ValuePattern<Layer>>;
+pub type PortSelectorVal = PortSelectorDef<Hop, VarVal<Topic>, VarVal<ValuePattern<Layer>>>;
+pub type PortSelectorCtx = PortSelectorDef<Hop, Topic, ValuePattern<Layer>>;
+pub type PortSelector = PortSelectorDef<Hop, Topic, ValuePattern<Layer>>;
 
-pub struct PortSelectorDef<Hop,Topic,Layer> {
+pub struct PortSelectorDef<Hop, Topic, Layer> {
     point: PointSelectorDef<Hop>,
     topic: Topic,
-    layer: Layer
+    layer: Layer,
 }
-

@@ -1,7 +1,8 @@
+use crate::cli::{CliSessionState, CommandExecutor};
 use crate::driver::Drivers;
 use crate::field::{FieldEx, RegistryApi};
 use crate::machine::MachineSkel;
-use crate::portal::PortalInlet;
+use crate::portal::{PortalInlet, PortalShell};
 use crate::router::StarRouter;
 use crate::shell::ShellEx;
 use crate::state::{
@@ -12,19 +13,23 @@ use cosmic_locality::driver::Drivers;
 use dashmap::mapref::one::Ref;
 use dashmap::DashMap;
 use mesh_portal_versions::error::MsgErr;
+use mesh_portal_versions::version::v0_0_1::cli::RawCommand;
 use mesh_portal_versions::version::v0_0_1::id::id::{
-    Layer, Point, Port, RouteSeg, ToPoint, ToPort, TraversalLayer, Uuid,
+    Layer, Point, Port, PortSelector, RouteSeg, ToPoint, ToPort, Topic, TraversalLayer, Uuid,
 };
-use mesh_portal_versions::version::v0_0_1::id::StarKey;
-use mesh_portal_versions::version::v0_0_1::id::Traversal;
+use mesh_portal_versions::version::v0_0_1::id::{StarKey, StarSub};
+use mesh_portal_versions::version::v0_0_1::id::{Traversal, TraversalDirection};
 use mesh_portal_versions::version::v0_0_1::log::PointLogger;
+use mesh_portal_versions::version::v0_0_1::parse::ScopedVars;
 use mesh_portal_versions::version::v0_0_1::quota::Timeouts;
 use mesh_portal_versions::version::v0_0_1::substance::substance::Substance;
 use mesh_portal_versions::version::v0_0_1::sys::{Assign, Sys};
+use mesh_portal_versions::version::v0_0_1::util::ValueMatcher;
 use mesh_portal_versions::version::v0_0_1::wave::{
     Agent, AsyncRequestHandler, AsyncTransmitter, AsyncTransmitterWithAgent, ReqCtx, ReqShell,
     Requestable, RespCore, RespShell, RootReqCtx, Router, Transporter, Wave,
 };
+use serde::{Deserialize, Serialize};
 use std::ops::{Deref, DerefMut};
 use std::str::FromStr;
 use std::sync::Arc;
@@ -40,6 +45,7 @@ pub struct StarState {
     pub driver: Arc<DashMap<Point, DriverState>>,
     pub portal_inlet: Arc<DashMap<Point, PortalInletState>>,
     pub portal_shell: Arc<DashMap<Point, PortalShellState>>,
+    pub topic: Arc<DashMap<Port, Box<dyn TopicHandler>>>,
 }
 
 impl StarState {
@@ -50,6 +56,25 @@ impl StarState {
             driver: Arc::new(DashMap::new()),
             portal_inlet: Arc::new(DashMap::new()),
             portal_shell: Arc::new(DashMap::new()),
+            topic: Arc::new(DashMap::new()),
+        }
+    }
+
+    pub fn find_topic(
+        &self,
+        port: &Port,
+        source: &Port,
+    ) -> Option<Result<&Box<dyn TopicHandler>, MsgErr>> {
+        match self.topic.get(port) {
+            None => None,
+            Some(topic) => {
+                let topic = topic.value();
+                if topic.source_selector().is_match(source).is_ok() {
+                    Some(Ok(topic))
+                } else {
+                    Some(Err(MsgErr::forbidden()))
+                }
+            }
         }
     }
 
@@ -111,12 +136,12 @@ impl StarState {
 
 #[derive(Clone)]
 pub struct StarSkel {
-    pub logger: PointLogger,
     pub key: StarKey,
+    pub kind: StarSub,
+    pub logger: PointLogger,
     pub registry: Arc<dyn RegistryApi>,
     pub surface: mpsc::Sender<Wave>,
-    pub towards_fabric_router: mpsc::Sender<Traversal<Wave>>,
-    pub towards_core_router: mpsc::Sender<Traversal<Wave>>,
+    pub traversal_router: mpsc::Sender<Traversal<Wave>>,
     pub fabric: mpsc::Sender<Wave>,
     pub machine: MachineSkel,
     pub exchange: Arc<DashMap<Uuid, oneshot::Sender<RespShell>>>,
@@ -131,22 +156,19 @@ impl StarSkel {
 
 pub enum StarCall {
     HyperWave(HyperWave),
-    TowardsFabric(Traversal<Wave>),
-    TowardsCore(Traversal<Wave>),
+    Traverse(Traversal<Wave>),
 }
 
 pub struct StarTx {
     surface: mpsc::Sender<HyperWave>,
-    towards_fabric_router: mpsc::Sender<Traversal<Wave>>,
-    towards_core_router: mpsc::Sender<Traversal<Wave>>,
+    traversal_router: mpsc::Sender<Traversal<Wave>>,
     call_rx: mpsc::Receiver<StarCall>,
 }
 
 impl StarTx {
     pub fn new() -> Self {
         let (surface_tx, mut surface_rx) = mpsc::channel(1024);
-        let (towards_fabric_router_tx, mut towards_fabric_router_rx) = mpsc::channel(1024);
-        let (towards_core_router_tx, mut towards_core_router_rx) = mpsc::channel(1024);
+        let (traversal_router_tx, mut traversal_router_rx) = mpsc::channel(1024);
 
         let (call_tx, call_rx) = mpsc::channel(1024);
 
@@ -162,25 +184,15 @@ impl StarTx {
         {
             let call_tx = call_tx.clone();
             tokio::spawn(async move {
-                while let Some(traversal) = towards_fabric_router_rx.recv().await {
-                    call_tx.send(StarCall::TowardsFabric(traversal)).await;
-                }
-            });
-        }
-
-        {
-            let call_tx = call_tx.clone();
-            tokio::spawn(async move {
-                while let Some(traversal) = towards_core_router_rx.recv().await {
-                    call_tx.send(StarCall::TowardsCore(traversal)).await;
+                while let Some(traversal) = traversal_router_rx.recv().await {
+                    call_tx.send(StarCall::Traverse(traversal)).await;
                 }
             });
         }
 
         Self {
             surface: surface_tx,
-            towards_fabric_router: towards_fabric_router_tx,
-            towards_core_router: towards_core_router_tx,
+            traversal_router: traversal_router_tx,
             call_rx,
         }
     }
@@ -199,7 +211,7 @@ impl Star {
         let transmitter = AsyncTransmitterWithAgent::new(
             Agent::Point(skel.point().clone()),
             skel.point().clone().to_port().with_layer(Layer::Shell),
-            Arc::new(StarTransmitter::new(skel.clone())),
+            Arc::new(StarInternalTransmitter::new(skel.clone())),
         );
         let star = Self {
             skel,
@@ -215,20 +227,17 @@ impl Star {
             while let Some(call) = self.call_rx.recv().await {
                 match call {
                     StarCall::HyperWave(wave) => {
-                        self.receive_hyperwave(wave);
+                        self.hyperwave(wave);
                     }
-                    StarCall::TowardsFabric(traversal) => {
-                        self.towards_fabric(traversal);
-                    }
-                    StarCall::TowardsCore(traversal) => {
-                        self.towards_core(traversal);
+                    StarCall::Traverse(traversal) => {
+                        self.traverse(traversal);
                     }
                 }
             }
         });
     }
 
-    fn receive_hyperwave(&self, wave: HyperWave) {
+    fn hyperwave(&self, wave: HyperWave) {
         // right now we don't do anything with HyperWave, but maybe in the future...
         let wave = wave.wave;
 
@@ -250,146 +259,95 @@ impl Star {
         }
 
         // okay if it wasn't for the star, then on to regular routing...
+        // hyperwaves are delivered to the Surface of the star therefor it will be deposited in the Field
+        let transmitter = StarInternalTransmitter::new(self.skel.clone(), Layer::Field);
+        transmitter.route(wave).await;
+    }
 
-        let skel = self.skel.clone();
-        tokio::spawn(async move {
-            async fn route(skel: StarSkel, wave: Wave) -> anyhow::Result<()> {
-                let record = skel.registry.locate(&wave.to().clone().to_point()).await?;
-                if let RouteSeg::Fabric(route) = &record.location.ok_or()?.route {
-                    match StarKey::from_str(route.as_str()) {
-                        Ok(key) => {
-                            if key == skel.key {
-                                let locality = record.location.clone().ok_or()?;
-                                let plan = record.details.stub.kind.wave_traversal_plan();
-                                let logger = skel.logger.point(wave.to().clone().to_point());
-                                let logger = logger.span();
-                                let traversal = Traversal::new(
-                                    wave,
-                                    record,
-                                    locality,
-                                    plan.stack.first().cloned().unwrap(),
-                                    logger,
-                                );
-                                skel.towards_core_router.send(traversal).await;
-                            } else {
-                                // routed to this star, but not the appropriate location
-                                if wave.is_req() {
-                                    let req = wave.unwrap_req();
-                                    let resp = req.not_found();
-                                    skel.fabric.send(resp.into() ).await;
+    async fn traverse(&self, traversal: Traversal<Wave>) {
+        let next = traversal.next();
+        match next {
+            None => match traversal.dir {
+                TraversalDirection::Fabric => {
+                    self.skel.fabric.send(traversal.payload);
+                }
+                TraversalDirection::Core => {
+                    self.skel
+                        .logger
+                        .warn("should not have traversed a wave all the way to the core in Star");
+                }
+            },
+            Some(next) => {
+                if traversal.is_req()
+                    && next == traversal.to().layer
+                    && self.skel.state.topic.contains_key(traversal.to())
+                {
+                    let topic = self.skel.state.find_topic(traversal.to(), traversal.from());
+                    match topic {
+                        None => {
+                            // send some sort of Not_found
+                            //                            req.not_found()
+                        }
+                        Some(result) => {
+                            match result {
+                                Ok(topic_handler) => {
+                                    let req = traversal.unwrap_req().payload;
+                                    let ctx = RootReqCtx::new(
+                                        req,
+                                        self.skel.logger.span(),
+                                        self.transmitter.clone(),
+                                    );
+
+                                    topic_handler.handle(ctx).await;
+                                }
+                                Err(err) => {
+                                    // some some 'forbidden' error message sending towards_core...
                                 }
                             }
                         }
-                        Err(err) => skel.logger.warn(format!(
-                            "unexpected Fabric Route in Point '{}' (expecting a valid StarKey)",
-                            wave.to().to_string()
-                        )),
                     }
                 } else {
-                    skel.logger.warn(format!(
-                        "unexpected Point '{}' (expecting a valid Fabric StarKey Route)",
-                        wave.to().to_string()
-                    ))
+                    match next {
+                        Layer::PortalInlet => {
+                            let inlet = PortalInlet::new(
+                                self.skel.clone(),
+                                self.skel.state.find_portal_inlet(&traversal.location),
+                            );
+                            inlet.traverse(traversal).await;
+                        }
+                        Layer::Field => {
+                            let field = FieldEx::new(
+                                self.skel.clone(),
+                                self.skel.state.find_field(traversal.payload.to()).field,
+                            );
+                            field.traverse(traversal).await;
+                        }
+                        Layer::Shell => {
+                            let shell = ShellEx::new(
+                                self.skel.clone(),
+                                self.skel.state.find_shell(traversal.payload.to()).shell,
+                            );
+                            shell.traverse(traversal).await;
+                        }
+                        Layer::Driver => {
+                            self.drivers.traverse(traversal).await;
+                        }
+                        Layer::PortalShell => {
+                            let portal = PortalShell::new(
+                                self.skel.clone(),
+                                self.skel
+                                    .state
+                                    .find_portal_shell(traversal.payload.to())
+                                    .portal_shell(),
+                            );
+                            portal.traverse(traversal).await;
+                        }
+                        _ => {
+                            self.skel.logger.warn("attempt to traverse wave in the inner layers which the Star does not manage");
+                        }
+                    }
                 }
-                Ok(())
             }
-            route(skel, wave).await;
-        });
-    }
-
-    async fn towards_fabric(&self, traversal: Traversal<Wave>) {
-        let next = traversal.next_towards_fabric();
-        match next {
-            None => {
-                self.skel.fabric.send(traversal.payload).await;
-            }
-            Some(next) => match next {
-                Layer::PortalInlet => {
-                    let inlet = PortalInlet::new(
-                        self.skel.clone(),
-                        self.skel.state.find_portal_inlet(&traversal.locality),
-                    );
-                    inlet.towards_fabric(traversal).await;
-                }
-                Layer::Field => {
-                    let field = FieldEx::new(
-                        self.skel.clone(),
-                        self.skel.state.find_field(traversal.payload.to()).field,
-                    );
-                    field.towards_fabric(traversal).await;
-                }
-                Layer::Shell => {
-                    let shell = ShellEx::new(
-                        self.skel.clone(),
-                        self.skel.state.find_shell(traversal.payload.to()).shell,
-                    );
-                    shell.towards_fabric(traversal).await;
-                }
-                Layer::Driver => {
-                    self.drivers.towards_fabric(traversal).await;
-                }
-                Layer::PortalShell => {
-                    let portal = PortalShell::new(
-                        self.skel.clone(),
-                        self.skel
-                            .state
-                            .find_portal_shell(traversal.payload.to())
-                            .portal_shell(),
-                    );
-                    portal.towards_fabric(traversal).await;
-                }
-                _ => {
-                    self.skel.logger.warn("attempt to traverse wave in the inner layers which the Star does not manage");
-                }
-            },
-        }
-    }
-
-    async fn towards_core(&self, traversal: Traversal<Wave>) {
-        let next = traversal.next_towards_core();
-        match next {
-            None => {
-                self.skel.core.send(traversal.payload).await;
-            }
-            Some(next) => match next {
-                Layer::PortalInlet => {
-                    let inlet = PortalInlet::new(
-                        self.skel.clone(),
-                        self.skel.state.find_portal_inlet(&traversal.locality),
-                    );
-                    inlet.towards_core(traversal).await;
-                }
-                Layer::Field => {
-                    let field = FieldEx::new(
-                        self.skel.clone(),
-                        self.skel.state.find_field(traversal.payload.to()).field,
-                    );
-                    field.towards_core(traversal).await;
-                }
-                Layer::Shell => {
-                    let shell = ShellEx::new(
-                        self.skel.clone(),
-                        self.skel.state.find_shell(traversal.payload.to()).shell,
-                    );
-                    shell.towards_core(traversal).await;
-                }
-                Layer::Driver => {
-                    self.drivers.towards_core(traversal).await;
-                }
-                Layer::PortalShell => {
-                    let portal = PortalShell::new(
-                        self.skel.clone(),
-                        self.skel
-                            .state
-                            .find_portal_shell(traversal.payload.to())
-                            .portal_shell(),
-                    );
-                    portal.towards_core(traversal).await;
-                }
-                _ => {
-                    self.skel.logger.warn("attempt to traverse wave in the inner layers which the Star does not manage");
-                }
-            },
         }
     }
 
@@ -405,32 +363,32 @@ impl Star {
 impl Star {
     #[route("Sys<Assign>")]
     pub async fn assign(&self, ctx: ReqCtx<'_, Sys>) -> Result<RespCore, MsgErr> {
-        if let Sys::Assign(assign) = ctx.input {
-            self.drivers.assign(assign).await?;
-            // terrible hack to clone it but I need to add ok() and err() autos to ctx...
-            let req = ctx.request().clone();
-            Ok(req.core.ok(Substance::Empty))
-        } else {
-            Err(MsgErr::bad_request())
-        }
+        self.drivers.assign(ctx).await
     }
 }
 
-pub struct StarTransmitter {
+#[derive(Clone)]
+pub struct StarInternalTransmitter {
     pub skel: StarSkel,
+    pub layer: Layer,
 }
 
-impl StarTransmitter {
-    pub fn new(skel: StarSkel) -> Self {
-        Self { skel }
+impl StarInternalTransmitter {
+    pub fn new(skel: StarSkel, layer: Layer) -> Self {
+        Self { skel, layer }
+    }
+
+    pub fn with(self, layer: Layer) -> Self {
+        Self::new(self.skel, layer)
     }
 }
 
-impl AsyncTransmitter for StarTransmitter {
+impl AsyncTransmitter for StarInternalTransmitter {
     async fn send(&self, request: ReqShell) -> RespShell {
         let (tx, rx) = oneshot::channel();
         self.skel.exchange.insert(request.id.clone(), tx);
         let stub = request.as_stub();
+        self.route(Wave::Req(request)).await;
         match tokio::time::timeout(
             Duration::from_secs(
                 self.skel
@@ -449,13 +407,84 @@ impl AsyncTransmitter for StarTransmitter {
     }
 
     async fn route(&self, wave: Wave) {
+        let record = self
+            .skel
+            .registry
+            .locate(&wave.to().clone().to_point())
+            .await?;
+        let location = record.location.clone().ok_or()?;
+        let plan = record.details.stub.kind.wave_traversal_plan();
+        let logger = skel.logger.point(wave.to().clone().to_point());
+        let logger = logger.span();
+        let mut traversal = Traversal::new(
+            wave,
+            record,
+            location,
+            plan.stack.first().cloned().unwrap(),
+            logger,
+            // default to Fabric direction
+            TraversalDirection::Fabric,
+        );
+
+        // if the to is not even in this star, traverse towards fabric
+        if location != *skel.point() {
+            // already set to travel towards Fabric
+            self.skel.traversal_router.send(traversal).await;
+        }
+        // if the to and from points are the same traverse in the direction of the target layer
+        else if wave.to().point == wave.from().point {
+            if wave.to().layer == wave.from().layer {
+                self.skel
+                    .logger
+                    .warn("attempt to send wave to same point & layer");
+            } else if wave.from() < wave.to() {
+                // traveling from Fabric to Core (we need to reverse order of the traversal)
+                traversal.reverse();
+                self.skel.traversal_router.send(traveral).await;
+            } else {
+                // traveling from Core to Fabric... already set that way no action needed.
+                self.skel.traversal_router.send(traveral).await;
+            }
+        } else {
+            // finally we handle the most common case where the points are not the same
+            if traversal.to().layer > self.layer {
+                // the destination layer is greater than the insertion layer therefor we are traveling towards the Core
+                traversal.reverse();
+                self.skel.traversal_router.send(traveral).await;
+            } else {
+                // the destination layer is less than the insertion layer therefore we are traveling towards the Fabric (no action needed)
+                self.skel.traversal_router.send(traveral).await;
+            }
+        }
+
         match self.skel.registry.locate(wave.to()).await {
             Ok(record) => match record.location.ok_or() {
                 Ok(location) => {
-                    if location == *self.skel.point() {
-                        self.skel.surface.send(wave).await;
+                    let plan = record.details.stub.kind.wave_traversal_plan();
+                    let logger = skel.logger.point(wave.to().clone().to_point());
+                    let logger = logger.span();
+                    let traversal = Traversal::new(
+                        wave,
+                        record,
+                        location,
+                        plan.stack.first().cloned().unwrap(),
+                        logger,
+                    );
+
+                    if traversal.to().point == traversal.from().point {
+                        if traversal.from().layer < traversal.to().layer {
+                            self.skel.towards_core_router.send(traversal).await;
+                        } else if traversal.from().layer > traversal.to().layer {
+                            self.skel.traversal_router.send(traversal).await;
+                        } else {
+                            self.skel
+                                .logger
+                                .warn("attempt to route a wave to itself on the same layer");
+                            return;
+                        }
                     } else {
-                        self.skel.fabric.send(wave).await;
+                        // sense it's not sending to itself it must be routed all the way to the surface of the star
+                        self.skel.traversal_router.send(traversal).await;
                     }
                 }
                 Err(err) => {
@@ -473,4 +502,8 @@ impl AsyncTransmitter for StarTransmitter {
             }
         }
     }
+}
+
+pub trait TopicHandler: Send + Sync + AsyncRequestHandler + Serialize + Deserialize {
+    fn source_selector(&self) -> &PortSelector;
 }

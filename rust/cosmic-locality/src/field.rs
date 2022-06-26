@@ -1,9 +1,6 @@
-use starlane_core::artifact::ArtifactRef;
-use starlane_core::error::Error;
-use starlane_core::message::delivery::Delivery;
-use mesh_portal_versions::version::v0_0_1::id::ArtifactSubKind;
-use starlane_core::star::core::particle::driver::ResourceCoreDriverApi;
-use starlane_core::star::StarSkel;
+use crate::star::StarSkel;
+use anyhow::anyhow;
+use dashmap::DashMap;
 use http::{HeaderMap, StatusCode, Uri};
 use mesh_artifact_api::Artifact;
 use mesh_portal::version::latest::config::bind::{
@@ -13,50 +10,61 @@ use mesh_portal::version::latest::entity::request::get::{Get, GetOp};
 use mesh_portal::version::latest::entity::request::{Method, Rc, ReqCore};
 use mesh_portal::version::latest::entity::response::RespCore;
 use mesh_portal::version::latest::id::Point;
-use mesh_portal::version::latest::messaging::{Agent, Message, ReqShell, RespShell};
-use mesh_portal::version::latest::payload::{Call, CallKind, Substance};
 use mesh_portal::version::latest::log::{PointLogger, SpanLogger};
+use mesh_portal::version::latest::messaging::{Agent, Message, ReqShell, RespShell};
+use mesh_portal::version::latest::msg::MsgMethod;
+use mesh_portal::version::latest::payload::{Call, CallKind, Substance};
+use mesh_portal::version::latest::security::Access;
 use mesh_portal_versions::error::MsgErr;
+use mesh_portal_versions::version::v0_0_1::config::config::bind::{
+    BindConfig, MessageKind, PipelineStepVar, PipelineStopVar,
+};
+use mesh_portal_versions::version::v0_0_1::id::id::{
+    Layer, Point, ToPoint, ToPort, TraversalLayer, Uuid,
+};
+use mesh_portal_versions::version::v0_0_1::id::ArtifactSubKind;
+use mesh_portal_versions::version::v0_0_1::id::Traversal;
+use mesh_portal_versions::version::v0_0_1::log::{PointLogger, RootLogger, SpanLogger};
+use mesh_portal_versions::version::v0_0_1::parse::model::PipelineVar;
+use mesh_portal_versions::version::v0_0_1::parse::{
+    Env, MapResolver, MultiVarResolver, PointCtxResolver, RegexCapturesResolver,
+};
+use mesh_portal_versions::version::v0_0_1::security::Access;
+use mesh_portal_versions::version::v0_0_1::selector::selector::PipelineKind;
+use mesh_portal_versions::version::v0_0_1::selector::{PayloadBlock, PayloadBlockVar};
+use mesh_portal_versions::version::v0_0_1::substance::substance::{Call, CallKind, Substance};
+use mesh_portal_versions::version::v0_0_1::sys::ParticleRecord;
+use mesh_portal_versions::version::v0_0_1::util::{ToResolved, ValueMatcher};
+use mesh_portal_versions::version::v0_0_1::wave::{
+    Agent, CmdMethod, Method, ReqCore, ReqShell, Requestable, RespCore, RespShell, Wave,
+};
+use nom::combinator::map_res;
 use regex::{CaptureMatches, Regex};
+use starlane_core::artifact::ArtifactRef;
+use starlane_core::error::Error;
+use starlane_core::message::delivery::Delivery;
+use starlane_core::star::core::particle::driver::ResourceCoreDriverApi;
+use starlane_core::star::StarSkel;
 use std::collections::HashMap;
 use std::pin::Pin;
 use std::str::FromStr;
 use std::sync::Arc;
-use anyhow::anyhow;
-use dashmap::DashMap;
-use mesh_portal::version::latest::msg::MsgMethod;
-use mesh_portal::version::latest::security::Access;
-use mesh_portal_versions::version::v0_0_1::config::config::bind::{BindConfig, MessageKind, PipelineStepVar, PipelineStopVar};
-use mesh_portal_versions::version::v0_0_1::log::{PointLogger, RootLogger, SpanLogger};
-use mesh_portal_versions::version::v0_0_1::parse::{Env, MapResolver, MultiVarResolver, PointCtxResolver, RegexCapturesResolver};
-use mesh_portal_versions::version::v0_0_1::parse::model::PipelineVar;
-use mesh_portal_versions::version::v0_0_1::selector::{PayloadBlock, PayloadBlockVar};
-use mesh_portal_versions::version::v0_0_1::selector::selector::PipelineKind;
-use mesh_portal_versions::version::v0_0_1::util::{ToResolved, ValueMatcher};
-use nom::combinator::map_res;
 use tokio::io::AsyncBufReadExt;
-use tokio::sync::{mpsc, Mutex};
 use tokio::sync::mpsc::Sender;
-use mesh_portal_versions::version::v0_0_1::id::id::{Layer, Point, ToPoint, ToPort, TraversalLayer, Uuid};
-use mesh_portal_versions::version::v0_0_1::security::Access;
-use mesh_portal_versions::version::v0_0_1::substance::substance::{Call, CallKind, Substance};
-use mesh_portal_versions::version::v0_0_1::wave::{Agent, CmdMethod, Method, ReqCore, ReqShell, Requestable, RespCore, RespShell, Wave};
-use mesh_portal_versions::version::v0_0_1::sys::ParticleRecord;
-use crate::star::StarSkel;
-use mesh_portal_versions::version::v0_0_1::id::Traversal;
+use tokio::sync::{mpsc, Mutex};
 
 /// The idea here is to eventually move this funcitionality into it's own crate 'mesh-bindex'
 /// this mod basically enforces the bind
 
 #[derive(Clone)]
 pub struct FieldState {
-    pipe_exes: Arc<DashMap<String,PipeEx>>
+    pipe_exes: Arc<DashMap<String, PipeEx>>,
 }
 
 impl FieldState {
-    pub fn new()->Self {
+    pub fn new() -> Self {
         Self {
-            pipe_exes: Arc::new(DashMap::new() )
+            pipe_exes: Arc::new(DashMap::new()),
         }
     }
 }
@@ -67,8 +75,6 @@ pub struct FieldEx {
     pub state: FieldState,
 }
 
-
-
 fn request_id(request: &ReqShell) -> String {
     format!("{}{}", request.to.to_string(), request.id)
 }
@@ -78,17 +84,11 @@ fn request_id_from_response(response: &RespShell) -> String {
 }
 
 impl FieldEx {
-
-    pub fn new(  skel: StarSkel, state: FieldState) -> Self {
-        Self {
-            skel,
-            state,
-        }
+    pub fn new(skel: StarSkel, state: FieldState) -> Self {
+        Self { skel, state }
     }
 
-
-
-    async fn handle_action( &self, action: RequestAction ) -> anyhow::Result<()> {
+    async fn handle_action(&self, action: RequestAction) -> anyhow::Result<()> {
         match action.action {
             PipeAction::CoreRequest(mut request) => {
                 let request = request.with(Wave::Req(request.payload));
@@ -96,17 +96,17 @@ impl FieldEx {
             }
             PipeAction::FabricRequest(mut request) => {
                 let request = request.with(Wave::Req(request.payload));
-                self.skel.towards_fabric_router.send(request).await;
+                self.skel.traversal_router.send(request).await;
             }
             PipeAction::Respond => {
                 let pipex = self.state.pipe_exes.remove(&action.request_id);
 
                 match pipex {
                     None => {
-                        error!("no pipeline set for requst_id: {}",action.request_id);
+                        error!("no pipeline set for requst_id: {}", action.request_id);
                     }
-                    Some((_,mut pipex)) => {
-                        self.skel.towards_fabric_router.send(pipex.respond()).await;
+                    Some((_, mut pipex)) => {
+                        self.skel.traversal_router.send(pipex.respond()).await;
                     }
                 }
             }
@@ -117,19 +117,17 @@ impl FieldEx {
 
 #[async_trait]
 impl TraversalLayer for FieldEx {
-
     fn layer(&self) -> &Layer {
         &Layer::Field
     }
 
     async fn towards_fabric_router(&self, traversal: Traversal<Wave>) {
-       self.skel.towards_fabric_router.send(traversal).await;
+        self.skel.traversal_router.send(traversal).await;
     }
 
     async fn towards_core_router(&self, traversal: Traversal<Wave>) {
         self.skel.towards_core_router.send(traversal).await;
     }
-
 
     fn exchange(&self) -> &Arc<DashMap<Uuid, tokio::sync::oneshot::Sender<RespShell>>> {
         &self.skel.exchange
@@ -139,23 +137,27 @@ impl TraversalLayer for FieldEx {
         // not sure if field will ever handle anything for itself
     }
 
-    async fn incoming_request(&self, mut request: Traversal<ReqShell>) -> Result<(),MsgErr>{
-
+    async fn to_core_request(&self, mut request: Traversal<ReqShell>) -> Result<(), MsgErr> {
         info!("BindEx: handle_request");
-        request.logger.set_span_attr("message-id", &request.id );
+        request.logger.set_span_attr("message-id", &request.id);
         let access = self.skel.registry.access(&request.agent, &request.to).await;
 
         match access {
             Ok(access) => {
                 if !access.permissions().particle.execute {
-                    let err_msg = format!("execute permission required to send requests to {}", request.to.to_string() );
-                    request.logger.error( err_msg.as_str() );
-                    self.skel.fabric.send(Wave::Resp(request.err(err_msg.into())));
+                    let err_msg = format!(
+                        "execute permission required to send requests to {}",
+                        request.to.to_string()
+                    );
+                    request.logger.error(err_msg.as_str());
+                    self.skel
+                        .fabric
+                        .send(Wave::Resp(request.err(err_msg.into())));
                     return Ok(());
                 }
             }
             Err(err) => {
-                error!("{}", err.to_string() )
+                error!("{}", err.to_string())
             }
         }
 
@@ -165,11 +167,12 @@ impl TraversalLayer for FieldEx {
         let regex = route.selector.path.clone();
 
         let env = {
-            let path_regex_capture_resolver = RegexCapturesResolver::new(regex, request.item.core.uri.path().to_string())?;
-            let mut env = Env::new(request.item.to.clone().to_point() );
+            let path_regex_capture_resolver =
+                RegexCapturesResolver::new(regex, request.item.core.uri.path().to_string())?;
+            let mut env = Env::new(request.item.to.clone().to_point());
             env.add_var_resolver(Arc::new(path_regex_capture_resolver));
-            env.set_var( "self.bundle", bind.bundle()?.to_string().as_str() );
-            env.set_var( "self.bind", bind.point().clone().to_string().as_str() );
+            env.set_var("self.bundle", bind.bundle()?.to_string().as_str());
+            env.set_var("self.bind", bind.point().clone().to_string().as_str());
             env
         };
 
@@ -185,28 +188,28 @@ impl TraversalLayer for FieldEx {
             Err(err) => {
                 let err_msg = format!("Binder: pipeline error for call {}", call.to_string());
                 logger.error(err_msg.as_str());
-                self.skel.towards_fabric_router.send(pipex.fail(500, err_msg.as_str() )).await;
+                self.skel
+                    .traversal_router
+                    .send(pipex.fail(500, err_msg.as_str()))
+                    .await;
                 return Ok(());
             }
         };
 
         if let PipeAction::Respond = action {
-            self.skel.towards_fabric_router.send(pipex.respond()).await;
+            self.skel.traversal_router.send(pipex.respond()).await;
             return Ok(());
         }
 
         self.state.pipe_exes.insert(request_id.clone(), pipex);
 
-        let action = RequestAction{
-            request_id,
-            action
-        };
+        let action = RequestAction { request_id, action };
 
         self.handle_action(action);
         Ok(())
     }
 
-    async fn incoming_response(&self, mut traversal: Traversal<RespShell>) -> Result<(),MsgErr> {
+    async fn to_core_response(&self, mut traversal: Traversal<RespShell>) -> Result<(), MsgErr> {
         let request_id = request_id_from_response(&response);
         let mut pipex = self.state.pipe_exes.remove(&request_id);
 
@@ -215,27 +218,23 @@ impl TraversalLayer for FieldEx {
                 "Binder: cannot locate a pipeline executor for processing request: {}",
                 response.response_to
             );
-            traversal.logger.span()
-                .error(err_msg.clone());
+            traversal.logger.span().error(err_msg.clone());
             error!("{}", err_msg);
             return Err(err_msg.into());
         }
 
-        let (_,mut pipex) = pipex.expect("pipeline executor");
+        let (_, mut pipex) = pipex.expect("pipeline executor");
 
         let action = pipex.handle_response(response)?;
 
         if let PipeAction::Respond = action {
-            self.skel.towards_fabric_router.send(pipex.respond()).await;
-            return  Ok(());
+            self.skel.traversal_router.send(pipex.respond()).await;
+            return Ok(());
         }
 
         self.state.pipe_exes.insert(request_id.clone(), pipex);
 
-        let action = RequestAction{
-            request_id,
-            action
-        };
+        let action = RequestAction { request_id, action };
 
         self.handle_action(action);
 
@@ -248,7 +247,7 @@ pub struct PipeEx {
     pub traversal: PipeTraversal,
     pub binder: FieldEx,
     pub pipeline: PipelineVar,
-    pub env: Env
+    pub env: Env,
 }
 
 impl PipeEx {
@@ -257,7 +256,7 @@ impl PipeEx {
         binder: FieldEx,
         pipeline: PipelineVar,
         env: Env,
-        logger: SpanLogger
+        logger: SpanLogger,
     ) -> Self {
         let traversal = PipeTraversal::new(traversal);
         Self {
@@ -265,7 +264,7 @@ impl PipeEx {
             binder,
             pipeline,
             env,
-            logger
+            logger,
         }
     }
 }
@@ -277,9 +276,7 @@ impl PipeEx {
                 self.execute_step(&segment.step)?;
                 Ok(self.execute_stop(&segment.stop)?)
             }
-            None => {
-                Ok(PipeAction::Respond)
-            }
+            None => Ok(PipeAction::Respond),
         }
     }
 
@@ -318,18 +315,26 @@ impl PipeEx {
                 core.body = self.traversal.body.clone();
                 core.headers = self.traversal.headers.clone();
                 core.uri = Uri::from_str(path.as_str())?;
-                let request = self.traversal.initial.clone().with(ReqShell::new(core, self.traversal.to(), call.point));
+                let request = self.traversal.initial.clone().with(ReqShell::new(
+                    core,
+                    self.traversal.to(),
+                    call.point,
+                ));
                 Ok(PipeAction::FabricRequest(request))
             }
             PipelineStopVar::Respond => Ok(PipeAction::Respond),
             PipelineStopVar::Point(point) => {
                 let uri = self.traversal.uri.clone();
-                let point:Point = point.clone().to_resolved(&self.env)?;
+                let point: Point = point.clone().to_resolved(&self.env)?;
                 let method = Method::Cmd(CmdMethod::Read);
                 let mut core = method.into();
                 core.uri = uri;
 
-                let request = self.traversal.initial.clone().with(ReqShell::new(core, self.traversal.to(), point));
+                let request = self.traversal.initial.clone().with(ReqShell::new(
+                    core,
+                    self.traversal.to(),
+                    point,
+                ));
                 Ok(PipeAction::FabricRequest(request))
             }
         }
@@ -348,7 +353,7 @@ impl PipeEx {
     }
 
     fn execute_block(&self, block: &PayloadBlockVar) -> Result<(), MsgErr> {
-        let block:PayloadBlock  = block.clone().to_resolved(&self.env)?;
+        let block: PayloadBlock = block.clone().to_resolved(&self.env)?;
         match block {
             PayloadBlock::RequestPattern(pattern) => {
                 pattern.is_match(&self.traversal.body)?;
@@ -360,7 +365,6 @@ impl PipeEx {
         Ok(())
     }
 }
-
 
 pub struct PipeTraversal {
     pub initial: Traversal<ReqShell>,
@@ -401,7 +405,9 @@ impl PipeTraversal {
     }
 
     pub fn request(&self) -> Traversal<ReqShell> {
-        self.initial.clone().with(ReqShell::new(self.request_core(), self.from(), self.to()))
+        self.initial
+            .clone()
+            .with(ReqShell::new(self.request_core(), self.from(), self.to()))
     }
 
     pub fn response_core(&self) -> RespCore {
@@ -449,15 +455,14 @@ impl PipeTraversal {
     }
 }
 
-pub trait RegistryApi: Send+Sync {
+pub trait RegistryApi: Send + Sync {
     async fn access(&self, to: &Agent, on: &Point) -> anyhow::Result<Access>;
-    async fn locate(&self, particle: &Point ) -> anyhow::Result<ParticleRecord>;
+    async fn locate(&self, particle: &Point) -> anyhow::Result<ParticleRecord>;
 }
-
 
 struct RequestAction {
     pub request_id: String,
-    pub action: PipeAction
+    pub action: PipeAction,
 }
 
 pub enum PipeAction {
@@ -465,4 +470,3 @@ pub enum PipeAction {
     FabricRequest(Traversal<ReqShell>),
     Respond,
 }
-

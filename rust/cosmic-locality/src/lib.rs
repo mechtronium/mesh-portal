@@ -19,6 +19,7 @@ pub mod router;
 pub mod machine;
 pub mod host;
 pub mod guest;
+pub mod cli;
 
 
 pub fn add(left: usize, right: usize) -> usize {
