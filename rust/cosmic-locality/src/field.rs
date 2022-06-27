@@ -3,18 +3,7 @@ use anyhow::anyhow;
 use dashmap::DashMap;
 use http::{HeaderMap, StatusCode, Uri};
 use mesh_artifact_api::Artifact;
-use mesh_portal::version::latest::config::bind::{
-    BindConfig, Pipeline, PipelineStep, PipelineStop, StepKind,
-};
-use mesh_portal::version::latest::entity::request::get::{Get, GetOp};
-use mesh_portal::version::latest::entity::request::{Method, Rc, ReqCore};
-use mesh_portal::version::latest::entity::response::RespCore;
-use mesh_portal::version::latest::id::Point;
-use mesh_portal::version::latest::log::{PointLogger, SpanLogger};
-use mesh_portal::version::latest::messaging::{Agent, Message, ReqShell, RespShell};
-use mesh_portal::version::latest::msg::MsgMethod;
-use mesh_portal::version::latest::payload::{Call, CallKind, Substance};
-use mesh_portal::version::latest::security::Access;
+
 use mesh_portal_versions::error::MsgErr;
 use mesh_portal_versions::version::v0_0_1::config::config::bind::{
     BindConfig, MessageKind, PipelineStepVar, PipelineStopVar,
@@ -40,11 +29,7 @@ use mesh_portal_versions::version::v0_0_1::wave::{
 };
 use nom::combinator::map_res;
 use regex::{CaptureMatches, Regex};
-use starlane_core::artifact::ArtifactRef;
-use starlane_core::error::Error;
-use starlane_core::message::delivery::Delivery;
-use starlane_core::star::core::particle::driver::ResourceCoreDriverApi;
-use starlane_core::star::StarSkel;
+
 use std::collections::HashMap;
 use std::pin::Pin;
 use std::str::FromStr;
@@ -119,6 +104,10 @@ impl FieldEx {
 impl TraversalLayer for FieldEx {
     fn layer(&self) -> &Layer {
         &Layer::Field
+    }
+
+    async fn traversal_router(&self, traversal: Traversal<Wave>) {
+        self.skel.traversal_router.send(traversal).await;
     }
 
     async fn towards_fabric_router(&self, traversal: Traversal<Wave>) {
@@ -455,6 +444,7 @@ impl PipeTraversal {
     }
 }
 
+#[async_trait]
 pub trait RegistryApi: Send + Sync {
     async fn access(&self, to: &Agent, on: &Point) -> anyhow::Result<Access>;
     async fn locate(&self, particle: &Point) -> anyhow::Result<ParticleRecord>;

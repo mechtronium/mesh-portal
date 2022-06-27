@@ -414,7 +414,7 @@ impl AsyncTransmitter for StarInternalTransmitter {
             .await?;
         let location = record.location.clone().ok_or()?;
         let plan = record.details.stub.kind.wave_traversal_plan();
-        let logger = skel.logger.point(wave.to().clone().to_point());
+        let logger = self.skel.logger.point(wave.to().clone().to_point());
         let logger = logger.span();
         let mut traversal = Traversal::new(
             wave,

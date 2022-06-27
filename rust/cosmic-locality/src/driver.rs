@@ -2,7 +2,6 @@ use crate::field::RegistryApi;
 use crate::machine::MachineSkel;
 use crate::star::StarSkel;
 use crate::state::DriverState;
-use cosmic_locality::state::DriverState;
 use dashmap::DashMap;
 use mesh_portal_versions::error::MsgErr;
 use mesh_portal_versions::version::v0_0_1::id::id::{Kind, Layer, ToPoint, TraversalLayer, Uuid};
@@ -82,26 +81,31 @@ impl Drivers {
     }
 }
 
+#[async_trait]
 impl TraversalLayer for Drivers {
     fn layer(&self) -> &Layer {
         &Layer::Driver
     }
 
-    async fn towards_fabric_router(&self, traversal: Traversal<Wave>) {
+    async fn traversal_router(&self, traversal: Traversal<Wave>) {
         self.skel.traversal_router.send(traversal).await;
     }
 
-    async fn towards_core_router(&self, traversal: Traversal<Wave>) {
-        match self.drivers.get(&traversal.record.details.stub.kind) {
-            None => {
-                traversal.logger.warn(format!(
-                    "star does not have a driver for Kind <{}>",
-                    traversal.record.details.stub.kind.to_string()
-                ));
+    async fn traverse(&self, traversal: Traversal<Wave>) {
+        if traversal.dir.is_core() {
+            match self.drivers.get(&traversal.record.details.stub.kind) {
+                None => {
+                    traversal.logger.warn(format!(
+                        "star does not have a driver for Kind <{}>",
+                        traversal.record.details.stub.kind.to_string()
+                    ));
+                }
+                Some(driver) => {
+                    driver.towards_core_router(traversal).await;
+                }
             }
-            Some(driver) => {
-                driver.towards_core_router(traversal).await;
-            }
+        } else {
+            self.traversal_router(traversal).await;
         }
     }
 
@@ -126,13 +130,13 @@ impl DriversBuilder {
         self.logger.replace(logger);
     }
 
-    pub fn build(self) -> Result<Drivers, MsgErr> {
+    pub fn build(self, skel: DriverSkel) -> Result<Drivers, MsgErr> {
         if self.logger.is_none() {
             return Err("expected point logger to be set".into());
         }
         let mut drivers = HashMap::new();
         for factory in self.factories.values() {
-            drivers.insert(factory.kind(), factory.create(skel));
+            drivers.insert(factory.kind(), factory.create(skel.clone()));
         }
         Ok(Drivers::new(drivers, self.logger.unwrap()))
     }
@@ -140,9 +144,10 @@ impl DriversBuilder {
 
 pub trait DriverFactory {
     fn kind(&self) -> Kind;
-    fn create(&self, skel: StarSkel) -> Arc<dyn Driver>;
+    fn create(&self, skel: DriverSkel) -> Arc<dyn Driver>;
 }
 
+#[async_trait]
 pub trait Driver: TraversalLayer + AsyncRequestHandler {
     fn skel(&self) -> StarSkel;
 

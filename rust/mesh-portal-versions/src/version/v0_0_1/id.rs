@@ -2717,6 +2717,21 @@ pub enum TraversalDirection {
 }
 
 impl TraversalDirection {
+    pub fn is_fabric(&self) -> bool {
+        match self {
+            TraversalDirection::Fabric => true,
+            TraversalDirection::Core => false,
+        }
+    }
+    pub fn is_core(&self) -> bool {
+        match self {
+            TraversalDirection::Fabric => false,
+            TraversalDirection::Core => true,
+        }
+    }
+}
+
+impl TraversalDirection {
     pub fn reverse(&self) -> TraversalDirection {
         match self {
             Self::Fabric => Self::Core,

@@ -57,7 +57,7 @@ impl Cli {
     pub async fn session(&self) -> Result<CliSession<'_>, MsgErr> {
         let mut req = ReqProto::new();
         req.to(self.cli_session_factory.clone());
-        req.method(MsgMethod::new("NewCliSession").unwrap().into());
+        req.method(MsgMethod::new("NewCliSession").unwrap());
 
         let response = self.tx.req(req).await?;
 
@@ -76,12 +76,15 @@ impl Cli {
 #[derive(Clone)]
 pub struct CliSession<'a> {
     pub cli: &'a Cli,
-    pub transmitter: ProtoTransmitter,
+    pub tx: ProtoTransmitter,
 }
 
 impl<'a> CliSession<'a> {
     pub fn new(cli: &'a Cli, transmitter: ProtoTransmitter) -> Self {
-        Self { cli, transmitter }
+        Self {
+            cli,
+            tx: transmitter,
+        }
     }
 
     pub async fn exec<R: ToString>(&self, raw: R) -> Result<RespShell, MsgErr> {
@@ -101,9 +104,8 @@ impl<'a> CliSession<'a> {
             transfers,
         };
         let mut req: ReqProto = ReqProto::new();
-        req.method(MsgMethod::new("Exec").unwrap());
-        request.body(raw.into())?;
-        self.tx.send(request.clone()).await
+        req.core(raw.into())?;
+        self.tx.send(req.clone()).await
     }
 
     pub fn template<R: ToString>(&self, raw: R) -> Result<CommandTemplate, MsgErr> {
@@ -114,10 +116,13 @@ impl<'a> CliSession<'a> {
 impl<'a> Drop for CliSession<'a> {
     fn drop(&mut self) {
         let request = ReqProto::msg(
-            self.to.with_topic(Topic::CLI),
+            self.to.with_topic(Topic::Cli),
             MsgMethod::new("DropSession").unwrap(),
         );
-        self.transmitter.send_sync(request);
+        let tx = self.tx.clone();
+        tokio::spawn(async move {
+            self.tx.req(request).await;
+        });
     }
 }
 

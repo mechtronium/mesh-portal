@@ -1,7 +1,6 @@
 use crate::field::FieldState;
 use crate::portal::PortalInlet;
 use dashmap::DashSet;
-use mesh_portal_versions::version::v0_0_1::id::id::Layer::PortalInlet;
 use mesh_portal_versions::version::v0_0_1::id::id::{Point, Uuid};
 use mesh_portal_versions::version::v0_0_1::particle::particle::Details;
 use std::sync::Arc;
