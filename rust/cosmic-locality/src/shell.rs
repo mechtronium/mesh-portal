@@ -24,9 +24,9 @@ use mesh_portal_versions::version::v0_0_1::parse::ScopedVars;
 use mesh_portal_versions::version::v0_0_1::quota::Timeouts;
 use mesh_portal_versions::version::v0_0_1::wave::{
     Agent, AsyncInternalRequestHandlers, AsyncPointRequestHandlers, AsyncRequestHandler,
-    AsyncRequestHandlerRelay, AsyncRouter, AsyncTransmitter, AsyncTransmitterWithAgent, ReqCtx,
-    ReqShell, ReqXtra, RequestHandler, Requestable, RespCore, RespShell, RespXtra, RootReqCtx,
-    Wave, WaveXtra,
+    AsyncRequestHandlerRelay, AsyncRouter, AsyncTransmitter, AsyncTransmitterWithAgent, InCtx,
+    ReqShell, ReqXtra, RequestHandler, Requestable, RespCore, RespShell, RespXtra, RootInCtx, Wave,
+    WaveXtra,
 };
 use std::sync::Arc;
 use std::time::Duration;
@@ -51,7 +51,7 @@ impl TraversalLayer for ShellEx {
         &Layer::Shell
     }
 
-    async fn towards_router(&self, traversal: Traversal<Wave>) {
+    async fn traversal_router(&self, traversal: Traversal<Wave>) {
         self.skel.traversal_router.send(traversal).await;
     }
 
@@ -65,7 +65,7 @@ impl TraversalLayer for ShellEx {
             self.skel.clone(),
             self.layer().clone(),
         ));
-        let ctx = RootReqCtx::new(request, logger, trasmitter.clone());
+        let ctx = RootInCtx::new(request, logger, trasmitter.clone());
         let response: Result<RespShell, MsgErr> = self.handle(ctx).await;
         let wave: Wave = response.into();
         trasmitter.route(wave).await;
@@ -133,7 +133,7 @@ impl TraversalLayer for ShellEx {
 #[routes]
 impl ShellEx {
     #[route("Msg<NewCli>")]
-    pub async fn new_session(&self, ctx: ReqCtx<'_, ReqShell>) -> Result<Port, MsgErr> {
+    pub async fn new_session(&self, ctx: InCtx<'_, ReqShell>) -> Result<Port, MsgErr> {
         // only allow a cli session to be created by any layer of THIS particle
         if ctx.from.clone().to_point() != ctx.to.clone().to_point() {
             return Err(MsgErr::forbidden());
@@ -164,8 +164,8 @@ impl ShellEx {
 #[routes_async]
 impl CliSession {
     #[route("Msg<Exec>")]
-    pub async fn exec(&self, ctx: ReqCtx<'_, RawCommand>) -> Result<RespCore, MsgErr> {
-        if self.state.source != ctx.request().from {
+    pub async fn exec(&self, ctx: InCtx<'_, RawCommand>) -> Result<RespCore, MsgErr> {
+        if self.state.source != ctx.req().from {
             return Err(MsgErr::forbidden());
         }
 

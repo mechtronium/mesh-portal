@@ -5,28 +5,29 @@ pub mod substance {
 
     use crate::error::{MsgErr, ParseErrs};
     use crate::version::v0_0_1::bin::Bin;
+    use crate::version::v0_0_1::cli::RawCommand;
     use crate::version::v0_0_1::command::request::{Rc, RcCommandType};
-    use crate::version::v0_0_1::id::id::{KindParts, BaseKind, Meta, Point, PointCtx, PointVar, Port};
+    use crate::version::v0_0_1::command::Command;
+    use crate::version::v0_0_1::http::HttpMethod;
+    use crate::version::v0_0_1::id::id::{
+        BaseKind, KindParts, Meta, Point, PointCtx, PointVar, Port,
+    };
+    use crate::version::v0_0_1::log::Log;
+    use crate::version::v0_0_1::msg::MsgMethod;
+    use crate::version::v0_0_1::parse::model::Subst;
+    use crate::version::v0_0_1::parse::{CtxResolver, Env};
     use crate::version::v0_0_1::particle::particle::{Particle, Status, Stub};
     use crate::version::v0_0_1::selector::selector::{KindSelector, PointSelector};
-    use crate::version::v0_0_1::util::{ToResolved, uuid, ValueMatcher, ValuePattern};
+    use crate::version::v0_0_1::sys::Sys;
+    use crate::version::v0_0_1::util::{uuid, ToResolved, ValueMatcher, ValuePattern};
+    use crate::version::v0_0_1::wave::{Method, ReqCore, RespCore, RespShell, Wave};
+    use cosmic_macros_primitive::Autobox;
+    use cosmic_nom::Tw;
+    use http::header::CONTENT_TYPE;
     use http::{HeaderMap, HeaderValue, Uri};
+    use serde_json::Value;
     use std::str::FromStr;
     use std::sync::Arc;
-    use http::header::CONTENT_TYPE;
-    use serde_json::Value;
-    use crate::version::v0_0_1::cli::RawCommand;
-    use crate::version::v0_0_1::command::Command;
-    use crate::version::v0_0_1::wave::{Method, ReqCore, RespShell, RespCore, Wave};
-    use crate::version::v0_0_1::http::HttpMethod;
-    use crate::version::v0_0_1::msg::MsgMethod;
-    use crate::version::v0_0_1::parse::{CtxResolver, Env};
-    use crate::version::v0_0_1::parse::model::Subst;
-    use cosmic_nom::Tw;
-    use cosmic_macros_primitive::Autobox;
-    use crate::version::v0_0_1::log::Log;
-    use crate::version::v0_0_1::sys::Sys;
-
 
     #[derive(
         Debug,
@@ -64,7 +65,9 @@ pub mod substance {
         Wave,
     }
 
-    #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, strum_macros::Display,Autobox)]
+    #[derive(
+        Debug, Clone, Serialize, Deserialize, Eq, PartialEq, strum_macros::Display, Autobox,
+    )]
     pub enum Substance {
         Empty,
         List(SubstanceList),
@@ -88,17 +91,19 @@ pub mod substance {
         RespCore(Box<RespCore>),
         Sys(Sys),
         Token(Token),
-        Wave(Box<Wave>)
+        Wave(Box<Wave>),
     }
 
-    #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq,Hash )]
+    #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
     pub struct Token {
-        data: String
+        data: String,
     }
 
     impl Token {
-        pub fn new<D:ToString>(data: D) -> Self {
-            Self{data:data.to_string()}
+        pub fn new<D: ToString>(data: D) -> Self {
+            Self {
+                data: data.to_string(),
+            }
         }
 
         pub fn new_uuid() -> Self {
@@ -136,7 +141,7 @@ pub mod substance {
         }
     }
 
-    pub trait ToRequestCore  {
+    pub trait ToRequestCore {
         type Method;
         fn to_request_core(self) -> ReqCore;
     }
@@ -192,7 +197,7 @@ pub mod substance {
                 Substance::Sys(_) => SubstanceKind::Sys,
                 Substance::MultipartForm(_) => SubstanceKind::MultipartForm,
                 Substance::Token(_) => SubstanceKind::Token,
-                Substance::Wave(_) => SubstanceKind::Wave
+                Substance::Wave(_) => SubstanceKind::Wave,
             }
         }
 
@@ -207,7 +212,6 @@ pub mod substance {
         }
     }
 
-
     impl TryInto<HashMap<String, Substance>> for Substance {
         type Error = MsgErr;
 
@@ -219,12 +223,10 @@ pub mod substance {
         }
     }
 
-
     #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
     pub struct SubstanceMap {
         pub map: HashMap<String, Substance>,
     }
-
 
     impl Deref for SubstanceMap {
         type Target = HashMap<String, Substance>;
@@ -323,9 +325,6 @@ pub mod substance {
         }
     }
 
-
-
-
     #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
     pub struct SubstanceList {
         pub list: Vec<Box<Substance>>,
@@ -396,7 +395,7 @@ pub mod substance {
     pub type SubstanceTypePatternCtx = SubstanceTypePatternDef<PointCtx>;
     pub type SubstanceTypePatternVar = SubstanceTypePatternDef<PointVar>;
 
-    #[derive(Debug, Clone, Serialize, Deserialize,Eq,PartialEq)]
+    #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
     pub enum SubstanceTypePatternDef<Pnt> {
         Empty,
         Primitive(SubstanceKind),
@@ -404,38 +403,37 @@ pub mod substance {
         Map(Box<MapPatternDef<Pnt>>),
     }
 
-
-
-    impl ToResolved<SubstanceTypePatternDef<Point>> for SubstanceTypePatternDef<PointCtx>{
-        fn to_resolved(self, env: &Env ) -> Result<SubstanceTypePatternDef<Point>, MsgErr> {
+    impl ToResolved<SubstanceTypePatternDef<Point>> for SubstanceTypePatternDef<PointCtx> {
+        fn to_resolved(self, env: &Env) -> Result<SubstanceTypePatternDef<Point>, MsgErr> {
             match self {
                 SubstanceTypePatternDef::Empty => Ok(SubstanceTypePatternDef::Empty),
-                SubstanceTypePatternDef::Primitive(payload_type) =>Ok(SubstanceTypePatternDef::Primitive(payload_type)),
-                SubstanceTypePatternDef::List(list)=>Ok(SubstanceTypePatternDef::List(list)),
-                SubstanceTypePatternDef::Map(map)  => {
+                SubstanceTypePatternDef::Primitive(payload_type) => {
+                    Ok(SubstanceTypePatternDef::Primitive(payload_type))
+                }
+                SubstanceTypePatternDef::List(list) => Ok(SubstanceTypePatternDef::List(list)),
+                SubstanceTypePatternDef::Map(map) => {
                     Err("MapPatternCtx resolution not supported yet...".into())
                 }
             }
         }
     }
-
 
     impl ToResolved<SubstanceTypePatternCtx> for SubstanceTypePatternVar {
-        fn to_resolved(self, env: &Env ) -> Result<SubstanceTypePatternCtx, MsgErr> {
+        fn to_resolved(self, env: &Env) -> Result<SubstanceTypePatternCtx, MsgErr> {
             match self {
                 SubstanceTypePatternVar::Empty => Ok(SubstanceTypePatternCtx::Empty),
-                SubstanceTypePatternVar::Primitive(payload_type) =>Ok(SubstanceTypePatternCtx::Primitive(payload_type)),
-                SubstanceTypePatternVar::List(list)=>Ok(SubstanceTypePatternCtx::List(list)),
-                SubstanceTypePatternVar::Map(map)  => {
+                SubstanceTypePatternVar::Primitive(payload_type) => {
+                    Ok(SubstanceTypePatternCtx::Primitive(payload_type))
+                }
+                SubstanceTypePatternVar::List(list) => Ok(SubstanceTypePatternCtx::List(list)),
+                SubstanceTypePatternVar::Map(map) => {
                     Err("MapPatternCtx resolution not supported yet...".into())
                 }
             }
         }
     }
 
-
-
-    impl <Pnt> SubstanceTypePatternDef<Pnt> {
+    impl<Pnt> SubstanceTypePatternDef<Pnt> {
         pub fn is_match(&self, payload: &Substance) -> Result<(), ()> {
             unimplemented!();
             /*
@@ -505,7 +503,7 @@ pub mod substance {
     pub type SubstancePatternCtx = SubstancePatternDef<PointCtx>;
     pub type SubstancePattern = SubstancePatternDef<Point>;
 
-    #[derive(Debug, Clone, Serialize,Deserialize,Eq,PartialEq)]
+    #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
     pub struct SubstancePatternDef<Pnt> {
         pub structure: SubstanceTypePatternDef<Pnt>,
         pub format: Option<SubstanceFormat>,
@@ -523,23 +521,20 @@ pub mod substance {
             };
             let validator = match self.validator {
                 None => None,
-                Some(validator) => {
-                    match validator.to_resolved(env) {
-                        Ok(validator) => Some(validator),
-                        Err(err) => {
-                            errs.push(err);
-                            None
-                        }
+                Some(validator) => match validator.to_resolved(env) {
+                    Ok(validator) => Some(validator),
+                    Err(err) => {
+                        errs.push(err);
+                        None
                     }
-                }
+                },
             };
-
 
             if errs.is_empty() {
                 Ok(SubstancePatternCtx {
                     structure: structure.expect("structure"),
                     validator: validator,
-                    format: self.format
+                    format: self.format,
                 })
             } else {
                 Err(ParseErrs::fold(errs).into())
@@ -551,7 +546,7 @@ pub mod substance {
         fn to_resolved(self, resolver: &Env) -> Result<SubstancePattern, MsgErr> {
             let mut errs = vec![];
             let structure = match self.structure.to_resolved(resolver) {
-              Ok(structure) => Some(structure),
+                Ok(structure) => Some(structure),
                 Err(err) => {
                     errs.push(err);
                     None
@@ -559,23 +554,20 @@ pub mod substance {
             };
             let validator = match self.validator {
                 None => None,
-                Some(validator) => {
-                    match validator.to_resolved(resolver) {
-                        Ok(validator) => Some(validator),
-                        Err(err) => {
-                            errs.push(err);
-                            None
-                        }
+                Some(validator) => match validator.to_resolved(resolver) {
+                    Ok(validator) => Some(validator),
+                    Err(err) => {
+                        errs.push(err);
+                        None
                     }
-                }
+                },
             };
-
 
             if errs.is_empty() {
                 Ok(SubstancePattern {
                     structure: structure.expect("structure"),
                     validator: validator,
-                    format: self.format
+                    format: self.format,
                 })
             } else {
                 Err(ParseErrs::fold(errs).into())
@@ -583,8 +575,7 @@ pub mod substance {
         }
     }
 
-
-        impl <Pnt> ValueMatcher<Substance> for SubstancePatternDef<Pnt> {
+    impl<Pnt> ValueMatcher<Substance> for SubstancePatternDef<Pnt> {
         fn is_match(&self, payload: &Substance) -> Result<(), ()> {
             self.structure.is_match(&payload)?;
 
@@ -593,7 +584,7 @@ pub mod substance {
         }
     }
 
-    #[derive(Debug, Clone,Serialize,Deserialize,Eq,PartialEq)]
+    #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
     pub struct CallWithConfigDef<Pnt> {
         pub call: CallDef<Pnt>,
         pub config: Option<Pnt>,
@@ -615,21 +606,19 @@ pub mod substance {
             };
             let config = match self.config {
                 None => None,
-                Some(config) => {
-                    match config.to_resolved(resolver) {
-                        Ok(config) => Some(config),
-                        Err(err) => {
-                            errs.push(err);
-                            None
-                        }
+                Some(config) => match config.to_resolved(resolver) {
+                    Ok(config) => Some(config),
+                    Err(err) => {
+                        errs.push(err);
+                        None
                     }
-                }
+                },
             };
 
             if errs.is_empty() {
                 Ok(CallWithConfigCtx {
                     call: call.expect("call"),
-                    config
+                    config,
                 })
             } else {
                 Err(ParseErrs::fold(errs).into())
@@ -648,21 +637,19 @@ pub mod substance {
             };
             let config = match self.config {
                 None => None,
-                Some(config) => {
-                    match config.to_resolved(resolver) {
-                        Ok(config) => Some(config),
-                        Err(err) => {
-                            errs.push(err);
-                            None
-                        }
+                Some(config) => match config.to_resolved(resolver) {
+                    Ok(config) => Some(config),
+                    Err(err) => {
+                        errs.push(err);
+                        None
                     }
-                }
+                },
             };
 
             if errs.is_empty() {
                 Ok(CallWithConfig {
                     call: call.expect("call"),
-                    config
+                    config,
                 })
             } else {
                 Err(ParseErrs::fold(errs).into())
@@ -670,47 +657,42 @@ pub mod substance {
         }
     }
 
-
-
     pub type Call = CallDef<Point>;
     pub type CallCtx = CallDef<PointCtx>;
     pub type CallVar = CallDef<PointVar>;
 
-    impl ToResolved<Call> for CallCtx{
-        fn to_resolved(self, env: &Env ) -> Result<Call, MsgErr> {
+    impl ToResolved<Call> for CallCtx {
+        fn to_resolved(self, env: &Env) -> Result<Call, MsgErr> {
             Ok(Call {
                 point: self.point.to_resolved(env)?,
-                kind: self.kind
+                kind: self.kind,
             })
         }
     }
 
-    impl ToResolved<CallCtx> for CallVar{
-        fn to_resolved(self, env: &Env ) -> Result<CallCtx, MsgErr> {
+    impl ToResolved<CallCtx> for CallVar {
+        fn to_resolved(self, env: &Env) -> Result<CallCtx, MsgErr> {
             Ok(CallCtx {
                 point: self.point.to_resolved(env)?,
-                kind: self.kind
+                kind: self.kind,
             })
         }
     }
 
-    impl ToResolved<Call> for CallVar{
-        fn to_resolved(self, env: &Env ) -> Result<Call, MsgErr> {
+    impl ToResolved<Call> for CallVar {
+        fn to_resolved(self, env: &Env) -> Result<Call, MsgErr> {
             let call: CallCtx = self.to_resolved(env)?;
             call.to_resolved(env)
         }
     }
 
-
-    #[derive(Debug, Clone,Serialize,Deserialize,Eq,PartialEq)]
+    #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
     pub struct CallDef<Pnt> {
         pub point: Pnt,
         pub kind: CallKind,
     }
 
-
-
-    #[derive(Debug, Clone,Serialize,Deserialize,Eq,PartialEq)]
+    #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
     pub enum CallKind {
         Msg(MsgCall),
         Http(HttpCall),
@@ -743,7 +725,7 @@ pub mod substance {
         }
     }
 
-    #[derive(Debug, Clone,Serialize,Deserialize,Eq,PartialEq )]
+    #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
     pub struct MsgCall {
         pub path: Subst<Tw<String>>,
         pub method: MsgMethod,
@@ -751,7 +733,7 @@ pub mod substance {
 
     impl MsgCall {
         pub fn new(method: MsgMethod, path: Subst<Tw<String>>) -> Self {
-            Self { method , path }
+            Self { method, path }
         }
     }
 
@@ -761,7 +743,7 @@ pub mod substance {
         }
     }
 
-    #[derive(Debug, Clone,Serialize,Deserialize,Eq,PartialEq)]
+    #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
     pub struct HttpCall {
         pub path: Subst<Tw<String>>,
 
@@ -769,7 +751,7 @@ pub mod substance {
     }
 
     impl HttpCall {
-            pub fn new(method: HttpMethod, path: Subst<Tw<String>>) -> Self {
+        pub fn new(method: HttpMethod, path: Subst<Tw<String>>) -> Self {
             Self { method, path }
         }
     }
@@ -779,7 +761,6 @@ pub mod substance {
             format!("Http<{}>{}", self.method.to_string(), self.path.to_string())
         }
     }
-
 
     /*
     impl FromStr for HttpMethod {
@@ -840,20 +821,17 @@ pub mod substance {
         Image,
     }
 
-
-
     pub type MapPattern = MapPatternDef<Point>;
     pub type MapPatternCtx = MapPatternDef<PointCtx>;
     pub type MapPatternVar = MapPatternDef<PointVar>;
 
-
-    #[derive(Debug, Clone,Serialize,Deserialize,Eq,PartialEq)]
+    #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
     pub struct MapPatternDef<Pnt> {
         pub required: HashMap<String, ValuePattern<SubstancePatternDef<Pnt>>>,
         pub allowed: ValuePattern<SubstancePatternDef<Pnt>>,
     }
 
-    impl <Pnt> Default for MapPatternDef<Pnt> {
+    impl<Pnt> Default for MapPatternDef<Pnt> {
         fn default() -> Self {
             MapPatternDef {
                 required: Default::default(),
@@ -862,13 +840,13 @@ pub mod substance {
         }
     }
 
-    impl <Pnt> ToString for MapPatternDef<Pnt> {
+    impl<Pnt> ToString for MapPatternDef<Pnt> {
         fn to_string(&self) -> String {
             "Map?".to_string()
         }
     }
 
-    impl <Pnt>MapPatternDef<Pnt> {
+    impl<Pnt> MapPatternDef<Pnt> {
         pub fn new(
             required: HashMap<String, ValuePattern<SubstancePatternDef<Pnt>>>,
             allowed: ValuePattern<SubstancePatternDef<Pnt>>,
@@ -1011,13 +989,13 @@ pub mod substance {
 
      */
 
-/*    #[derive(Debug, Clone, Serialize, Deserialize)]
-    pub enum SubstanceDelivery<PAYLOAD, PAYLOAD_REF> {
-        Substance(PAYLOAD),
-        Ref(PAYLOAD_REF),
-    }
+    /*    #[derive(Debug, Clone, Serialize, Deserialize)]
+       pub enum SubstanceDelivery<PAYLOAD, PAYLOAD_REF> {
+           Substance(PAYLOAD),
+           Ref(PAYLOAD_REF),
+       }
 
- */
+    */
 
     /*
     impl<FromSubstance, FromSubstanceRef> SubstanceDelivery<FromSubstance, FromSubstanceRef> {
@@ -1038,20 +1016,16 @@ pub mod substance {
     }
      */
 
-
-
-
-
-    #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq )]
+    #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
     pub struct MultipartForm {
-        data: String
+        data: String,
     }
 
-    impl TryInto<HashMap<String,String>> for MultipartForm {
+    impl TryInto<HashMap<String, String>> for MultipartForm {
         type Error = MsgErr;
 
         fn try_into(self) -> Result<HashMap<String, String>, Self::Error> {
-            let map: HashMap<String,String> = serde_urlencoded::from_str(&self.data )?;
+            let map: HashMap<String, String> = serde_urlencoded::from_str(&self.data)?;
             Ok(map)
         }
     }
@@ -1071,7 +1045,7 @@ pub mod substance {
                 headers,
                 method: HttpMethod::Post.into(),
                 uri: Default::default(),
-                body: Substance::MultipartForm(self)
+                body: Substance::MultipartForm(self),
             }
         }
     }
@@ -1097,28 +1071,27 @@ pub mod substance {
     }
 
     pub struct MultipartFormBuilder {
-        map: HashMap<String,String>
+        map: HashMap<String, String>,
     }
 
     impl MultipartFormBuilder {
         pub fn new() -> Self {
             Self {
-                map: HashMap::new()
+                map: HashMap::new(),
             }
         }
 
-        pub fn put<S:ToString>( & mut self, key: S, value: S ) {
-            self.insert(key.to_string(),value.to_string() );
+        pub fn put<S: ToString>(&mut self, key: S, value: S) {
+            self.insert(key.to_string(), value.to_string());
         }
 
-        pub fn get<S:ToString>( &self, key: S ) -> Option<&String> {
-            self.map.get(&key.to_string() )
+        pub fn get<S: ToString>(&self, key: S) -> Option<&String> {
+            self.map.get(&key.to_string())
         }
-
     }
 
     impl Deref for MultipartFormBuilder {
-        type Target = HashMap<String,String>;
+        type Target = HashMap<String, String>;
 
         fn deref(&self) -> &Self::Target {
             &self.map
@@ -1127,26 +1100,14 @@ pub mod substance {
 
     impl DerefMut for MultipartFormBuilder {
         fn deref_mut(&mut self) -> &mut Self::Target {
-            & mut self.map
+            &mut self.map
         }
     }
 
     impl MultipartFormBuilder {
-        pub fn build(self) -> Result<MultipartForm,MsgErr> {
-            let data = serde_urlencoded::to_string(&self.map )?;
-            Ok(MultipartForm {
-                data
-            })
+        pub fn build(self) -> Result<MultipartForm, MsgErr> {
+            let data = serde_urlencoded::to_string(&self.map)?;
+            Ok(MultipartForm { data })
         }
     }
-
-
-
-
 }
-
-
-
-
-
-

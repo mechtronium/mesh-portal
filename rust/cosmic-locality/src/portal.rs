@@ -28,36 +28,7 @@ impl TraversalLayer for PortalInlet {
         todo!()
     }
 
-    async fn towards_fabric_router(&self, traversal: Traversal<Wave>) {
-        todo!()
-    }
-
-    async fn towards_core_router(&self, traversal: Traversal<Wave>) {
-        todo!()
-    }
-
-    fn exchange(&self) -> &Arc<DashMap<Uuid, Sender<RespShell>>> {
-        todo!()
-    }
-
-    async fn layer_handle(&self, request: ReqShell) {
-        todo!()
-    }
-}
-
-/// the portal endpoint that is outside of the Mesh
-pub struct PortalOutlet {}
-
-impl TraversalLayer for PortalOutlet {
-    fn layer(&self) -> &Layer {
-        todo!()
-    }
-
-    async fn towards_fabric_router(&self, traversal: Traversal<Wave>) {
-        todo!()
-    }
-
-    async fn towards_core_router(&self, traversal: Traversal<Wave>) {
+    async fn traversal_router(&self, traversal: Traversal<Wave>) {
         todo!()
     }
 
@@ -92,11 +63,7 @@ impl TraversalLayer for TunnelOutlet {
         todo!()
     }
 
-    async fn towards_fabric_router(&self, traversal: Traversal<Wave>) {
-        todo!()
-    }
-
-    async fn towards_core_router(&self, traversal: Traversal<Wave>) {
+    async fn traversal_router(&self, traversal: Traversal<Wave>) {
         todo!()
     }
 
@@ -125,11 +92,7 @@ impl TraversalLayer for TunnelInlet {
         todo!()
     }
 
-    async fn towards_fabric_router(&self, traversal: Traversal<Wave>) {
-        todo!()
-    }
-
-    async fn towards_core_router(&self, traversal: Traversal<Wave>) {
+    async fn traversal_router(&self, traversal: Traversal<Wave>) {
         todo!()
     }
 
@@ -158,11 +121,7 @@ impl TraversalLayer for PortalOutlet {
         todo!()
     }
 
-    async fn towards_fabric_router(&self, traversal: Traversal<Wave>) {
-        todo!()
-    }
-
-    async fn towards_core_router(&self, traversal: Traversal<Wave>) {
+    async fn traversal_router(&self, traversal: Traversal<Wave>) {
         todo!()
     }
 
@@ -188,23 +147,18 @@ impl PortalShell {
 
 impl TraversalLayer for PortalShell {
     fn layer(&self) -> &Layer {
-        &Layer::PortalShell
+        todo!()
     }
 
-    async fn towards_fabric_router(&self, traversal: Traversal<Wave>) {
-        self.skel.traversal_router.send(traversal).await;
-    }
-
-    async fn towards_core_router(&self, traversal: Traversal<Wave>) {
-        // intercept Assignments
-        self.skel.towards_core_router.send(traversal).await;
+    async fn traversal_router(&self, traversal: Traversal<Wave>) {
+        todo!()
     }
 
     fn exchange(&self) -> &Arc<DashMap<Uuid, Sender<RespShell>>> {
-        &self.skel.exchange
+        todo!()
     }
 
     async fn layer_handle(&self, request: ReqShell) {
-        // this is where
+        todo!()
     }
 }

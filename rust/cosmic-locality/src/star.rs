@@ -26,8 +26,8 @@ use mesh_portal_versions::version::v0_0_1::substance::substance::Substance;
 use mesh_portal_versions::version::v0_0_1::sys::{Assign, Sys};
 use mesh_portal_versions::version::v0_0_1::util::ValueMatcher;
 use mesh_portal_versions::version::v0_0_1::wave::{
-    Agent, AsyncRequestHandler, AsyncTransmitter, AsyncTransmitterWithAgent, ReqCtx, ReqShell,
-    Requestable, RespCore, RespShell, RootReqCtx, Router, Transporter, Wave,
+    Agent, AsyncRequestHandler, AsyncTransmitter, AsyncTransmitterWithAgent, InCtx, ReqShell,
+    Requestable, RespCore, RespShell, RootInCtx, Router, Transporter, Wave,
 };
 use serde::{Deserialize, Serialize};
 use std::ops::{Deref, DerefMut};
@@ -245,7 +245,7 @@ impl Star {
         if *wave.to() == *self.skel.point() && wave.is_req() {
             let req = wave.unwrap_req();
             let stub = req.as_stub();
-            let ctx = RootReqCtx::new(req, self.skel.logger.span(), self.transmitter.clone());
+            let ctx = RootInCtx::new(req, self.skel.logger.span(), self.transmitter.clone());
             match self.handle(ctx).await {
                 Ok(resp) => {
                     self.transmitter.route(Wave::Resp(resp)).await;
@@ -292,7 +292,7 @@ impl Star {
                             match result {
                                 Ok(topic_handler) => {
                                     let req = traversal.unwrap_req().payload;
-                                    let ctx = RootReqCtx::new(
+                                    let ctx = RootInCtx::new(
                                         req,
                                         self.skel.logger.span(),
                                         self.transmitter.clone(),
@@ -362,7 +362,7 @@ impl Star {
 #[routes]
 impl Star {
     #[route("Sys<Assign>")]
-    pub async fn assign(&self, ctx: ReqCtx<'_, Sys>) -> Result<RespCore, MsgErr> {
+    pub async fn assign(&self, ctx: InCtx<'_, Sys>) -> Result<RespCore, MsgErr> {
         self.drivers.assign(ctx).await
     }
 }
@@ -384,7 +384,7 @@ impl StarInternalTransmitter {
 }
 
 impl AsyncTransmitter for StarInternalTransmitter {
-    async fn send(&self, request: ReqShell) -> RespShell {
+    async fn req(&self, request: ReqShell) -> RespShell {
         let (tx, rx) = oneshot::channel();
         self.skel.exchange.insert(request.id.clone(), tx);
         let stub = request.as_stub();

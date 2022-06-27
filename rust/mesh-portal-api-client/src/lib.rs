@@ -14,21 +14,25 @@ extern crate cosmic_macros_primitive;
 #[macro_use]
 extern crate lazy_static;
 
-use std::collections::HashSet;
 use dashmap::{DashMap, DashSet};
 use mesh_portal::error::MsgErr;
+use mesh_portal::version::latest::entity::response::RespCore;
 use mesh_portal::version::latest::id::{Point, Port, Uuid};
 use mesh_portal::version::latest::messaging::{Agent, ReqCtx, SysMethod};
+use mesh_portal::version::latest::payload::Substance;
+use mesh_portal::version::latest::sys::{Assign, Sys};
 use mesh_portal_versions::version::v0_0_1::id::id::{Layer, ToPoint, ToPort};
-use mesh_portal_versions::version::v0_0_1::wave::{AsyncInternalRequestHandlers, AsyncTransmitter, AsyncTransmitterWithAgent, AsyncRequestHandler, AsyncRequestHandlerRelay, AsyncRouter, ReqShell, ReqXtra, RequestHandlerRelay, Requestable, RespShell, RespXtra, WaitTime, Wave, WaveXtra, AsyncPointRequestHandlers};
 use mesh_portal_versions::version::v0_0_1::quota::Timeouts;
+use mesh_portal_versions::version::v0_0_1::wave::{
+    AsyncInternalRequestHandlers, AsyncPointRequestHandlers, AsyncRequestHandler,
+    AsyncRequestHandlerRelay, AsyncRouter, AsyncTransmitter, ProtoTransmitter, ReqShell, ReqXtra,
+    RequestHandlerRelay, Requestable, RespShell, RespXtra, WaitTime, Wave, WaveXtra,
+};
+use std::collections::HashSet;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::mpsc;
 use tokio::sync::oneshot;
-use mesh_portal::version::latest::entity::response::RespCore;
-use mesh_portal::version::latest::payload::Substance;
-use mesh_portal::version::latest::sys::{Assign, Sys};
 
 pub struct PortalCore {
     pub port: Port,
@@ -46,18 +50,21 @@ impl PortalCore {
         let messenger = Arc::new(PortalTransmitter::new(inlet_tx, assigned.clone()));
 
         async fn listen_for_point(
-            mut outlet_rx: mpsc::Receiver<Wave>
+            mut outlet_rx: mpsc::Receiver<Wave>,
         ) -> Result<(Point, mpsc::Receiver<Wave>), MsgErr> {
             while let Ok(frame) = tokio::time::timeout(
                 Duration::from_secs(Timeouts::default().from(WaitTime::High)),
                 outlet_rx.recv(),
-            ).await
+            )
+            .await
             {
                 if let Some(frame) = frame {
-                    if let Wave::Req(request) = frame{
+                    if let Wave::Req(request) = frame {
                         let point: Point = request
                             .require_method(SysMethod::AssignPort)?
-                            .core.body.try_into()?;
+                            .core
+                            .body
+                            .try_into()?;
                         return Ok((point, outlet_rx));
                     } // else do nothing...
                 } else {
@@ -72,20 +79,20 @@ impl PortalCore {
 
         let handlers = AsyncInternalRequestHandlers::new();
 
-       let mut port= point.to_port().with_layer(Layer::Core);
+        let mut port = point.to_port().with_layer(Layer::Core);
 
-       {
-          let handlers = handlers.clone();
-          tokio::spawn(async move {
-             while let Some(wave) = outlet_rx.recv().await {
-                 // process wave somehow...
-             }
-          });
-       }
+        {
+            let handlers = handlers.clone();
+            tokio::spawn(async move {
+                while let Some(wave) = outlet_rx.recv().await {
+                    // process wave somehow...
+                }
+            });
+        }
 
         Ok(Self {
             port,
-           assigned,
+            assigned,
             transmitter: messenger,
             handlers,
         })
@@ -123,7 +130,7 @@ impl PortalTransmitter {
 
 #[async_trait]
 impl AsyncTransmitter for PortalTransmitter {
-    async fn send(&self, request: ReqShell ) -> RespShell {
+    async fn req(&self, request: ReqShell) -> RespShell {
         if !self.assigned.contains(&request.from.clone().to_point()) {
             return request.forbidden();
         }
@@ -146,61 +153,47 @@ impl AsyncTransmitter for PortalTransmitter {
         }
     }
 
-    fn send_sync(&self, request: ReqShell ) -> RespShell {
-        let (tx, rx) = oneshot::channel();
-        self.exchanges.insert(request.id.clone(), tx);
-        let response = tokio::runtime::Handle::current().block_on(async move {
-            let stub = request.as_stub();
-            self.inlet_tx.send(request.into()).await;
-            if let Ok(result) =
-                tokio::time::timeout(Duration::from_secs(self.timeouts.from(&stub )), rx).await
-            {
-                if let Ok(frame) = result {
-                    frame
-                } else {
-                    stub.server_error()
-                }
-            } else {
-                stub.timeout()
-            }
-        });
-        response
-    }
-
     async fn route(&self, wave: Wave) {
         unimplemented!()
     }
 }
 
-pub trait PortalCtrlFactory: Send+Sync {
-   fn create(&self, assign: Assign, tx: AsyncTransmitterWithAgent) -> Result<Box<dyn AsyncRequestHandler>,MsgErr>;
+pub trait PortalCtrlFactory: Send + Sync {
+    fn create(
+        &self,
+        assign: Assign,
+        tx: ProtoTransmitter,
+    ) -> Result<Box<dyn AsyncRequestHandler>, MsgErr>;
 }
-
-
 
 #[derive(AsyncRequestHandler)]
 pub struct PortalRequestHandler {
     factory: Box<dyn PortalCtrlFactory>,
     handlers: AsyncPointRequestHandlers,
-    messenger: Arc<dyn AsyncTransmitter>
+    messenger: Arc<dyn AsyncTransmitter>,
 }
 
 #[routes_async(self.handlers)]
 impl PortalRequestHandler {
+    pub fn new(
+        transmitter: Arc<dyn AsyncTransmitter>,
+        factory: Box<dyn PortalCtrlFactory>,
+    ) -> Self {
+        Self {
+            factory,
+            handlers: AsyncPointRequestHandlers::new(),
+            messenger: transmitter,
+        }
+    }
 
-   pub fn new(transmitter: Arc<dyn AsyncTransmitter>, factory: Box<dyn PortalCtrlFactory>) -> Self {
-      Self {
-         factory,
-         handlers: AsyncPointRequestHandlers::new(),
-          messenger: transmitter
-      }
-   }
+    #[route("Sys<Assign>")]
+    pub async fn assign(&self, request: ReqCtx<'_, Assign>) -> Result<RespCore, MsgErr> {
+        let mut transmitter = ProtoTransmitter::new(self.messenger.clone());
 
-   #[route("Sys<Assign>")]
-   pub async fn assign(&self, request: ReqCtx<'_,Assign>) -> Result<RespCore,MsgErr> {
-      let transmitter = AsyncTransmitterWithAgent::new(Agent::Anonymous, request.details.stub.point.clone().to_port().with_layer(Layer::Core), self.messenger.clone() );
-      self.handlers.add( request.details.stub.point.clone(), self.factory.create(request.input.clone(), transmitter)?);
-      Ok(RespCore::ok(Substance::Empty))
-   }
-
+        self.handlers.add(
+            request.details.stub.point.clone(),
+            self.factory.create(request.input.clone(), transmitter)?,
+        );
+        Ok(RespCore::ok(Substance::Empty))
+    }
 }

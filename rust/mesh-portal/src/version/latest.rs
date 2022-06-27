@@ -9,7 +9,6 @@ use serde::{Deserialize, Serialize};
 
 use mesh_portal_versions::version::v0_0_1 as current;
 
-
 pub type State = current::State;
 
 pub mod artifact {
@@ -18,7 +17,6 @@ pub mod artifact {
     pub type ArtifactRequest = current::artifact::ArtifactRequest;
     pub type ArtifactResponse = current::artifact::ArtifactResponse;
 }
-
 
 pub mod id {
     use mesh_portal_versions::version::v0_0_1 as current;
@@ -47,12 +45,12 @@ pub mod id {
 
 pub mod path {
     use mesh_portal_versions::version::v0_0_1 as current;
-    pub type Path=current::path::Path;
+    pub type Path = current::path::Path;
 }
 
 pub mod selector {
-    use mesh_portal_versions::version::{v0_0_1 as current, v0_0_1};
     use mesh_portal_versions::version::v0_0_1::selector;
+    use mesh_portal_versions::version::{v0_0_1 as current, v0_0_1};
 
     pub type GenericKindSelector = selector::selector::KindBaseSelector;
     pub type GenericSubKindSelector = selector::selector::SubKindSelector;
@@ -71,7 +69,7 @@ pub mod selector {
     pub type UploadBlock = v0_0_1::selector::UploadBlock;
     pub type CreateBlock = v0_0_1::selector::CreateBlock;
     pub type PatternBlock = v0_0_1::selector::PatternBlock;
-    pub type MapEntryPattern= selector::selector::MapEntryPattern;
+    pub type MapEntryPattern = selector::selector::MapEntryPattern;
     pub type Hop = selector::selector::Hop;
     pub type Pattern<P> = selector::selector::Pattern<P>;
     pub type EmptyPattern<P> = selector::selector::EmptyPattern<P>;
@@ -87,16 +85,16 @@ pub mod selector {
         pub type ProductSelector = selector::selector::specific::ProductSelector;
         pub type VariantSelector = selector::selector::specific::VariantSelector;
         pub type VersionPattern = selector::selector::specific::VersionPattern;
-   }
+    }
 }
 
 pub mod messaging {
     use mesh_portal_versions::version::v0_0_1 as current;
     use mesh_portal_versions::version::v0_0_1::wave;
 
-    pub type RequestHandler=dyn wave::RequestHandler;
-    pub type ReqCtx<'a,R> = wave::ReqCtx<'a,R>;
-    pub type RootRequestCtx<R> = wave::RootReqCtx<R>;
+    pub type RequestHandler = dyn wave::RequestHandler;
+    pub type ReqCtx<'a, R> = wave::InCtx<'a, R>;
+    pub type RootRequestCtx<R> = wave::RootInCtx<R>;
     pub type ReqShell = wave::ReqShell;
     pub type RespShell = wave::RespShell;
     pub type RequestBuilder = wave::ReqBuilder;
@@ -114,9 +112,7 @@ pub mod messaging {
     pub type MethodPattern = wave::MethodPattern;
 
     pub type SysMethod = wave::SysMethod;
-
 }
-
 
 pub mod frame {
     use mesh_portal_versions::version::v0_0_1 as current;
@@ -146,14 +142,13 @@ pub mod parse {
     use mesh_portal_versions::error::MsgErr;
     use mesh_portal_versions::version::v0_0_1::config::config::bind::RouteSelector;
 
-    pub fn route_attribute(s: &str ) -> Result<RouteSelector, MsgErr> {
+    pub fn route_attribute(s: &str) -> Result<RouteSelector, MsgErr> {
         current::parse::route_attribute(s)
     }
 
-    pub fn route_attribute_value(s: &str ) -> Result<RouteSelector, MsgErr> {
+    pub fn route_attribute_value(s: &str) -> Result<RouteSelector, MsgErr> {
         current::parse::route_attribute_value(s)
     }
-
 }
 
 pub mod payload {
@@ -184,8 +179,6 @@ pub mod command {
     pub mod request {
         use mesh_portal_versions::version;
         use mesh_portal_versions::version::v0_0_1 as current;
-
-
     }
 
     pub mod common {
@@ -215,7 +208,6 @@ pub mod security {
     pub type AccessGrantKind = current::security::AccessGrantKind;
 }
 
-
 pub mod msg {
     use mesh_portal_versions::version::v0_0_1 as current;
     use mesh_portal_versions::version::v0_0_1::msg;
@@ -243,17 +235,16 @@ pub mod config {
     pub type Document = config::config::Document;
     pub type ParticleConfigBody = config::config::ParticleConfigBody;
 
-
     pub mod bind {
         use mesh_portal_versions::version::v0_0_1 as current;
         use mesh_portal_versions::version::v0_0_1::config;
 
         pub type RouteSelector = config::config::bind::RouteSelector;
         pub type BindConfig = config::config::bind::BindConfig;
-        pub type ConfigScope<T,E>= config::config::bind::ConfigScope<T,E>;
-        pub type Pipeline= config::config::bind::Pipeline;
-        pub type PipelineStep= config::config::bind::PipelineStep;
-        pub type PipelineStop= config::config::bind::PipelineStop;
+        pub type ConfigScope<T, E> = config::config::bind::ConfigScope<T, E>;
+        pub type Pipeline = config::config::bind::Pipeline;
+        pub type PipelineStep = config::config::bind::PipelineStep;
+        pub type PipelineStop = config::config::bind::PipelineStop;
         pub type PatternBlock = config::config::bind::PatternBlock;
         pub type Whitelist = config::config::bind::Whitelist;
         pub type CallPattern = config::config::bind::CallPattern;
@@ -268,8 +259,8 @@ pub mod entity {
     pub type EntityType = wave::MethodKind;
 
     pub mod request {
-        use mesh_portal_versions::version::{v0_0_1 as current, v0_0_1};
         use mesh_portal_versions::version::v0_0_1::{command, entity};
+        use mesh_portal_versions::version::{v0_0_1 as current, v0_0_1};
 
         pub type Method = v0_0_1::wave::Method;
         pub type ReqCore = v0_0_1::wave::ReqCore;
@@ -280,7 +271,7 @@ pub mod entity {
             use mesh_portal_versions::version::v0_0_1 as current;
             use mesh_portal_versions::version::v0_0_1::{command, entity};
 
-            pub type Create= command::request::create::Create;
+            pub type Create = command::request::create::Create;
             pub type Template = command::request::create::Template;
             pub type KindTemplate = command::request::create::KindTemplate;
             pub type Fulfillment = command::request::create::Fulfillment;
@@ -314,7 +305,7 @@ pub mod entity {
             use mesh_portal_versions::version::v0_0_1 as current;
             use mesh_portal_versions::version::v0_0_1::{command, entity};
 
-            pub type Query= command::request::query::Query;
+            pub type Query = command::request::query::Query;
             pub type QueryResult = command::request::query::QueryResult;
         }
 
@@ -335,8 +326,8 @@ pub mod entity {
     }
 
     pub mod response {
-        use mesh_portal_versions::version::{v0_0_1 as current, v0_0_1};
         use mesh_portal_versions::version::v0_0_1::entity;
+        use mesh_portal_versions::version::{v0_0_1 as current, v0_0_1};
 
         pub type RespCore = v0_0_1::wave::RespCore;
     }
@@ -357,19 +348,16 @@ pub mod particle {
     pub type Property = particle::particle::Property;
 }
 
-
-
-
 pub mod util {
-    use mesh_portal_versions::version::v0_0_1 as current;
     use crate::error::MsgErr;
+    use mesh_portal_versions::version::v0_0_1 as current;
 
     pub type ValuePattern<T> = current::util::ValuePattern<T>;
     pub type ValueMatcher<T> = dyn current::util::ValueMatcher<T>;
     pub type RegexMatcher = current::util::RegexMatcher;
     pub type StringMatcher = current::util::StringMatcher;
-    pub type Convert<A>= dyn current::util::Convert<A>;
-    pub type ConvertFrom<A>= dyn current::util::ConvertFrom<A>;
+    pub type Convert<A> = dyn current::util::Convert<A>;
+    pub type ConvertFrom<A> = dyn current::util::ConvertFrom<A>;
 
     pub fn uuid() -> String {
         current::util::uuid()
@@ -417,7 +405,7 @@ pub mod fail {
     }
 
     pub type BadRequest = current::fail::BadRequest;
-    pub type BadCoercion= current::fail::BadCoercion;
+    pub type BadCoercion = current::fail::BadCoercion;
     pub type Conditional = current::fail::Conditional;
     pub type Timeout = current::fail::Timeout;
     pub type NotFound = current::fail::NotFound;
@@ -425,7 +413,7 @@ pub mod fail {
     pub type Identifier = current::fail::Identifier;
     pub type Illegal = current::fail::Illegal;
     pub type Wrong = current::fail::Wrong;
-    pub type Messaging= current::fail::Messaging;
+    pub type Messaging = current::fail::Messaging;
     pub type Fail = current::fail::Fail;
 }
 
@@ -452,14 +440,13 @@ pub mod cli {
     pub type Transfer = current::cli::Transfer;
 }
 
-
 pub mod service {
     use mesh_portal_versions::version::{v0_0_1 as current, v0_0_1};
 
-    pub type Router=dyn v0_0_1::wave::AsyncRouter;
-    pub type Global=dyn current::service::Global;
-    pub type AccessProvider=dyn current::service::AccessProvider;
-    pub type AllAccessProvider=current::service::AllAccessProvider;
+    pub type Router = dyn v0_0_1::wave::AsyncRouter;
+    pub type Global = dyn current::service::Global;
+    pub type AccessProvider = dyn current::service::AccessProvider;
+    pub type AllAccessProvider = current::service::AllAccessProvider;
 }
 
 pub mod sys {
@@ -468,4 +455,3 @@ pub mod sys {
     pub type AssignmentKind = current::sys::AssignmentKind;
     pub type Sys = current::sys::Sys;
 }
-

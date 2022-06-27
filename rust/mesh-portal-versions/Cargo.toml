@@ -32,5 +32,6 @@ chrono = { version="0.4.19", features=["serde"] }
 tokio = { version = "1.15.0", features = ["full"] }
 dashmap = "4.0.2"
 serde_urlencoded = "0.7.1"
+enum-ordinalize = "3.1.11"
 
 #tailcall = "0.1.6"

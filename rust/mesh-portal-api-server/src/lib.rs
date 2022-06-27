@@ -27,16 +27,20 @@ use mesh_portal::version::latest::fail;
 use mesh_portal::version::latest::frame::CloseReason;
 use mesh_portal::version::latest::id::{Point, Port};
 use mesh_portal::version::latest::log::{RootLogger, SpanLogger};
-use mesh_portal::version::latest::messaging::{Agent, ReqProto, ReqShell, RespShell, Scope, SysMethod};
+use mesh_portal::version::latest::messaging::{
+    Agent, ReqProto, ReqShell, RespShell, Scope, SysMethod,
+};
 use mesh_portal::version::latest::particle::Stub;
 use mesh_portal::version::latest::payload::Substance;
 use mesh_portal::version::latest::sys::{Assign, Sys};
 use mesh_portal_versions::error::MsgErr;
 use mesh_portal_versions::version::v0_0_1::id::id::{Layer, ToPoint, ToPort};
-use mesh_portal_versions::version::v0_0_1::wave::{AsyncTransmitter, AsyncRequestHandler, MethodKind, RespCore, RootReqCtx, AsyncRouter, Wave, WaveXtra, Requestable, RespXtra};
+use mesh_portal_versions::version::v0_0_1::wave::{
+    AsyncRequestHandler, AsyncRouter, AsyncTransmitter, MethodKind, Requestable, RespCore,
+    RespXtra, RootInCtx, Wave, WaveXtra,
+};
 use std::fmt::Debug;
 use tokio::task::yield_now;
-
 
 #[derive(Clone)]
 pub enum PortalEvent {
@@ -80,7 +84,8 @@ impl Portal {
         point: Point,
         transmitter: Arc<dyn AsyncTransmitter>,
     ) -> (Self, mpsc::Sender<WaveXtra>) {
-        let (inlet_tx, mut inlet_rx):(mpsc::Sender<WaveXtra>, mpsc::Receiver<WaveXtra>) = mpsc::channel(1024);
+        let (inlet_tx, mut inlet_rx): (mpsc::Sender<WaveXtra>, mpsc::Receiver<WaveXtra>) =
+            mpsc::channel(1024);
         {
             let outlet_tx = outlet_tx.clone();
             let logger = logger.point(point.clone());
@@ -91,13 +96,13 @@ impl Portal {
                     match inlet_rx.recv().await {
                         Some(frame) => {
                             let span = frame.span();
-                            match frame{
+                            match frame {
                                 WaveXtra::Req(frame) => {
                                     let request = frame.request;
                                     let stub = request.as_stub();
                                     match tokio::time::timeout(
                                         Duration::from_secs(config.response_timeout),
-                                        transmitter.send(request),
+                                        transmitter.req(request),
                                     )
                                     .await
                                     {
@@ -107,8 +112,7 @@ impl Portal {
                                             outlet_tx.send(frame).await;
                                         }
                                         _ => {
-                                            let response =
-                                                stub.err(MsgErr::timeout());
+                                            let response = stub.err(MsgErr::timeout());
                                             let frame = RespXtra::new(response);
                                             let frame = WaveXtra::Resp(frame);
                                             outlet_tx.send(frame).await;
@@ -147,7 +151,7 @@ impl Portal {
         )
     }
 
-    pub async fn assign(&self, assign: Assign) -> Result<(),MsgErr>{
+    pub async fn assign(&self, assign: Assign) -> Result<(), MsgErr> {
         let point = assign.details.stub.point.clone();
         self.assigned.insert(point.clone());
         let logger = self.logger.point(point.clone());
@@ -155,20 +159,14 @@ impl Portal {
         let stub = assign.details.stub.clone();
         let assign: Sys = assign.into();
         let assign: Substance = assign.into();
-        let mut request =
-            ReqProto::sys(Point::local_portal().clone().to_port(), SysMethod::Assign);
+        let mut request = ReqProto::sys(Point::local_portal().clone().to_port(), SysMethod::Assign);
         request.body(assign);
-        let request = request.to_request(
-            point.clone().to_port().with_layer(Layer::Shell),
-            Agent::Anonymous,
-            Scope::Full,
-        )?;
-        let frame = request.to_frame(Some(logger.current_span().clone()) );
+        request.fill_from(point.clone().to_port().with_layer(Layer::Shell));
+        let frame = request.to_frame(Some(logger.current_span().clone()));
         let frame = frame.into();
         self.outlet_tx.send(frame).await;
 
-        self.broadcast_tx
-            .send(PortalEvent::ParticleAdded(point));
+        self.broadcast_tx.send(PortalEvent::ParticleAdded(point));
         Ok(())
     }
 
@@ -176,11 +174,11 @@ impl Portal {
         let stub = request.as_stub();
         match tokio::time::timeout(
             Duration::from_secs(self.config.response_timeout),
-            self.transmitter.send(request),
+            self.transmitter.req(request),
         )
         .await
         {
-            Ok(response) => response,
+            Ok(Ok(response)) => response,
             _ => {
                 let response = stub.err(MsgErr::timeout());
                 response
@@ -188,9 +186,7 @@ impl Portal {
         }
     }
 
-    pub fn shutdown(&mut self) {
-
-    }
+    pub fn shutdown(&mut self) {}
 
     pub fn has_core_port(&self, port: &Port) -> Result<(), ()> {
         if let Layer::Shell = port.layer {
@@ -216,19 +212,19 @@ impl AsyncRouter for Portal {
         match wave {
             Wave::Req(request) => {
                 if self.has_core_port(&request.to).is_err() {
-                    self.transmitter.route(request.not_found().into() ).await;
+                    self.transmitter.route(request.not_found().into()).await;
                     return;
                 }
 
                 // don't allow anyone to say this request came from itself
-                if  self.has_core_port(&request.from).is_ok() {
-                    self.transmitter.route(request.forbidden().into() ).await;
+                if self.has_core_port(&request.from).is_ok() {
+                    self.transmitter.route(request.forbidden().into()).await;
                     return;
                 }
 
                 // the portal shell sends Sys messages...
                 if request.core.method.kind() == MethodKind::Sys {
-                    self.transmitter.route(request.forbidden().into() ).await;
+                    self.transmitter.route(request.forbidden().into()).await;
                     return;
                 }
                 let logger = self.logger.point(request.to.clone().to_point());
@@ -243,8 +239,6 @@ impl AsyncRouter for Portal {
         }
     }
 }
-
-
 
 #[cfg(test)]
 pub mod test {

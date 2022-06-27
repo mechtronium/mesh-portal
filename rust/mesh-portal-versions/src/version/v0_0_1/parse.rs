@@ -1783,7 +1783,7 @@ impl File {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct FileResolver {
     pub files: HashMap<String, Bin>,
 }
@@ -1820,7 +1820,7 @@ impl FileResolver {
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct ScopedVars {
-    parent: Option<ScopedVars>,
+    parent: Option<Box<ScopedVars>>,
     pub point: Point,
     pub vars: HashMap<String, Substance>,
     pub file_resolver: FileResolver,
@@ -1837,8 +1837,8 @@ impl ScopedVars {
     }
     pub fn push(self) -> Self {
         Self {
-            parent: Some(self),
             point: self.point.clone(),
+            parent: Some(Box::new(self)),
             vars: HashMap::new(),
             file_resolver: FileResolver::new(),
         }
@@ -1846,19 +1846,21 @@ impl ScopedVars {
 
     pub fn push_working<S: ToString>(self, segs: S) -> Result<Self, MsgErr> {
         Ok(Self {
-            parent: Some(self),
             point: self.point.push(segs.to_string())?,
+            parent: Some(Box::new(self)),
             vars: HashMap::new(),
             file_resolver: FileResolver::new(),
         })
     }
 
     pub fn pop(self) -> Result<ScopedVars, MsgErr> {
-        Ok(self.parent.ok_or("expected parent scopedVars".into())?)
+        Ok(*self
+            .parent
+            .ok_or::<MsgErr>("expected parent scopedVars".into())?)
     }
 
-    pub fn val<K: ToString>(&self, var: K) -> Result<Substance, ResolverErr> {
-        match self.vars.get(var.to_string()) {
+    pub fn val<K: ToString>(&self, var: K) -> Result<&Substance, ResolverErr> {
+        match self.vars.get(&var.to_string()) {
             None => {
                 if let Some(parent) = self.parent.as_ref() {
                     parent.val(var.to_string())
@@ -1871,28 +1873,19 @@ impl ScopedVars {
     }
 
     pub fn set_working(&mut self, point: Point) {
-        self.point.replace(point);
+        self.point = point;
     }
 
     pub fn working(&self) -> &Point {
         &self.point
     }
 
-    pub fn set_var<V: ToString>(&mut self, key: V, value: V) {
-        match self.var_resolver.as_mut() {
-            None => {
-                let mut var_resolver = CompositeResolver::new();
-                var_resolver.set(key, value);
-                self.var_resolver.replace(var_resolver);
-            }
-            Some(var_resolver) => {
-                var_resolver.set(key, value);
-            }
-        }
+    pub fn set_var<V: ToString>(&mut self, key: V, value: Substance) {
+        self.vars.insert(key.to_string(), value);
     }
 
     pub fn file<N: ToString>(&self, name: N) -> Result<File, ResolverErr> {
-        match self.file_resolver.get(&name.to_string()) {
+        match self.file_resolver.files.get(&name.to_string()) {
             None => {
                 if let Some(parent) = self.parent.as_ref() {
                     parent.file(name.to_string())
@@ -1900,21 +1893,12 @@ impl ScopedVars {
                     Err(ResolverErr::NotFound)
                 }
             }
-            Some(file) => Ok(file),
+            Some(bin) => Ok(File::new(name.to_string(), bin.clone())),
         }
     }
 
     pub fn set_file<N: ToString>(&mut self, name: N, content: Bin) {
-        match self.file_resolver.as_mut() {
-            None => {
-                let mut file_resolver = FileResolver::new();
-                file_resolver.files.insert(name.to_string(), content);
-                self.file_resolver.replace(file_resolver);
-            }
-            Some(file_resolver) => {
-                file_resolver.files.insert(name.to_string(), content);
-            }
-        }
+        self.file_resolver.files.insert(name.to_string(), content);
     }
 }
 
@@ -4948,7 +4932,7 @@ use crate::version::v0_0_1::config::config::Document;
 use crate::version::v0_0_1::http::HttpMethod;
 use crate::version::v0_0_1::id::id::{BaseKind, KindParts, PointKind, PointSeg, Specific};
 use crate::version::v0_0_1::id::{
-    ArtifactSubKind, BaseSubKind, DatabaseSubKind, FileSubKind, StarKey, UserBaseSubKind,
+    ArtifactSubKind, BaseSubKind, DatabaseSubKind, FileSubKind, StarKey, StarSub, UserBaseSubKind,
 };
 use crate::version::v0_0_1::msg::MsgMethod;
 use crate::version::v0_0_1::parse::error::{find_parse_err, result};
@@ -5497,6 +5481,17 @@ pub fn resolve_kind<I: Span>(base: BaseKind) -> impl FnMut(I) -> Res<I, Kind> {
             },
             BaseKind::Artifact => match ArtifactSubKind::from_str(sub.as_str()) {
                 Ok(sub) => Ok((next, Kind::Artifact(sub))),
+                Err(err) => {
+                    let err = ErrorTree::from_error_kind(input.clone(), ErrorKind::Fail);
+                    Err(nom::Err::Error(ErrorTree::add_context(
+                        input,
+                        "kind-sub:not-accepted",
+                        err,
+                    )))
+                }
+            },
+            BaseKind::Star => match StarSub::from_str(sub.as_str()) {
+                Ok(sub) => Ok((next, Kind::Star(sub))),
                 Err(err) => {
                     let err = ErrorTree::from_error_kind(input.clone(), ErrorKind::Fail);
                     Err(nom::Err::Error(ErrorTree::add_context(
@@ -8138,13 +8133,13 @@ fn topic_uuid<I: Span>(input: I) -> Res<I, Topic> {
         .map(|(next, uuid)| ((next, Topic::Uuid(uuid))))
 }
 
+fn topic_cli<I: Span>(input: I) -> Res<I, Topic> {
+    value(Topic::Cli, tag("Topic<Cli>"))(input)
+}
+
 fn topic_path<I: Span>(input: I) -> Res<I, Topic> {
     delimited(tag("Topic<Path>("), many1(skewer_case), tag(")"))(input)
         .map(|(next, segments)| ((next, Topic::Path(segments))))
-}
-
-fn topic_cli<I: Span>(input: I) -> Res<I, Topic> {
-    context("Topic<CLI>", value(Topic::CLI, tag("Topic<CLI>")))(input)
 }
 
 fn topic_any<I: Span>(input: I) -> Res<I, Topic> {
@@ -8162,7 +8157,7 @@ pub fn topic_none<I: Span>(input: I) -> Res<I, Topic> {
 pub fn topic<I: Span>(input: I) -> Res<I, Topic> {
     context(
         "topic",
-        alt((topic_path, topic_uuid, topic_cli, topic_any, topic_not)),
+        alt((topic_cli, topic_path, topic_uuid, topic_any, topic_not)),
     )(input)
 }
 

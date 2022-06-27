@@ -12,7 +12,7 @@ use mesh_portal_versions::version::v0_0_1::particle::particle::Status;
 use mesh_portal_versions::version::v0_0_1::substance::substance::Substance;
 use mesh_portal_versions::version::v0_0_1::sys::{Assign, Sys};
 use mesh_portal_versions::version::v0_0_1::wave::{
-    AsyncRequestHandler, ReqCtx, ReqShell, RespCore, RespShell, Wave,
+    AsyncRequestHandler, InCtx, ReqShell, RespCore, RespShell, Wave,
 };
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -55,7 +55,7 @@ impl Drivers {
 }
 
 impl Drivers {
-    pub async fn assign(&self, ctx: ReqCtx<'_, Sys>) -> Result<RespCore, MsgErr> {
+    pub async fn assign(&self, ctx: InCtx<'_, Sys>) -> Result<RespCore, MsgErr> {
         if let Sys::Assign(assign) = &ctx.input {
             match self.drivers.get(&assign.details.stub.kind) {
                 None => Err(format!(
@@ -72,8 +72,8 @@ impl Drivers {
                     self.skel
                         .state
                         .driver
-                        .insert(ctx.request().to.clone().to_point(), state);
-                    Ok(ctx.request().core.ok(Substance::Empty))
+                        .insert(ctx.req().to.clone().to_point(), state);
+                    Ok(ctx.req().core.ok(Substance::Empty))
                 }
             }
         } else {

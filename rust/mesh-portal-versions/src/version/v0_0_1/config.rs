@@ -52,7 +52,7 @@ pub mod config {
         }
     }
 
-    #[derive(Debug, Clone, Serialize, Deserialize,Eq,PartialEq)]
+    #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
     pub struct PointConfig<Body> {
         pub point: Point,
         pub body: Body,
@@ -66,23 +66,23 @@ pub mod config {
         }
     }
 
-    #[derive(Clone,Autobox)]
+    #[derive(Clone)]
     pub enum Document {
         BindConfig(BindConfig),
     }
 
-    #[derive(Debug, Clone, Serialize, Deserialize,Eq,PartialEq)]
+    #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
     pub struct ParticleConfigBody {
-        pub details: Details
+        pub details: Details,
     }
 
     pub mod bind {
         use crate::error::{MsgErr, ParseErrs};
         use crate::version::v0_0_1::command::request::Rc;
-        use crate::version::v0_0_1::wave::{MethodKind, MethodPattern, ReqShell, ReqCore};
         use crate::version::v0_0_1::id::id::{Point, PointCtx, PointVar, Topic};
         use crate::version::v0_0_1::substance::substance::{Call, CallDef};
         use crate::version::v0_0_1::substance::substance::{Substance, SubstancePattern};
+        use crate::version::v0_0_1::wave::{MethodKind, MethodPattern, ReqCore, ReqShell};
 
         use crate::version::v0_0_1::parse::model::{
             BindScope, MessageScope, MethodScope, PipelineSegment, PipelineSegmentDef, PipelineVar,
@@ -364,13 +364,11 @@ pub mod config {
                     topic: None,
                     method: ValuePattern::Any,
                     path: Regex::new("/.*").unwrap(),
-                    filters: Default::default()
+                    filters: Default::default(),
                 }
             }
 
-            pub fn from_method(
-                method: ValuePattern<MethodPattern>,
-            ) -> Self {
+            pub fn from_method(method: ValuePattern<MethodPattern>) -> Self {
                 Self {
                     topic: None,
                     method,
@@ -379,15 +377,14 @@ pub mod config {
                 }
             }
 
-            pub fn with_topic( self, topic: Topic ) -> Self {
+            pub fn with_topic(self, topic: Topic) -> Self {
                 Self {
                     topic: Some(ValuePattern::Pattern(topic)),
                     method: self.method,
                     path: self.path,
-                    filters: self.filters
+                    filters: self.filters,
                 }
             }
-
 
             pub fn is_match(&self, request: &ReqShell) -> Result<(), ()> {
                 if let Some(topic) = &self.topic {

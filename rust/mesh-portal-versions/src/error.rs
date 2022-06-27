@@ -3,68 +3,59 @@ use std::fmt::{Debug, Display, Formatter};
 use std::io;
 use std::string::FromUtf8Error;
 
+use crate::version::v0_0_1::parse::error::find_parse_err;
+use crate::version::v0_0_1::substance::substance::{Errors, Substance};
+use crate::version::v0_0_1::wave::RespCore;
+use ariadne::{Label, Report, ReportBuilder, ReportKind, Source};
+use cosmic_nom::Span;
+use cosmic_nom::SpanExtra;
 use http::header::ToStrError;
 use http::status::InvalidStatusCode;
 use http::uri::InvalidUri;
+use http::StatusCode;
 use nom::error::VerboseError;
 use nom::Err;
 use nom_locate::LocatedSpan;
 use nom_supreme::error::{ErrorTree, StackContext};
+use serde::de::Error;
 use std::num::ParseIntError;
 use std::ops::Range;
 use std::rc::Rc;
 use std::sync::{Arc, PoisonError};
-use ariadne::{Label, Report, ReportBuilder, ReportKind, Source};
-use http::StatusCode;
-use serde::de::Error;
-use crate::version::v0_0_1::parse::error::find_parse_err;
-use cosmic_nom::SpanExtra;
-use cosmic_nom::Span;
-use crate::version::v0_0_1::wave::RespCore;
-use crate::version::v0_0_1::substance::substance::{Errors, Substance};
 
 pub enum MsgErr {
-    Status {
-        status: u16,
-        message: String,
-    },
+    Status { status: u16, message: String },
     ParseErrs(ParseErrs),
-//    SubstErr(SubstErr)
 }
 
 impl Into<RespCore> for MsgErr {
     fn into(self) -> RespCore {
         match self {
-            MsgErr::Status { status, message } => {
-                RespCore {
-                    headers: Default::default(),
-                    status: StatusCode::from_u16(status).unwrap_or(StatusCode::from_u16(500).unwrap()),
-                    body: Substance::Errors(Errors::default(message.as_str()))
-                }
-            }
-            MsgErr::ParseErrs(_) => {
-                RespCore {
-                    headers: Default::default(),
-                    status: StatusCode::from_u16(500u16).unwrap_or(StatusCode::from_u16(500).unwrap()),
-                    body: Substance::Errors(Errors::default("parsing error..."))
-                }
-            }
+            MsgErr::Status { status, message } => RespCore {
+                headers: Default::default(),
+                status: StatusCode::from_u16(status).unwrap_or(StatusCode::from_u16(500).unwrap()),
+                body: Substance::Errors(Errors::default(message.as_str())),
+            },
+            MsgErr::ParseErrs(_) => RespCore {
+                headers: Default::default(),
+                status: StatusCode::from_u16(500u16).unwrap_or(StatusCode::from_u16(500).unwrap()),
+                body: Substance::Errors(Errors::default("parsing error...")),
+            },
         }
-
     }
 }
 
 impl MsgErr {
-    pub fn from_status(status:u16) -> MsgErr {
+    pub fn from_status(status: u16) -> MsgErr {
         let message = match status {
             400 => "Bad Request".to_string(),
             404 => "Not Found".to_string(),
             403 => "Forbidden".to_string(),
             408 => "Timeout".to_string(),
             500 => "Internal Server Error".to_string(),
-            status => format!("{} Error",status)
+            status => format!("{} Error", status),
         };
-        MsgErr::Status { status, message}
+        MsgErr::Status { status, message }
     }
 }
 
@@ -76,11 +67,11 @@ impl Into<ParseErrs> for MsgErr {
                 let report = builder.with_message(message).finish();
                 let errs = ParseErrs {
                     report: vec![report],
-                    source: None
+                    source: None,
                 };
                 errs
             }
-            MsgErr::ParseErrs(errs) => errs
+            MsgErr::ParseErrs(errs) => errs,
         }
     }
 }
@@ -110,16 +101,12 @@ impl Debug for MsgErr {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
             MsgErr::Status { status, message } => {
-                f.write_str(format!("{}: {}",status,message).as_str() )
+                f.write_str(format!("{}: {}", status, message).as_str())
             }
-            MsgErr::ParseErrs(_) => {
-                f.write_str("Error Report..." )
-            }
+            MsgErr::ParseErrs(_) => f.write_str("Error Report..."),
         }
     }
 }
-
-
 
 impl MsgErr {
     pub fn print(&self) {
@@ -127,16 +114,12 @@ impl MsgErr {
             MsgErr::Status { .. } => {
                 println!("{}", self.to_string());
             }
-            MsgErr::ParseErrs(err) => {
-                err.print()
-            }
+            MsgErr::ParseErrs(err) => err.print(),
         }
     }
 }
 
 impl MsgErr {
-
-
     pub fn new(status: u16, message: &str) -> Self {
         Self::Status {
             status,
@@ -158,7 +141,6 @@ impl MsgErr {
         }
     }
 
-
     pub fn err500() -> Self {
         Self::Status {
             status: 500,
@@ -173,8 +155,7 @@ impl MsgErr {
         }
     }
 
-
-    pub fn from_500<S:ToString>(message: S) -> Self {
+    pub fn from_500<S: ToString>(message: S) -> Self {
         Self::Status {
             status: 500,
             message: message.to_string(),
@@ -183,26 +164,17 @@ impl MsgErr {
 }
 
 impl StatusErr for MsgErr {
-
     fn status(&self) -> u16 {
         match self {
-            MsgErr::Status { status,message } => {
-                status.clone()
-            }
-            MsgErr::ParseErrs(_) => {
-                500u16
-            }
+            MsgErr::Status { status, message } => status.clone(),
+            MsgErr::ParseErrs(_) => 500u16,
         }
     }
 
     fn message(&self) -> String {
         match self {
-            MsgErr::Status { status,message } => {
-                message.clone()
-            }
-            MsgErr::ParseErrs(_) => {
-                "Error report".to_string()
-            }
+            MsgErr::Status { status, message } => message.clone(),
+            MsgErr::ParseErrs(_) => "Error report".to_string(),
         }
     }
 }
@@ -216,11 +188,9 @@ impl Display for MsgErr {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
             MsgErr::Status { status, message } => {
-                f.write_str(format!("{}: {}",status,message).as_str() )
+                f.write_str(format!("{}: {}", status, message).as_str())
             }
-            MsgErr::ParseErrs(_) => {
-                f.write_str("Error Report..." )
-            }
+            MsgErr::ParseErrs(_) => f.write_str("Error Report..."),
         }
     }
 }
@@ -236,11 +206,11 @@ impl From<String> for MsgErr {
     }
 }
 
-impl <T> From<PoisonError<T>> for MsgErr {
+impl<T> From<PoisonError<T>> for MsgErr {
     fn from(e: PoisonError<T>) -> Self {
         MsgErr::Status {
             status: 500,
-            message: e.to_string()
+            message: e.to_string(),
         }
     }
 }
@@ -265,7 +235,7 @@ impl From<FromUtf8Error> for MsgErr {
 
 impl From<&str> for MsgErr {
     fn from(message: &str) -> Self {
-        Self::Status  {
+        Self::Status {
             status: 500,
             message: message.to_string(),
         }
@@ -274,7 +244,7 @@ impl From<&str> for MsgErr {
 
 impl From<Box<bincode::ErrorKind>> for MsgErr {
     fn from(message: Box<bincode::ErrorKind>) -> Self {
-        Self::Status  {
+        Self::Status {
             status: 500,
             message: message.to_string(),
         }
@@ -283,7 +253,7 @@ impl From<Box<bincode::ErrorKind>> for MsgErr {
 
 impl From<Infallible> for MsgErr {
     fn from(i: Infallible) -> Self {
-        Self::Status  {
+        Self::Status {
             status: 500,
             message: i.to_string(),
         }
@@ -292,7 +262,7 @@ impl From<Infallible> for MsgErr {
 
 impl From<nom::Err<VerboseError<&str>>> for MsgErr {
     fn from(error: nom::Err<VerboseError<&str>>) -> Self {
-        Self::Status  {
+        Self::Status {
             status: 500,
             message: error.to_string(),
         }
@@ -301,28 +271,25 @@ impl From<nom::Err<VerboseError<&str>>> for MsgErr {
 
 impl From<semver::Error> for MsgErr {
     fn from(error: semver::Error) -> Self {
-        Self::Status  {
+        Self::Status {
             status: 500,
             message: error.to_string(),
         }
     }
 }
-
 
 impl From<ErrorTree<&str>> for MsgErr {
     fn from(error: ErrorTree<&str>) -> Self {
-        Self::Status  {
+        Self::Status {
             status: 500,
             message: error.to_string(),
         }
     }
 }
 
-
-
 impl From<strum::ParseError> for MsgErr {
     fn from(error: strum::ParseError) -> Self {
-        Self::Status  {
+        Self::Status {
             status: 500,
             message: error.to_string(),
         }
@@ -331,7 +298,7 @@ impl From<strum::ParseError> for MsgErr {
 
 impl From<ParseIntError> for MsgErr {
     fn from(x: ParseIntError) -> Self {
-        Self::Status  {
+        Self::Status {
             status: 500,
             message: x.to_string(),
         }
@@ -340,7 +307,7 @@ impl From<ParseIntError> for MsgErr {
 
 impl From<regex::Error> for MsgErr {
     fn from(x: regex::Error) -> Self {
-        Self::Status  {
+        Self::Status {
             status: 500,
             message: x.to_string(),
         }
@@ -349,7 +316,7 @@ impl From<regex::Error> for MsgErr {
 
 impl From<InvalidUri> for MsgErr {
     fn from(x: InvalidUri) -> Self {
-        Self::Status  {
+        Self::Status {
             status: 500,
             message: x.to_string(),
         }
@@ -358,7 +325,7 @@ impl From<InvalidUri> for MsgErr {
 
 impl From<http::Error> for MsgErr {
     fn from(x: http::Error) -> Self {
-        Self::Status  {
+        Self::Status {
             status: 500,
             message: x.to_string(),
         }
@@ -367,16 +334,16 @@ impl From<http::Error> for MsgErr {
 
 impl From<ToStrError> for MsgErr {
     fn from(x: ToStrError) -> Self {
-        Self::Status  {
+        Self::Status {
             status: 500,
             message: x.to_string(),
         }
     }
 }
 
-impl <I:Span> From<nom::Err<ErrorTree<I>>> for MsgErr {
+impl<I: Span> From<nom::Err<ErrorTree<I>>> for MsgErr {
     fn from(err: Err<ErrorTree<I>>) -> Self {
-        fn handle<I:Span>(err: ErrorTree<I>) -> MsgErr {
+        fn handle<I: Span>(err: ErrorTree<I>) -> MsgErr {
             match err {
                 ErrorTree::Base {
                     location,
@@ -421,109 +388,101 @@ impl <I:Span> From<nom::Err<ErrorTree<I>>> for MsgErr {
     }
 }
 
-
 impl Into<String> for MsgErr {
     fn into(self) -> String {
         self.to_string()
     }
 }
 
-
-
 impl From<io::Error> for MsgErr {
     fn from(e: io::Error) -> Self {
-        MsgErr::new(500,e.to_string().as_str())
+        MsgErr::new(500, e.to_string().as_str())
     }
 }
-
 
 impl From<ParseErrs> for MsgErr {
     fn from(errs: ParseErrs) -> Self {
         MsgErr::ParseErrs(errs)
     }
 }
-impl <I:Span> From<nom::Err<ErrorTree<I>>> for ParseErrs {
+impl<I: Span> From<nom::Err<ErrorTree<I>>> for ParseErrs {
     fn from(err: Err<ErrorTree<I>>) -> Self {
         match find_parse_err(&err) {
-            MsgErr::Status { .. } => {
-                ParseErrs {
-                   report: vec![],
-                   source: None
-                }
-            }
-            MsgErr::ParseErrs(parse_errs) => parse_errs
+            MsgErr::Status { .. } => ParseErrs {
+                report: vec![],
+                source: None,
+            },
+            MsgErr::ParseErrs(parse_errs) => parse_errs,
         }
     }
 }
 
-
-pub struct SubstErr {
-}
+pub struct SubstErr {}
 
 impl SubstErr {
-
-    pub fn report( &self ) -> Result<Report,MsgErr> {
+    pub fn report(&self) -> Result<Report, MsgErr> {
         unimplemented!()
     }
-
 }
 
 pub struct ParseErrs {
     pub report: Vec<Report>,
-    pub source: Option<Arc<String>>
+    pub source: Option<Arc<String>>,
 }
 
-
 impl ParseErrs {
-
     pub fn from_report(report: Report, source: Arc<String>) -> Self {
         Self {
             report: vec![report],
-            source: Some(source)
+            source: Some(source),
         }
     }
 
-    pub fn from_loc_span<I:Span>(message: &str, label: &str, span: I) -> MsgErr{
-
+    pub fn from_loc_span<I: Span>(message: &str, label: &str, span: I) -> MsgErr {
         let mut builder = Report::build(ReportKind::Error, (), 23);
-        let report = builder.with_message(message).with_label(
-            Label::new(span.location_offset()..(span.location_offset()+span.len())).with_message(label),
-        ).finish();
+        let report = builder
+            .with_message(message)
+            .with_label(
+                Label::new(span.location_offset()..(span.location_offset() + span.len()))
+                    .with_message(label),
+            )
+            .finish();
         return ParseErrs::from_report(report, span.extra()).into();
     }
 
-    pub fn from_range(message: &str, label: &str, range: Range<usize>, extra: SpanExtra ) -> MsgErr{
-
+    pub fn from_range(message: &str, label: &str, range: Range<usize>, extra: SpanExtra) -> MsgErr {
         let mut builder = Report::build(ReportKind::Error, (), 23);
-        let report = builder.with_message(message).with_label(
-            Label::new(range).with_message(label),
-        ).finish();
+        let report = builder
+            .with_message(message)
+            .with_label(Label::new(range).with_message(label))
+            .finish();
         return ParseErrs::from_report(report, extra).into();
     }
 
-
-
-    pub fn from_owned_span<I:Span>(message: &str, label: &str, span: I) -> MsgErr{
+    pub fn from_owned_span<I: Span>(message: &str, label: &str, span: I) -> MsgErr {
         let mut builder = Report::build(ReportKind::Error, (), 23);
-        let report = builder.with_message(message).with_label(
-            Label::new(span.location_offset()..(span.location_offset()+span.len())).with_message(label),
-        ).finish();
+        let report = builder
+            .with_message(message)
+            .with_label(
+                Label::new(span.location_offset()..(span.location_offset() + span.len()))
+                    .with_message(label),
+            )
+            .finish();
         return ParseErrs::from_report(report, span.extra()).into();
     }
 
-
     pub fn print(&self) {
         if let Some(source) = self.source.as_ref() {
-            for report in &self.report
-            {
-                report.print(Source::from(source.as_str())).unwrap_or_default()
+            for report in &self.report {
+                report
+                    .print(Source::from(source.as_str()))
+                    .unwrap_or_default()
             }
         }
     }
 
-    pub fn fold<E:Into<ParseErrs>>( errs: Vec<E> ) -> ParseErrs {
-
-        let errs : Vec<ParseErrs> = errs.into_iter().map( |e| e.into() ).collect();
+    pub fn fold<E: Into<ParseErrs>>(errs: Vec<E>) -> ParseErrs {
+        let errs: Vec<ParseErrs> = errs.into_iter().map(|e| e.into()).collect();
 
         let source = if let Some(first) = errs.first() {
             if let Some(source) = first.source.as_ref().cloned() {
@@ -535,9 +494,9 @@ impl ParseErrs {
             None
         };
 
-        let mut rtn = ParseErrs{
+        let mut rtn = ParseErrs {
             report: vec![],
-            source
+            source,
         };
 
         for err in errs {
@@ -552,17 +511,92 @@ impl From<serde_urlencoded::de::Error> for MsgErr {
     fn from(err: serde_urlencoded::de::Error) -> Self {
         MsgErr::Status {
             status: 500u16,
-            message: err.to_string()
+            message: err.to_string(),
         }
     }
 }
-
 
 impl From<serde_urlencoded::ser::Error> for MsgErr {
     fn from(err: serde_urlencoded::ser::Error) -> Self {
         MsgErr::Status {
             status: 500u16,
-            message: err.to_string()
+            message: err.to_string(),
         }
+    }
+}
+
+pub mod report {
+    use serde::{Deserialize, Serialize};
+
+    #[derive(Clone, Serialize, Deserialize)]
+    pub struct Report {
+        kind: ReportKind,
+        code: Option<String>,
+        msg: Option<String>,
+        note: Option<String>,
+        help: Option<String>,
+        location: Range,
+        labels: Vec<Label>,
+    }
+
+    #[derive(Serialize, Deserialize, Copy, Clone, Debug, PartialEq, Eq)]
+    pub enum ReportKind {
+        Error,
+        Warning,
+        Advice,
+    }
+
+    #[derive(Clone, Serialize, Deserialize)]
+    pub struct Range {
+        pub start: u32,
+        pub end: u32,
+    }
+
+    #[derive(Clone, Serialize, Deserialize)]
+    pub struct Label {
+        span: Range,
+        msg: Option<String>,
+        color: Option<Color>,
+        order: i32,
+        priority: i32,
+    }
+
+    #[derive(Serialize, Deserialize, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Copy, Clone)]
+    pub enum Color {
+        /// No color has been set. Nothing is changed when applied.
+        Unset,
+
+        /// Terminal default #9. (foreground code `39`, background code `49`).
+        Default,
+
+        /// Black #0 (foreground code `30`, background code `40`).
+        Black,
+
+        /// Red: #1 (foreground code `31`, background code `41`).
+        Red,
+
+        /// Green: #2 (foreground code `32`, background code `42`).
+        Green,
+
+        /// Yellow: #3 (foreground code `33`, background code `43`).
+        Yellow,
+
+        /// Blue: #4 (foreground code `34`, background code `44`).
+        Blue,
+
+        /// Magenta: #5 (foreground code `35`, background code `45`).
+        Magenta,
+
+        /// Cyan: #6 (foreground code `36`, background code `46`).
+        Cyan,
+
+        /// White: #7 (foreground code `37`, background code `47`).
+        White,
+
+        /// A color number from 0 to 255, for use in 256-color terminals.
+        Fixed(u8),
+
+        /// A 24-bit RGB color, as specified by ISO-8613-3.
+        RGB(u8, u8, u8),
     }
 }

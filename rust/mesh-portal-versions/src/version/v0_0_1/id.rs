@@ -11,12 +11,8 @@ use crate::version::v0_0_1::sys::{ChildRegistry, ParticleRecord};
 use crate::version::v0_0_1::wave::{ReqShell, RespShell, Wave};
 use core::str::FromStr;
 use cosmic_nom::new_span;
-use mesh_portal::version::latest::id::{Point, Port};
 use nom::combinator::all_consuming;
 use serde::{Deserialize, Serialize};
-use starlane_core::error::Error;
-use starlane_core::star;
-use starlane_core::template::StarHandle;
 use std::ops::{Deref, DerefMut};
 use tokio::sync::oneshot;
 
@@ -33,6 +29,7 @@ pub mod id {
     use std::collections::HashMap;
     use std::convert::TryInto;
     use std::fmt::Formatter;
+    use std::mem::discriminant;
     use std::ops::{Deref, Range};
     use std::str::FromStr;
     use std::sync::Arc;
@@ -160,6 +157,7 @@ pub mod id {
                 SubKind::Artifact(a) => a.into(),
                 SubKind::Base(b) => b.into(),
                 SubKind::UserBase(u) => u.into(),
+                SubKind::Star(s) => s.into(),
             }
         }
     }
@@ -173,6 +171,7 @@ pub mod id {
                 SubKind::Artifact(a) => a.into(),
                 SubKind::Base(b) => b.into(),
                 SubKind::UserBase(u) => u.into(),
+                SubKind::Star(s) => s.into(),
             }
         }
     }
@@ -235,6 +234,7 @@ pub mod id {
                 Kind::Database(_) => BaseKind::Database,
                 Kind::Base(_) => BaseKind::Base,
                 Kind::Repo => BaseKind::Repo,
+                Kind::Star(_) => BaseKind::Star,
             }
         }
 
@@ -253,12 +253,12 @@ pub mod id {
             sub.specific().cloned()
         }
 
-        pub fn wave_traversal_plan(&self) -> &'static TraversalPlan {
+        pub fn wave_traversal_plan(&self) -> &TraversalPlan {
             match self {
-                Kind::Mechtron => MECHTRON_WAVE_TRAVERSAL_PLAN,
-                Kind::Portal => PORTAL_WAVE_TRAVERSAL_PLAN,
-                Kind::Star(_) => STAR_WAVE_TRAVERSAL_PLAN,
-                _ => STD_WAVE_TRAVERSAL_PLAN,
+                Kind::Mechtron => &MECHTRON_WAVE_TRAVERSAL_PLAN,
+                Kind::Portal => &PORTAL_WAVE_TRAVERSAL_PLAN,
+                Kind::Star(_) => &STAR_WAVE_TRAVERSAL_PLAN,
+                _ => &STD_WAVE_TRAVERSAL_PLAN,
             }
         }
     }
@@ -311,7 +311,11 @@ pub mod id {
                     value.sub.ok_or("File<?> requires a Sub Kind")?.as_str(),
                 )?),
                 BaseKind::Artifact => Kind::Artifact(ArtifactSubKind::from_str(
-                    value.sub.ok_or("Artifact<?> requires a Sub Kind")?.as_str(),
+                    value.sub.ok_or("Artifact<?> requires a sub kind")?.as_str(),
+                )?),
+
+                BaseKind::Star => Kind::Star(StarSub::from_str(
+                    value.sub.ok_or("Star<?> requires a sub kind")?.as_str(),
                 )?),
 
                 BaseKind::Root => Kind::Root,
@@ -1227,6 +1231,7 @@ pub mod id {
         None,
         Not,
         Any,
+        Cli,
         Uuid(Uuid),
         Path(Vec<SkewerCase>),
     }
@@ -1249,6 +1254,7 @@ pub mod id {
                     }
                     return format!("Topic<Path>({})", rtn);
                 }
+                Topic::Cli => "Topic<Cli>".to_string(),
             }
         }
     }
@@ -1279,7 +1285,9 @@ pub mod id {
         Hash,
         strum_macros::Display,
         strum_macros::EnumString,
+        Ordinalize,
     )]
+    #[repr(u8)]
     pub enum Layer {
         PortalInlet = 0,
         Field,
@@ -1311,7 +1319,7 @@ pub mod id {
     #[async_trait]
     pub trait TraversalLayer {
         fn layer(&self) -> &Layer;
-        async fn towards_router(&self, traversal: Traversal<Wave>);
+        async fn traversal_router(&self, traversal: Traversal<Wave>);
         fn exchange(&self) -> &Arc<DashMap<Uuid, oneshot::Sender<RespShell>>>;
 
         async fn layer_handle(&self, request: ReqShell);
@@ -1347,20 +1355,20 @@ pub mod id {
         }
 
         async fn to_fabric_request(&self, request: Traversal<ReqShell>) -> Result<(), MsgErr> {
-            self.towards_router(response.wrap()).await;
+            self.traversal_router(request.wrap()).await;
             Ok(())
         }
         async fn to_fabric_response(&self, response: Traversal<RespShell>) -> Result<(), MsgErr> {
-            self.towards_router(response.wrap()).await;
+            self.traversal_router(response.wrap()).await;
             Ok(())
         }
         async fn to_core_request(&self, request: Traversal<ReqShell>) -> Result<(), MsgErr> {
-            self.towards_router(response.wrap()).await;
+            self.traversal_router(request.wrap()).await;
             Ok(())
         }
 
         async fn to_core_response(&self, response: Traversal<RespShell>) -> Result<(), MsgErr> {
-            self.towards_router(response.wrap()).await;
+            self.traversal_router(response.wrap()).await;
             Ok(())
         }
 
@@ -1396,11 +1404,11 @@ pub mod id {
         pub fn towards_fabric(&self, layer: &Layer) -> Option<Layer> {
             let mut layer = layer.clone();
             loop {
-                layer = layer - 1;
-                if layer < 0 {
+                let layer = layer.ordinal() - 1;
+                if layer < 0u8 {
                     return None;
-                } else if self.stack.contains(&layer) {
-                    return Some(layer);
+                } else if self.stack.contains(&Layer::from_ordinal(layer).unwrap()) {
+                    return Some(Layer::from_ordinal(layer).unwrap());
                 }
             }
         }
@@ -1408,10 +1416,14 @@ pub mod id {
         pub fn towards_core(&self, layer: &Layer) -> Option<Layer> {
             let mut layer = layer.clone();
             loop {
-                layer = layer + 1;
-                if layer > self.stack.len() - 1 {
-                    return None;
-                } else if self.stack.contains(&layer) {
+                let layer = match Layer::from_ordinal(layer.ordinal() + 1) {
+                    Some(layer) => layer,
+                    None => {
+                        return None;
+                    }
+                };
+
+                if self.stack.contains(&layer) {
                     return Some(layer);
                 }
             }
@@ -1469,9 +1481,10 @@ pub mod id {
                 Topic::Any => ValuePattern::Any,
                 Topic::Uuid(uuid) => ValuePattern::Pattern(Topic::Uuid(uuid)),
                 Topic::Path(path) => ValuePattern::Pattern(Topic::Path(path)),
+                Topic::Cli => ValuePattern::Pattern(Topic::Cli),
             };
             let layer = ValuePattern::Pattern(self.layer);
-            Self {
+            PortSelector {
                 point,
                 topic,
                 layer,
@@ -1580,10 +1593,10 @@ pub mod id {
 
     impl Into<PointSelector> for Point {
         fn into(self) -> PointSelector {
-            result(all_consuming(point_selector)(new_span(
-                self.to_string().as_str(),
-            )))
-            .unwrap()
+            let string = self.to_string();
+            let rtn = result(all_consuming(point_selector)(new_span(string.as_str()))).unwrap();
+            string;
+            rtn
         }
     }
 
@@ -2141,14 +2154,6 @@ pub mod id {
         }
     }
 
-    impl TryInto<PointSelector> for Point {
-        type Error = MsgErr;
-
-        fn try_into(self) -> Result<PointSelector, Self::Error> {
-            Ok(PointSelector::from_str(self.to_string().as_str())?)
-        }
-    }
-
     impl<Route, Seg> PointDef<Route, Seg>
     where
         Route: ToString,
@@ -2411,6 +2416,23 @@ pub enum StarSub {
     Fold, // exit from the Mesh.. maintains connections etc to Databases, Keycloak, etc.... Like A Space Fold out of the Fabric..
 }
 
+impl Into<SubKind> for StarSub {
+    fn into(self) -> SubKind {
+        SubKind::Star(self)
+    }
+}
+
+impl Into<Option<CamelCase>> for StarSub {
+    fn into(self) -> Option<CamelCase> {
+        Some(CamelCase::from_str(self.to_string().as_str()).unwrap())
+    }
+}
+
+impl Into<Option<String>> for StarSub {
+    fn into(self) -> Option<String> {
+        Some(self.to_string())
+    }
+}
 #[derive(
     Clone,
     Debug,
@@ -2635,6 +2657,11 @@ impl ToPort for StarKey {
     }
 }
 
+pub struct StarHandle {
+    pub name: String,
+    pub index: u16,
+}
+
 impl StarKey {
     pub fn new(constellation: &ConstellationName, handle: &StarHandle) -> Self {
         Self {
@@ -2673,7 +2700,7 @@ impl FromStr for StarKey {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone)]
 pub struct Traversal<W> {
     pub payload: W,
     pub record: ParticleRecord,
@@ -2683,6 +2710,7 @@ pub struct Traversal<W> {
     pub dir: TraversalDirection,
 }
 
+#[derive(Clone)]
 pub enum TraversalDirection {
     Fabric,
     Core,
@@ -2787,7 +2815,7 @@ impl Traversal<Wave> {
     }
 
     pub fn unwrap_req(self) -> Traversal<ReqShell> {
-        if let Wave::Req(req) = self.payload {
+        if let Wave::Req(req) = self.payload.clone() {
             self.with(req)
         } else {
             panic!("cannot call this unless you are sure it's a Req")
@@ -2795,7 +2823,7 @@ impl Traversal<Wave> {
     }
 
     pub fn unwrap_resp(self) -> Traversal<RespShell> {
-        if let Wave::Resp(resp) = self.payload {
+        if let Wave::Resp(resp) = self.payload.clone() {
             self.with(resp)
         } else {
             panic!("cannot call this unless you are sure it's a Resp")
@@ -2805,7 +2833,8 @@ impl Traversal<Wave> {
 
 impl Traversal<ReqShell> {
     pub fn wrap(self) -> Traversal<Wave> {
-        self.with(Wave::Req(self.payload))
+        let req = self.payload.clone();
+        self.with(Wave::Req(req))
     }
 
     pub fn is_inter_layer(&self) -> bool {
@@ -2815,7 +2844,8 @@ impl Traversal<ReqShell> {
 
 impl Traversal<RespShell> {
     pub fn wrap(self) -> Traversal<Wave> {
-        self.with(Wave::Resp(self.payload))
+        let resp = self.payload.clone();
+        self.with(Wave::Resp(resp))
     }
 
     pub fn is_inter_layer(&self) -> bool {

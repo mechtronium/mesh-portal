@@ -104,15 +104,15 @@ impl WaveXtra {
     }
 }
 
-pub struct RootReqCtx<I> {
+pub struct RootInCtx<I> {
     pub input: I,
     pub request: ReqShell,
     session: Option<Session>,
     logger: SpanLogger,
-    pub tx: Arc<dyn AsyncTransmitter>,
+    pub tx: ProtoTransmitter,
 }
 
-impl<I> Deref for RootReqCtx<I> {
+impl<I> Deref for RootInCtx<I> {
     type Target = I;
 
     fn deref(&self) -> &Self::Target {
@@ -120,8 +120,8 @@ impl<I> Deref for RootReqCtx<I> {
     }
 }
 
-impl RootReqCtx<ReqShell> {
-    pub fn new(request: ReqShell, logger: SpanLogger, tx: Arc<dyn AsyncTransmitter>) -> Self {
+impl RootInCtx<ReqShell> {
+    pub fn new(request: ReqShell, logger: SpanLogger, tx: ProtoTransmitter) -> Self {
         Self {
             request: request.clone(),
             input: request.clone(),
@@ -132,8 +132,8 @@ impl RootReqCtx<ReqShell> {
     }
 }
 
-impl<I> RootReqCtx<I> {
-    pub fn transform_input<I2, E>(self) -> Result<RootReqCtx<I2>, MsgErr>
+impl<I> RootInCtx<I> {
+    pub fn transform_input<I2, E>(self) -> Result<RootInCtx<I2>, MsgErr>
     where
         I2: TryFrom<I, Error = E>,
         E: Into<MsgErr>,
@@ -142,7 +142,7 @@ impl<I> RootReqCtx<I> {
             Ok(input) => input,
             Err(err) => return Err(err.into()),
         };
-        Ok(RootReqCtx {
+        Ok(RootInCtx {
             logger: self.logger,
             request: self.request,
             input,
@@ -151,20 +151,20 @@ impl<I> RootReqCtx<I> {
         })
     }
 
-    pub fn push<'a>(&'a self) -> ReqCtx<'a, I> {
-        ReqCtx::new(self, &self.input, &self.tx, self.logger.clone())
+    pub fn push<'a>(&'a self) -> InCtx<'a, I> {
+        InCtx::new(self, &self.input, &self.tx, self.logger.clone())
     }
 }
 
-pub struct ReqCtx<'a, I> {
-    root: &'a RootReqCtx<I>,
-    tx: &'a AsyncTransmitter,
-    parent: Option<Box<ReqCtx<'a, I>>>,
+pub struct InCtx<'a, I> {
+    root: &'a RootInCtx<I>,
+    tx: &'a ProtoTransmitter,
+    parent: Option<Box<InCtx<'a, I>>>,
     pub input: &'a I,
     pub logger: SpanLogger,
 }
 
-impl<'a, I> Deref for ReqCtx<'a, I> {
+impl<'a, I> Deref for InCtx<'a, I> {
     type Target = I;
 
     fn deref(&self) -> &Self::Target {
@@ -172,11 +172,11 @@ impl<'a, I> Deref for ReqCtx<'a, I> {
     }
 }
 
-impl<'a, I> ReqCtx<'a, I> {
+impl<'a, I> InCtx<'a, I> {
     pub fn new(
-        root: &'a RootReqCtx<I>,
+        root: &'a RootInCtx<I>,
         input: &'a I,
-        tx: &'a AsyncTransmitter,
+        tx: &'a ProtoTransmitter,
         logger: SpanLogger,
     ) -> Self {
         Self {
@@ -188,8 +188,8 @@ impl<'a, I> ReqCtx<'a, I> {
         }
     }
 
-    pub fn push(self) -> ReqCtx<'a, I> {
-        ReqCtx {
+    pub fn push(self) -> InCtx<'a, I> {
+        InCtx {
             root: self.root,
             input: self.input,
             logger: self.logger.span(),
@@ -198,31 +198,37 @@ impl<'a, I> ReqCtx<'a, I> {
         }
     }
 
-    pub fn pop(self) -> Option<ReqCtx<'a, I>> {
+    pub fn pop(self) -> Option<InCtx<'a, I>> {
         match self.parent {
             None => None,
             Some(parent) => Some(*parent),
         }
     }
 
-    pub fn request(&self) -> &ReqShell {
+    pub fn req(&self) -> &ReqShell {
         &self.root.request
     }
 
-    pub async fn send(&self, request: ReqProto) -> Result<RespShell, MsgErr> {
-        let request =
-            request.to_request(self.request().to.clone(), Agent::Anonymous, Scope::None)?;
-        self.tx.send(request).await
+    pub async fn send(&self, req: ReqProto) -> Result<RespShell, MsgErr> {
+        self.tx.req(req).await
     }
 }
 
-impl<'a> ReqCtx<'a, &mut ReqShell> {
-    pub fn ok_substance(self, substance: Substance) -> RespCore {
-        self.input.core.ok(substance)
+impl<'a> InCtx<'a, &mut ReqShell> {
+    pub fn ok_body(self, substance: Substance) -> RespCore {
+        self.input.core.ok_body(substance)
     }
 
     pub fn not_found(self) -> RespCore {
         self.input.core.not_found()
+    }
+
+    pub fn forbidden(self) -> RespCore {
+        self.input.core.forbidden()
+    }
+
+    pub fn bad_request(self) -> RespCore {
+        self.input.core.bad_request()
     }
 
     pub fn err(self, err: MsgErr) -> RespCore {
@@ -230,7 +236,7 @@ impl<'a> ReqCtx<'a, &mut ReqShell> {
     }
 }
 
-impl<'a> ReqCtx<'a, RespShell> {
+impl<'a> InCtx<'a, RespShell> {
     pub fn pass(self) -> RespCore {
         self.input.core.clone()
     }
@@ -352,6 +358,19 @@ impl Requestable<RespShell> for ReqStub {
         }
     }
 
+    fn fail<M: ToString>(self, status: u16, message: M) -> RespShell
+    where
+        Self: Sized,
+    {
+        RespShell {
+            id: uuid(),
+            to: self.from,
+            from: self.to,
+            core: RespCore::fail(status, message.to_string().as_str()),
+            response_to: self.id,
+        }
+    }
+
     fn err(self, err: MsgErr) -> RespShell {
         RespShell {
             id: uuid(),
@@ -402,7 +421,21 @@ impl Requestable<RespXtra> for ReqStub {
             core: RespCore::status(status),
             response_to: self.id,
         }
-        .to_frame(self.span)
+        .to_xtra(self.span)
+    }
+
+    fn fail<M: ToString>(self, status: u16, message: M) -> RespXtra
+    where
+        Self: Sized,
+    {
+        RespShell {
+            id: uuid(),
+            to: self.from,
+            from: self.to,
+            core: RespCore::fail(status, message.to_string().as_str()),
+            response_to: self.id,
+        }
+        .to_xtra(self.span)
     }
 
     fn err(self, err: MsgErr) -> RespXtra {
@@ -413,7 +446,7 @@ impl Requestable<RespXtra> for ReqStub {
             core: RespCore::err(err),
             response_to: self.id,
         }
-        .to_frame(self.span)
+        .to_xtra(self.span)
     }
 
     fn ok(self) -> RespXtra {
@@ -424,7 +457,7 @@ impl Requestable<RespXtra> for ReqStub {
             core: RespCore::ok(Substance::Empty),
             response_to: self.id,
         }
-        .to_frame(self.span)
+        .to_xtra(self.span)
     }
 
     fn body(self, body: Substance) -> RespXtra {
@@ -435,7 +468,7 @@ impl Requestable<RespXtra> for ReqStub {
             core: RespCore::ok(body),
             response_to: self.id,
         }
-        .to_frame(self.span)
+        .to_xtra(self.span)
     }
 
     fn core(self, core: RespCore) -> RespXtra {
@@ -446,7 +479,7 @@ impl Requestable<RespXtra> for ReqStub {
             core,
             response_to: self.id,
         }
-        .to_frame(self.span)
+        .to_xtra(self.span)
     }
 }
 
@@ -465,10 +498,12 @@ impl Into<ReqProto> for ReqShell {
     fn into(self) -> ReqProto {
         ReqProto {
             id: self.id,
+            from: Some(self.from),
             to: Some(self.to),
             core: Some(self.core),
-            handling: self.handling,
-            scope: self.scope,
+            handling: Some(self.handling),
+            scope: Some(self.scope),
+            agent: Some(self.agent),
         }
     }
 }
@@ -493,7 +528,7 @@ impl ReqShell {
         };
 
         Ok(Call {
-            point: self.item.to.clone().to_point(),
+            point: self.to.clone().to_point(),
             kind: kind.clone(),
         })
     }
@@ -679,6 +714,17 @@ impl Requestable<RespXtra> for ReqXtra {
         RespXtra {
             session: None,
             response: self.request.status(status),
+            span: self.span,
+        }
+    }
+
+    fn fail<M: ToString>(self, status: u16, message: M) -> RespXtra
+    where
+        Self: Sized,
+    {
+        RespXtra {
+            session: None,
+            response: self.request.fail(status, message.to_string().as_str()),
             span: self.span,
         }
     }
@@ -913,7 +959,7 @@ impl ReqShell {
         let core = RespCore {
             headers: Default::default(),
             status: StatusCode::from_u16(status)
-                .or_else(|| StatusCode::from_u16(500u16))
+                .or_else(|_| StatusCode::from_u16(500u16))
                 .unwrap(),
             body: Substance::Errors(Errors::default(error.to_string().as_str())),
         };
@@ -1010,30 +1056,66 @@ impl Default for ReqBuilder {
 #[derive(Debug, Clone)]
 pub struct ReqProto {
     pub id: String,
+    pub from: Option<Port>,
     pub to: Option<Port>,
     pub core: Option<ReqCore>,
-    pub handling: Handling,
-    pub scope: Scope,
+    pub handling: Option<Handling>,
+    pub scope: Option<Scope>,
+    pub agent: Option<Agent>,
 }
 
 impl ReqProto {
-    pub fn to_request<P>(self, from: P, agent: Agent, scope: Scope) -> Result<ReqShell, MsgErr>
-    where
-        P: ToPort,
-    {
-        let scope = self.scope | scope;
+    pub fn build(self) -> Result<ReqShell, MsgErr> {
         let request = ReqShell {
             id: self.id,
-            from: from.to_port(),
+            from: self.from.ok_or(MsgErr::new(500u16, "must set 'from'"))?,
             to: self.to.ok_or(MsgErr::new(500u16, "must set 'to'"))?,
             core: self
                 .core
                 .ok_or(MsgErr::new(500u16, "request core must be set"))?,
-            agent,
-            handling: self.handling,
-            scope,
+            agent: self.agent.ok_or(MsgErr::new(500u16, "must set 'agent'"))?,
+            handling: self
+                .handling
+                .ok_or(MsgErr::new(500u16, "must set 'handling'"))?,
+            scope: self.scope.ok_or(MsgErr::new(500u16, "must set 'scope'"))?,
         };
         Ok(request)
+    }
+
+    pub fn fill_to<P: ToPort>(&mut self, to: P) {
+        if self.to.is_none() {
+            self.to.replace(to.to_port());
+        }
+    }
+
+    pub fn fill_from<P: ToPort>(&mut self, from: P) {
+        if self.from.is_none() {
+            self.from.replace(from.to_port());
+        }
+    }
+
+    pub fn fill_core(&mut self, core: ReqCore) {
+        if self.core.is_none() {
+            self.core.replace(core);
+        }
+    }
+
+    pub fn fill_scope(&mut self, scope: Scope) {
+        if self.scope.is_none() {
+            self.scope.replace(scope);
+        }
+    }
+
+    pub fn fill_agent(&mut self, agent: Agent) {
+        if self.agent.is_none() {
+            self.agent.replace(agent);
+        }
+    }
+
+    pub fn fill_handling(&mut self, handling: Handling) {
+        if self.handling.is_none() {
+            self.handling.replace(handling);
+        }
     }
 
     pub fn body(&mut self, body: Substance) -> Result<(), MsgErr> {
@@ -1044,69 +1126,95 @@ impl ReqProto {
         Ok(())
     }
 
-    pub fn method(&mut self, method: Method) -> Result<(), MsgErr> {
+    pub fn method<M: Into<Method>>(&mut self, method: M) -> Result<(), MsgErr> {
+        let method: Method = method.into();
         if self.core.is_none() {
-            let core: ReqCore = method.into();
-            self.core = Some(core);
+            self.core = Some(method.into());
         } else {
             self.core.as_mut().unwrap().method = method;
         }
         Ok(())
     }
+
+    pub fn to<P: ToPort>(&mut self, to: P) {
+        self.to.replace(to.to_port());
+    }
+
+    pub fn from<P: ToPort>(&mut self, from: P) {
+        self.from.replace(from.to_port());
+    }
 }
 
 impl ReqProto {
-    pub fn new<P: ToPort>(to: P, method: Method) -> Self {
+    pub fn new() -> Self {
         Self {
             id: uuid(),
+            from: None,
+            to: None,
+            core: None,
+            handling: None,
+            scope: None,
+            agent: None,
+        }
+    }
+
+    pub fn to_with_method<P: ToPort>(to: P, method: Method) -> Self {
+        Self {
+            id: uuid(),
+            from: None,
             to: Some(to.to_port()),
             core: Some(ReqCore::new(method)),
-            handling: Default::default(),
-            scope: Scope::None,
+            handling: None,
+            scope: None,
+            agent: None,
         }
     }
 
     pub fn from_core(core: ReqCore) -> Self {
         Self {
             id: uuid(),
+            from: None,
             to: None,
             core: Some(core),
-            handling: Default::default(),
-            scope: Scope::None,
+            handling: None,
+            scope: None,
+            agent: None,
         }
     }
 
     pub fn sys<M: Into<SysMethod>, P: ToPort>(to: P, method: M) -> Self {
         let method: SysMethod = method.into();
         let method: Method = method.into();
-        Self::new(to, method)
+        Self::to_with_method(to, method)
     }
 
     pub fn msg<M: Into<MsgMethod>, P: ToPort>(to: P, method: M) -> Self {
         let method: MsgMethod = method.into();
         let method: Method = method.into();
-        Self::new(to, method)
+        Self::to_with_method(to, method)
     }
 
     pub fn http<M: Into<HttpMethod>, P: ToPort>(to: P, method: M) -> Self {
         let method: HttpMethod = method.into();
         let method: Method = method.into();
-        Self::new(to, method)
+        Self::to_with_method(to, method)
     }
 
     pub fn cmd<M: Into<CmdMethod>, P: ToPort>(to: P, method: M) -> Self {
         let method: CmdMethod = method.into();
         let method: Method = method.into();
-        Self::new(to, method)
+        Self::to_with_method(to, method)
     }
 
     pub fn core<P: ToPort>(to: P, core: ReqCore) -> Self {
         Self {
             id: uuid(),
+            from: None,
             to: Some(to.to_port()),
             core: Some(core),
-            scope: Default::default(),
-            handling: Default::default(),
+            scope: None,
+            handling: None,
+            agent: None,
         }
     }
 }
@@ -1121,6 +1229,10 @@ pub struct RespShell {
 }
 
 impl RespShell {
+    pub fn is_ok(&self) -> bool {
+        self.core.is_ok()
+    }
+
     pub fn core_result<E>(result: Result<RespShell, E>) -> Result<RespCore, E> {
         match result {
             Ok(response) => Ok(response.core),
@@ -1128,7 +1240,7 @@ impl RespShell {
         }
     }
 
-    pub fn to_frame(self, span: Option<LogSpan>) -> RespXtra {
+    pub fn to_xtra(self, span: Option<LogSpan>) -> RespXtra {
         RespXtra {
             session: None,
             response: self,
@@ -1494,6 +1606,7 @@ pub trait AsyncRouter: Send + Sync {
     async fn route(&self, wave: Wave);
 }
 
+#[async_trait]
 pub trait Router: Send + Sync {
     async fn route(&self, wave: Wave);
 }
@@ -1529,7 +1642,7 @@ impl AsyncRequestHandler for AsyncPointRequestHandlers {
         }
     }
 
-    async fn handle(&self, request: RootReqCtx<ReqShell>) -> Result<RespCore, MsgErr> {
+    async fn handle(&self, request: RootInCtx<ReqShell>) -> Result<RespCore, MsgErr> {
         if let Some(handler) = self.handlers.get(&request.to) {
             handler.handle(request).await
         } else {
@@ -1539,94 +1652,7 @@ impl AsyncRequestHandler for AsyncPointRequestHandlers {
 }
 
 pub trait TransportPlanner {
-    fn dest<P: ToPort>(port: P) -> Port;
-}
-
-/// Transporter will always wrap a Wave in another Wave which will then
-/// transport the wave to the next desired hop in its journey as determined
-/// by the TransportPlanner
-pub struct Transporter {
-    pub planner: Box<dyn TransportPlanner>,
-    pub transmitter: AsyncTransmitterWithAgent,
-}
-
-impl Transporter {
-    pub fn new(
-        planner: Box<dyn TransportPlanner>,
-        transmitter: AsyncTransmitterWithAgent,
-        logger: PointLogger,
-    ) -> Self {
-        Self {
-            planner,
-            transmitter,
-        }
-    }
-
-    pub async fn request(&self, req: ReqShell) -> Result<RespShell, MsgErr> {
-        let dest = self.planner.dest(wave.to().clone());
-        let mut trans = ReqProto::sys(dest, SysMethod::Transport);
-        trans.body(Wave::Req(req).into());
-        let resp = self.transmitter.send(trans).await?;
-        let wave: Wave = resp.core.body.try_into()?;
-        match wave {
-            Wave::Req(_) => Err(MsgErr::bad_request()),
-            Wave::Resp(resp) => Ok(resp),
-        }
-    }
-
-    pub async fn response(&self, req: ReqShell) {
-        let dest = self.planner.dest(wave.to().clone());
-        let mut trans = ReqProto::sys(dest, SysMethod::Transport);
-        trans.body(Wave::Req(req).into());
-        self.transmitter.send(trans).await;
-        // here we don't wait for a response becauase we can't do anything with it anyway
-    }
-}
-
-#[derive(Clone)]
-pub struct AsyncTransmitterWithAgent {
-    pub agent: Agent,
-    pub from: Port,
-    pub relay: Arc<dyn AsyncTransmitter>,
-}
-
-impl AsyncTransmitterWithAgent {
-    pub fn new(agent: Agent, from: Port, relay: Arc<dyn AsyncTransmitter>) -> Self {
-        Self { agent, from, relay }
-    }
-
-    pub fn with_topic(self, topic: Topic) -> Self {
-        Self {
-            agent: self.agent,
-            from: self.from.with_topic(topic),
-            relay: self.relay,
-        }
-    }
-}
-
-impl AsyncTransmitterWithAgent {
-    pub async fn send(&self, request: ReqProto) -> Result<RespShell, MsgErr> {
-        let request = request.to_request(self.from.clone(), self.agent.clone(), Scope::None)?;
-        Ok(self.relay.send(request).await)
-    }
-
-    pub async fn route(&self, wave: Wave) {
-        self.relay.route(wave).await;
-    }
-}
-
-impl AsyncTransmitterWithAgent {
-    pub fn with_from(self, from: Port) -> Self {
-        let mut rtn = self.clone();
-        rtn.from = from;
-        rtn
-    }
-
-    pub fn with_agent(self, agent: Agent) -> Self {
-        let mut rtn = self.clone();
-        rtn.agent = agent;
-        rtn
-    }
+    fn dest(&self, port: Port) -> Port;
 }
 
 #[derive(Clone)]
@@ -1693,7 +1719,7 @@ impl SyncTransmitRelay {
 
 #[async_trait]
 pub trait AsyncTransmitter: Send + Sync {
-    async fn send(&self, request: ReqShell) -> Result<RespShell, MsgErr>;
+    async fn req(&self, request: ReqShell) -> Result<RespShell, MsgErr>;
     async fn route(&self, wave: Wave);
 }
 
@@ -1714,13 +1740,13 @@ impl<H> InternalPipeline<H> {
 
 pub trait RequestHandler {
     fn select(&self, request: &ReqShell) -> Result<(), ()>;
-    fn handle(&self, request: RootReqCtx<ReqShell>) -> Result<RespCore, MsgErr>;
+    fn handle(&self, request: RootInCtx<ReqShell>) -> Result<RespCore, MsgErr>;
 }
 
 #[async_trait]
 pub trait AsyncRequestHandler: Sync + Send {
     async fn select(&self, request: &ReqShell) -> Result<(), ()>;
-    async fn handle(&self, request: RootReqCtx<ReqShell>) -> Result<RespCore, MsgErr>;
+    async fn handle(&self, request: RootInCtx<ReqShell>) -> Result<RespCore, MsgErr>;
 }
 
 impl RequestHandler for RequestHandlerRelay {
@@ -1728,64 +1754,8 @@ impl RequestHandler for RequestHandlerRelay {
         self.relay.select(request)
     }
 
-    fn handle(&self, request: RootReqCtx<ReqShell>) -> Result<RespCore, MsgErr> {
+    fn handle(&self, request: RootInCtx<ReqShell>) -> Result<RespCore, MsgErr> {
         self.relay.handle(request)
-    }
-}
-
-#[async_trait]
-pub trait AsyncAuthorizationRequester {
-    async fn authorize(self, messenger: AsyncTransmitterWithAgent) -> Result<AuthResponse, MsgErr>;
-}
-
-pub struct Credentials {
-    pub username: String,
-    pub password: String,
-}
-
-#[derive(Clone, Serialize, Deserialize)]
-pub struct Authorization {
-    pub agent: Point,
-}
-
-pub enum AuthResponse {
-    Next(Box<dyn AsyncAuthorizationRequester>),
-    Authorized(Authorization),
-}
-
-pub struct AsyncCredsAuthorizationRequester {
-    pub auth_point: Point,
-    pub credentials: Credentials,
-}
-
-#[async_trait]
-impl AsyncAuthorizationRequester for AsyncCredsAuthorizationRequester {
-    async fn authorize(self, messenger: AsyncTransmitterWithAgent) -> Result<AuthResponse, MsgErr> {
-        let mut form = MultipartFormBuilder::new();
-        form.put("username", self.credentials.username.as_str());
-        form.put("password", self.credentials.password.as_str());
-        let form = form.build()?;
-        let request = form.to_request_core();
-        let mut request = ReqProto::core(self.auth_point.clone(), request);
-        request.handling.wait = WaitTime::High;
-        let refresh_token: Token = messenger.send(request).await?.try_into()?;
-        let next = AsyncRefreshTokenAuthorizationRequester {
-            auth_point: self.auth_point,
-            token: refresh_token,
-        };
-        Ok(AuthResponse::Next(Box::new(next)))
-    }
-}
-
-pub struct AsyncRefreshTokenAuthorizationRequester {
-    pub auth_point: Point,
-    pub token: Token,
-}
-
-#[async_trait]
-impl AsyncAuthorizationRequester for AsyncRefreshTokenAuthorizationRequester {
-    async fn authorize(self, messenger: AsyncTransmitterWithAgent) -> Result<AuthResponse, MsgErr> {
-        unimplemented!()
     }
 }
 
@@ -1806,7 +1776,7 @@ impl AsyncRequestHandler for AsyncRequestHandlerRelay {
         self.relay.select(request).await
     }
 
-    async fn handle(&self, ctx: RootReqCtx<ReqShell>) -> Result<RespCore, MsgErr> {
+    async fn handle(&self, ctx: RootInCtx<ReqShell>) -> Result<RespCore, MsgErr> {
         self.relay.handle(ctx).await
     }
 }
@@ -1847,7 +1817,7 @@ impl AsyncRequestHandler for AsyncInternalRequestHandlers<AsyncRequestHandlerRel
         Err(())
     }
 
-    async fn handle(&self, ctx: RootReqCtx<ReqShell>) -> Result<RespCore, MsgErr> {
+    async fn handle(&self, ctx: RootInCtx<ReqShell>) -> Result<RespCore, MsgErr> {
         let read = self.pipelines.read().await;
         for pipeline in read.iter() {
             if pipeline.selector.is_match(&ctx.request).is_ok() {
@@ -1990,7 +1960,7 @@ impl RespCore {
         Self {
             headers: HeaderMap::new(),
             status: StatusCode::from_u16(status)
-                .or_else(|| StatusCode::from_u16(500u16))
+                .or_else(|_| StatusCode::from_u16(500u16))
                 .unwrap(),
             body: Substance::Errors(errors),
         }
@@ -2317,10 +2287,42 @@ impl ReqCore {
         }
     }
 
+    pub fn server_error(&self) -> RespCore {
+        RespCore {
+            headers: Default::default(),
+            status: StatusCode::from_u16(500u16).unwrap(),
+            body: Substance::Empty,
+        }
+    }
+
+    pub fn timeout(&self) -> RespCore {
+        RespCore {
+            headers: Default::default(),
+            status: StatusCode::from_u16(408u16).unwrap(),
+            body: Substance::Empty,
+        }
+    }
+
     pub fn not_found(&self) -> RespCore {
         RespCore {
             headers: Default::default(),
             status: StatusCode::from_u16(404u16).unwrap(),
+            body: Substance::Empty,
+        }
+    }
+
+    pub fn forbidden(&self) -> RespCore {
+        RespCore {
+            headers: Default::default(),
+            status: StatusCode::from_u16(403u16).unwrap(),
+            body: Substance::Empty,
+        }
+    }
+
+    pub fn bad_request(&self) -> RespCore {
+        RespCore {
+            headers: Default::default(),
+            status: StatusCode::from_u16(400u16).unwrap(),
             body: Substance::Empty,
         }
     }
@@ -2333,20 +2335,28 @@ impl ReqCore {
         }
     }
 
-    pub fn ok(&self, substance: Substance) -> RespCore {
+    pub fn ok(&self) -> RespCore {
         RespCore {
             headers: Default::default(),
             status: StatusCode::from_u16(200u16).unwrap(),
-            body: substance,
+            body: Substance::Empty,
+        }
+    }
+
+    pub fn ok_body(&self, body: Substance) -> RespCore {
+        RespCore {
+            headers: Default::default(),
+            status: StatusCode::from_u16(200u16).unwrap(),
+            body,
         }
     }
 
     pub fn fail<M: ToString>(&self, status: u16, message: M) -> RespCore {
-        let errors = Errors::default(error);
+        let errors = Errors::default(message.to_string().as_str());
         RespCore {
             headers: Default::default(),
             status: StatusCode::from_u16(status)
-                .or_else(|| StatusCode::from_u16(500u16))
+                .or_else(|_| StatusCode::from_u16(500u16))
                 .unwrap(),
             body: Substance::Errors(errors),
         }
@@ -2442,5 +2452,83 @@ impl ValueMatcher<SysMethod> for SysMethod {
         } else {
             Err(())
         }
+    }
+}
+
+#[derive(Clone)]
+pub enum SetStrategy<T> {
+    None,
+    Fill(T),
+    Override(T),
+}
+
+#[derive(Clone)]
+pub struct ProtoTransmitter {
+    pub agent: SetStrategy<Agent>,
+    pub scope: SetStrategy<Scope>,
+    pub handling: SetStrategy<Handling>,
+    pub from: SetStrategy<Port>,
+    pub to: SetStrategy<Port>,
+    pub transmitter: Arc<dyn AsyncTransmitter>,
+}
+
+impl ProtoTransmitter {
+    pub fn new(transmitter: Arc<dyn AsyncTransmitter>) -> ProtoTransmitter {
+        Self {
+            from: SetStrategy::None,
+            to: SetStrategy::None,
+            agent: SetStrategy::Fill(Agent::Anonymous),
+            scope: SetStrategy::Fill(Scope::None),
+            handling: SetStrategy::Fill(Handling::default()),
+            transmitter,
+        }
+    }
+
+    pub fn from_topic(&mut self, topic: Topic) -> Result<(), MsgErr> {
+        self.from = match self.from.clone() {
+            SetStrategy::None => {
+                return Err(MsgErr::from_500(
+                    "cannot set Topic without first setting Port",
+                ));
+            }
+            SetStrategy::Fill(from) => SetStrategy::Fill(from.with_topic(topic)),
+            SetStrategy::Override(from) => SetStrategy::Override(from.with_topic(topic)),
+        };
+        Ok(())
+    }
+
+    pub async fn req(&self, mut req: ReqProto) -> Result<RespShell, MsgErr> {
+        match &self.from {
+            SetStrategy::None => {}
+            SetStrategy::Fill(from) => req.fill_from(from.clone()),
+            SetStrategy::Override(from) => req.from = Some(from.clone()),
+        }
+
+        match &self.to {
+            SetStrategy::None => {}
+            SetStrategy::Fill(to) => req.fill_to(to.clone()),
+            SetStrategy::Override(to) => req.to = Some(to.clone()),
+        }
+
+        match &self.agent {
+            SetStrategy::None => {}
+            SetStrategy::Fill(agent) => req.fill_agent(agent.clone()),
+            SetStrategy::Override(agent) => req.agent = Some(agent.clone()),
+        }
+
+        match &self.scope {
+            SetStrategy::None => {}
+            SetStrategy::Fill(scope) => req.fill_scope(scope.clone()),
+            SetStrategy::Override(scope) => req.scope = Some(scope.clone()),
+        }
+
+        match &self.handling {
+            SetStrategy::None => {}
+            SetStrategy::Fill(handling) => req.fill_handling(handling.clone()),
+            SetStrategy::Override(handling) => req.handling = Some(handling.clone()),
+        }
+
+        let req = req.build()?;
+        self.transmitter.req(req).await
     }
 }
